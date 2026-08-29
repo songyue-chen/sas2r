@@ -52,3 +52,10 @@ test_that("effective_tol merges overrides cleanly", {
   expect_identical(effective_tol(p, "other"), list(abs = 1e-8, rel = 1e-8))
 })
 
+test_that("string representations of numeric tolerances are parsed cleanly", {
+  p <- compare_profile(abs = "1e-6", rel = "1e-5")
+  expect_identical(p$numeric$abs, 1e-6)
+  expect_identical(p$numeric$rel, 1e-5)
+})
+
+

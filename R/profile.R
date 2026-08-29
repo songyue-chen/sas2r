@@ -47,6 +47,12 @@ compare_profile <- function(abs = 1e-8, rel = 1e-8,
                             padding = c("cosmetic", "strict"),
                             attrs_cosmetic = c("label", "format.sas"),
                             overrides = list(), keys = NULL) {
+  if (is.character(abs) && length(abs) == 1L && !is.na(suppressWarnings(as.numeric(abs)))) {
+    abs <- as.numeric(abs)
+  }
+  if (is.character(rel) && length(rel) == 1L && !is.na(suppressWarnings(as.numeric(rel)))) {
+    rel <- as.numeric(rel)
+  }
   if (!is.numeric(abs) || length(abs) != 1L || is.na(abs) || abs < 0) {
     cli::cli_abort("{.arg abs} must be a single non-negative number.")
   }

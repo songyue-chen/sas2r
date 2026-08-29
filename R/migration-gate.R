@@ -324,6 +324,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         num_tol <- assertions$numeric_tolerance %||% comparison_rules$numeric_tolerance
         abs_tol <- comparison_rules$tol_abs %||% num_tol
         rel_tol <- comparison_rules$tol_rel
+        if (!is.null(abs_tol)) abs_tol <- suppressWarnings(as.numeric(abs_tol))
+        if (!is.null(rel_tol)) rel_tol <- suppressWarnings(as.numeric(rel_tol))
         if (is.null(abs_tol) && is.null(rel_tol)) {
           prof_defaults <- compare_profile()
           abs_tol <- prof_defaults$numeric$abs
