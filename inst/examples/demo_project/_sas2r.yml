@@ -1,0 +1,20 @@
+libraries:
+  adam: { path: data/adam, engine: sas7bdat, write: rds }
+macros:
+  search_path:
+    - macros
+
+# Optional agent configuration. Authenticate outside R first with
+# `aws sso login --profile clinical-dev`; sas2r never starts a login flow.
+# llm:
+#   provider: bedrock
+#   auth_mode: ambient
+#   profile: clinical-dev
+#   region: us-west-2
+#   model: us.anthropic.claude-example-v1:0
+#   cache: auto
+#   capabilities:
+#     structured_output: native
+#     tool_calling: native
+#   # ellmer gathers with tools before structured finalization; no
+#   # tools_with_structured_output override is needed or honored.

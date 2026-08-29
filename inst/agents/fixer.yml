@@ -1,0 +1,21 @@
+name: fixer
+description: >
+  Repairs generated R code or proposes bundle-local helper patches using cited static review,
+  smoke, bundle, or output evidence. Never modifies original SAS source, input datasets, or installed package helpers.
+prompt: fixer.md
+tier: frontier
+temperature: 0
+tools:
+  read_unit_context:  { max_calls: 4 }
+  lookup_rulebook:    { max_calls: 4 }
+  find_macro:         { max_calls: 3 }
+  get_macro_source:   { max_calls: 2 }
+  search_docs:        { max_calls: 3 }
+  search_skills:      { max_calls: 2 }
+  read_skill:         { max_calls: 2 }
+  read_comparison_report: { max_calls: 2 }
+tool_call_limit: 15
+retry_limit: 2
+max_repair_iterations: 3
+output_schema: program_fix_v1
+on_budget_exhausted: downgrade

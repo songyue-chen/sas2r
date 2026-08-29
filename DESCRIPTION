@@ -1,0 +1,39 @@
+Package: sas2r
+Title: Use R to Get R: Translate SAS Programs to R with Dependency-Aware
+    Migration
+Version: 0.2.0
+Authors@R: person("Songyue", "Chen", email = "chuckknow@gmail.com", role = c("aut", "cre"))
+Description: Translates SAS programs and projects to R using dependency-aware
+    orchestration, program smoke execution, and final-output evidence.
+    Deterministic and offline by default; optional agent review and repair
+    send bounded excerpts to a configured 'ellmer' provider only when one is
+    supplied.
+License: Apache License (>= 2)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+VignetteBuilder: knitr
+Depends: R (>= 4.1)
+Imports:
+    callr,
+    cli (>= 3.4),
+    clue,
+    haven,
+    jsonlite,
+    stats,
+    tibble,
+    utils,
+    vctrs,
+    yaml
+Suggests:
+    diffdf,
+    dplyr,
+    ellmer (>= 0.4.2),
+    knitr,
+    pdftools,
+    pkgload,
+    rmarkdown,
+    S7,
+    testthat (>= 3.1.7),
+    withr
+Config/testthat/edition: 3

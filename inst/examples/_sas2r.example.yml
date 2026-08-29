@@ -1,0 +1,147 @@
+# ==============================================================================
+# sas2r Project Configuration (_sas2r.yml)
+# ==============================================================================
+# All sections are optional. Relative paths are resolved relative to the
+# directory containing this configuration file.
+#
+# SOURCE AUTHORITY & PRECEDENCE:
+# 1. An accessible point-of-use source LIBNAME in SAS code is authoritative.
+# 2. Configured libraries fill an absent or unusable SAS source binding.
+# 3. A missing dataset member under an accessible source root does NOT fall
+#    through to a configured copy.
+# 4. Project-local, absolute, and fileref %INCLUDE targets need no configuration;
+#    includes.roots is searched only when source-relative resolution fails.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. SAS Library Paths
+# ------------------------------------------------------------------------------
+# Map SAS librefs to filesystem directory paths. Both scalar and expanded
+# dictionary syntaxes are supported.
+libraries:
+  # Scalar syntax (shorthand: libref -> path)
+  adam: data/adam
+
+  # Expanded syntax with engine and write format
+  sdtm:
+    path: data/sdtm
+    engine: sas7bdat      # Input format: sas7bdat | rds | xpt | csv | duckdb
+    write: rds            # Output format for emitted R code: rds | xpt
+
+  work:
+    path: data/work
+    engine: rds
+    write: rds
+
+# ------------------------------------------------------------------------------
+# 2. Output Contracts & Overrides (Optional)
+# ------------------------------------------------------------------------------
+# Explicitly declare expected output datasets and TLF artifacts to evaluate
+# at the migration gate.
+outputs:
+  datasets:
+    - adam.adsl
+    - adam.adae
+  tlfs:
+    - outputs/table1.pdf
+    - outputs/figure1.pdf
+
+# ------------------------------------------------------------------------------
+# 3. Macro Search Path
+# ------------------------------------------------------------------------------
+# Directories containing external SAS autocall macros (*.sas).
+macros:
+  search_path:
+    - macros
+    - /mount/shared/macros
+
+# ------------------------------------------------------------------------------
+# 4. Include Fallback Roots
+# ------------------------------------------------------------------------------
+# Search roots for %INCLUDE targets. Used ONLY when a target file cannot be
+# resolved relative to the including SAS file or project root.
+includes:
+  roots:
+    - includes
+    - /mount/shared/sas-includes
+
+# ------------------------------------------------------------------------------
+# 5. Autoexec & Environment
+# ------------------------------------------------------------------------------
+# SAS autoexec files to ingest for global macro variables, options, and setup.
+environment:
+  autoexec:
+    - autoexec.sas
+
+# ------------------------------------------------------------------------------
+# 6. LLM Provider Configuration (Optional)
+# ------------------------------------------------------------------------------
+# Connect to an LLM provider for agent translation and code review.
+# Twelve native ellmer providers are supported: openai, anthropic, bedrock,
+# azure, databricks, deepseek, github, gemini, vertex, ollama, posit, snowflake.
+# NOTE: Secrets must NEVER be placed in this file. Provide them via environment
+# variables (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GITHUB_PAT).
+#
+# Active example: OpenAI
+llm:
+  provider: openai
+  auth_mode: api_key                    # Uses OPENAI_API_KEY environment variable
+  model: gpt-5.6-terra
+  tiers:
+    frontier: gpt-5.6-terra
+    cheap: gpt-5.6-luna
+  capabilities:
+    tool_calling: native
+  # Absolute ceiling for each HTTP transfer attempt. It is not an inactivity
+  # timer: receiving output does not reset it. sas2r defaults to 300 seconds.
+  timeout_seconds: 900
+  # Transport attempts per HTTP request. sas2r defaults to 1 so retries stay
+  # visible; values above 1 can multiply elapsed time and ambiguous spend.
+  max_tries: 1
+
+# Alternative Provider Examples (uncomment to use):
+#
+# Anthropic:
+# llm:
+#   provider: anthropic
+#   auth_mode: api_key                  # Uses ANTHROPIC_API_KEY environment variable
+#   model: claude-3-5-sonnet-20241022
+#
+# AWS Bedrock:
+# llm:
+#   provider: bedrock
+#   auth_mode: ambient                  # Uses ambient AWS credential chain
+#   profile: clinical-dev
+#   region: us-east-1
+#   model: us.anthropic.claude-3-5-sonnet-20241022-v2:0
+#
+# Azure OpenAI:
+# llm:
+#   provider: azure
+#   auth_mode: ambient                  # Or api_key with AZURE_OPENAI_API_KEY
+#   endpoint: https://example-resource.openai.azure.com
+#   api_version: 2024-10-21
+#   model: sas2r-deployment
+
+# ------------------------------------------------------------------------------
+# 7. Usage Budget & Policy (Optional)
+# ------------------------------------------------------------------------------
+# Default is mode: observe, max_usd: Inf (audits usage without stopping calls).
+# budget:
+#   mode: observe                       # observe | soft | strict
+#   max_calls: 50
+#   max_output_tokens: 16384
+#   max_usd: 5.00
+#   max_retries: 2                      # sas2r-level; see llm.max_tries
+#   max_tool_calls: 500
+#   max_wall_time: 7200                 # denies new calls after this time; does not interrupt an in-flight request
+
+# ------------------------------------------------------------------------------
+# 8. Data & Model Privacy Boundary
+# ------------------------------------------------------------------------------
+# sas2r enforces a strict privacy boundary between local data and remote models:
+# - Only SAS source code, macro structures, and column name metadata are transmitted.
+# - sas2r NEVER transmits raw dataset cell values, row numbers, patient identifiers,
+#   or sensitive key values to external LLM providers.
+# - All dataset generation and comparison occur locally to satisfy enterprise
+#   data residency and governance requirements.

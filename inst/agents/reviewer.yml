@@ -1,0 +1,16 @@
+name: reviewer
+description: >
+  Reviews SAS source and generated R translation for semantic equivalence and source grounding.
+  Operates strictly read-only and static; never executes code or claims runtime/output verification.
+prompt: reviewer.md
+tier: frontier
+temperature: 0
+tools:
+  query_project_graph: { max_calls: 4 }
+  lookup_rulebook:     { max_calls: 6 }
+  search_skills:       { max_calls: 2 }
+  read_skill:          { max_calls: 2 }
+tool_call_limit: 15
+retry_limit: 2
+output_schema: program_review_v1
+on_budget_exhausted: downgrade

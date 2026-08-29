@@ -1,0 +1,8 @@
+Package: ellmer
+Type: Package
+Title: Isolated Ellmer S7 Contract Fixture
+Version: 0.4.2
+Description: Minimal offline public-method fixture for sas2r adapter tests.
+License: MIT
+Encoding: UTF-8
+Imports: S7

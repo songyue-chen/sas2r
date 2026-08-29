@@ -1,0 +1,151 @@
+---
+title: "Dependency-Aware SAS-to-R Migration"
+author: "sas2r development team"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Dependency-Aware SAS-to-R Migration}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Overview
+
+`sas2r` provides a dependency-aware migration framework that translates SAS programs and multi-module clinical pipelines into modular, reproducible R bundles.
+
+Rather than translating single programs in isolation without context, `sas2r` analyzes macro definitions, `%include` relationships, dataset lineages, and configured outputs across the entire codebase to guarantee correct execution ordering and reproducible artifact generation.
+
+## Migration Pipeline Architecture
+
+A complete migration workflow follows six coordinated phases:
+
+1. **Dependency Analysis**: Discovers module dependencies, macro definitions, and data references to construct a Directed Acyclic Graph (DAG) and topological execution schedule.
+2. **Deterministic Baseline Transpilation**: Parses SAS statements into robust base R / tidyverse idioms with format catalog compilation (`_sas2r_formats.R`) and runtime helper bindings (`sas2r-helpers.R`).
+3. **Immediate Component Repair**: Translates and checks program units, verifying syntax and running independent static reviews without reasoning bias.
+4. **Subprocess Attempt Execution**: Executes the complete generated R bundle inside an isolated subprocess using copy-on-write library registries.
+5. **Output Verification Gate**: Evaluates generated candidate datasets and Table/Listing/Figure (TLF) outputs against structural assertions and optional SAS reference datasets (`.xpt`, `.sas7bdat`, `.rds`).
+6. **Authoritative Reporting**: Produces machine-readable (`.sas2r/report.json`) and human-readable (`report.md`) audit documentation.
+
+## Configuring a Clinical Study Migration (`_sas2r.yml`)
+
+Create a `_sas2r.yml` file in your clinical study directory:
+
+```yaml
+project: cdsc_pilot_study
+
+libraries:
+  sdtm:
+    path: data/sdtm
+    engine: xpt
+  adam:
+    path: data/adam
+    engine: xpt
+    write: rds
+
+outputs:
+  datasets:
+    - adam.adsl
+    - adam.adae
+    - adam.advs_bds
+
+  # Golden SAS reference datasets for automated validation
+  references:
+    adam.adsl: data/reference/adsl.xpt
+    adam.adae: data/reference/adae.sas7bdat
+    adam.advs_bds: data/reference/advs.rds
+
+  assertions:
+    adam.adsl:
+      keys: [STUDYID, USUBJID]
+      numeric_tolerance: 1e-6
+    adam.advs_bds:
+      keys: [STUDYID, USUBJID, PARAMCD, AVISITN, ATPTN]
+      numeric_tolerance: 1e-6
+
+llm:
+  provider: anthropic           # or openai, gemini, deepseek
+  model: claude-sonnet-4-6
+  reasoning_effort: high
+  max_output_tokens: 16384
+```
+
+## Running a Migration in R
+
+To migrate a single SAS script or an entire directory of SAS files, call `sas_translate()`:
+
+```r
+library(sas2r)
+
+# Load API keys from environment
+readRenviron("~/.Renviron")
+
+# Translate and execute the study migration
+result <- sas_translate(
+  path = "programs/",
+  out_dir = "migration_output",
+  config = "_sas2r.yml",
+  execute = TRUE,
+  max_program_repair_rounds = 1L,
+  max_bundle_repair_rounds = 2L
+)
+
+# Inspect the result object
+print(result)
+cat("Status:", result$status, "\n")
+cat("Bundle Directory:", result$bundle_dir, "\n")
+
+# View generated R code
+cat(sas_code(result))
+
+# Export clean production R bundle
+sas_write(result, "production_r/")
+```
+
+An interrupted or amended run can pick up where it left off: `sas_translate(..., resume = TRUE)` reconciles the prior run's artifacts and re-translates only components whose source or bindings changed, leaving completed work in place.
+
+### Four Canonical Bundle Statuses
+
+Each translation attempt resolves to one of four authoritative statuses:
+
+- **`validated`**: All required candidate datasets match reference SAS data files (`.xpt`, `.sas7bdat`, `.rds`) within defined numerical and multiset key tolerances.
+- **`migration_ready`**: All required candidate datasets and TLFs were generated and structurally validated in isolated execution attempts.
+- **`needs_review`**: Staged code is syntactically valid but execution was skipped (`execute = FALSE`), or reviewer findings require manual review.
+- **`blocked`**: Unresolved compilation errors, syntax defects, or failing smoke executions prevent artifact generation.
+
+## Component Evidence Ladder
+
+Within each bundle, individual components accumulate immutable evidence records:
+
+- `transpiled_only`: Deterministically translated baseline R code and contracts.
+- `reviewed_only`: Evaluated by an independent reviewer without material issues.
+- `smoke_verified`: Verified in an isolated subprocess with its upstream dependency chain.
+- `runtime_verified`: Executed during a complete bundle run with verified downstream outputs.
+- `reference_validated`: Validated against golden SAS reference outputs with zero differences.
+
+## Attempt Isolation & Copy-on-Write
+
+`sas2r` protects production and raw input datasets from inadvertent mutation during translation:
+
+- Input libraries are mounted read-only.
+- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`attempts/bundle_attempt_001/`).
+- Multi-round repairs select improved attempts deterministically and prune rejected attempts according to configuration.
+
+## Model Privacy & Clinical Data Protection
+
+`sas2r` maintains a strict separation between remote language models and clinical study data:
+
+- **Transmission Boundary**: By default, prompts carry program logic, macro structures, column name metadata, and redacted comparison digests (variable names, mismatch counts, difference magnitudes, pattern hints — not the mismatching cells).
+- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may quote a small, capped set of example differences — including row numbers, key values, and differing cell values (subject identifiers among them when key columns identify subjects) — and `agent_evidence = "bounded"` adds capped output metadata with short previews to repair evidence. The default `agent_evidence = "code_only"` sends neither.
+- **Data Residency**: All dataset reading, execution, and comparison run in the local R process; confirm your configured endpoint meets your organization's data residency obligations before enabling an LLM provider.
+
+## Parity Disclaimer
+
+> **THIS IS NOT PARITY**: Automated translation by `sas2r` does not guarantee regulatory equivalence or replace independent statistical validation. All migrated R code and generated artifacts must be formally validated according to standard clinical operating procedures prior to regulatory submission.
+

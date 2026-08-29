@@ -1,0 +1,167 @@
+name: check
+on:
+  push: { branches: [main] }
+  pull_request: {}
+jobs:
+  rcmdcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { use-public-rspm: true }
+      # The .Rmd vignette makes pandoc a hard R CMD build dependency.
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            local::.
+          extra-packages: |
+            any::rcmdcheck
+      - name: Check sas2r
+        run: |
+          # --as-cran so unstated test dependencies surface as WARNINGs and
+          # actually gate. error_on stays "warning": --as-cran always emits a
+          # "New submission" NOTE and a clock NOTE that are not defects.
+          # --no-manual because the runner has no LaTeX toolchain: without it
+          # the PDF-manual build fails as an ERROR plus a WARNING that say
+          # nothing about the package.
+          rcmdcheck::rcmdcheck(
+            ".", args = c("--no-manual", "--as-cran"), error_on = "warning"
+          )
+        shell: Rscript {0}
+  installed-tests:
+    # The plan-5 lesson: pkgload masks namespace/S3/collation bugs.
+    # This job runs the suites against genuinely installed packages.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { use-public-rspm: true }
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            local::.
+          extra-packages: |
+            any::testthat
+            any::dplyr
+      - name: Install sas2r
+        run: R CMD INSTALL .
+      - name: Test installed sas2r
+        run: testthat::test_check("sas2r", stop_on_failure = TRUE)
+        shell: Rscript {0}
+        working-directory: tests
+      - name: Run migration acceptance fixture gate
+        run: Rscript tools/run-migration-acceptance.R --fixture --artifacts=$RUNNER_TEMP/acceptance-fixture
+  no-sas-tarball:
+    # Definition of Done: the package must build to a tarball, install into a
+    # clean library, and pass acceptance with no SAS executable present.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { use-public-rspm: true }
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            local::.
+          extra-packages: |
+            any::testthat
+            any::dplyr
+      - name: Assert no SAS executable is present
+        run: |
+          if command -v sas >/dev/null 2>&1; then
+            echo "a SAS executable is on PATH; this gate requires none" >&2
+            exit 1
+          fi
+      - name: Build tarball
+        run: R CMD build --no-manual .
+      - name: Install tarball into a clean library
+        run: |
+          mkdir -p "$RUNNER_TEMP/cleanlib" "$RUNNER_TEMP/tarball"
+          R CMD INSTALL --library="$RUNNER_TEMP/cleanlib" sas2r_*.tar.gz
+          tar xzf sas2r_*.tar.gz -C "$RUNNER_TEMP/tarball"
+      - name: Acceptance against the installed tarball
+        run: |
+          .libPaths(c(Sys.getenv("CLEANLIB"), .libPaths()))
+          library(sas2r)
+          # test_dir(), not test_local(): test_local() derives `package`
+          # itself and walks up to the checkout, so it would both duplicate
+          # the argument and run the source tree's tests instead of the
+          # tarball's.
+          res <- testthat::test_dir(
+            file.path(Sys.getenv("TARBALL_TESTS"), "testthat"),
+            package = "sas2r", load_package = "installed",
+            reporter = "summary", stop_on_failure = TRUE
+          )
+        shell: Rscript {0}
+        env:
+          CLEANLIB: ${{ runner.temp }}/cleanlib
+          TARBALL_TESTS: ${{ runner.temp }}/tarball/sas2r/tests
+      # A bash step: the old first line was R (`.libPaths(c(...))`) under the
+      # default shell, so the step died on a bash syntax error before Rscript
+      # ever ran. The clean library reaches the child through R_LIBS_USER.
+      # cleanlib first so the tarball-installed sas2r wins, then the pak
+      # library: R_LIBS_USER *replaces* the default user library, and with
+      # cleanlib alone every dependency disappeared from .libPaths.
+      - name: Run migration acceptance fixture gate against installed tarball
+        run: Rscript tools/run-migration-acceptance.R --fixture --artifacts="$RUNNER_TEMP/acceptance-fixture"
+        env:
+          R_LIBS_USER: ${{ runner.temp }}/cleanlib:${{ runner.temp }}/Library
+
+  real-ellmer-contract:
+    name: real ellmer ${{ matrix.ellmer-version }} contract
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ellmer-version: "0.4.2"
+            ellmer-install: "archive"
+          - ellmer-version: "current"
+            ellmer-install: "current"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { use-public-rspm: true }
+      # gitcreds and paws.common: chat_github() checks for gitcreds, and
+      # chat_aws_bedrock() checks for paws.common, before any credential lookup
+      # runs. The comments live here because a # line inside a YAML literal
+      # block is content, not a comment -- pak received it as a package ref
+      # and failed the whole job with "Cannot parse package".
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            local::.
+          extra-packages: |
+            any::testthat
+            any::remotes
+            any::processx
+            any::gitcreds
+            any::paws.common
+      - name: Install selected real ellmer
+        env:
+          SAS2R_EXPECTED_ELLMER_VERSION: ${{ matrix.ellmer-version }}
+          SAS2R_ELLMER_INSTALL: ${{ matrix.ellmer-install }}
+        run: |
+          expected <- Sys.getenv("SAS2R_EXPECTED_ELLMER_VERSION")
+          if (identical(Sys.getenv("SAS2R_ELLMER_INSTALL"), "current")) {
+            install.packages("ellmer")
+          } else {
+            remotes::install_version(
+              "ellmer", version = expected, dependencies = NA,
+              upgrade = "never", repos = getOption("repos")
+            )
+          }
+          actual <- as.character(utils::packageVersion("ellmer"))
+          if (!identical(expected, "current") && !identical(actual, expected)) {
+            stop("expected ellmer ", expected, ", installed ", actual)
+          }
+        shell: Rscript {0}
+      - name: Install sas2r against selected ellmer
+        run: R CMD INSTALL .
+      - name: Exercise real ellmer public contract offline
+        env:
+          SAS2R_EXPECTED_ELLMER_VERSION: ${{ matrix.ellmer-version }}
+        run: source("tests/real-ellmer/contract.R", echo = TRUE)
+        shell: Rscript {0}
