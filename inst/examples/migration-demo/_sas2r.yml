@@ -1,0 +1,15 @@
+libraries:
+  adam:
+    path: data
+    engine: rds
+    write: rds
+  work:
+    path: data
+    engine: rds
+    write: rds
+
+outputs:
+  datasets:
+    - adam.final_ds
+  tlfs:
+    - outputs/figure1.pdf

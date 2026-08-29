@@ -1,0 +1,20 @@
+name: translator
+description: >
+  Translates SAS program logic into idiomatic, faithful R code and behavioral contracts.
+  Proposes candidate translations and interface metadata but never certifies runtime validity or final status.
+prompt: translator.md
+tier: frontier
+temperature: 0
+tools:
+  query_project_graph: { max_calls: 4 }
+  lookup_rulebook:    { max_calls: 6 }
+  find_macro:         { max_calls: 4 }
+  get_macro_source:   { max_calls: 3 }
+  list_macro_files:   { max_calls: 2 }
+  search_docs:        { max_calls: 3 }
+  search_skills:      { max_calls: 2 }
+  read_skill:         { max_calls: 2 }
+tool_call_limit: 15
+retry_limit: 2
+output_schema: program_translation_v1
+on_budget_exhausted: downgrade

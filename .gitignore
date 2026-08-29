@@ -1,0 +1,22 @@
+.Rproj.user
+.Rhistory
+.RData
+.Renviron
+*.Rcheck/
+.superpowers/
+.worktrees/
+worktrees/
+.DS_Store
+.sas2r/
+live_tests/
+test_project/
+scratch/
+phuse-validation/
+AGENTS.md
+
+# docs/: publish only the three user-facing guides; everything else is
+# internal working material (plans, specs, review rounds, decision notes).
+docs/*
+!docs/llm-providers.md
+!docs/migration-evidence.md
+!docs/output-evidence.md

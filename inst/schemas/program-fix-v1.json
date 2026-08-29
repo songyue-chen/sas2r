@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sas2r.dev/schemas/program-fix-v1.json",
+  "title": "sas2r program fix output",
+  "x-sas2r-schema-version": "1",
+  "type": "object",
+  "properties": {
+    "r_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "diagnosis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "changed_interfaces": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "affected_outputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "remaining_uncertainty": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "bundle_helper_patch": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "content": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "path",
+            "content",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "r_code",
+    "diagnosis",
+    "summary",
+    "evidence_ids",
+    "changed_interfaces",
+    "affected_outputs",
+    "remaining_uncertainty",
+    "bundle_helper_patch"
+  ],
+  "additionalProperties": false
+}

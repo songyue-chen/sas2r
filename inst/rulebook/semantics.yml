@@ -1,0 +1,634 @@
+schema_version: 1
+
+rules:
+  functions.upcase:
+    classification: adapter_required
+    sas_default: "Uppercases using the active SAS locale and character semantics."
+    r_default: "toupper uses the R session locale and returns NA for missing values."
+    strategy: toupper
+    implementation_status: implemented_unverified
+    risk: medium
+    scope: "UPCASE calls dispatched by the DATA-step expression translator."
+    sources: &function_sources
+      - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lefunctionsref/titlepage.htm
+        accessed: 2026-08-19
+        version: "SAS 9.4"
+      - url: https://stat.ethz.ch/R-manual/R-devel/library/base/html/00Index.html
+        accessed: 2026-08-19
+        version: "R devel manual"
+    edge_cases: [locale, non_ascii, missing_character]
+
+  functions.lowcase:
+    classification: adapter_required
+    sas_default: "Lowercases using the active SAS locale and character semantics."
+    r_default: "tolower uses the R session locale and returns NA for missing values."
+    strategy: tolower
+    implementation_status: implemented_unverified
+    risk: medium
+    scope: "LOWCASE calls dispatched by the DATA-step expression translator."
+    sources: *function_sources
+    edge_cases: [locale, non_ascii, missing_character]
+
+  functions.strip:
+    classification: adapter_required
+    sas_default: "Removes leading and trailing blanks from fixed-width SAS character values."
+    r_default: "trimws removes a configurable whitespace class from R strings."
+    strategy: trimws
+    implementation_status: implemented_unverified
+    risk: medium
+    scope: "STRIP calls on character values; fixed-width metadata is not modeled."
+    sources: *function_sources
+    edge_cases: [all_blank, fixed_width_padding, missing_character]
+
+  functions.compress:
+    classification: adapter_required
+    sas_default: "COMPRESS removes selected characters and supports SAS modifiers."
+    r_default: "R has no single base function with the complete COMPRESS modifier contract."
+    strategy: sas_compress
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "COMPRESS calls accepted by sas_compress; the complete modifier surface is not claimed."
+    sources: *function_sources
+    edge_cases: [modifier_semantics, regex_metacharacters, missing_character]
+
+  functions.substr:
+    classification: adapter_required
+    sas_default: "SUBSTR uses one-based positions and SAS character-length assignment behavior."
+    r_default: "R substring functions do not reproduce DATA-step target-length side effects."
+    strategy: sas_substr
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "SUBSTR used as a value expression, not as a left-hand assignment target."
+    sources: *function_sources
+    edge_cases: [position_zero, out_of_range, multibyte, assignment_target]
+
+  functions.length:
+    classification: adapter_required
+    sas_default: "LENGTH reflects SAS character value behavior, including blank values."
+    r_default: "R string width functions distinguish character count, bytes, and vector length."
+    strategy: sas_length
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "LENGTH calls handled by sas_length; declared fixed-width metadata is not modeled."
+    sources: *function_sources
+    edge_cases: [blank_value, fixed_width_padding, multibyte, missing_character]
+
+  functions.abs:
+    classification: equivalent
+    sas_default: "Returns the absolute magnitude of a numeric argument."
+    r_default: "abs returns the absolute magnitude of a numeric argument."
+    strategy: abs
+    implementation_status: implemented_unverified
+    risk: low
+    scope: "Finite ordinary numeric values; SAS special missing values are not modeled."
+    sources: *function_sources
+    edge_cases: [negative_zero, infinity, special_missing]
+
+  functions.int:
+    classification: equivalent
+    sas_default: "INT truncates a numeric value toward zero."
+    r_default: "trunc truncates a numeric value toward zero."
+    strategy: trunc
+    implementation_status: implemented_unverified
+    risk: low
+    scope: "Finite ordinary numeric values."
+    sources: *function_sources
+    edge_cases: [negative_fraction, large_magnitude, special_missing]
+
+  functions.round:
+    classification: adapter_required
+    sas_default: "Nearest multiple; halfway cases round away from zero."
+    r_default: "Base R round uses ties to even for exactly represented halfway cases."
+    strategy: sas_round
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "ROUND with numeric x and positive numeric unit."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_rounding.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://stat.ethz.ch/R-manual/R-devel/library/base/html/Round.html
+        accessed: 2026-08-19
+        version: "R devel manual"
+    edge_cases: [halfway_positive, halfway_negative, binary_boundary, nonunit_increment]
+
+  functions.min:
+    classification: adapter_required
+    sas_default: "MIN ignores ordinary missing arguments when a nonmissing argument is available."
+    r_default: "base min propagates NA unless na.rm is selected."
+    strategy: sas_min
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Scalar numeric arguments handled by sas_min."
+    sources: *function_sources
+    edge_cases: [all_missing, special_missing, zero_arguments]
+
+  functions.max:
+    classification: adapter_required
+    sas_default: "MAX ignores ordinary missing arguments when a nonmissing argument is available."
+    r_default: "base max propagates NA unless na.rm is selected."
+    strategy: sas_max
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Scalar numeric arguments handled by sas_max."
+    sources: *function_sources
+    edge_cases: [all_missing, special_missing, zero_arguments]
+
+  functions.sum:
+    classification: adapter_required
+    sas_default: "SUM ignores ordinary missing arguments and returns missing when every argument is missing."
+    r_default: "base sum propagates NA unless na.rm is selected and returns zero for an empty input."
+    strategy: sas_sum
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Scalar numeric arguments handled by sas_sum."
+    sources: *function_sources
+    edge_cases: [all_missing, special_missing, zero_arguments]
+
+  functions.mean:
+    classification: adapter_required
+    sas_default: "MEAN ignores ordinary missing arguments and returns missing when every argument is missing."
+    r_default: "base mean propagates NA unless na.rm is selected."
+    strategy: sas_mean
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Scalar numeric arguments handled by sas_mean."
+    sources: *function_sources
+    edge_cases: [all_missing, special_missing, zero_arguments]
+
+  functions.missing:
+    classification: known_divergence
+    sas_default: "MISSING recognizes numeric missing values, special numeric missings, and blank character values."
+    r_default: "is.na recognizes R missing values but does not treat a blank string as missing."
+    strategy: is.na
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Direct MISSING dispatch; blank strings and SAS special missing values remain divergent."
+    sources: *function_sources
+    edge_cases: [blank_character, special_missing, tagged_na]
+
+  functions.put:
+    classification: adapter_required
+    sas_default: "PUT applies SAS formats, width rules, and missing-value rendering."
+    r_default: "R formatting functions use different format catalogs and width conventions."
+    strategy: sas_put
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Formats implemented by sas_put only; no complete SAS format catalog is claimed."
+    sources: *function_sources
+    edge_cases: [unsupported_format, width, date_epoch, missing_rendering]
+
+  operators.eq:
+    classification: known_divergence
+    sas_default: "EQ comparison follows SAS numeric-missing ordering and blank-padded character rules."
+    r_default: "R equality propagates NA and compares character values without SAS blank padding."
+    strategy: "=="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form EQ operator in translated expressions."
+    sources: &comparison_sources
+      - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
+        accessed: 2026-08-19
+        version: "SAS 9.4"
+      - url: https://stat.ethz.ch/R-manual/R-devel/library/base/html/Comparison.html
+        accessed: 2026-08-19
+        version: "R devel manual"
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  operators.ne:
+    classification: known_divergence
+    sas_default: "NE comparison follows SAS numeric-missing ordering and blank-padded character rules."
+    r_default: "R inequality propagates NA and compares character values without SAS blank padding."
+    strategy: "!="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form NE operator in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  operators.lt:
+    classification: known_divergence
+    sas_default: "LT orders numeric missing values below numbers and applies SAS collation to characters."
+    r_default: "R ordering propagates NA and uses the active R locale for characters."
+    strategy: "<"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form LT operator in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, collation]
+
+  operators.gt:
+    classification: known_divergence
+    sas_default: "GT orders numeric missing values below numbers and applies SAS collation to characters."
+    r_default: "R ordering propagates NA and uses the active R locale for characters."
+    strategy: ">"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form GT operator in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, collation]
+
+  operators.le:
+    classification: known_divergence
+    sas_default: "LE orders numeric missing values below numbers and applies SAS collation to characters."
+    r_default: "R ordering propagates NA and uses the active R locale for characters."
+    strategy: "<="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form LE operator in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, collation]
+
+  operators.ge:
+    classification: known_divergence
+    sas_default: "GE orders numeric missing values below numbers and applies SAS collation to characters."
+    r_default: "R ordering propagates NA and uses the active R locale for characters."
+    strategy: ">="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form GE operator in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, collation]
+
+  operators.and:
+    classification: known_divergence
+    sas_default: "AND treats SAS numeric zero as false and nonzero nonmissing values as true."
+    r_default: "R elementwise logical conjunction propagates NA under three-valued logic."
+    strategy: "&"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form AND operator in translated expressions."
+    sources: &logic_sources
+      - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
+        accessed: 2026-08-19
+        version: "SAS 9.4"
+      - url: https://stat.ethz.ch/R-manual/R-devel/library/base/html/Logic.html
+        accessed: 2026-08-19
+        version: "R devel manual"
+    edge_cases: [ordinary_missing, numeric_truth, vector_recycling]
+
+  operators.or:
+    classification: known_divergence
+    sas_default: "OR treats SAS numeric zero as false and nonzero nonmissing values as true."
+    r_default: "R elementwise logical disjunction propagates NA under three-valued logic."
+    strategy: "|"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form OR operator in translated expressions."
+    sources: *logic_sources
+    edge_cases: [ordinary_missing, numeric_truth, vector_recycling]
+
+  operators.not:
+    classification: known_divergence
+    sas_default: "NOT negates SAS numeric truth values."
+    r_default: "R logical negation coerces supported values and preserves NA."
+    strategy: "!"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Word-form NOT operator in translated expressions."
+    sources: *logic_sources
+    edge_cases: [ordinary_missing, numeric_truth, coercion]
+
+  operators.in:
+    classification: known_divergence
+    sas_default: "IN uses SAS comparison semantics for membership."
+    r_default: "R percent-in uses match semantics, including its treatment of NA."
+    strategy: "%in%"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "IN membership expressions dispatched to percent-in."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  "operators.=":
+    classification: known_divergence
+    sas_default: "Symbolic equality follows SAS numeric-missing ordering and blank-padded character rules."
+    r_default: "R equality propagates NA and compares character values without SAS blank padding."
+    strategy: "=="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Symbolic equality in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  "operators.^=":
+    classification: known_divergence
+    sas_default: "Caret-equals inequality follows SAS missing and character comparison rules."
+    r_default: "R inequality propagates NA and has no caret-equals spelling."
+    strategy: "!="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Caret-equals inequality in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  "operators.~=":
+    classification: known_divergence
+    sas_default: "Tilde-equals inequality follows SAS missing and character comparison rules."
+    r_default: "R inequality propagates NA and has no tilde-equals spelling."
+    strategy: "!="
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Tilde-equals inequality in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, special_missing, blank_padding]
+
+  "operators.||":
+    classification: adapter_required
+    sas_default: "Concatenation preserves SAS character semantics and treats numeric operands through SAS conversion rules."
+    r_default: "R has no built-in double-bar string concatenation operator and paste0 propagates NA textually."
+    strategy: "%+%"
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Double-bar concatenation handled by the emitted percent-plus helper."
+    sources: *function_sources
+    edge_cases: [missing_character, implicit_conversion, fixed_width_padding]
+
+  "operators.**":
+    classification: equivalent
+    sas_default: "Double-star exponentiation; a missing operand yields missing, and 0**0 is 1."
+    r_default: "R exponentiation is ^; NA operands propagate NA, and 0^0 is 1."
+    strategy: "^"
+    implementation_status: implemented_unverified
+    risk: low
+    scope: "Double-star exponentiation in translated expressions."
+    sources: *comparison_sources
+    edge_cases: [ordinary_missing, negative_base_fractional_exponent]
+
+  procs.sort:
+    classification: adapter_required
+    sas_default: "PROC SORT uses SAS missing ordering, collation, and sort-option behavior."
+    r_default: "R ordering defaults depend on NA placement, locale, and sort implementation."
+    strategy: emit_proc_sort
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Supported PROC SORT statements and options accepted by emit_proc_sort."
+    sources: &proc_sources
+      - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/proc/titlepage.htm
+        accessed: 2026-08-19
+        version: "SAS 9.4"
+      - url: https://stat.ethz.ch/R-manual/R-devel/library/base/html/order.html
+        accessed: 2026-08-19
+        version: "R devel manual"
+    edge_cases: [missing_order, locale_collation, sort_stability, nodupkey]
+
+  procs.format:
+    classification: adapter_required
+    sas_default: "PROC FORMAT defines SAS catalogs, ranges, precedence, and missing-value labels."
+    r_default: "R has no native equivalent to the complete SAS format-catalog contract."
+    strategy: emit_proc_format
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Supported VALUE-format declarations accepted by emit_proc_format."
+    sources: *proc_sources
+    edge_cases: [overlapping_ranges, other_clause, missing_labels, catalog_scope]
+
+  procs.sql:
+    classification: known_divergence
+    sas_default: "PROC SQL combines SAS missing, remerge, ordering, and DATA-step-compatible value semantics."
+    r_default: "The emitted R data operations do not implement a complete SQL engine or SAS NULL/missing behavior."
+    strategy: emit_proc_sql
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "The explicitly partial PROC SQL subset accepted by emit_proc_sql."
+    sources: *proc_sources
+    edge_cases: [missing_vs_null, remerge, duplicate_columns, ordering]
+
+  procs.means:
+    classification: adapter_required
+    sas_default: "PROC MEANS uses SAS defaults for missing values, variance divisor, and requested statistics."
+    r_default: "R summary functions require explicit missing and estimator choices to align with SAS."
+    strategy: emit_proc_means
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Supported PROC MEANS statements and statistics accepted by emit_proc_means."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas-summary-stats.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_summary_skew_kurt.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [all_missing, vardef, skewness_type, kurtosis_type]
+
+  procs.freq:
+    classification: adapter_required
+    sas_default: "PROC FREQ defaults for missing levels, corrections, exact methods, and p-values are SAS-specific."
+    r_default: "R test functions use function-specific correction and p-value defaults."
+    strategy: emit_proc_freq
+    implementation_status: implemented_unverified
+    risk: high
+    scope: "Supported one-way and limited table output accepted by emit_proc_freq; inferential parity is not claimed."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_chi-sq.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_binomial_test.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [missing_levels, continuity_correction, exact_method, two_sided_pvalue]
+
+known_domains:
+  quantiles:
+    classification: known_divergence
+    sas_default: "SAS PROC UNIVARIATE defaults to PCTLDEF=5."
+    r_default: "R quantile defaults to type 7; type 2 is the CAMIS-aligned choice for the cited SAS default."
+    strategy: deferred_explicit_quantile_definition
+    implementation_status: deferred
+    risk: high
+    scope: "Percentile definitions outside the currently supported PROC surface."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas-summary-stats.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [pctldef, interpolation, missing_values, boundary_probabilities]
+
+  skewness_kurtosis:
+    classification: known_divergence
+    sas_default: "SAS moment estimators depend on statistic and VARDEF choices."
+    r_default: "R packages expose multiple skewness and kurtosis definitions with differing defaults."
+    strategy: deferred_explicit_moment_definition
+    implementation_status: deferred
+    risk: high
+    scope: "Skewness and kurtosis beyond the current deterministic PROC MEANS subset."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_summary_skew_kurt.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [estimator_type, vardef, small_sample, missing_values]
+
+  categorical_tests:
+    classification: known_divergence
+    sas_default: "SAS categorical tests use procedure-specific correction, exact-method, and two-sided definitions."
+    r_default: "R test functions use different function-specific defaults."
+    strategy: deferred_explicit_test_method
+    implementation_status: deferred
+    risk: high
+    scope: "Chi-square, Fisher, McNemar, and binomial inference not emitted by the supported PROC FREQ subset."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_chi-sq.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_mcnemar.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_binomial_test.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [continuity_correction, exact_method, tie_handling, two_sided_pvalue]
+
+  regression_anova:
+    classification: known_divergence
+    sas_default: "SAS modeling procedures pin procedure-specific reference, contrast, and sums-of-squares behavior."
+    r_default: "R model functions inherit factor levels, contrasts, and method defaults from the model and session."
+    strategy: deferred_explicit_model_contract
+    implementation_status: deferred
+    risk: high
+    scope: "Regression and ANOVA procedures are outside the current executable PROC map."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_logistic-regr.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_anova.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [reference_level, contrasts, sums_of_squares, convergence]
+
+  cox_ties:
+    classification: known_divergence
+    sas_default: "SAS PHREG defaults to Breslow handling of tied event times."
+    r_default: "R survival coxph defaults to Efron tie handling."
+    strategy: deferred_explicit_ties_method
+    implementation_status: deferred
+    risk: high
+    scope: "Cox proportional-hazards models; PHREG is not in the executable PROC map."
+    sources: &survival_sources
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_survival.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [tied_events, weights, strata, convergence]
+
+  survival_intervals:
+    classification: known_divergence
+    sas_default: "SAS survival procedures default to procedure-specific confidence transforms including log-log intervals."
+    r_default: "R Kaplan-Meier summaries commonly default to log confidence intervals."
+    strategy: deferred_explicit_survival_ci
+    implementation_status: deferred
+    risk: high
+    scope: "Kaplan-Meier confidence intervals and tail summaries outside the executable PROC map."
+    sources: *survival_sources
+    edge_cases: [confidence_transform, censored_tail, median_not_reached, ties]
+
+  mixed_models:
+    classification: known_divergence
+    sas_default: "SAS mixed-model procedures use explicit covariance, optimizer, and degrees-of-freedom conventions."
+    r_default: "R mixed-model packages vary in parameterization, optimizer, and inferential defaults."
+    strategy: deferred_explicit_mixed_model_contract
+    implementation_status: deferred
+    risk: high
+    scope: "Random-effects and MMRM procedures outside the executable PROC map."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_random_effects_models.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_mmrm.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [covariance_structure, parameterization, optimizer, degrees_of_freedom]
+
+  correlations:
+    classification: equivalent
+    sas_default: "Pearson, Spearman, and Kendall methods align when the cited options and data conditions are matched."
+    r_default: "R correlation methods align under the cited matched options and data conditions."
+    strategy: deferred_matched_correlation_options
+    implementation_status: deferred
+    risk: medium
+    scope: "Correlation procedures are not currently in the executable PROC map; alignment is limited to the cited conditions."
+    sources:
+      - url: https://psiaims.github.io/CAMIS/Comp/r-sas_correlation.html
+        accessed: 2026-08-19
+        version: "CAMIS reviewed page"
+    edge_cases: [missing_policy, ties, weights, pvalue_method]
+
+  missing_values:
+    classification: known_divergence
+    sas_default: "SAS has ordinary and special numeric missing values with ordering semantics."
+    r_default: "R has NA and typed missing values without SAS special-missing ordering."
+    strategy: deferred_missing_value_model
+    implementation_status: deferred
+    risk: high
+    scope: "Language-wide missing-value semantics not fully represented by the current helper layer."
+    sources: *comparison_sources
+    edge_cases: [special_missing, ordering, arithmetic, grouping]
+
+  fixed_width_character:
+    classification: known_divergence
+    sas_default: "SAS character variables have declared fixed widths and blank-padding behavior."
+    r_default: "R character vectors store variable-length strings."
+    strategy: deferred_character_metadata_model
+    implementation_status: deferred
+    risk: high
+    scope: "Language-wide character storage and comparison semantics."
+    sources: *function_sources
+    edge_cases: [blank_padding, truncation, assignment_length, comparison]
+
+  collation_sort:
+    classification: known_divergence
+    sas_default: "SAS sort order depends on missing ordering, collation, and procedure options."
+    r_default: "R ordering depends on NA placement, locale, and method."
+    strategy: deferred_explicit_sort_contract
+    implementation_status: deferred
+    risk: high
+    scope: "Language-wide ordering beyond the supported PROC SORT subset."
+    sources: *proc_sources
+    edge_cases: [missing_order, locale, stability, duplicates]
+
+  implicit_conversion:
+    classification: known_divergence
+    sas_default: "SAS performs context-dependent implicit numeric and character conversions and emits log notes."
+    r_default: "R coercion rules and warning behavior differ by operator and function."
+    strategy: deferred_explicit_conversion
+    implementation_status: deferred
+    risk: high
+    scope: "Language-wide implicit conversion behavior."
+    sources: *function_sources
+    edge_cases: [invalid_numeric, width, format, warning_visibility]
+
+  datetime_epochs_formats:
+    classification: known_divergence
+    sas_default: "SAS date, time, and datetime numerics use SAS epochs plus formats and informats."
+    r_default: "R Date and POSIX classes use different epochs, classes, and timezone rules."
+    strategy: deferred_datetime_contract
+    implementation_status: deferred
+    risk: high
+    scope: "Date/time epochs, formats, informats, and timezones beyond current format helpers."
+    sources: *function_sources
+    edge_cases: [date_epoch, datetime_epoch, timezone, missing_format]
+
+  data_step_pdv_merge:
+    classification: known_divergence
+    sas_default: "The DATA step uses PDV retention, BY-group state, and sequential merge semantics."
+    r_default: "R data-frame operations do not have an implicit PDV or SAS sequential merge state."
+    strategy: deferred_pdv_state_model
+    implementation_status: deferred
+    risk: high
+    scope: "DATA-step state and merge behavior outside explicitly implemented IR cases."
+    sources:
+      - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
+        accessed: 2026-08-19
+        version: "SAS 9.4"
+      - url: https://cran.r-project.org/doc/manuals/r-release/R-lang.html
+        accessed: 2026-08-19
+        version: "R language definition"
+    edge_cases: [retain, by_groups, many_to_many_merge, statement_order]
+
+  proc_sql_null:
+    classification: known_divergence
+    sas_default: "PROC SQL applies SAS missing-value behavior in expressions, joins, grouping, and ordering."
+    r_default: "R missing-value and data-frame join behavior differs from SAS PROC SQL."
+    strategy: deferred_sql_missing_contract
+    implementation_status: deferred
+    risk: high
+    scope: "PROC SQL semantics beyond the explicitly partial emitter subset."
+    sources: *proc_sources
+    edge_cases: [missing_vs_null, join_keys, grouping, ordering]

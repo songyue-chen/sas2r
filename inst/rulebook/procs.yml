@@ -1,0 +1,7 @@
+sort:      { status: supported, emitter: emit_proc_sort }
+format:    { status: supported, emitter: emit_proc_format }
+sql:       { status: partial,   emitter: emit_proc_sql }
+print:     { status: skip_note, emitter: emit_proc_note }
+transpose: { status: deferred }
+means:     { status: supported, emitter: emit_proc_means }
+freq:      { status: supported, emitter: emit_proc_freq }

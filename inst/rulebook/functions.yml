@@ -1,0 +1,16 @@
+# SAS function -> R target. sas_* names are provided by the emitted helpers file.
+upcase: toupper
+lowcase: tolower
+strip: trimws
+compress: sas_compress
+substr: sas_substr
+length: sas_length
+abs: abs
+int: trunc
+round: sas_round
+min: sas_min
+max: sas_max
+sum: sas_sum
+mean: sas_mean
+missing: is.na
+put: sas_put
