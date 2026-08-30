@@ -111,3 +111,48 @@ test_that("resume reruns into a fresh run scope without disturbing prior attempt
   expect_true(dir.exists(file.path(out, r1$run_id)))
   expect_true(dir.exists(file.path(out, r2$run_id)))
 })
+
+test_that("the materialized run folder re-runs standalone: helpers and librefs just work", {
+  # The deliverable must be runnable where the user finds it: the bootstrap
+  # loads the helpers (lib_read, lib_write, sas_sort, ...) without sas2r
+  # installed in the program, and the materialized registry anchors work and
+  # libref write paths at the run folder -- not the attempt evidence dirs.
+  proj <- withr::local_tempdir()
+  dir.create(file.path(proj, "data"))
+  saveRDS(data.frame(usubjid = c("02", "01"), age = c(30, 40)),
+          file.path(proj, "data", "dm.rds"))
+  writeLines(c(
+    "libraries:",
+    "  raw:",
+    "    path: data",
+    "    engine: rds"
+  ), file.path(proj, "_sas2r.yml"))
+  writeLines(c(
+    "data work.a;",
+    "  set raw.dm;",
+    "run;",
+    "",
+    "proc sort data=work.a out=work.b;",
+    "  by usubjid;",
+    "run;"
+  ), file.path(proj, "prog.sas"))
+
+  out <- withr::local_tempdir()
+  res <- sas_translate(proj, out_dir = out, execute = TRUE)
+  run_dir <- file.path(out, res$run_id)
+  expect_true(file.exists(file.path(run_dir, "prog.R")))
+
+  # The regenerated registry points work at the run folder, not the attempt.
+  reg <- readLines(file.path(run_dir, "_sas2r_registry.R"), warn = FALSE)
+  expect_false(any(grepl("bundle_attempt", reg, fixed = TRUE)))
+
+  elsewhere <- withr::local_tempdir()
+  r <- callr::rscript(file.path(run_dir, "prog.R"),
+                      wd = elsewhere, show = FALSE, fail_on_status = FALSE)
+  expect_identical(r$status, 0L)
+
+  b_path <- file.path(run_dir, "work", "b.rds")
+  expect_true(file.exists(b_path))
+  b <- readRDS(b_path)
+  expect_identical(as.character(b$usubjid), c("01", "02"))
+})

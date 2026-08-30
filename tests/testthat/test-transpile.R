@@ -939,3 +939,40 @@ test_that("generated registry uses the same selected binding as project lineage"
                       file.path(root, "p.sas"), 1L)$selected_path,
     canonical(source_lib))
 })
+
+test_that("bootstrap finds its bundle via --file= when launched by Rscript elsewhere", {
+  # Pasting into a console and Rscript-from-another-directory both lack the
+  # source()/sys.source() frames the primary detection relies on; Rscript is
+  # recoverable through --file= on the command line, so a program launched as
+  # `Rscript /abs/path/prog.R` from any working directory must still boot.
+  bundle <- withr::local_tempdir()
+  writeLines(".sas2r_registry <- list()", file.path(bundle, "_sas2r_registry.R"))
+  writeLines("# helpers stub", file.path(bundle, "sas2r-helpers.R"))
+  writeLines("# formats stub", file.path(bundle, "_sas2r_formats.R"))
+  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
+
+  elsewhere <- withr::local_tempdir()
+  res <- callr::rscript(
+    file.path(bundle, "prog.R"),
+    wd = elsewhere, show = FALSE, fail_on_status = FALSE
+  )
+  expect_identical(res$status, 0L)
+  expect_match(res$stdout, "BOOT_OK", fixed = TRUE)
+})
+
+test_that("bootstrap failure tells the user how to launch the program", {
+  # With no registry anywhere above the anchor, the error must be actionable:
+  # name source() and setwd() rather than only reporting the search root.
+  lonely <- withr::local_tempdir()
+  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
+
+  elsewhere <- withr::local_tempdir()
+  res <- callr::rscript(
+    file.path(lonely, "prog.R"),
+    wd = elsewhere, show = FALSE, fail_on_status = FALSE
+  )
+  expect_false(identical(res$status, 0L))
+  expect_match(res$stderr, "source\\(")
+  expect_match(res$stderr, "setwd\\(")
+  expect_match(res$stderr, "_sas2r_registry\\.R")
+})
