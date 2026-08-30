@@ -32,9 +32,14 @@ usage_timestamp <- function(time = Sys.time()) {
 }
 
 new_usage_run_id <- function() {
+  # Timestamp-first so run directories (attempts/<run_id>/) list in
+  # chronological order and the latest run is obvious at a glance; the hash
+  # suffix keeps two runs started within the same second from colliding.
   paste0(
     "run_",
-    substr(as.character(cli::hash_sha256(tempfile("sas2r-run-"))), 1L, 24L)
+    format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
+    "_",
+    substr(as.character(cli::hash_sha256(tempfile("sas2r-run-"))), 1L, 8L)
   )
 }
 

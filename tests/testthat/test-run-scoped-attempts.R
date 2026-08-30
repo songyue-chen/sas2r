@@ -32,6 +32,19 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
   expect_identical(run_scope_of(r2$bundle_dir), r2$run_id)
   expect_true(dir.exists(r1$bundle_dir))
   expect_true(length(list.files(r1$bundle_dir, pattern = "\\.R$")) > 0L)
+
+  # Run ids are timestamp-first (chronologically sortable directory names)
+  # with a hash suffix so same-second runs stay distinct.
+  expect_match(r1$run_id, "^run_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
+  expect_match(r2$run_id, "^run_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
+
+  # Each run folder carries its own report; the root report.md is the
+  # latest run's copy.
+  expect_true(file.exists(file.path(out, "attempts", r1$run_id, "report.md")))
+  expect_true(file.exists(file.path(out, "attempts", r2$run_id, "report.json")))
+  root_md <- readLines(file.path(out, "report.md"), warn = FALSE)
+  expect_true(any(grepl(r2$run_id, root_md, fixed = TRUE)))
+  expect_false(any(grepl(r1$run_id, root_md, fixed = TRUE)))
 })
 
 test_that("staging lives under .sas2r/ and no programs surface at the out_dir root", {

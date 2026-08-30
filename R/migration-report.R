@@ -244,6 +244,14 @@ write_migration_report <- function(state) {
   # Write JSON report
   atomic_write_json(report_payload, paths$report_json)
 
+  # When paths are run-scoped, the run's own folder gets a copy of the machine
+  # report so attempts/<run_id>/ is self-contained evidence; the .sas2r/ copy
+  # stays authoritative for the latest run (resume reads it).
+  run_dir <- if (identical(basename(paths$attempts %||% ""), run_id)) paths$attempts else NULL
+  if (!is.null(run_dir) && dir.exists(run_dir)) {
+    atomic_write_json(report_payload, file.path(run_dir, "report.json"))
+  }
+
   # 2. Construct Markdown report lines
   md_lines <- c(
     "# SAS to R Migration Report",
@@ -375,6 +383,12 @@ write_migration_report <- function(state) {
 
   # Write Markdown report
   writeLines(md_lines, paths$report_md)
+
+  # Per-run markdown report alongside the run's attempts; the out_dir root
+  # report.md always reflects the latest run.
+  if (!is.null(run_dir) && dir.exists(run_dir)) {
+    writeLines(md_lines, file.path(run_dir, "report.md"))
+  }
 
   invisible(paths$report_md)
 }
