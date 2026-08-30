@@ -1,6 +1,6 @@
 ---
 title: "Dependency-Aware SAS-to-R Migration"
-author: "sas2r development team"
+author: "Songyue Chen"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
