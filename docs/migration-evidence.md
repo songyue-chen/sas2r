@@ -42,7 +42,7 @@ Under the default `agent_evidence = "code_only"` policy, agents receive source c
 
 ### Copy-on-Write Attempt Isolation
 
-Each attempt runs in an isolated directory, grouped per run (`runs/<run_id>/bundle_attempt_NNN/`, where run ids are timestamp-first and sort chronologically) so repeated runs into the same output directory never collide. A run's folder is self-contained evidence: its attempts, its per-component program revisions and reviews (`runs/<run_id>/programs/`), and its own `report.md` and `report.json`. The `report.md` at the output root is always the latest run's copy:
+Each attempt runs in an isolated directory, grouped per run (`runs/<run_id>/bundle_attempt_NNN/`, where run ids are timestamp-first and sort chronologically) so repeated runs into the same output directory never collide. A run's folder is self-contained evidence: its attempts, its per-component program revisions and reviews (`runs/<run_id>/programs/`), and its own `report.md` and `report.json` (the state-level `.sas2r/report.json` additionally tracks the latest run for `resume`):
 - Source inputs are never mutated (protected by copy-on-write library registries).
 - Attempt outputs, logs, and `record.json` are captured atomically.
 - Deterministic selection ensures newer attempts are selected only if they improve upon or maintain previous pass criteria without regressions.

@@ -246,7 +246,8 @@ write_migration_report <- function(state) {
 
   # When paths are run-scoped, the run's own folder gets a copy of the machine
   # report so runs/<run_id>/ is self-contained evidence; the .sas2r/ copy
-  # stays authoritative for the latest run (resume reads it).
+  # stays authoritative for the latest run (resume reads it). The markdown
+  # report needs no copy: paths$report_md already points inside the run folder.
   run_dir <- if (identical(basename(paths$attempts %||% ""), run_id)) paths$attempts else NULL
   if (!is.null(run_dir) && dir.exists(run_dir)) {
     atomic_write_json(report_payload, file.path(run_dir, "report.json"))
@@ -382,13 +383,8 @@ write_migration_report <- function(state) {
   )
 
   # Write Markdown report
+  dir.create(dirname(paths$report_md), recursive = TRUE, showWarnings = FALSE)
   writeLines(md_lines, paths$report_md)
-
-  # Per-run markdown report alongside the run's attempts; the out_dir root
-  # report.md always reflects the latest run.
-  if (!is.null(run_dir) && dir.exists(run_dir)) {
-    writeLines(md_lines, file.path(run_dir, "report.md"))
-  }
 
   invisible(paths$report_md)
 }

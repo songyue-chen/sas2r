@@ -38,13 +38,14 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
   expect_match(r1$run_id, "^run_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
   expect_match(r2$run_id, "^run_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
 
-  # Each run folder carries its own report; the root report.md is the
-  # latest run's copy.
+  # Each run folder carries its own report; no report surfaces at the
+  # out_dir root, and each result points at its own run's copy.
   expect_true(file.exists(file.path(out, "runs", r1$run_id, "report.md")))
   expect_true(file.exists(file.path(out, "runs", r2$run_id, "report.json")))
-  root_md <- readLines(file.path(out, "report.md"), warn = FALSE)
-  expect_true(any(grepl(r2$run_id, root_md, fixed = TRUE)))
-  expect_false(any(grepl(r1$run_id, root_md, fixed = TRUE)))
+  expect_false(file.exists(file.path(out, "report.md")))
+  expect_identical(basename(dirname(r1$report_path)), r1$run_id)
+  expect_identical(basename(dirname(r2$report_path)), r2$run_id)
+  expect_true(file.exists(r1$report_path))
 })
 
 test_that("staging lives under .sas2r/ and no programs surface at the out_dir root", {
@@ -61,7 +62,7 @@ test_that("staging lives under .sas2r/ and no programs surface at the out_dir ro
     list.files(out, pattern = "\\.R$"),
     character(0)
   )
-  expect_true(file.exists(file.path(out, "report.md")))
+  expect_true(file.exists(res$report_path))
 
   # Program evidence and outputs no longer surface at the out_dir root:
   # revisions/reviews live inside the run's own folder, and the old empty
