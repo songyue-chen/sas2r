@@ -5,9 +5,17 @@ test_that("migration records have deterministic identities and paths", {
 
   p <- migration_paths(file.path(tempdir(), "out"))
   expect_named(p, c(
-    "root", "state", "graph", "outputs", "programs", "attempts",
+    "root", "state", "graph", "outputs", "programs", "staging", "attempts",
     "selected", "usage", "report_json", "report_md"
   ))
+  expect_identical(p$staging, file.path(p$state, "staging"))
+  expect_identical(p$attempts, file.path(p$root, "attempts"))
+
+  # A run-scoped view nests attempts under the run id; nothing else moves.
+  scoped <- migration_paths(file.path(tempdir(), "out"), run_id = "run_abc")
+  expect_identical(scoped$attempts, file.path(scoped$root, "attempts", "run_abc"))
+  expect_identical(scoped[setdiff(names(scoped), "attempts")],
+                   p[setdiff(names(p), "attempts")])
   expect_identical(COMPONENT_EVIDENCE_LEVELS, c(
     "reviewed_only", "runtime_verified", "output_verified",
     "reference_validated"

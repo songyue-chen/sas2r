@@ -319,10 +319,13 @@ sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 # Does my sign-in actually work?
 sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 
-# Compare any two datasets directly, the same way the pipeline does
+# Compare any two datasets directly, the same way the pipeline does.
+# (result$outputs_dir points into the selected attempt of the latest run --
+# attempts are grouped per run under attempts/<run_id>/, so reruns into the
+# same out_dir never overwrite each other.)
 report <- compare_datasets(
   base = haven::read_xpt("data/reference/adsl.xpt"),
-  comp = readRDS("migration_output/attempts/bundle_attempt_001/adam/adsl.rds"),
+  comp = readRDS(file.path(result$outputs_dir, "adsl.rds")),
   keys = c("STUDYID", "USUBJID")
 )
 print(report$passed)

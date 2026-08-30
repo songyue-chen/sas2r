@@ -42,7 +42,7 @@ Under the default `agent_evidence = "code_only"` policy, agents receive source c
 
 ### Copy-on-Write Attempt Isolation
 
-Each attempt runs in an isolated directory (`attempts/bundle_attempt_NNN/`):
+Each attempt runs in an isolated directory, grouped per run (`attempts/<run_id>/bundle_attempt_NNN/`) so repeated runs into the same output directory never collide:
 - Source inputs are never mutated (protected by copy-on-write library registries).
 - Attempt outputs, logs, and `record.json` are captured atomically.
 - Deterministic selection ensures newer attempts are selected only if they improve upon or maintain previous pass criteria without regressions.

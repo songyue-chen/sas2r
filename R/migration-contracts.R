@@ -81,18 +81,32 @@ migration_hash <- function(x) {
 #' Get canonical on-disk paths for a migration output directory
 #'
 #' @param out_dir Output root directory.
+#' @param run_id Optional run identifier. When supplied, attempt directories
+#'   are scoped under `attempts/<run_id>/` so repeated runs into the same
+#'   `out_dir` can never collide with or silently overwrite a previous run's
+#'   attempts. Without it (direct tooling and tests), the unscoped
+#'   `attempts/` root is used.
 #' @return Named list of canonical paths.
 #' @noRd
-migration_paths <- function(out_dir) {
+migration_paths <- function(out_dir, run_id = NULL) {
   root <- out_dir
   state <- file.path(root, ".sas2r")
+  attempts <- if (is.null(run_id)) {
+    file.path(root, "attempts")
+  } else {
+    file.path(root, "attempts", run_id)
+  }
   list(
     root = root,
     state = state,
     graph = file.path(state, "graph.json"),
     outputs = file.path(root, "outputs"),
     programs = file.path(root, "programs"),
-    attempts = file.path(root, "attempts"),
+    # The staged working bundle lives under .sas2r/, not at the out_dir root:
+    # staging is an intermediate the pipeline patches in place, and surfacing
+    # it at the top level made users mistake it for the final translation.
+    staging = file.path(state, "staging"),
+    attempts = attempts,
     selected = file.path(state, "selected.json"),
     usage = file.path(state, "usage.json"),
     report_json = file.path(state, "report.json"),
@@ -102,16 +116,19 @@ migration_paths <- function(out_dir) {
 
 #' Initialize on-disk migration directories
 #'
-#' Creates `.sas2r/`, `programs/`, `attempts/`, and `outputs/` under `out_dir`.
+#' Creates `.sas2r/` (with `staging/`), `programs/`, `attempts/`, and
+#' `outputs/` under `out_dir`.
 #'
 #' @param out_dir Output root directory.
+#' @param run_id Optional run identifier forwarded to [migration_paths()].
 #' @return Named list of migration paths.
 #' @noRd
-init_migration_paths <- function(out_dir) {
-  paths <- migration_paths(out_dir)
+init_migration_paths <- function(out_dir, run_id = NULL) {
+  paths <- migration_paths(out_dir, run_id = run_id)
   dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$programs, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$staging, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$attempts, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$outputs, recursive = TRUE, showWarnings = FALSE)
   paths

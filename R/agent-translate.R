@@ -732,7 +732,7 @@ generate_program_revision <- function(
     staged_rel <- paste0(component_id, ".R")
   }
 
-  staged_path <- file.path(baseline$out_dir %||% paths$root, staged_rel)
+  staged_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, staged_rel)
   staged_lines <- if (file.exists(staged_path)) readLines(staged_path, warn = FALSE) else character()
 
   comp_units <- if (!is.null(baseline$manifest) && nrow(baseline$manifest) > 0L) {
@@ -863,7 +863,7 @@ generate_program_revision <- function(
   final_r_code_lines <- if (length(staged_lines) > 0L) staged_lines else c(BANNER, "")
   final_r_code_text <- paste(final_r_code_lines, collapse = "\n")
 
-  helper_path <- file.path(baseline$out_dir %||% paths$root, "sas2r-helpers.R")
+  helper_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "sas2r-helpers.R")
   helper_h <- if (file.exists(helper_path)) {
     migration_hash(readLines(helper_path, warn = FALSE))
   } else {
@@ -893,7 +893,7 @@ generate_program_revision <- function(
   writeLines(final_r_code_lines, r_path)
   atomic_write_json(contract, contract_path)
 
-  registry_path <- file.path(baseline$out_dir %||% paths$root, "_sas2r_registry.R")
+  registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "_sas2r_registry.R")
   checks <- check_program_revision(r_path, contract = contract, registry = registry_path)
 
   list(
@@ -944,7 +944,7 @@ generate_program_revisions <- function(
   }
 
   if (is.null(baseline)) {
-    baseline <- sas_transpile(project, paths$root)
+    baseline <- sas_transpile(project, paths$staging %||% paths$root)
   }
   if (is.null(outputs)) {
     outputs <- infer_output_contracts(project, overrides = config$outputs)

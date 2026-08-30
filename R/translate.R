@@ -182,6 +182,9 @@ sas_translate <- function(
     max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
     usage_budget = budget
   )
+  # Adopt the state's run-scoped paths: attempts (and thus pruning and the
+  # selected-bundle fallbacks below) live under attempts/<run_id>/.
+  paths <- state$paths
   state$graph <- graph
   state$schedule <- schedule
   state$output_contracts <- output_contracts

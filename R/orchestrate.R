@@ -27,10 +27,18 @@ new_migration_state <- function(
   usage_budget = NULL
 ) {
   p <- if (inherits(project, "sas2r_project")) project else sas_project(project)
-  paths <- migration_paths(out_dir)
-  init_migration_paths(out_dir)
+  # The budget carries the run identifier, and attempt directories are scoped
+  # by it (attempts/<run_id>/...): every invocation -- including resume = TRUE,
+  # which reconstructs spend but mints a fresh run_id -- gets its own attempts
+  # tree, so a rerun into the same out_dir can never silently overwrite or
+  # interleave with a previous run's attempts.
+  budget <- usage_budget %||% new_usage_budget(
+    ledger_path = file.path(migration_paths(out_dir)$state, "usage.jsonl")
+  )
+  paths <- migration_paths(out_dir, run_id = budget$run_id)
+  init_migration_paths(out_dir, run_id = budget$run_id)
 
-  baseline <- sas_transpile(p, paths$root)
+  baseline <- sas_transpile(p, paths$staging)
   graph <- build_dependency_graph(p)
   schedule <- stable_dependency_schedule(graph)
   attempt <- init_attempt(paths, kind = "smoke", sequence = 1L)
@@ -45,10 +53,6 @@ new_migration_state <- function(
   runtime <- list(
     registry = file.path(staged_dir, "_sas2r_registry.R"),
     helpers = file.path(staged_dir, "sas2r-helpers.R")
-  )
-
-  budget <- usage_budget %||% new_usage_budget(
-    ledger_path = file.path(paths$state, "usage.jsonl")
   )
 
   state <- list(
