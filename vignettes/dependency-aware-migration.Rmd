@@ -133,7 +133,7 @@ Within each bundle, individual components accumulate immutable evidence records:
 `sas2r` protects production and raw input datasets from inadvertent mutation during translation:
 
 - Input libraries are mounted read-only.
-- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`attempts/<run_id>/bundle_attempt_001/`). Attempts are grouped per run under timestamp-first run ids that sort chronologically, each run folder keeps its own `report.md`, and re-running into the same `out_dir` never overwrites an earlier run's attempts.
+- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`runs/<run_id>/bundle_attempt_001/`). Everything a run produces -- attempts, per-component program evidence, and its own `report.md` -- is grouped under timestamp-first run ids that sort chronologically, so re-running into the same `out_dir` never overwrites an earlier run's work.
 - Multi-round repairs select improved attempts deterministically and prune rejected attempts according to configuration.
 
 ## Model Privacy & Clinical Data Protection

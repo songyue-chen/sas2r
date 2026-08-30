@@ -22,7 +22,7 @@ test_that("new_migration_state initializes canonical directories and records", {
   expect_true(dir.exists(state$paths$state))
   expect_true(dir.exists(state$paths$programs))
   expect_true(dir.exists(state$paths$attempts))
-  expect_true(dir.exists(state$paths$outputs))
+  expect_true(dir.exists(state$paths$programs))
   expect_true(!is.null(state$graph$nodes))
   expect_true(nrow(state$schedule) >= 1L)
   expect_true(!is.null(state$attempt))

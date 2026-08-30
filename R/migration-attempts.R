@@ -47,10 +47,10 @@ init_attempt <- function(paths, kind = "smoke", parent_attempt_id = NULL, sequen
   attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
     paths$attempts
   } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) == "attempts") {
+    if (basename(paths) %in% c("runs", "attempts")) {
       paths
     } else {
-      file.path(paths, "attempts")
+      file.path(paths, "runs")
     }
   } else {
     cli::cli_abort(
@@ -360,7 +360,7 @@ resume_migration_attempts <- function(paths, run_binding = NULL) {
   attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
     paths$attempts
   } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) == "attempts") paths else file.path(paths, "attempts")
+    if (basename(paths) %in% c("runs", "attempts")) paths else file.path(paths, "runs")
   } else {
     cli::cli_abort("{.arg paths} must be a migration_paths object or directory path", class = "sas2r_invalid_argument")
   }
@@ -376,6 +376,9 @@ resume_migration_attempts <- function(paths, run_binding = NULL) {
   }
 
   attempt_dirs <- list.dirs(attempts_root, full.names = TRUE, recursive = FALSE)
+  # The run folder holds more than attempts (programs/ evidence, report
+  # copies); only <kind>_attempt_<NNN> directories are attempt records.
+  attempt_dirs <- attempt_dirs[grepl("^[a-z]+_attempt_[0-9]+$", basename(attempt_dirs))]
   reusable_ids <- character()
   incomplete_ids <- character()
   completed_list <- list()
@@ -539,9 +542,9 @@ prune_rejected_attempt_outputs <- function(paths, keep_raw = FALSE) {
   attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
     paths$attempts
   } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) == "attempts") paths else file.path(paths, "attempts")
+    if (basename(paths) %in% c("runs", "attempts")) paths else file.path(paths, "runs")
   } else {
-    file.path(dirname(dirname(sel_path)), "attempts")
+    file.path(dirname(dirname(sel_path)), "runs")
   }
 
   if (!dir.exists(attempts_root)) {
@@ -553,6 +556,9 @@ prune_rejected_attempt_outputs <- function(paths, keep_raw = FALSE) {
   }
 
   attempt_dirs <- list.dirs(attempts_root, full.names = TRUE, recursive = FALSE)
+  # Prune must only ever touch attempt directories: the run folder also holds
+  # the run's programs/ evidence and report copies, which are permanent.
+  attempt_dirs <- attempt_dirs[grepl("^[a-z]+_attempt_[0-9]+$", basename(attempt_dirs))]
   pruned_attempts <- character()
   removed_paths <- character()
 

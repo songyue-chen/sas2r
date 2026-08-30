@@ -101,7 +101,11 @@ sas_translate <- function(
     out_dir <- tempfile(pattern = "sas2r_out_")
   }
   paths <- migration_paths(out_dir)
-  init_migration_paths(out_dir)
+  # Only the root and state directories are needed before the run identifier
+  # exists; the run-scoped directories (runs/<run_id>/...) are created by
+  # new_migration_state() once the budget has minted the run id.
+  dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
 
   # 2. Configuration resolution
   cfg <- if (inherits(config, "sas2r_config")) {
@@ -195,6 +199,16 @@ sas_translate <- function(
   if (isTRUE(resume) && file.exists(paths$report_json)) {
     prior_report <- tryCatch(read_json_record(paths$report_json), error = function(e) NULL)
     if (!is.null(prior_report) && !is.null(prior_report$component_evidence)) {
+      # Program evidence is scoped per run; the prior run's report names its
+      # run id, which locates that run's programs/ directory. The unscoped
+      # root programs/ fallback keeps outputs from older layouts readable.
+      prior_rid <- prior_report$run_id
+      prior_programs <- if (is.character(prior_rid) && length(prior_rid) == 1L && nzchar(prior_rid) &&
+                            dir.exists(file.path(paths$root, "runs", prior_rid, "programs"))) {
+        file.path(paths$root, "runs", prior_rid, "programs")
+      } else {
+        file.path(paths$root, "programs")
+      }
       sched_cids <- schedule$component_id
       for (cid in sched_cids) {
         prior_comp <- prior_report$component_evidence[[cid]]
@@ -222,7 +236,7 @@ sas_translate <- function(
 
             # Restore selected revision
             staged_file <- paste0(cid, ".R")
-            r_path <- file.path(paths$programs, cid, "r1", staged_file)
+            r_path <- file.path(prior_programs, cid, "r1", staged_file)
             r_code <- if (file.exists(r_path)) paste(readLines(r_path, warn = FALSE), collapse = "\n") else ""
             state$selected_revisions[[cid]] <- list(
               component_id = cid,

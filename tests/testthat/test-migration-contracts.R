@@ -5,17 +5,20 @@ test_that("migration records have deterministic identities and paths", {
 
   p <- migration_paths(file.path(tempdir(), "out"))
   expect_named(p, c(
-    "root", "state", "graph", "outputs", "programs", "staging", "attempts",
+    "root", "state", "graph", "programs", "staging", "attempts",
     "selected", "usage", "report_json", "report_md"
   ))
   expect_identical(p$staging, file.path(p$state, "staging"))
-  expect_identical(p$attempts, file.path(p$root, "attempts"))
+  expect_identical(p$attempts, file.path(p$root, "runs"))
 
-  # A run-scoped view nests attempts under the run id; nothing else moves.
+  # A run-scoped view nests attempts AND program evidence under the run id;
+  # nothing else moves.
   scoped <- migration_paths(file.path(tempdir(), "out"), run_id = "run_abc")
-  expect_identical(scoped$attempts, file.path(scoped$root, "attempts", "run_abc"))
-  expect_identical(scoped[setdiff(names(scoped), "attempts")],
-                   p[setdiff(names(p), "attempts")])
+  expect_identical(scoped$attempts, file.path(scoped$root, "runs", "run_abc"))
+  expect_identical(scoped$programs, file.path(scoped$root, "runs", "run_abc", "programs"))
+  moved <- c("attempts", "programs")
+  expect_identical(scoped[setdiff(names(scoped), moved)],
+                   p[setdiff(names(p), moved)])
   expect_identical(COMPONENT_EVIDENCE_LEVELS, c(
     "reviewed_only", "runtime_verified", "output_verified",
     "reference_validated"
@@ -41,7 +44,6 @@ test_that("init_migration_paths creates required directories and returns path li
   expect_true(dir.exists(paths$state))
   expect_true(dir.exists(paths$programs))
   expect_true(dir.exists(paths$attempts))
-  expect_true(dir.exists(paths$outputs))
   expect_identical(paths$root, td)
 })
 

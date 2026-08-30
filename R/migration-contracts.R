@@ -91,17 +91,22 @@ migration_hash <- function(x) {
 migration_paths <- function(out_dir, run_id = NULL) {
   root <- out_dir
   state <- file.path(root, ".sas2r")
-  attempts <- if (is.null(run_id)) {
-    file.path(root, "attempts")
+  runs_root <- file.path(root, "runs")
+  # Scoped, everything a run produces lives inside its own runs/<run_id>/
+  # folder: attempt directories, per-component program evidence (revisions
+  # and reviews), and that run's report copies. Unscoped (direct tooling and
+  # tests), attempts sit under runs/ and program evidence under programs/.
+  attempts <- if (is.null(run_id)) runs_root else file.path(runs_root, run_id)
+  programs <- if (is.null(run_id)) {
+    file.path(root, "programs")
   } else {
-    file.path(root, "attempts", run_id)
+    file.path(runs_root, run_id, "programs")
   }
   list(
     root = root,
     state = state,
     graph = file.path(state, "graph.json"),
-    outputs = file.path(root, "outputs"),
-    programs = file.path(root, "programs"),
+    programs = programs,
     # The staged working bundle lives under .sas2r/, not at the out_dir root:
     # staging is an intermediate the pipeline patches in place, and surfacing
     # it at the top level made users mistake it for the final translation.
@@ -116,8 +121,8 @@ migration_paths <- function(out_dir, run_id = NULL) {
 
 #' Initialize on-disk migration directories
 #'
-#' Creates `.sas2r/` (with `staging/`), `programs/`, `attempts/`, and
-#' `outputs/` under `out_dir`.
+#' Creates `.sas2r/` (with `staging/`), the run (or `runs/`) directory, and
+#' its `programs/` evidence directory under `out_dir`.
 #'
 #' @param out_dir Output root directory.
 #' @param run_id Optional run identifier forwarded to [migration_paths()].
@@ -127,10 +132,9 @@ init_migration_paths <- function(out_dir, run_id = NULL) {
   paths <- migration_paths(out_dir, run_id = run_id)
   dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
-  dir.create(paths$programs, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$staging, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$attempts, recursive = TRUE, showWarnings = FALSE)
-  dir.create(paths$outputs, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$programs, recursive = TRUE, showWarnings = FALSE)
   paths
 }
 

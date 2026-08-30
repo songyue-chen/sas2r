@@ -70,7 +70,7 @@ write_migration_report <- function(state) {
     cli::cli_abort("Unable to determine migration paths from state", class = "sas2r_invalid_argument")
   }
 
-  init_migration_paths(paths$root)
+  dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
 
   run_id <- state$run_id %||% paths$run_id %||% state$usage_budget$run_id %||% new_usage_run_id()
   status <- state$status %||% "blocked"
@@ -245,7 +245,7 @@ write_migration_report <- function(state) {
   atomic_write_json(report_payload, paths$report_json)
 
   # When paths are run-scoped, the run's own folder gets a copy of the machine
-  # report so attempts/<run_id>/ is self-contained evidence; the .sas2r/ copy
+  # report so runs/<run_id>/ is self-contained evidence; the .sas2r/ copy
   # stays authoritative for the latest run (resume reads it).
   run_dir <- if (identical(basename(paths$attempts %||% ""), run_id)) paths$attempts else NULL
   if (!is.null(run_dir) && dir.exists(run_dir)) {
