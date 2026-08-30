@@ -130,7 +130,8 @@ llm:
 # budget:
 #   mode: observe                       # observe | soft | strict
 #   max_calls: 50
-#   max_output_tokens: 16384
+#   max_output_tokens: 128000           # keep well clear of the model's own maximum;
+#                                       # a low ceiling truncates reasoning models
 #   max_usd: 5.00
 #   max_retries: 2                      # sas2r-level; see llm.max_tries
 #   max_tool_calls: 500

@@ -73,7 +73,6 @@ llm:
   provider: anthropic           # or openai, gemini, deepseek
   model: claude-sonnet-4-6
   reasoning_effort: high
-  max_output_tokens: 16384
 ```
 
 ## Running a Migration in R

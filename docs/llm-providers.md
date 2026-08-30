@@ -238,7 +238,9 @@ budget:
   max_retries: 2                        # sas2r-level retries (see note below)
   max_tool_calls: 500                   # total tool executions across the run
   max_wall_time: 7200                   # seconds, whole run
-  max_output_tokens: 32768
+  max_output_tokens: 128000             # keep well clear of the model's own
+                                        # maximum; a low ceiling truncates
+                                        # reasoning models mid-answer
   max_request_bytes: 1048576
   max_request_chars: 500000
   max_input_tokens: 128000

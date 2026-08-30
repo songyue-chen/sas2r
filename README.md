@@ -200,8 +200,11 @@ llm:
 
   temperature: 0               # model settings, passed through when the
   top_p: 1                     # provider supports them
-  reasoning_effort: high
-  max_output_tokens: 16384
+  reasoning_effort: high       # max_output_tokens is deliberately unset here:
+                               # sas2r then uses the model's own maximum. Cap it
+                               # only if you must -- a small ceiling is spent on
+                               # reasoning before any answer text emerges, and
+                               # the translation comes back truncated
 
   cache: 1h                    # prompt-cache lifetime (anthropic, posit,
                                # bedrock). 1h is the default: migration
