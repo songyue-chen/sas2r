@@ -348,7 +348,7 @@ sas_translate <- function(
   # 12b. Surface the selected translation at the top of the run folder, next
   # to its report; the attempt bundle underneath stays canonical.
   if (identical(basename(paths$attempts), budget$run_id)) {
-    materialize_run_translation(bundle_dir, paths$attempts)
+    materialize_run_translation(bundle_dir, paths$attempts, project = state$project)
   }
 
   # 13. Write authoritative machine and markdown reports

@@ -267,22 +267,34 @@ input_hash_manifest <- function(project) {
 #'
 #' @param bundle_dir The selected attempt's bundle directory.
 #' @param run_dir The run folder root.
+#' @param project Optional `sas2r_project`. When supplied, the materialized
+#'   copy gets its own registry anchored at the run folder -- `work` and every
+#'   configured libref's write path point beside the programs, not into the
+#'   attempt evidence directories (which pruning may already have emptied) --
+#'   so `lib_read()`/`lib_write()` work when the user re-runs the programs in
+#'   place. Reads still come from the configured input libraries.
 #' @return The run directory, invisibly (NULL when either side is missing).
 #' @noRd
-materialize_run_translation <- function(bundle_dir, run_dir) {
+materialize_run_translation <- function(bundle_dir, run_dir, project = NULL) {
   if (is.null(bundle_dir) || length(bundle_dir) != 1L || !dir.exists(bundle_dir)) {
     return(invisible(NULL))
   }
   if (is.null(run_dir) || length(run_dir) != 1L || !dir.exists(run_dir)) {
     return(invisible(NULL))
   }
+  fresh_registry <- !is.null(project) && inherits(project, "sas2r_project")
   rels <- list.files(bundle_dir, recursive = TRUE)
   keep <- !grepl("\\.contract\\.json$", rels) &
     rels != "_sas2r_bundle_progress.json"
+  if (fresh_registry) keep <- keep & rels != "_sas2r_registry.R"
   for (rel in rels[keep]) {
     dest <- file.path(run_dir, rel)
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
     file.copy(file.path(bundle_dir, rel), dest, overwrite = TRUE)
+  }
+  if (fresh_registry) {
+    lib_map <- build_attempt_library_map(project, run_dir)
+    write_registry(project, run_dir, library_map = lib_map)
   }
   invisible(run_dir)
 }
