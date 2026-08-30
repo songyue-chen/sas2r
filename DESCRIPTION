@@ -1,6 +1,5 @@
 Package: sas2r
-Title: Use R to Get R: Translate SAS Programs to R with Dependency-Aware
-    Migration
+Title: Translate SAS Programs to R with Dependency-Aware Migration
 Version: 0.2.0
 Authors@R: person("Songyue", "Chen", email = "chuckknow@gmail.com", role = c("aut", "cre"))
 Description: Translates SAS programs and projects to R using dependency-aware
