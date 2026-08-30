@@ -15,9 +15,9 @@ test_that("migration records have deterministic identities and paths", {
   # report under the run id; nothing else moves (report_json in particular
   # stays at the state level -- resume reads it there).
   scoped <- migration_paths(file.path(tempdir(), "out"), run_id = "run_abc")
-  expect_identical(scoped$attempts, file.path(scoped$root, "runs", "run_abc"))
-  expect_identical(scoped$programs, file.path(scoped$root, "runs", "run_abc", "programs"))
-  expect_identical(scoped$report_md, file.path(scoped$root, "runs", "run_abc", "report.md"))
+  expect_identical(scoped$attempts, file.path(scoped$root, "run_abc"))
+  expect_identical(scoped$programs, file.path(scoped$root, "run_abc", "programs"))
+  expect_identical(scoped$report_md, file.path(scoped$root, "run_abc", "report.md"))
   expect_identical(scoped$report_json, p$report_json)
   moved <- c("attempts", "programs", "report_md")
   expect_identical(scoped[setdiff(names(scoped), moved)],

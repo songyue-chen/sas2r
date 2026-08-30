@@ -20,8 +20,11 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
 
   expect_false(identical(r1$run_id, r2$run_id))
 
-  run_dirs <- list.dirs(file.path(out, "runs"), full.names = FALSE, recursive = FALSE)
+  top <- list.dirs(out, full.names = FALSE, recursive = FALSE)
+  run_dirs <- top[grepl("^run_", top)]
   expect_setequal(run_dirs, c(r1$run_id, r2$run_id))
+  # Nothing else visible shares the out_dir top level with the run folders.
+  expect_identical(setdiff(top, c(run_dirs, ".sas2r")), character(0))
 
   # Each result's bundle lives inside its own run's attempts tree (compare by
   # path components: normalizePath() resolves /var -> /private/var on macOS,
@@ -33,6 +36,22 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
   expect_true(dir.exists(r1$bundle_dir))
   expect_true(length(list.files(r1$bundle_dir, pattern = "\\.R$")) > 0L)
 
+  # The selected translation is materialized at the top of each run folder:
+  # program .R files plus the runtime trio, with machine metadata left in
+  # the attempt bundle.
+  for (r in list(r1, r2)) {
+    run_root_files <- list.files(file.path(out, r$run_id))
+    expect_true("sas2r-helpers.R" %in% run_root_files)
+    expect_true("_sas2r_registry.R" %in% run_root_files)
+    programs_at_root <- setdiff(
+      grep("\\.R$", run_root_files, value = TRUE),
+      c("sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")
+    )
+    expect_gt(length(programs_at_root), 0L)
+    expect_identical(grep("contract\\.json$", run_root_files, value = TRUE), character(0))
+    expect_false("_sas2r_bundle_progress.json" %in% run_root_files)
+  }
+
   # Run ids are timestamp-first (chronologically sortable directory names)
   # with a hash suffix so same-second runs stay distinct.
   expect_match(r1$run_id, "^run_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
@@ -40,8 +59,8 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
 
   # Each run folder carries its own report; no report surfaces at the
   # out_dir root, and each result points at its own run's copy.
-  expect_true(file.exists(file.path(out, "runs", r1$run_id, "report.md")))
-  expect_true(file.exists(file.path(out, "runs", r2$run_id, "report.json")))
+  expect_true(file.exists(file.path(out, r1$run_id, "report.md")))
+  expect_true(file.exists(file.path(out, r2$run_id, "report.json")))
   expect_false(file.exists(file.path(out, "report.md")))
   expect_identical(basename(dirname(r1$report_path)), r1$run_id)
   expect_identical(basename(dirname(r2$report_path)), r2$run_id)
@@ -69,13 +88,13 @@ test_that("staging lives under .sas2r/ and no programs surface at the out_dir ro
   # outputs/ decoy is gone.
   expect_false(dir.exists(file.path(out, "programs")))
   expect_false(dir.exists(file.path(out, "outputs")))
-  expect_true(dir.exists(file.path(out, "runs", res$run_id, "programs")))
+  expect_true(dir.exists(file.path(out, res$run_id, "programs")))
 
   # The run's program evidence (revisions, reviews) must survive attempt
   # pruning: prune only touches <kind>_attempt_NNN directories, never the
   # programs/ folder that shares the run directory with them.
   expect_gt(
-    length(list.files(file.path(out, "runs", res$run_id, "programs"),
+    length(list.files(file.path(out, res$run_id, "programs"),
                       recursive = TRUE)),
     0L
   )
@@ -89,6 +108,6 @@ test_that("resume reruns into a fresh run scope without disturbing prior attempt
   r2 <- sas_translate(f, out_dir = out, execute = FALSE, resume = TRUE)
 
   expect_false(identical(r1$run_id, r2$run_id))
-  expect_true(dir.exists(file.path(out, "runs", r1$run_id)))
-  expect_true(dir.exists(file.path(out, "runs", r2$run_id)))
+  expect_true(dir.exists(file.path(out, r1$run_id)))
+  expect_true(dir.exists(file.path(out, r2$run_id)))
 })

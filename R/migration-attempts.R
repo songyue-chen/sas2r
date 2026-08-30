@@ -254,6 +254,39 @@ input_hash_manifest <- function(project) {
 #' helpers into `attempt/bundle/`, and emits the attempt-specific read/write
 #' registry template. Never executes mutable files outside the snapshot.
 #'
+#' Materialize the selected translation at the run folder root
+#'
+#' Copies the selected attempt's bundle files to the top of the run folder so
+#' users find the translated programs (and the runtime files they need)
+#' without descending into bundle_attempt_NNN/bundle/. Machine metadata
+#' (*.contract.json, _sas2r_bundle_progress.json) stays behind in the attempt
+#' bundle, which remains the canonical, complete artifact that
+#' `sas_code()`/`sas_write()` and `$bundle_dir` refer to. Written only after
+#' selection is final, so unlike a pre-selection staging copy it cannot
+#' diverge from the selected result.
+#'
+#' @param bundle_dir The selected attempt's bundle directory.
+#' @param run_dir The run folder root.
+#' @return The run directory, invisibly (NULL when either side is missing).
+#' @noRd
+materialize_run_translation <- function(bundle_dir, run_dir) {
+  if (is.null(bundle_dir) || length(bundle_dir) != 1L || !dir.exists(bundle_dir)) {
+    return(invisible(NULL))
+  }
+  if (is.null(run_dir) || length(run_dir) != 1L || !dir.exists(run_dir)) {
+    return(invisible(NULL))
+  }
+  rels <- list.files(bundle_dir, recursive = TRUE)
+  keep <- !grepl("\\.contract\\.json$", rels) &
+    rels != "_sas2r_bundle_progress.json"
+  for (rel in rels[keep]) {
+    dest <- file.path(run_dir, rel)
+    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+    file.copy(file.path(bundle_dir, rel), dest, overwrite = TRUE)
+  }
+  invisible(run_dir)
+}
+
 #' @param state Migration state object.
 #' @param attempt Initialized attempt record or attempt directory path.
 #' @return The canonical path to the populated attempt bundle directory.

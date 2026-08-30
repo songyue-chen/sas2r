@@ -91,16 +91,17 @@ migration_hash <- function(x) {
 migration_paths <- function(out_dir, run_id = NULL) {
   root <- out_dir
   state <- file.path(root, ".sas2r")
-  runs_root <- file.path(root, "runs")
-  # Scoped, everything a run produces lives inside its own runs/<run_id>/
-  # folder: attempt directories, per-component program evidence (revisions
-  # and reviews), and that run's report copies. Unscoped (direct tooling and
-  # tests), attempts sit under runs/ and program evidence under programs/.
-  attempts <- if (is.null(run_id)) runs_root else file.path(runs_root, run_id)
+  # Scoped, everything a run produces lives inside its own <run_id>/ folder
+  # directly under out_dir -- attempt directories, per-component program
+  # evidence (revisions and reviews), and that run's reports. Nothing else
+  # visible shares that level, so the runs need no extra grouping folder.
+  # Unscoped (direct tooling and tests), attempts sit under runs/ and program
+  # evidence under programs/.
+  attempts <- if (is.null(run_id)) file.path(root, "runs") else file.path(root, run_id)
   programs <- if (is.null(run_id)) {
     file.path(root, "programs")
   } else {
-    file.path(runs_root, run_id, "programs")
+    file.path(root, run_id, "programs")
   }
   list(
     root = root,
@@ -121,7 +122,7 @@ migration_paths <- function(out_dir, run_id = NULL) {
     report_md = if (is.null(run_id)) {
       file.path(root, "report.md")
     } else {
-      file.path(runs_root, run_id, "report.md")
+      file.path(root, run_id, "report.md")
     }
   )
 }
