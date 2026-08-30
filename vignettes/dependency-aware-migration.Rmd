@@ -1,6 +1,6 @@
 ---
 title: "Dependency-Aware SAS-to-R Migration"
-author: "sas2r development team"
+author: "Songyue Chen"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -133,7 +133,7 @@ Within each bundle, individual components accumulate immutable evidence records:
 `sas2r` protects production and raw input datasets from inadvertent mutation during translation:
 
 - Input libraries are mounted read-only.
-- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`runs/<run_id>/bundle_attempt_001/`). Everything a run produces -- attempts, per-component program evidence, and its own `report.md` -- is grouped under timestamp-first run ids that sort chronologically, so re-running into the same `out_dir` never overwrites an earlier run's work.
+- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`<run_id>/bundle_attempt_001/`). Each run gets its own timestamp-first `run_<timestamp>_<hash>/` folder directly in the output directory -- the selected translated programs and the run's `report.md` sit at its top, with attempts and per-component program evidence beneath -- so re-running into the same `out_dir` never overwrites an earlier run's work.
 - Multi-round repairs select improved attempts deterministically and prune rejected attempts according to configuration.
 
 ## Model Privacy & Clinical Data Protection

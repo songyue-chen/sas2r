@@ -203,12 +203,18 @@ sas_translate <- function(
       # run id, which locates that run's programs/ directory. The unscoped
       # root programs/ fallback keeps outputs from older layouts readable.
       prior_rid <- prior_report$run_id
-      prior_programs <- if (is.character(prior_rid) && length(prior_rid) == 1L && nzchar(prior_rid) &&
-                            dir.exists(file.path(paths$root, "runs", prior_rid, "programs"))) {
-        file.path(paths$root, "runs", prior_rid, "programs")
-      } else {
+      prior_candidates <- c(
+        if (is.character(prior_rid) && length(prior_rid) == 1L && nzchar(prior_rid)) {
+          c(
+            file.path(paths$root, prior_rid, "programs"),
+            # earlier layouts kept runs under a runs/ grouping folder
+            file.path(paths$root, "runs", prior_rid, "programs")
+          )
+        },
         file.path(paths$root, "programs")
-      }
+      )
+      existing <- prior_candidates[dir.exists(prior_candidates)]
+      prior_programs <- if (length(existing)) existing[[1L]] else prior_candidates[[length(prior_candidates)]]
       sched_cids <- schedule$component_id
       for (cid in sched_cids) {
         prior_comp <- prior_report$component_evidence[[cid]]
@@ -337,6 +343,12 @@ sas_translate <- function(
   # 12. Prune unselected raw attempts if requested
   if (!isTRUE(keep_raw_attempts)) {
     prune_rejected_attempt_outputs(paths, keep_raw = FALSE)
+  }
+
+  # 12b. Surface the selected translation at the top of the run folder, next
+  # to its report; the attempt bundle underneath stays canonical.
+  if (identical(basename(paths$attempts), budget$run_id)) {
+    materialize_run_translation(bundle_dir, paths$attempts)
   }
 
   # 13. Write authoritative machine and markdown reports
