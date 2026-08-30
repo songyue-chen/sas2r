@@ -114,8 +114,15 @@ migration_paths <- function(out_dir, run_id = NULL) {
     attempts = attempts,
     selected = file.path(state, "selected.json"),
     usage = file.path(state, "usage.json"),
+    # The machine report stays at a fixed state-level path: resume reads it
+    # to reconcile the previous run. The human report belongs to its run --
+    # scoped, it lives inside runs/<run_id>/ next to the attempts it explains.
     report_json = file.path(state, "report.json"),
-    report_md = file.path(root, "report.md")
+    report_md = if (is.null(run_id)) {
+      file.path(root, "report.md")
+    } else {
+      file.path(runs_root, run_id, "report.md")
+    }
   )
 }
 
