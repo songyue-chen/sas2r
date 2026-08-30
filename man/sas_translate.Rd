@@ -73,3 +73,33 @@ initializes/reconciles run -> discovers dependency graph and output contracts ->
 baseline generation and immediate program repair -> full bundle attempt execution
 and output-driven repair -> deterministic gate selection and reporting.
 }
+\examples{
+# Translate a small SAS program with the deterministic rule-based engine.
+# Neither an LLM nor a SAS installation is required.
+sas_dir <- file.path(tempdir(), "sas2r-translate-example")
+dir.create(sas_dir, showWarnings = FALSE)
+writeLines(c(
+  "data work.adsl;",
+  "  set adam.dm;",
+  "  where age >= 18;",
+  "  bmi = weight / (height * height);",
+  "run;",
+  "",
+  "proc sort data=work.adsl out=work.adsl_sorted;",
+  "  by usubjid;",
+  "run;"
+), file.path(sas_dir, "adsl.sas"))
+
+# execute = FALSE translates without running the generated bundle.
+res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+res$status
+cat(sas_code(res))
+
+\dontrun{
+# Run the generated bundle and let the agents translate, review, and repair
+# the patterns the deterministic rules cannot prove.
+llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+res <- sas_translate("path/to/sas/project", llm = llm, recursive = TRUE)
+sas_write(res, "path/to/r/bundle")
+}
+}

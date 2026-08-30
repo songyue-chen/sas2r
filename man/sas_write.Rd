@@ -18,3 +18,16 @@ The target directory path, invisibly.
 Copies the selected generated bundle, outputs (if any), and migration reports
 to the destination directory. Warns if status is \code{blocked} or \code{needs_review}.
 }
+\examples{
+sas_dir <- file.path(tempdir(), "sas2r-write-example")
+dir.create(sas_dir, showWarnings = FALSE)
+writeLines(c("proc sort data=work.dm out=work.dm_sorted;",
+             "  by usubjid;",
+             "run;"), file.path(sas_dir, "sort.sas"))
+res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+
+# Writing an unverified translation warns; the bundle is still written.
+dest <- tempfile("sas2r-bundle")
+suppressWarnings(sas_write(res, dest))
+list.files(dest, recursive = TRUE)
+}

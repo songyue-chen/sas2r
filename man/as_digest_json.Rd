@@ -15,3 +15,12 @@ A JSON string representing the diff digest.
 \description{
 Serialize a diff digest to JSON
 }
+\examples{
+sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+digest <- diff_digest(compare_datasets(sas, r, keys = "usubjid"))
+
+# The redacted JSON payload that may cross to an LLM.
+json <- as_digest_json(digest)
+substr(json, 1, 60)
+}

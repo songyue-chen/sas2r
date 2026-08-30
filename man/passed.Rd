@@ -15,3 +15,8 @@ Logical indicating whether the comparison passed.
 \description{
 Did a comparison pass within tolerance?
 }
+\examples{
+sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+passed(compare_datasets(sas, r, keys = "usubjid"))
+}

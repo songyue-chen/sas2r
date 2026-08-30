@@ -11,6 +11,15 @@ DIGEST_VAR_COLS <- c(
 #' @param x An object of class `sas2r_comparison`.
 #' @param label Label for the dataset comparison.
 #' @return An object of class `sas2r_diff_digest`.
+#' @examples
+#' sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+#' r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+#' cmp <- compare_datasets(sas, r, keys = "usubjid")
+#'
+#' # Names, counts and magnitudes only -- never cell values, never key values.
+#' d <- diff_digest(cmp, label = "adsl")
+#' d$vars
+#' d$pattern_hints
 #' @export
 diff_digest <- function(x, label = "dataset") {
   stopifnot(inherits(x, "sas2r_comparison"))
@@ -79,6 +88,14 @@ diff_digest <- function(x, label = "dataset") {
 #'
 #' @param digest An object of class `sas2r_diff_digest`.
 #' @return A JSON string representing the diff digest.
+#' @examples
+#' sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+#' r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+#' digest <- diff_digest(compare_datasets(sas, r, keys = "usubjid"))
+#'
+#' # The redacted JSON payload that may cross to an LLM.
+#' json <- as_digest_json(digest)
+#' substr(json, 1, 60)
 #' @export
 as_digest_json <- function(digest) {
   stopifnot(inherits(digest, "sas2r_diff_digest"))

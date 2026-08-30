@@ -569,6 +569,14 @@ llm_model_inventory <- function(config) {
 #' foundation-model inventory does not enumerate them safely.
 #' @param config An `llm:` mapping, a `sas2r_config`, or a normalized LLM list.
 #' @return A `sas2r_llm_model_inventory` record.
+#' @examples
+#' \dontrun{
+#' # Contacts the provider's read-only inventory route; needs credentials.
+#' sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+#'
+#' # Or straight from a project configuration.
+#' sas_llm_models(sas_config("path/to/_sas2r.yml"))
+#' }
 #' @export
 sas_llm_models <- function(config) {
   config <- normalize_llm_config(config)

@@ -40,6 +40,17 @@ effective_tol <- function(profile, var) {
 #' @param overrides Named list of per-variable numeric tolerance overrides.
 #' @param keys Character vector of key column names, or `NULL`.
 #' @return An object of class `sas2r_profile`.
+#' @examples
+#' # Defaults implement the accepted SAS-to-R tolerance rules.
+#' p <- compare_profile()
+#' p$numeric
+#'
+#' # Tighten numeric tolerance and make trailing blanks significant.
+#' strict <- compare_profile(abs = 1e-12, rel = 1e-12, padding = "strict")
+#'
+#' # Per-variable tolerance override, plus keys used for row matching.
+#' compare_profile(overrides = list(aval = list(abs = 1e-6)),
+#'                 keys = c("usubjid", "paramcd"))
 #' @export
 compare_profile <- function(abs = 1e-8, rel = 1e-8,
                             sas_null_equals_na = TRUE,

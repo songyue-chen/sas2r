@@ -28,6 +28,35 @@
 #'   `$bundle_dir`, `$outputs_dir`, `$status`, `$status_reason`, `$graph_path`,
 #'   `$output_contracts_path`, `$report_path`, `$report_json_path`, `$component_evidence`,
 #'   `$output_assessments`, `$diagnostics`, `$repair_history`, `$usage`, and `$project`.
+#' @examples
+#' # Translate a small SAS program with the deterministic rule-based engine.
+#' # Neither an LLM nor a SAS installation is required.
+#' sas_dir <- file.path(tempdir(), "sas2r-translate-example")
+#' dir.create(sas_dir, showWarnings = FALSE)
+#' writeLines(c(
+#'   "data work.adsl;",
+#'   "  set adam.dm;",
+#'   "  where age >= 18;",
+#'   "  bmi = weight / (height * height);",
+#'   "run;",
+#'   "",
+#'   "proc sort data=work.adsl out=work.adsl_sorted;",
+#'   "  by usubjid;",
+#'   "run;"
+#' ), file.path(sas_dir, "adsl.sas"))
+#'
+#' # execute = FALSE translates without running the generated bundle.
+#' res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+#' res$status
+#' cat(sas_code(res))
+#'
+#' \dontrun{
+#' # Run the generated bundle and let the agents translate, review, and repair
+#' # the patterns the deterministic rules cannot prove.
+#' llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+#' res <- sas_translate("path/to/sas/project", llm = llm, recursive = TRUE)
+#' sas_write(res, "path/to/r/bundle")
+#' }
 #' @export
 sas_translate <- function(
   path,
@@ -367,6 +396,18 @@ print.sas2r_translation <- function(x, ...) {
 #' @param x A `sas2r_translation` object.
 #' @param dir Target directory path to write translated files.
 #' @return The target directory path, invisibly.
+#' @examples
+#' sas_dir <- file.path(tempdir(), "sas2r-write-example")
+#' dir.create(sas_dir, showWarnings = FALSE)
+#' writeLines(c("proc sort data=work.dm out=work.dm_sorted;",
+#'              "  by usubjid;",
+#'              "run;"), file.path(sas_dir, "sort.sas"))
+#' res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+#'
+#' # Writing an unverified translation warns; the bundle is still written.
+#' dest <- tempfile("sas2r-bundle")
+#' suppressWarnings(sas_write(res, dest))
+#' list.files(dest, recursive = TRUE)
 #' @export
 sas_write <- function(x, dir) {
   stopifnot(inherits(x, "sas2r_translation"))
@@ -415,6 +456,16 @@ sas_write <- function(x, dir) {
 #' @param x A `sas2r_translation` object.
 #' @param file Staged file index or name/component ID.
 #' @return Character string containing the program code.
+#' @examples
+#' sas_dir <- file.path(tempdir(), "sas2r-code-example")
+#' dir.create(sas_dir, showWarnings = FALSE)
+#' writeLines(c("proc sort data=work.dm out=work.dm_sorted;",
+#'              "  by usubjid;",
+#'              "run;"), file.path(sas_dir, "sort.sas"))
+#' res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+#'
+#' # Resolve by index, or by file name / component id.
+#' cat(sas_code(res, 1L))
 #' @export
 sas_code <- function(x, file = 1L) {
   stopifnot(inherits(x, "sas2r_translation"))

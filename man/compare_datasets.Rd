@@ -19,5 +19,21 @@ compare_datasets(base, comp, profile = compare_profile(), keys = profile$keys)
 An object of class \code{sas2r_comparison}.
 }
 \description{
-Compare two datasets under SAS-aware tolerance rules
+A thin wrapper over the shared cell comparator \code{diff_aligned_cells()}: rows
+pair by the given keys (or in row order when \code{keys} is \code{NULL}), and every
+cell verdict comes from the same loop the output-review engine uses.
+}
+\examples{
+sas <- data.frame(usubjid = c("01-001", "01-002", "01-003"),
+                  aval = c(1.0, 2.0, 3.0))
+r <- data.frame(usubjid = c("01-001", "01-002", "01-003"),
+                aval = c(1.0, 2.0, 3.0 + 1e-10))
+
+# A floating-point difference inside tolerance is not a mismatch.
+cmp <- compare_datasets(sas, r, keys = "usubjid")
+passed(cmp)
+
+# A genuine difference is reported.
+r$aval[3] <- 3.5
+passed(compare_datasets(sas, r, keys = "usubjid"))
 }

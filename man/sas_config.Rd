@@ -35,3 +35,15 @@ A caller-supplied configuration list has no file of its own, so
 root. Both bases are facts about the project's layout, and both travel with
 the checkout.
 }
+\examples{
+# Read the demo project configuration shipped with the package.
+cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
+                              package = "sas2r"))
+class(cfg)
+names(cfg$libraries)
+
+\dontrun{
+# With no argument, _sas2r.yml is discovered by searching upwards.
+cfg <- sas_config(start = "path/to/study")
+}
+}

@@ -21,3 +21,13 @@ Build the redacted diff digest (the only comparison artifact that may
 cross to an LLM). Names, counts, magnitudes, and enumerated hints only --
 never cell values, never key values.
 }
+\examples{
+sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+cmp <- compare_datasets(sas, r, keys = "usubjid")
+
+# Names, counts and magnitudes only -- never cell values, never key values.
+d <- diff_digest(cmp, label = "adsl")
+d$vars
+d$pattern_hints
+}

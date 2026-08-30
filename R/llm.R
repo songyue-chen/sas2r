@@ -1175,6 +1175,18 @@ ellmer_llm <- function(cfg) {
 #'   already-normalized LLM list.
 #' @return A `sas2r_llm` adapter.
 #' @seealso [sas_llm_probe()], [sas_llm_models()]
+#' @examples
+#' # Constructing an adapter contacts no network and reads no credentials.
+#' if (requireNamespace("ellmer", quietly = TRUE)) {
+#'   llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+#'   class(llm)
+#' }
+#'
+#' \dontrun{
+#' # Any ellmer-supported provider works; credentials stay with ellmer.
+#' llm <- sas_llm(list(provider = "openai", model = "gpt-4.1"))
+#' res <- sas_translate("path/to/sas", llm = llm)
+#' }
 #' @export
 sas_llm <- function(config) {
   config <- normalize_llm_config(config)
@@ -1622,6 +1634,12 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
 #'   nonanswer. Access, authentication, and transport failures are raised as
 #'   classed conditions with secrets redacted.
 #' @seealso [sas_llm()], [sas_llm_models()]
+#' @examples
+#' \dontrun{
+#' # Sends one minimal ping to validate connectivity and model access.
+#' llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+#' sas_llm_probe(llm)
+#' }
 #' @export
 sas_llm_probe <- function(llm, max_retries = 2L, log_dir = tempdir(),
                           on_charge = NULL, tier = "cheap", can_attempt = NULL,

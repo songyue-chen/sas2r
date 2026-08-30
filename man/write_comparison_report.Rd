@@ -35,3 +35,13 @@ Path to the written file, invisibly.
 \description{
 Write a PROC-COMPARE-style markdown report or versioned JSON comparison report
 }
+\examples{
+sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+cmp <- compare_datasets(sas, r, keys = "usubjid")
+
+# PROC COMPARE-style markdown.
+md <- file.path(tempdir(), "sas2r-comparison.md")
+write_comparison_report(cmp, file = md)
+cat(head(readLines(md), 6), sep = "\n")
+}

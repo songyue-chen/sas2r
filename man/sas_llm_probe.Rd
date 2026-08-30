@@ -59,6 +59,13 @@ usage ledger additionally requires \code{usage_budget} to carry a
 shared budget; a standalone call with no \code{usage_budget} gets a transient
 budget with none, so it is audited but not ledgered.
 }
+\examples{
+\dontrun{
+# Sends one minimal ping to validate connectivity and model access.
+llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+sas_llm_probe(llm)
+}
+}
 \seealso{
 \code{\link[=sas_llm]{sas_llm()}}, \code{\link[=sas_llm_models]{sas_llm_models()}}
 }

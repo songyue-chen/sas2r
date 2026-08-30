@@ -357,6 +357,17 @@ find_config <- function(start = ".") {
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
 #'   `include_roots`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
+#' @examples
+#' # Read the demo project configuration shipped with the package.
+#' cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
+#'                               package = "sas2r"))
+#' class(cfg)
+#' names(cfg$libraries)
+#'
+#' \dontrun{
+#' # With no argument, _sas2r.yml is discovered by searching upwards.
+#' cfg <- sas_config(start = "path/to/study")
+#' }
 #' @export
 sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)

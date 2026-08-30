@@ -18,3 +18,14 @@ Character string containing the program code.
 Recursively inspects the selected bundle directory and resolves by component ID,
 relative file path, basename, or integer index.
 }
+\examples{
+sas_dir <- file.path(tempdir(), "sas2r-code-example")
+dir.create(sas_dir, showWarnings = FALSE)
+writeLines(c("proc sort data=work.dm out=work.dm_sorted;",
+             "  by usubjid;",
+             "run;"), file.path(sas_dir, "sort.sas"))
+res <- sas_translate(sas_dir, out_dir = tempfile("sas2r-out"), execute = FALSE)
+
+# Resolve by index, or by file name / component id.
+cat(sas_code(res, 1L))
+}

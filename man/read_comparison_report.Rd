@@ -17,3 +17,16 @@ An object of class \code{sas2r_comparison_report}.
 \description{
 Read a bounded comparison report from the registry
 }
+\examples{
+ref <- data.frame(usubjid = "01-001", aval = 1.0)
+cand <- data.frame(usubjid = "01-001", aval = 2.0)
+target <- list(target_id = "adam.adsl", logical_dataset = "adam.adsl",
+               role = "output", contributing_unit_ids = integer())
+report <- compare_aligned_outputs(ref, cand, target = target)
+
+# The registry may be a named list or an environment.
+registry <- list()
+registry[[report$report_id]] <- report
+back <- read_comparison_report(report$report_id, registry)
+identical(back$report_id, report$report_id)
+}

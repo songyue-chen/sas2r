@@ -41,3 +41,15 @@ and nowhere else. Defaults implement the accepted SAS-to-R tolerance
 rules: SAS null == NA, special missings reported, trailing padding
 cosmetic, combined absolute + relative numeric tolerance.
 }
+\examples{
+# Defaults implement the accepted SAS-to-R tolerance rules.
+p <- compare_profile()
+p$numeric
+
+# Tighten numeric tolerance and make trailing blanks significant.
+strict <- compare_profile(abs = 1e-12, rel = 1e-12, padding = "strict")
+
+# Per-variable tolerance override, plus keys used for row matching.
+compare_profile(overrides = list(aval = list(abs = 1e-6)),
+                keys = c("usubjid", "paramcd"))
+}

@@ -20,7 +20,7 @@ format_cell_value <- function(x) {
 
 #' Compare two datasets under SAS-aware tolerance rules
 #'
-#' A thin wrapper over the shared cell comparator [diff_aligned_cells()]: rows
+#' A thin wrapper over the shared cell comparator `diff_aligned_cells()`: rows
 #' pair by the given keys (or in row order when `keys` is `NULL`), and every
 #' cell verdict comes from the same loop the output-review engine uses.
 #'
@@ -29,6 +29,19 @@ format_cell_value <- function(x) {
 #' @param profile A [compare_profile()].
 #' @param keys Key columns for row matching; NULL compares in row order.
 #' @return An object of class `sas2r_comparison`.
+#' @examples
+#' sas <- data.frame(usubjid = c("01-001", "01-002", "01-003"),
+#'                   aval = c(1.0, 2.0, 3.0))
+#' r <- data.frame(usubjid = c("01-001", "01-002", "01-003"),
+#'                 aval = c(1.0, 2.0, 3.0 + 1e-10))
+#'
+#' # A floating-point difference inside tolerance is not a mismatch.
+#' cmp <- compare_datasets(sas, r, keys = "usubjid")
+#' passed(cmp)
+#'
+#' # A genuine difference is reported.
+#' r$aval[3] <- 3.5
+#' passed(compare_datasets(sas, r, keys = "usubjid"))
 #' @export
 compare_datasets <- function(base, comp, profile = compare_profile(),
                              keys = profile$keys) {
@@ -118,7 +131,7 @@ compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
 #' Assemble a `sas2r_comparison` from column alignment and a row pairing
 #'
 #' The one assembly both public comparison paths share; the per-cell verdicts
-#' come from [diff_aligned_cells()], the engine's loop.
+#' come from `diff_aligned_cells()`, the engine's loop.
 #' @noRd
 compare_datasets_impl <- function(al, profile, keys, pairing) {
   base <- al$base
@@ -224,6 +237,10 @@ compare_datasets_impl <- function(al, profile, keys, pairing) {
 #'
 #' @param x An object of class `sas2r_comparison`.
 #' @return Logical indicating whether the comparison passed.
+#' @examples
+#' sas <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+#' r <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+#' passed(compare_datasets(sas, r, keys = "usubjid"))
 #' @export
 passed <- function(x) {
   stopifnot(inherits(x, "sas2r_comparison"))

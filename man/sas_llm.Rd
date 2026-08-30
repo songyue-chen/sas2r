@@ -21,6 +21,19 @@ Constructing an adapter contacts no network -- use \code{\link[=sas_llm_probe]{s
 validate connectivity and model capabilities, and \code{\link[=sas_llm_models]{sas_llm_models()}} to see
 the inventory visible to the configured identity.
 }
+\examples{
+# Constructing an adapter contacts no network and reads no credentials.
+if (requireNamespace("ellmer", quietly = TRUE)) {
+  llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+  class(llm)
+}
+
+\dontrun{
+# Any ellmer-supported provider works; credentials stay with ellmer.
+llm <- sas_llm(list(provider = "openai", model = "gpt-4.1"))
+res <- sas_translate("path/to/sas", llm = llm)
+}
+}
 \seealso{
 \code{\link[=sas_llm_probe]{sas_llm_probe()}}, \code{\link[=sas_llm_models]{sas_llm_models()}}
 }

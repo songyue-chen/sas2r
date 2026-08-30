@@ -19,3 +19,12 @@ never represented as an empty list of models. Bedrock inference-profile and
 custom-runtime selectors require probe-based access validation because the
 foundation-model inventory does not enumerate them safely.
 }
+\examples{
+\dontrun{
+# Contacts the provider's read-only inventory route; needs credentials.
+sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+
+# Or straight from a project configuration.
+sas_llm_models(sas_config("path/to/_sas2r.yml"))
+}
+}

@@ -4,7 +4,7 @@
 \name{sas2r-package}
 \alias{sas2r}
 \alias{sas2r-package}
-\title{sas2r: Translate SAS Programs to R with Dependency-Aware Migration}
+\title{sas2r: Use R to Get R: Translate SAS Programs to R with Dependency-Aware Migration}
 \description{
 Translates SAS programs and projects to R using dependency-aware orchestration, program smoke execution, and final-output evidence. Deterministic and offline by default; optional agent review and repair send bounded excerpts to a configured 'ellmer' provider only when one is supplied.
 }

@@ -924,6 +924,16 @@ make_sas_order_keys <- function(col, descending = FALSE) {
 #' @param pairs Matched pairs tibble (reference_row, candidate_row).
 #' @param context Optional alignment context list.
 #' @return A list containing order analysis metadata.
+#' @examples
+#' ref <- data.frame(id = 1:3, v = c("a", "b", "c"))
+#' cand <- data.frame(id = c(3, 1, 2), v = c("c", "a", "b"))
+#' pairs <- tibble::tibble(reference_row = 1:3, candidate_row = c(2L, 3L, 1L))
+#'
+#' # Content is equivalent; only the row order differs.
+#' res <- analyze_output_order(ref, cand, pairs,
+#'   context = list(order_contract = list(vars = "id", descending = FALSE)))
+#' res$order_equivalent
+#' res$reason
 #' @export
 analyze_output_order <- function(reference, candidate, pairs, context = NULL) {
   meaningful <- FALSE

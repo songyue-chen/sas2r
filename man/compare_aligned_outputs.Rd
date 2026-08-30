@@ -38,3 +38,13 @@ An object of class \code{sas2r_comparison_report}.
 \description{
 Compare aligned outputs under SAS-aware tolerance rules
 }
+\examples{
+ref <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+cand <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+target <- list(target_id = "adam.adsl", logical_dataset = "adam.adsl",
+               role = "output", contributing_unit_ids = integer())
+
+report <- compare_aligned_outputs(ref, cand, target = target)
+report$report_id
+report$examples
+}

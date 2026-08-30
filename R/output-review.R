@@ -862,6 +862,15 @@ new_comparison_report <- function(target, alignment, comparison,
 #' @param resource_state Resource status string.
 #' @param max_examples Maximum number of examples to include.
 #' @return An object of class `sas2r_comparison_report`.
+#' @examples
+#' ref <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.0))
+#' cand <- data.frame(usubjid = c("01-001", "01-002"), aval = c(1.0, 2.5))
+#' target <- list(target_id = "adam.adsl", logical_dataset = "adam.adsl",
+#'                role = "output", contributing_unit_ids = integer())
+#'
+#' report <- compare_aligned_outputs(ref, cand, target = target)
+#' report$report_id
+#' report$examples
 #' @export
 compare_aligned_outputs <- function(reference, candidate, target,
                                     context = NULL,
@@ -930,6 +939,18 @@ build_output_comparison_report <- compare_aligned_outputs
 #' @param report_id Report identifier string.
 #' @param registry Registry environment or list.
 #' @return An object of class `sas2r_comparison_report`.
+#' @examples
+#' ref <- data.frame(usubjid = "01-001", aval = 1.0)
+#' cand <- data.frame(usubjid = "01-001", aval = 2.0)
+#' target <- list(target_id = "adam.adsl", logical_dataset = "adam.adsl",
+#'                role = "output", contributing_unit_ids = integer())
+#' report <- compare_aligned_outputs(ref, cand, target = target)
+#'
+#' # The registry may be a named list or an environment.
+#' registry <- list()
+#' registry[[report$report_id]] <- report
+#' back <- read_comparison_report(report$report_id, registry)
+#' identical(back$report_id, report$report_id)
 #' @export
 read_comparison_report <- function(report_id, registry) {
   if (!is_scalar_character(report_id) || !nzchar(report_id)) {
