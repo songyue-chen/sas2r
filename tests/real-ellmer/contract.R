@@ -600,15 +600,28 @@ lookup <- sas2r:::make_tool(
     required = "name", additionalProperties = FALSE
   )
 )
-agent <- sas2r:::run_agent(
-  list(
-    name = "fixture", prompt = "translator.md", tier = "frontier",
-    tool_call_limit = 2L, retry_limit = 0L, temperature = NULL,
-    max_output_tokens = 321L, output_schema = "program_translation_v1"
+deprecations <- character()
+agent <- withCallingHandlers(
+  sas2r:::run_agent(
+    list(
+      name = "fixture", prompt = "translator.md", tier = "frontier",
+      tool_call_limit = 2L, retry_limit = 0L, temperature = NULL,
+      max_output_tokens = 321L, output_schema = "program_translation_v1"
+    ),
+    adapter, list(lookup = lookup), "translate",
+    log_dir = tempfile("sas2r-real-ellmer-")
   ),
-  adapter, list(lookup = lookup), "translate",
-  log_dir = tempfile("sas2r-real-ellmer-")
+  warning = function(w) {
+    if (inherits(w, "lifecycle_warning_deprecated") ||
+        grepl("tool", conditionMessage(w), ignore.case = TRUE)) {
+      deprecations <<- c(deprecations, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  }
 )
+if (length(deprecations)) {
+  stop("tool path raised a deprecation warning: ", paste(deprecations, collapse = " | "))
+}
 
 if (!identical(direct$data$r_code, "x <- 1")) {
   stop("real Chat$chat_structured did not normalize its structured result")
@@ -824,6 +837,21 @@ if (!any(vapply(
 ))) {
   stop("real Chat$chat did not submit the auto-executed tool result")
 }
+
+wire <- readLines(log_file, warn = FALSE)
+outputs <- unlist(lapply(wire, function(line) {
+  body <- tryCatch(jsonlite::fromJSON(line, simplifyVector = FALSE)$body, error = function(e) NULL)
+  vapply(Filter(function(i) identical(i$type, "function_call_output"), body$input %||% list()),
+         function(i) if (is.character(i$output)) i$output else jsonlite::toJSON(i$output, auto_unbox = TRUE),
+         character(1))
+}))
+if (!length(outputs)) stop("no tool result reached the wire")
+for (o in outputs) {
+  decoded <- tryCatch(jsonlite::fromJSON(o, simplifyVector = FALSE), error = function(e) NULL)
+  if (!is.list(decoded) || !identical(decoded$name, "round")) {
+    stop("tool result on the wire is not the object the tool returned (double-encoded?): ", o)
+  }
+}
 final_prompt <- "Return the complete final answer in the required schema."
 finalization_requests <- Filter(function(request) {
   has_structured_format(request) && contains_value(request$body, final_prompt)
@@ -912,6 +940,9 @@ message(
   " native=", length(anthropic_requests) + length(gemini_requests),
   " github=", if (github_retired) "retired-refusal-verified" else "exercised"
 )
+  if (nzchar(Sys.getenv("SAS2R_LOG_COPY"))) {
+    file.copy(log_file, Sys.getenv("SAS2R_LOG_COPY"), overwrite = TRUE)
+  }
 }
 
 run_real_ellmer_contract()

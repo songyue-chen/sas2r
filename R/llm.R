@@ -468,6 +468,21 @@ ellmer_output_type <- function(cfg, schema) {
   )
 }
 
+# Results cross into ellmer as JSON text sas2r encodes itself. ellmer used to
+# do this encoding on the tool's behalf (`to_json`, jsonlite::toJSON with
+# auto_unbox = TRUE, identical in 0.4.2 and 0.5.0) and from 0.5.0 warns that
+# it will stop; encoding here keeps the bytes the model sees unchanged while
+# owning the contract. Character and Content results are ellmer's to handle.
+ellmer_tool_result <- function(value) {
+  if (is.character(value) || inherits(value, "json")) return(value)
+  if (inherits(value, "ellmer::Content")) return(value)
+  if (is.list(value) && length(value) > 0L &&
+      all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
+    return(value)
+  }
+  jsonlite::toJSON(value, auto_unbox = TRUE)
+}
+
 ellmer_tool_function <- function(tool) {
   # `names(list())` is NULL, and mget(NULL) aborts with "invalid first
   # argument", so an argument-less tool must normalise to character(0).
@@ -487,7 +502,7 @@ ellmer_tool_function <- function(tool) {
   body(fn) <- quote({
     args <- mget(.argument_names, envir = environment(), inherits = FALSE)
     args <- args[!vapply(args, is.null, logical(1))]
-    .tool$call(args)
+    ellmer_tool_result(.tool$call(args))
   })
   fn
 }
@@ -543,7 +558,11 @@ ellmer_turn_from_message <- function(message, tool_request = NULL) {
     ))
   }
   if (identical(role, "tool")) {
-    value <- strict_json_list(message$content) %||% message$content %||% ""
+    value <- if (inherits(message$content, "json")) {
+      message$content
+    } else {
+      strict_json_list(message$content) %||% message$content %||% ""
+    }
     if (is.null(tool_request)) {
       tool_request <- ellmer_tool_request(list(
         id = message$tool_call_id, name = message$name,
@@ -664,10 +683,10 @@ ellmer_conversation_messages <- function(chat) {
             role = "tool",
             name = ellmer_public_prop(request, "name"),
             tool_call_id = ellmer_public_prop(request, "id"),
-            content = jsonlite::toJSON(
-              ellmer_public_prop(result, "value"),
-              auto_unbox = TRUE, null = "null", force = TRUE
-            )
+            # The value ellmer hands back may already be JSON text (its own
+            # normalization on >= 0.5.0, or ellmer_tool_result() on the way
+            # in); re-encoding it would double-encode the replayed result.
+            content = ellmer_tool_result(ellmer_public_prop(result, "value"))
           ))
         }
       } else {

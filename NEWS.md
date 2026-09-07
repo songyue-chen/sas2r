@@ -1,5 +1,8 @@
 # sas2r 0.2.0
 
+### Agents
+* **Tool result serialization at ellmer boundary**: Tool results handed to `ellmer` are now serialized to JSON using `jsonlite::toJSON(auto_unbox = TRUE)` at the tool-wrapper boundary. This preserves wire format byte-identically across both `ellmer` 0.4.2 and 0.5.0+ while preventing deprecation warnings on `ellmer` >= 0.5.0 where complex list returns are deprecated.
+
 ### Providers
 * **GitHub Models retired upstream**: `ellmer` 0.5.0 made `chat_github()` and `models_github()` defunct (GitHub Models was retired on 2026-07-30). The `github` provider stays registered for `ellmer` 0.4.2-0.4.x; on newer `ellmer`, `sas_llm()` and `sas_llm_models()` refuse it with a `sas2r_llm_provider_retired` error before any request is built, and the real-ellmer contract verifies that refusal instead of exercising the retired provider.
 
