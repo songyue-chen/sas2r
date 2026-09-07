@@ -121,10 +121,12 @@ unexported_api_references <- function(lines) {
     "sas_translate_all", "sas_write_report", "lint_r_code",
     "sas_cookbook_approve", "sas_cookbook_review", "sas_units"
   )
-  helpers <- c(
-    "lib_read", "lib_write", "sas_merge", "sas_sort", "chr_cmp",
+  # The runtime helpers are documented, vendored code rather than exports:
+  # the template's whole surface is legitimate to name in documentation.
+  helpers <- unique(c(
+    sas2r:::SAS2R_HELPER_NAMES,
     "sas_format", "sas_missing", "sas_truth", "sas_not_truth"
-  )
+  ))
   bare <- setdiff(setdiff(setdiff(api_shaped, exported), helpers), deleted_symbols)
 
   sort(unique(c(missing_internal, setdiff(unexported_qualified, deleted_symbols), bare)))
@@ -164,7 +166,8 @@ test_that("every sas2r symbol shipped docs present as API is exported", {
     providers = test_path("..", "..", "docs", "llm-providers.md"),
     evidence = test_path("..", "..", "docs", "output-evidence.md"),
     migration_evidence = test_path("..", "..", "docs", "migration-evidence.md"),
-    vignette = test_path("..", "..", "vignettes", "dependency-aware-migration.Rmd")
+    vignette = test_path("..", "..", "vignettes", "dependency-aware-migration.Rmd"),
+    runtime_vignette = test_path("..", "..", "vignettes", "runtime-helpers.Rmd")
   )
   skip_if_not(all(file.exists(paths)), "source-tree documentation contract")
 

@@ -1,5 +1,8 @@
 # sas2r 0.2.0
 
+### Runtime
+* **The runtime helpers are documented and versioned**: `?sas2r_runtime` documents every function a translated program's `sas2r-helpers.R` carries (each helper name, `?lib_read` for instance, is an alias of that topic), `vignette("runtime-helpers")` explains how to run programs and use the runtime interactively, every vendored `sas2r-helpers.R` now states the sas2r version that generated it, and a stability policy is in force. The distribution plan -- one exported source of truth vendored into bundles, and eventually a separate `sas2r.runtime` package -- is recorded in `docs/decisions/0003-runtime-helpers-distribution.md`.
+
 ### Agents
 * **Tool result serialization at ellmer boundary**: Tool results handed to `ellmer` are now serialized to JSON using `jsonlite::toJSON(auto_unbox = TRUE)` at the tool-wrapper boundary. This preserves wire format byte-identically across both `ellmer` 0.4.2 and 0.5.0+ while preventing deprecation warnings on `ellmer` >= 0.5.0 where complex list returns are deprecated.
 
