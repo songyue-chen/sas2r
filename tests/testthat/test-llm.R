@@ -1166,8 +1166,10 @@ test_that("a zero-argument tool is callable", {
 
   expect_no_error(result <- fn())
   expect_true(called)
-  expect_true(result$ok)
-  expect_identical(length(result$args), 0L)
+  expect_s3_class(result, "json")
+  parsed <- jsonlite::fromJSON(as.character(result))
+  expect_true(parsed$ok)
+  expect_identical(length(parsed$args), 0L)
 })
 
 test_that("a tool with arguments still receives them", {
@@ -1193,6 +1195,86 @@ test_that("every shipped tool schema produces a callable contract", {
     )
     expect_no_error(ellmer_tool_function(tool), message = nm)
   }
+})
+
+test_that("tool results cross into ellmer as the JSON ellmer itself would have produced", {
+  cases <- list(
+    list(name = "x"),
+    list(hits = list(list(a = 1L))),
+    list(error = "budget_exhausted"),
+    list(),
+    NULL,
+    c(1, 2)
+  )
+  for (v in cases) {
+    tool <- list(
+      name = "dummy",
+      schema = closed_tool_schema(),
+      call = function(args) v
+    )
+    fn <- ellmer_tool_function(tool)
+    expect_s3_class(fn(), "json")
+    expect_identical(as.character(fn()), as.character(jsonlite::toJSON(v, auto_unbox = TRUE)))
+  }
+})
+
+test_that("character and ellmer Content tool results pass through unchanged", {
+  char_val <- "plain character result"
+  tool_char <- list(
+    name = "t_char",
+    schema = closed_tool_schema(),
+    call = function(args) char_val
+  )
+  res_char <- ellmer_tool_function(tool_char)()
+  expect_identical(res_char, char_val)
+  expect_false(inherits(res_char, "json"))
+
+  json_val <- jsonlite::toJSON(list(already = "json"), auto_unbox = TRUE)
+  tool_json <- list(
+    name = "t_json",
+    schema = closed_tool_schema(),
+    call = function(args) json_val
+  )
+  res_json <- ellmer_tool_function(tool_json)()
+  expect_identical(res_json, json_val)
+  expect_s3_class(res_json, "json")
+
+  content_obj <- structure(list(), class = c("ellmer::Content", "S7_object"))
+  tool_content <- list(
+    name = "t_content",
+    schema = closed_tool_schema(),
+    call = function(args) content_obj
+  )
+  res_content <- ellmer_tool_function(tool_content)()
+  expect_identical(res_content, content_obj)
+
+  content_list <- list(content_obj, content_obj)
+  tool_content_list <- list(
+    name = "t_content_list",
+    schema = closed_tool_schema(),
+    call = function(args) content_list
+  )
+  res_content_list <- ellmer_tool_function(tool_content_list)()
+  expect_identical(res_content_list, content_list)
+})
+
+test_that("tool budget refusal round-trips through ellmer wrapper as JSON", {
+  tool <- make_tool(
+    name = "limited_tool",
+    fn = function(args) list(value = "ok"),
+    max_calls = 1L
+  )
+  fn <- ellmer_tool_function(tool)
+
+  res1 <- fn()
+  expect_s3_class(res1, "json")
+  parsed1 <- jsonlite::fromJSON(as.character(res1))
+  expect_identical(parsed1$value, "ok")
+
+  res2 <- fn()
+  expect_s3_class(res2, "json")
+  parsed2 <- jsonlite::fromJSON(as.character(res2))
+  expect_identical(parsed2, list(error = "budget_exhausted"))
 })
 
 test_that("parallel tool calls are paired with their results, not batched", {

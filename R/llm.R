@@ -468,6 +468,21 @@ ellmer_output_type <- function(cfg, schema) {
   )
 }
 
+# Results cross into ellmer as JSON text sas2r encodes itself. ellmer used to
+# do this encoding on the tool's behalf (`to_json`, jsonlite::toJSON with
+# auto_unbox = TRUE, identical in 0.4.2 and 0.5.0) and from 0.5.0 warns that
+# it will stop; encoding here keeps the bytes the model sees unchanged while
+# owning the contract. Character and Content results are ellmer's to handle.
+ellmer_tool_result <- function(value) {
+  if (is.character(value) || inherits(value, "json")) return(value)
+  if (inherits(value, "ellmer::Content")) return(value)
+  if (is.list(value) && length(value) > 0L &&
+      all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
+    return(value)
+  }
+  jsonlite::toJSON(value, auto_unbox = TRUE)
+}
+
 ellmer_tool_function <- function(tool) {
   # `names(list())` is NULL, and mget(NULL) aborts with "invalid first
   # argument", so an argument-less tool must normalise to character(0).
@@ -487,7 +502,7 @@ ellmer_tool_function <- function(tool) {
   body(fn) <- quote({
     args <- mget(.argument_names, envir = environment(), inherits = FALSE)
     args <- args[!vapply(args, is.null, logical(1))]
-    .tool$call(args)
+    ellmer_tool_result(.tool$call(args))
   })
   fn
 }

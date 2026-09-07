@@ -600,15 +600,28 @@ lookup <- sas2r:::make_tool(
     required = "name", additionalProperties = FALSE
   )
 )
-agent <- sas2r:::run_agent(
-  list(
-    name = "fixture", prompt = "translator.md", tier = "frontier",
-    tool_call_limit = 2L, retry_limit = 0L, temperature = NULL,
-    max_output_tokens = 321L, output_schema = "program_translation_v1"
+deprecations <- character()
+agent <- withCallingHandlers(
+  sas2r:::run_agent(
+    list(
+      name = "fixture", prompt = "translator.md", tier = "frontier",
+      tool_call_limit = 2L, retry_limit = 0L, temperature = NULL,
+      max_output_tokens = 321L, output_schema = "program_translation_v1"
+    ),
+    adapter, list(lookup = lookup), "translate",
+    log_dir = tempfile("sas2r-real-ellmer-")
   ),
-  adapter, list(lookup = lookup), "translate",
-  log_dir = tempfile("sas2r-real-ellmer-")
+  warning = function(w) {
+    if (inherits(w, "lifecycle_warning_deprecated") ||
+        grepl("tool", conditionMessage(w), ignore.case = TRUE)) {
+      deprecations <<- c(deprecations, conditionMessage(w))
+    }
+    invokeRestart("muffleWarning")
+  }
 )
+if (length(deprecations)) {
+  stop("tool path raised a deprecation warning: ", paste(deprecations, collapse = " | "))
+}
 
 if (!identical(direct$data$r_code, "x <- 1")) {
   stop("real Chat$chat_structured did not normalize its structured result")
