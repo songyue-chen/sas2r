@@ -558,7 +558,11 @@ ellmer_turn_from_message <- function(message, tool_request = NULL) {
     ))
   }
   if (identical(role, "tool")) {
-    value <- strict_json_list(message$content) %||% message$content %||% ""
+    value <- if (inherits(message$content, "json")) {
+      message$content
+    } else {
+      strict_json_list(message$content) %||% message$content %||% ""
+    }
     if (is.null(tool_request)) {
       tool_request <- ellmer_tool_request(list(
         id = message$tool_call_id, name = message$name,
@@ -679,10 +683,10 @@ ellmer_conversation_messages <- function(chat) {
             role = "tool",
             name = ellmer_public_prop(request, "name"),
             tool_call_id = ellmer_public_prop(request, "id"),
-            content = jsonlite::toJSON(
-              ellmer_public_prop(result, "value"),
-              auto_unbox = TRUE, null = "null", force = TRUE
-            )
+            # The value ellmer hands back may already be JSON text (its own
+            # normalization on >= 0.5.0, or ellmer_tool_result() on the way
+            # in); re-encoding it would double-encode the replayed result.
+            content = ellmer_tool_result(ellmer_public_prop(result, "value"))
           ))
         }
       } else {
