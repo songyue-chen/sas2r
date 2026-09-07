@@ -16,6 +16,7 @@ if (!exists("%||%", mode = "function")) {
 
 LLM_PROVIDER_SPEC_FIELDS <- c(
   "id", "chat_export", "models_export", "ellmer_support",
+  "retired_from_ellmer", "retired_reason",
   "output_schema_dialect",
   "auth_modes", "default_auth_mode", "config_fields", "credential_envs",
   "build_chat_args", "build_models_args", "normalize_config",
@@ -66,10 +67,15 @@ new_llm_provider_spec <- function(
     auth_command = function(config) NULL,
     access_context = function(config) "configured identity",
     output_schema_dialect = "standard", capability_defaults = list(),
-    ellmer_support = "official") {
+    ellmer_support = "official",
+    retired_from_ellmer = NULL, retired_reason = NULL) {
   spec <- list(
     id = id, chat_export = chat_export, models_export = models_export,
     ellmer_support = ellmer_support,
+    # ellmer retires providers outright (GitHub Models, 0.5.0): from that
+    # version its exports are defunct, so the registry records the version
+    # and sas2r refuses the provider before ever reaching the constructor.
+    retired_from_ellmer = retired_from_ellmer, retired_reason = retired_reason,
     output_schema_dialect = output_schema_dialect, auth_modes = auth_modes,
     default_auth_mode = default_auth_mode, config_fields = config_fields,
     credential_envs = credential_envs,
@@ -130,6 +136,14 @@ validate_llm_provider_registry <- function(registry) {
     if (!identical(spec$ellmer_support, "official")) {
       llm_config_abort(
         "LLM provider {.val {name}} must use an official ellmer constructor"
+      )
+    }
+    if (!is.null(spec$retired_from_ellmer) &&
+        (!llm_provider_scalar_string(spec$retired_from_ellmer) ||
+         !grepl("^[0-9]+(\\.[0-9]+)+$", spec$retired_from_ellmer) ||
+         !llm_provider_scalar_string(spec$retired_reason))) {
+      llm_config_abort(
+        "LLM provider {.val {name}} must name the ellmer version that retired it and why"
       )
     }
     if (!llm_provider_scalar_string(spec$output_schema_dialect) ||
@@ -481,6 +495,11 @@ build_llm_provider_registry <- function() {
       id = "github",
       chat_export = "chat_github",
       models_export = "models_github",
+      retired_from_ellmer = "0.5.0",
+      retired_reason = paste(
+        "GitHub Models was retired on 2026-07-30; ellmer 0.5.0 made",
+        "chat_github() and models_github() defunct"
+      ),
       auth_modes = "api_key",
       default_auth_mode = "api_key",
       config_fields = c(
@@ -735,6 +754,47 @@ llm_provider_registry <- local({
 })
 
 llm_provider_ids <- function() names(llm_provider_registry())
+
+llm_installed_ellmer_version <- function() {
+  if (!requireNamespace("ellmer", quietly = TRUE)) return(NULL)
+  utils::packageVersion("ellmer")
+}
+
+# NULL while the provider is usable with the installed ellmer; otherwise the
+# facts of its retirement. Unknown ellmer (not installed) never counts as
+# retired -- the missing-package error downstream says what is actually wrong.
+llm_provider_retirement <- function(spec,
+                                    ellmer_version = llm_installed_ellmer_version()) {
+  since <- spec$retired_from_ellmer
+  if (is.null(since) || is.null(ellmer_version)) return(NULL)
+  if (utils::compareVersion(as.character(ellmer_version), since) < 0L) return(NULL)
+  list(
+    provider = spec$id, since = since,
+    installed = as.character(ellmer_version),
+    reason = spec$retired_reason %||% "retired upstream"
+  )
+}
+
+# Refuse a retired provider at the public entry points, before its defunct
+# constructor or inventory export is reached: the failure then names the
+# retirement instead of surfacing as an access or transport error.
+llm_assert_provider_available <- function(provider) {
+  spec <- llm_provider_spec_or_null(provider)
+  if (is.null(spec)) return(invisible(NULL))
+  retirement <- llm_provider_retirement(spec)
+  if (is.null(retirement)) return(invisible(NULL))
+  llm_config_abort(
+    c(
+      paste0(
+        "LLM provider {.val {retirement$provider}} is retired in ellmer >= ",
+        "{retirement$since} (installed: {retirement$installed})."
+      ),
+      "i" = "{retirement$reason}.",
+      "i" = "Install ellmer < {retirement$since} to keep using it, or configure another provider."
+    ),
+    class = "sas2r_llm_provider_retired"
+  )
+}
 
 llm_provider_spec <- function(provider) {
   provider <- tolower(llm_scalar_string(provider, "provider", TRUE))
