@@ -34,6 +34,16 @@ if (utils::compareVersion(installed_version, "0.4.2") < 0L) {
   stop("real ellmer contract requires version 0.4.2 or newer")
 }
 
+# ellmer retired GitHub Models in 0.5.0 (chat_github() and models_github()
+# are defunct). Against such an ellmer the contract exercises the retirement
+# itself -- ellmer must really be defunct, and sas2r must refuse the provider
+# before reaching the constructor -- and skips the GitHub exercises that only
+# a live provider can satisfy. Against 0.4.2 every GitHub exercise still runs.
+github_retirement <- sas2r:::llm_provider_retirement(
+  sas2r:::llm_provider_spec("github")
+)
+github_retired <- !is.null(github_retirement)
+
 server_script <- normalizePath(
   file.path("tests", "real-ellmer", "replay_server.py"), mustWork = TRUE
 )
@@ -135,13 +145,15 @@ assert_public_formals(
 assert_public_formals(
   "models_deepseek", c("base_url", "api_key", "credentials"), "model"
 )
-assert_public_formals(
-  "chat_github", c("base_url", "model", "api_key", "credentials"),
-  c("models_base_url", "workspace", "account")
-)
-assert_public_formals(
-  "models_github", c("base_url", "api_key", "credentials"), "model"
-)
+if (!github_retired) {
+  assert_public_formals(
+    "chat_github", c("base_url", "model", "api_key", "credentials"),
+    c("models_base_url", "workspace", "account")
+  )
+  assert_public_formals(
+    "models_github", c("base_url", "api_key", "credentials"), "model"
+  )
+}
 assert_public_formals(
   "chat_google_gemini", c("base_url", "model", "api_key", "credentials"),
   c("project_id", "location", "workspace")
@@ -169,7 +181,7 @@ for (absent in c("models_databricks", "models_snowflake")) {
 # GitHub Models publishes different documented chat and inventory paths. The
 # `models_base_url` selector and the `inventory_unavailable` fallback exist
 # only because of that split, so the split itself is part of the contract.
-if (identical(
+if (!github_retired && identical(
   formals(ellmer::chat_github)$base_url,
   formals(ellmer::models_github)$base_url
 )) {
@@ -232,10 +244,16 @@ for (spec in sas2r:::llm_provider_registry()) {
 
 cloud_base_url <- sub("/v1$", "", base_url)
 bedrock_control_base_url <- paste0(cloud_base_url, "/bedrock-control")
+# Shaped like paws.common::locate_credentials() output. `access_token` is the
+# bearer-token slot ellmer >= 0.5.0 consults first (`nzchar()` on it); it must
+# be present and empty so the SigV4 signing path -- the one this contract
+# exercises -- is taken. Absent, that check sees logical(0) and the request
+# builder fails before any HTTP request exists.
 offline_aws_credentials <- list(
   access_key_id = "offline-access-key",
   secret_access_key = "offline-secret-key",
   session_token = "offline-session-token",
+  access_token = "",
   expiration = Sys.time() + 3600,
   region = "us-east-1"
 )
@@ -286,11 +304,33 @@ deepseek_chat <- testthat::with_mocked_bindings(
   deepseek_key = function() "offline-deepseek-key",
   .package = "ellmer"
 )
-github_chat <- testthat::with_mocked_bindings(
-  ellmer::chat_github(base_url = base_url, model = "offline-github-model"),
-  github_key = function() "offline-github-token",
-  .package = "ellmer"
-)
+github_chat <- if (github_retired) {
+  defunct <- tryCatch(
+    ellmer::chat_github(base_url = base_url, model = "offline-github-model"),
+    error = identity
+  )
+  if (!inherits(defunct, "defunctError")) {
+    stop("sas2r marks github retired from ellmer ", github_retirement$since,
+         " but ellmer::chat_github() still constructs; revisit the retirement")
+  }
+  refused <- tryCatch(
+    sas2r::sas_llm(list(
+      provider = "github", auth_mode = "api_key", base_url = base_url,
+      model = "offline-github-model"
+    )),
+    error = identity
+  )
+  if (!inherits(refused, "sas2r_llm_provider_retired")) {
+    stop("sas2r did not refuse the retired github provider before construction")
+  }
+  NULL
+} else {
+  testthat::with_mocked_bindings(
+    ellmer::chat_github(base_url = base_url, model = "offline-github-model"),
+    github_key = function() "offline-github-token",
+    .package = "ellmer"
+  )
+}
 posit_chat <- ellmer::chat_posit(
   base_url = cloud_base_url, model = "offline-posit-model", cache = "none",
   credentials = function() "offline-posit-token"
@@ -303,9 +343,10 @@ snowflake_chat <- ellmer::chat_snowflake(
   )
 )
 
-cloud_chats <- list(
-  bedrock_chat, azure_chat, vertex_chat, databricks_chat, deepseek_chat,
-  github_chat, posit_chat, snowflake_chat
+cloud_chats <- c(
+  list(bedrock_chat, azure_chat, vertex_chat, databricks_chat, deepseek_chat),
+  if (!github_retired) list(github_chat),
+  list(posit_chat, snowflake_chat)
 )
 if (any(vapply(cloud_chats, is.null, logical(1)))) {
   stop("cloud constructor returned no chat object")
@@ -375,13 +416,20 @@ if (!inherits(vertex_inventory, "sas2r_offline_credentials_boundary")) {
 # The remaining public inventory exports are reached with the exact arguments
 # the registry builds, and stopped at their credential callback before any
 # HTTP request can be built.
-for (inventory in list(
-  list(export = "models_anthropic", args = list(base_url = cloud_base_url)),
-  list(export = "models_deepseek", args = list(base_url = base_url)),
-  list(export = "models_github", args = list(base_url = base_url)),
-  list(export = "models_google_gemini", args = list(base_url = base_url)),
-  list(export = "models_posit", args = list(base_url = cloud_base_url))
-)) {
+inventory_routes <- c(
+  list(
+    list(export = "models_anthropic", args = list(base_url = cloud_base_url)),
+    list(export = "models_deepseek", args = list(base_url = base_url))
+  ),
+  if (!github_retired) {
+    list(list(export = "models_github", args = list(base_url = base_url)))
+  },
+  list(
+    list(export = "models_google_gemini", args = list(base_url = base_url)),
+    list(export = "models_posit", args = list(base_url = cloud_base_url))
+  )
+)
+for (inventory in inventory_routes) {
   result <- tryCatch(
     do.call(
       getExportedValue("ellmer", inventory$export),
@@ -397,14 +445,28 @@ for (inventory in list(
 # Providers ellmer publishes no inventory for, and a custom GitHub chat
 # endpoint without an explicit inventory endpoint, are reported explicitly and
 # never as an authoritative empty model list.
-for (unavailable in list(
-  list(provider = "databricks", auth_mode = "ambient",
-       workspace = cloud_base_url, model = "offline-databricks-model"),
-  list(provider = "snowflake", auth_mode = "ambient",
-       account = "offline-account", model = "offline-snowflake-model"),
-  list(provider = "github", auth_mode = "api_key", base_url = base_url,
-       model = "offline-github-model")
-)) {
+github_inventory_config <- list(
+  provider = "github", auth_mode = "api_key", base_url = base_url,
+  model = "offline-github-model"
+)
+if (github_retired) {
+  refused_inventory <- tryCatch(
+    sas2r::sas_llm_models(github_inventory_config), error = identity
+  )
+  if (!inherits(refused_inventory, "sas2r_llm_provider_retired")) {
+    stop("sas2r did not refuse the retired github provider before inventory")
+  }
+}
+unavailable_configs <- c(
+  list(
+    list(provider = "databricks", auth_mode = "ambient",
+         workspace = cloud_base_url, model = "offline-databricks-model"),
+    list(provider = "snowflake", auth_mode = "ambient",
+         account = "offline-account", model = "offline-snowflake-model")
+  ),
+  if (!github_retired) list(github_inventory_config)
+)
+for (unavailable in unavailable_configs) {
   inventory <- sas2r::sas_llm_models(unavailable)
   if (!identical(inventory$status, "inventory_unavailable") ||
       !is.null(inventory$models)) {
@@ -847,7 +909,8 @@ message(
   "real ellmer loopback contract passed: version=", installed_version,
   " path=", ellmer_path,
   " requests=", length(transport_requests),
-  " native=", length(anthropic_requests) + length(gemini_requests)
+  " native=", length(anthropic_requests) + length(gemini_requests),
+  " github=", if (github_retired) "retired-refusal-verified" else "exercised"
 )
 }
 

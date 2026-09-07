@@ -583,6 +583,7 @@ sas_llm_models <- function(config) {
   if (is.null(config)) {
     llm_config_abort("LLM configuration is required to discover models")
   }
+  llm_assert_provider_available(config$provider)
   public_redactor <- new_llm_audit_redactor(llm_config_secret_values(config))
   models <- if (!llm_inventory_selector_supported(config)) {
     structure(list(), class = "sas2r_inventory_unavailable")

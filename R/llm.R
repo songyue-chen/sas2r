@@ -1086,6 +1086,7 @@ ellmer_llm <- function(cfg) {
     cli::cli_abort("unknown LLM provider {.val {cfg$provider}}",
                    class = "sas2r_llm_error")
   }
+  llm_assert_provider_available(cfg$provider)
   cfg <- normalize_llm_config(cfg)
   configured_models <- c(cfg$model, unlist(cfg$tiers, use.names = FALSE))
   configured_models <- configured_models[

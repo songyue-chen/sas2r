@@ -16,7 +16,7 @@ The twelve supported provider IDs and their dispatch contracts:
 | `azure` | `ellmer::chat_azure_openai` | `ambient`, `api_key` (`ambient`) | `endpoint`, `api_version`; plus `api_key` when `auth_mode: api_key` | `credentials` | `AZURE_OPENAI_API_KEY`, `AZURE_CLIENT_SECRET`; Azure CLI / Entra ID / Managed Identity (`az login`) | Unavailable (no `models_*` export; deployment-based) | Offline contract + opt-in live smoke |
 | `databricks` | `ellmer::chat_databricks` | `ambient` (`ambient`) | *(none)* | `workspace` | `DATABRICKS_TOKEN`; Databricks CLI profile, Workbench, or Connect (`databricks auth login --host <workspace>`). `DATABRICKS_HOST` is read for tenant identity only and is not a credential | Unavailable (no `models_*` export) | Offline contract |
 | `deepseek` | `ellmer::chat_deepseek` | `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key` | `DEEPSEEK_API_KEY` | Available (`models_deepseek`) | Offline contract |
-| `github` | `ellmer::chat_github` | `api_key` (`api_key`) | *(none)* | `base_url`, `models_base_url`, `credentials`, `api_key` | `GITHUB_PAT` | Available by default; a custom chat `base_url` makes it `inventory_unavailable` unless `models_base_url` is also set | Offline contract |
+| `github` | `ellmer::chat_github` | `api_key` (`api_key`) | *(none)* | `base_url`, `models_base_url`, `credentials`, `api_key` | `GITHUB_PAT` | **Retired upstream.** GitHub Models was retired on 2026-07-30 and `ellmer` >= 0.5.0 makes `chat_github()`/`models_github()` defunct; `sas_llm()` and `sas_llm_models()` refuse the provider with `sas2r_llm_provider_retired` unless `ellmer` < 0.5.0 is installed (there: available by default; a custom chat `base_url` makes it `inventory_unavailable` unless `models_base_url` is also set) | Offline contract (ellmer 0.4.2); retirement refusal verified on current ellmer |
 | `gemini` | `ellmer::chat_google_gemini` | `ambient`, `api_key` (`ambient`) | Under `auth_mode: api_key`, one of `api_key`, `credentials`, or `GOOGLE_API_KEY`/`GEMINI_API_KEY` present in the environment | `base_url`, `credentials`, `api_key` | `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or Google Application Default Credentials (`gcloud auth application-default login`) | Available (`models_google_gemini`) | Offline contract |
 | `vertex` | `ellmer::chat_google_vertex` | `ambient` (`ambient`) | `project_id`, `location` | *(none — `credentials` is declared but always rejected; Vertex uses ADC)* | `GOOGLE_APPLICATION_CREDENTIALS`; Google Application Default Credentials (`gcloud auth application-default login`) | Available (`models_google_vertex`) | Offline contract + opt-in live smoke |
 | `ollama` | `ellmer::chat_ollama` | `none` (`none`) | `base_url` | *(none)* | None consumed. `OLLAMA_API_KEY` is on the redaction allowlist only | Available (`models_ollama`) | Offline argument-shape only |
@@ -124,6 +124,10 @@ DeepSeek ships `structured_output: fallback` deliberately. Do not override it
 to `native` -- the provider answers HTTP 400.
 
 ### GitHub Models
+> **Retired upstream.** GitHub Models was retired on 2026-07-30, and `ellmer`
+> 0.5.0 made `chat_github()` and `models_github()` defunct. This provider only
+> works with `ellmer` 0.4.2-0.4.x; on newer `ellmer`, `sas_llm()` refuses it
+> with a `sas2r_llm_provider_retired` error before any request is built.
 ```bash
 export GITHUB_PAT="ghp_..."
 ```

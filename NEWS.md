@@ -1,5 +1,8 @@
 # sas2r 0.2.0
 
+### Providers
+* **GitHub Models retired upstream**: `ellmer` 0.5.0 made `chat_github()` and `models_github()` defunct (GitHub Models was retired on 2026-07-30). The `github` provider stays registered for `ellmer` 0.4.2-0.4.x; on newer `ellmer`, `sas_llm()` and `sas_llm_models()` refuse it with a `sas2r_llm_provider_retired` error before any request is built, and the real-ellmer contract verifies that refusal instead of exercising the retired provider.
+
 ### Dependency-Aware Migration Architecture
 * **Single Authoritative Entry Point**: `sas_translate()` orchestrates end-to-end migration of single SAS programs or complete multi-file pipelines into modular, reproducible R bundles.
 * **Dependency Graph & Topological Scheduling**: Automatically parses `%include` trees, macro calls, and dataset lineages to construct an authoritative Directed Acyclic Graph (DAG) and deterministic topological execution schedule.

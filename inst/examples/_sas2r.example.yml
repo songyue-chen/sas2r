@@ -81,6 +81,8 @@ environment:
 # azure, databricks, deepseek, github, gemini, vertex, ollama, posit, snowflake.
 # NOTE: Secrets must NEVER be placed in this file. Provide them via environment
 # variables (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GITHUB_PAT).
+# NOTE: github (GitHub Models) was retired upstream on 2026-07-30 and needs
+# ellmer < 0.5.0; on newer ellmer sas2r refuses it before building a request.
 #
 # Active example: OpenAI
 llm:

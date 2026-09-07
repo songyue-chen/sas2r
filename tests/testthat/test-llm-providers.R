@@ -984,3 +984,36 @@ test_that("prompt cache defaults to 1h when unset; migrations outlive a 5m TTL",
     provider = "bedrock", model = "m", region = "us-east-1"))
   expect_null(bedrock$cache)
 })
+
+test_that("a provider ellmer has retired is refused before its constructor is reached", {
+  # GitHub Models: ellmer 0.5.0 made chat_github()/models_github() defunct.
+  # The registry records the retiring version, and both public entry points
+  # refuse the provider under such an ellmer -- with a classed error naming
+  # the retirement, not an access or transport failure from a defunct export.
+  spec <- sas2r:::llm_provider_spec("github")
+  expect_identical(spec$retired_from_ellmer, "0.5.0")
+  expect_match(spec$retired_reason, "retired", ignore.case = TRUE)
+
+  expect_null(sas2r:::llm_provider_retirement(spec, ellmer_version = package_version("0.4.2")))
+  expect_null(sas2r:::llm_provider_retirement(spec, ellmer_version = NULL))
+  retirement <- sas2r:::llm_provider_retirement(spec, ellmer_version = package_version("0.5.0"))
+  expect_identical(retirement$provider, "github")
+  expect_identical(retirement$since, "0.5.0")
+
+  # No other registered provider is retired, even far in ellmer's future.
+  others <- setdiff(sas2r:::llm_provider_ids(), "github")
+  expect_true(all(vapply(others, function(id) {
+    is.null(sas2r:::llm_provider_retirement(
+      sas2r:::llm_provider_spec(id), ellmer_version = package_version("99.0.0")
+    ))
+  }, logical(1))))
+
+  testthat::local_mocked_bindings(
+    llm_installed_ellmer_version = function() package_version("0.5.0"),
+    .package = "sas2r"
+  )
+  cfg <- list(provider = "github", auth_mode = "api_key", model = "m")
+  expect_error(sas2r::sas_llm(cfg), class = "sas2r_llm_provider_retired")
+  expect_error(sas2r::sas_llm_models(cfg), class = "sas2r_llm_provider_retired")
+  expect_error(sas2r::sas_llm(cfg), "0.5.0")
+})

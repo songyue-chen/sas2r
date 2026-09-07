@@ -267,7 +267,8 @@ provider: databricks
 model: databricks-claude-sonnet-4-6   # an endpoint name from your workspace
 workspace: https://my-workspace.cloud.databricks.com
 
-# github — sign-in: api_key. Key from GITHUB_PAT.
+# github — sign-in: api_key. Key from GITHUB_PAT. Retired upstream: needs
+# ellmer < 0.5.0 (GitHub Models was retired on 2026-07-30).
 provider: github
 model: gpt-5.6-terra
 
