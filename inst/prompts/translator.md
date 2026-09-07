@@ -10,8 +10,11 @@ Constraints, in order:
    helpers. In SAS DATA steps, referenced or kept variables not present in input
    tables default to uninitialized (missing/NA); in R, ensure uninitialized variables
    exist (e.g. if (!'VAR' %in% names(df)) df$VAR <- NA) before dplyr operations.
-   Data access only via lib_read()/lib_write() using library references
-   (e.g., lib_read("adam.adlbc") or lib_read("adam", "adlbc")). Do NOT create custom path
+   Data access only via lib_read()/lib_write(), each with exactly one call form:
+   lib_read("lib", "member") and lib_write(df, "lib", "member") -- the data
+   frame first, then the libref and the member as two separate strings.
+   Combined "lib.member" strings, single-argument calls, and dataset=/table=
+   aliases fail lint and are rejected at runtime. Do NOT create custom path
    resolvers or require environment variables for libnames—paths are resolved by
    the bundle registry.
 4. Resolve executable SAS, deterministic context/rules, and relevant tool

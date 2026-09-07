@@ -66,6 +66,50 @@ find_isna_vars <- function(e) {
 #' @return A tibble with columns `level` ("error", "warn", or "info"),
 #'   `kind`, and `detail`.
 #' @noRd
+# The bundle helpers accept exactly one call form each -- lib_read("lib",
+# "member") and lib_write(df, "lib", "member") -- and fail loudly otherwise.
+# Flagging the other forms statically turns a wrong call into repair feedback
+# in the immediate loop, before a smoke run spends a subprocess on it. Only
+# literal arguments can be judged; symbolic calls pass through to the runtime.
+lib_call_misuse <- function(e, fname) {
+  tryCatch({
+    args <- as.list(e)[-1]
+    nms <- names(args)
+    if (is.null(nms)) nms <- rep("", length(args))
+    canonical <- if (identical(fname, "lib_read")) {
+      'lib_read("lib", "member")'
+    } else {
+      'lib_write(df, "lib", "member")'
+    }
+    is_str <- function(a) is.character(a) && length(a) == 1L
+    if (any(nms %in% c("dataset", "table"))) {
+      return(sprintf("%s(): dataset=/table= aliases are not accepted; use %s",
+                     fname, canonical))
+    }
+    positional <- args[!nzchar(nms)]
+    if (identical(fname, "lib_write") && length(positional) >= 1L && is_str(positional[[1L]])) {
+      return(sprintf("%s() takes the data frame first; use %s", fname, canonical))
+    }
+    # Only the libref position can carry the combined form; a member literal
+    # is validated (and path traversal refused) by the helper at runtime.
+    libref_arg <- if ("libref" %in% nms) {
+      args[["libref"]]
+    } else {
+      idx <- if (identical(fname, "lib_read")) 1L else 2L
+      if (length(positional) >= idx) positional[[idx]] else NULL
+    }
+    if (!is.null(libref_arg) && is_str(libref_arg) && grepl(".", libref_arg, fixed = TRUE)) {
+      return(sprintf('%s() does not accept combined "lib.member" references; use %s',
+                     fname, canonical))
+    }
+    need <- if (identical(fname, "lib_read")) 2L else 3L
+    if (length(args) < need) {
+      return(sprintf("%s() needs both a libref and a member; use %s", fname, canonical))
+    }
+    NULL
+  }, error = function(err) NULL)
+}
+
 lint_r_code <- function(code,
                         allowlist = c("base", "dplyr", "tidyr", "haven",
                                       "stats", "utils"),
@@ -100,6 +144,10 @@ lint_r_code <- function(code,
     plain <- sub("^.*::", "", fname)
     if (plain %in% BANNED_FUNCTIONS) {
       add("error", "banned_function", fname)
+    }
+    if (plain %in% c("lib_read", "lib_write")) {
+      misuse <- lib_call_misuse(e, plain)
+      if (!is.null(misuse)) add("error", "helper_misuse", misuse)
     }
     if (grepl("::", fname)) {
       pkg <- sub("::.*$", "", fname)

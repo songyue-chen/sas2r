@@ -172,11 +172,7 @@ test_that("lib_read and lib_write work with registry", {
   df <- data.frame(A = 1:3, B = c("x", "y", "z"))
   h$lib_write(df, "testlib", "mydata")
   expect_true(file.exists(file.path(tmp, "mydata.rds")))
-
-  # lib_write supports flipped arguments lib_write("testlib.mydata2", df)
-  h$lib_write("testlib.mydata2", df)
-  expect_true(file.exists(file.path(tmp, "mydata2.rds")))
-  expect_identical(h$lib_read("testlib.mydata2")$A, 1:3)
+  expect_identical(h$lib_read("testlib", "mydata")$A, 1:3)
 
   # chr_cmp supports 2-argument comparison returning -1, 0, 1
   expect_identical(h$chr_cmp("ALT", "ALT"), 0L)
@@ -235,4 +231,61 @@ test_that("sas_if_else keeps classes and treats a missing condition as false", {
   out2 <- h$sas_if_else(cond, d, NA)
   expect_s3_class(out2, "Date")
   expect_identical(is.na(out2), c(FALSE, TRUE, TRUE))
+})
+
+test_that("lib_read and lib_write accept exactly one call form and teach the canonical one", {
+  # Every rejected form must fail loudly with the canonical signature in the
+  # message: that text is what the fixer sees, so a wrong call in an agent
+  # translation self-corrects instead of being silently reinterpreted.
+  h <- helpers_env()
+  tmp <- withr::local_tempdir()
+  h$.sas2r_registry <- list(
+    testlib = list(read_path = tmp, write_path = tmp, engine = "rds", write = "rds"),
+    work = list(read_path = tmp, write_path = tmp, engine = "rds", write = "rds")
+  )
+  df <- data.frame(A = 1:3)
+  h$lib_write(df, "testlib", "canon")
+
+  # argument swap
+  expect_error(h$lib_write("testlib.swapped", df), "data frame first")
+  expect_error(h$lib_write("testlib.swapped", df), 'lib_write(df, "lib", "member")', fixed = TRUE)
+  # combined lib.member, both helpers
+  expect_error(h$lib_write(df, "testlib.combined"), 'combined "lib.member"')
+  expect_error(h$lib_read("testlib.canon"), 'combined "lib.member"')
+  expect_error(h$lib_read("testlib.canon"), 'lib_read("lib", "member")', fixed = TRUE)
+  # single-argument calls no longer default to work
+  expect_error(h$lib_read("canon"), "needs both a libref and a member")
+  expect_error(h$lib_write(df, "single"), "needs both a libref and a member")
+  # named aliases
+  expect_error(h$lib_write(df, "testlib", dataset = "alias"), "dataset=/table=")
+  expect_error(h$lib_read("testlib", table = "canon"), "dataset=/table=")
+
+  # Rejected calls write nothing.
+  expect_identical(list.files(tmp, pattern = "\\.rds$"), "canon.rds")
+})
+
+test_that("a wrong lib_write call in a bundle fails its run with the teaching message on stderr", {
+  # The smoke executor captures subprocess stderr as repair evidence, so the
+  # canonical signature must reach stderr when a real bundle program runs.
+  bundle <- withr::local_tempdir()
+  write_helpers(bundle)
+  writeLines(c(
+    ".sas2r_registry <- list(",
+    sprintf("  work = list(read_path = %s, write_path = %s, engine = 'rds', write = 'rds')",
+            deparse(bundle), deparse(bundle)),
+    ")"
+  ), file.path(bundle, "_sas2r_registry.R"))
+  writeLines("# no formats", file.path(bundle, "_sas2r_formats.R"))
+  writeLines(c(
+    module_bootstrap(),
+    "adsl <- data.frame(x = 1)",
+    'lib_write("work.adsl", adsl)'
+  ), file.path(bundle, "prog.R"))
+
+  r <- callr::rscript(file.path(bundle, "prog.R"), wd = bundle,
+                      show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(r$status, 0L))
+  expect_match(r$stderr, "data frame first", fixed = TRUE)
+  expect_match(r$stderr, 'lib_write(df, "lib", "member")', fixed = TRUE)
+  expect_false(file.exists(file.path(bundle, "adsl.rds")))
 })
