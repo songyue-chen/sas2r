@@ -71,7 +71,13 @@ test_that("new provider inventory selectors match the public ellmer formals", {
     GITHUB_PAT = "offline-github-token"
   ))
   seen <- list()
+  # These assertions cover sas2r's own selector building, which must hold for
+  # the ellmer versions where every registered provider is live (github is
+  # retired from ellmer 0.5.0). ellmer itself is mocked out below, so pin the
+  # version the assertions assume rather than let the installed ellmer turn
+  # the github case into a retirement refusal.
   testthat::local_mocked_bindings(
+    llm_installed_ellmer_version = function() package_version("0.4.2"),
     llm_model_inventory = function(config) {
       seen[[config$provider]] <<- llm_inventory_args(config)
       c("model-a")
