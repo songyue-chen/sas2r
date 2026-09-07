@@ -106,3 +106,34 @@ test_that("parse failures are still reported as errors", {
   expect_true(any(lint$level == "error"))
   expect_true(any(lint$kind == "parse_failure"))
 })
+
+test_that("non-canonical lib_read/lib_write calls are lint errors that teach the canonical form", {
+  bad <- c(
+    'lib_write("adam.adsl", adsl)',
+    'lib_write(adsl, "adam.adsl")',
+    'lib_read("adam.adsl")',
+    'lib_read("adsl")',
+    'lib_write(adsl, "adam")',
+    'lib_write(adsl, "adam", dataset = "adsl")',
+    'lib_read("adam", table = "adsl")'
+  )
+  for (code in bad) {
+    res <- lint_r_code(code)
+    hit <- res[res$kind == "helper_misuse", , drop = FALSE]
+    expect_identical(nrow(hit), 1L, info = code)
+    expect_identical(hit$level, "error", info = code)
+    expect_match(hit$detail, 'lib_(read|write)\\((df, )?"lib", "member"\\)', info = code)
+  }
+
+  good <- c(
+    'adsl <- lib_read("adam", "adsl")',
+    'lib_write(adsl, "adam", "adsl")',
+    'lib_write(adsl, "adam", member = "adsl")',
+    'x <- lib_read(lib, mem)',          # symbolic arguments: judged at runtime
+    'lib_write(df, "work", "b") |> invisible()'
+  )
+  for (code in good) {
+    res <- lint_r_code(code)
+    expect_false(any(res$kind == "helper_misuse"), info = code)
+  }
+})

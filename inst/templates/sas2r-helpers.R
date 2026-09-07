@@ -460,23 +460,36 @@ split_ds <- function(ds, macro_vars = character()) {
   else c(lib = p[1], member = p[2])
 }
 
-lib_read <- function(libref, member = NULL, ...) {
-  dots <- list(...)
-  if (is.null(member) || missing(member)) {
-    if (!is.null(dots$dataset)) {
-      member <- dots$dataset
-    } else if (!is.null(dots$table)) {
-      member <- dots$table
-    } else if (!is.null(dots$member)) {
-      member <- dots$member
-    } else if (grepl(".", libref, fixed = TRUE)) {
-      parts <- strsplit(libref, ".", fixed = TRUE)[[1]]
-      libref <- parts[1]
-      member <- parts[2]
-    } else {
-      member <- libref
-      libref <- "work"
-    }
+lib_read <- function(libref, member, ...) {
+  # Exactly one call form: lib_read("lib", "member"). The rejected forms --
+  # combined "lib.member" strings, single-argument calls that used to default
+  # to work, and dataset=/table= aliases -- fail here with the canonical form
+  # in the message, so a wrong call in an agent translation becomes repair
+  # feedback instead of being silently reinterpreted.
+  canonical <- 'lib_read("lib", "member")'
+  if (length(list(...)) > 0L) {
+    stop("lib_read(): dataset=/table= aliases are not accepted; use ",
+         canonical, call. = FALSE)
+  }
+  if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
+      is.na(libref) || !nzchar(libref)) {
+    stop("lib_read() takes a libref and a member as two separate strings; use ",
+         canonical, call. = FALSE)
+  }
+  # The combined form lives in the libref position only. The member is left
+  # to sas2r_lib_member_path(), whose path-traversal refusal must keep its
+  # own classed condition rather than be pre-empted here.
+  if (grepl(".", libref, fixed = TRUE)) {
+    stop('lib_read() does not accept combined "lib.member" references; use ',
+         canonical, call. = FALSE)
+  }
+  if (missing(member)) {
+    stop("lib_read() needs both a libref and a member; use ", canonical,
+         ' -- a single-argument call no longer defaults to "work".', call. = FALSE)
+  }
+  if (!is.character(member) || length(member) != 1L || is.na(member) || !nzchar(member)) {
+    stop("lib_read() takes a libref and a member as two separate strings; use ",
+         canonical, call. = FALSE)
   }
   reg <- sas2r_lib_entry(libref)
   w_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
@@ -501,28 +514,37 @@ lib_read <- function(libref, member = NULL, ...) {
   df
 }
 
-lib_write <- function(df, libref = NULL, member = NULL, ...) {
-  dots <- list(...)
-  if (is.character(df) && !is.null(libref) && (is.data.frame(libref) || is.list(libref) || is.matrix(libref))) {
-    tmp_df <- libref
-    libref <- df
-    df <- tmp_df
+lib_write <- function(df, libref, member, ...) {
+  # Exactly one call form: lib_write(df, "lib", "member"), data frame first.
+  # See lib_read() for why the other forms are rejected rather than absorbed.
+  canonical <- 'lib_write(df, "lib", "member")'
+  if (length(list(...)) > 0L) {
+    stop("lib_write(): dataset=/table= aliases are not accepted; use ",
+         canonical, call. = FALSE)
   }
-  if (is.null(member) || missing(member)) {
-    if (!is.null(dots$dataset)) {
-      member <- dots$dataset
-    } else if (!is.null(dots$table)) {
-      member <- dots$table
-    } else if (!is.null(dots$member)) {
-      member <- dots$member
-    } else if (grepl(".", libref, fixed = TRUE)) {
-      parts <- strsplit(libref, ".", fixed = TRUE)[[1]]
-      libref <- parts[1]
-      member <- parts[2]
-    } else {
-      member <- libref
-      libref <- "work"
-    }
+  if (missing(df)) {
+    stop("lib_write() takes the data frame first; use ", canonical, call. = FALSE)
+  }
+  if (is.character(df)) {
+    stop("lib_write() takes the data frame first; use ", canonical,
+         ' -- the first argument was the string "', df[1], '".', call. = FALSE)
+  }
+  if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
+      is.na(libref) || !nzchar(libref)) {
+    stop("lib_write() takes the libref and member as two separate strings after ",
+         "the data frame; use ", canonical, call. = FALSE)
+  }
+  if (grepl(".", libref, fixed = TRUE)) {
+    stop('lib_write() does not accept combined "lib.member" references; use ',
+         canonical, call. = FALSE)
+  }
+  if (missing(member)) {
+    stop("lib_write() needs both a libref and a member; use ", canonical,
+         ' -- a two-argument call no longer defaults to "work".', call. = FALSE)
+  }
+  if (!is.character(member) || length(member) != 1L || is.na(member) || !nzchar(member)) {
+    stop("lib_write() takes the libref and member as two separate strings after ",
+         "the data frame; use ", canonical, call. = FALSE)
   }
   reg <- sas2r_lib_entry(libref)
   w_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
