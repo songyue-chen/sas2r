@@ -1,6 +1,7 @@
 # sas2r 0.2.0
 
 ### Runtime
+* **One runtime, two delivery forms**: the helpers every translated program calls now live in `R/runtime-*.R` as package code -- 21 of them exported with a help page and runnable examples each (`?lib_read`, `?sas_merge`, ...) -- and `inst/templates/sas2r-helpers.R`, the copy every bundle carries, is rendered from those files. Tests fail if the vendored runtime differs from the package's by a single function or if the template is stale. Registry lookup goes through `sas2r_registry_env()` so the same code serves a bundle, a test harness, and the console. The runtime's `emit_proc_sort` compatibility alias is removed: it collided with the package's PROC SORT emitter of the same name, and no generated code ever called it (earlier bundles keep their own frozen copy).
 * **The runtime helpers are documented and versioned**: `?sas2r_runtime` documents every function a translated program's `sas2r-helpers.R` carries (each helper name, `?lib_read` for instance, is an alias of that topic), `vignette("runtime-helpers")` explains how to run programs and use the runtime interactively, every vendored `sas2r-helpers.R` now states the sas2r version that generated it, and a stability policy is in force. The distribution plan -- one exported source of truth vendored into bundles, and eventually a separate `sas2r.runtime` package -- is recorded in `docs/decisions/0003-runtime-helpers-distribution.md`.
 
 ### Agents

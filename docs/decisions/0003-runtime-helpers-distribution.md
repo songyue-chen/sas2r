@@ -1,6 +1,6 @@
 # ADR 0003: How the runtime helpers are distributed
 
-**Status:** accepted · **Date:** 2026-09-07 · **Affects:** `inst/templates/sas2r-helpers.R`,
+**Status:** accepted; phases 1 and 2 implemented · **Date:** 2026-09-07 · **Affects:** `inst/templates/sas2r-helpers.R`,
 `write_helpers()`, package documentation, and a future `sas2r.runtime` package.
 
 ## Context
@@ -46,7 +46,7 @@ runtime once, the way they validate `admiral`, instead of validating a helper fi
 | Phase | What lands | Bundles |
 |---|---|---|
 | **1 — document** (this ADR's PR) | `?sas2r_runtime` help topic (with an alias per helper, so `?lib_read` resolves once sas2r is attached), `vignette("runtime-helpers")`, header comments in the helper file, a version stamp written by `write_helpers()`, contract tests keeping docs and template in sync, this policy. | unchanged |
-| **2 — one source, before 1.0** | Helper source moves to `R/runtime-*.R` as exported, roxygen-documented package code. `inst/templates/sas2r-helpers.R` is *generated* from those files at build time, with a contract test that fails when the vendored copy is stale. API tidy-up before it hardens: a consistent prefix, and the compatibility alias `emit_proc_sort()` retired. | unchanged in form; the vendored file becomes a snapshot of a known release |
+| **2 — one source, before 1.0** (done) | Helper source lives in `R/runtime-*.R`: 21 helpers exported with a help page and runnable examples each, the two operators and six plumbing helpers kept internal (exporting `%+%` would mask ggplot2's). `inst/templates/sas2r-helpers.R` is rendered from those files by `tools/build-runtime-template.R`; tests fail if the template is stale or if any vendored function differs from the package's. Registry lookup is the one context-dependent piece and now goes through `sas2r_registry_env()` -- lexically where the runtime was loaded, then the global environment, then any active frame -- so the same code serves both forms. Naming settled: `sas_*` for SAS semantics, `sas2r_*` for runtime plumbing, `lib_*` for data access. The template's `emit_proc_sort()` alias is gone: it collided with the package's PROC SORT *emitter* of the same name once both lived in one namespace, and no generated code ever called it (bundles from earlier versions keep their own frozen copy). | unchanged in form; the vendored file is a snapshot of a known release |
 | **3 — separate package, when usage justifies it** | `sas2r.runtime` on CRAN; sas2r imports it; an opt-in `runtime = "package"` mode writes `library(sas2r.runtime)` into bundles for organizations that validate the runtime once. | vendored by default; package mode opt-in |
 
 ### Naming

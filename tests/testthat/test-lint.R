@@ -74,30 +74,71 @@ test_that("SAS2R_HELPER_NAMES is in sync with sas2r-helpers.R template", {
   expect_setequal(SAS2R_HELPER_NAMES, ls(e, all.names = TRUE))
 })
 
-test_that("the ?sas2r_runtime topic documents every helper the template defines", {
+test_that("every helper has a help page: its own if exported, the runtime topic otherwise", {
   # Documentation is the third leg of the contract: a helper cannot be added
-  # to the template and the allowlist without a place in the reference. The
+  # to the source and the allowlist without a place in the reference. The
   # operators and the two S3 methods cannot be Rd aliases, so they are checked
-  # in the topic's text instead.
+  # in the runtime topic's text instead.
   src_man <- test_path("..", "..", "man")
   db <- if (dir.exists(src_man)) {
     tools::Rd_db(dir = test_path("..", ".."))
   } else {
     tools::Rd_db("sas2r")
   }
-  rd <- db[["sas2r_runtime.Rd"]]
-  expect_false(is.null(rd))
-  tags <- vapply(rd, function(x) attr(x, "Rd_tag") %||% "", character(1))
-  aliases <- unlist(lapply(rd[tags == "\\alias"], function(x) as.character(x[[1]])))
-  text <- paste(unlist(lapply(rd, function(x) paste(unlist(x), collapse = ""))), collapse = "")
+  rd_tags <- function(rd) vapply(rd, function(x) attr(x, "Rd_tag") %||% "", character(1))
+  aliases <- unlist(lapply(db, function(rd) {
+    unlist(lapply(rd[rd_tags(rd) == "\\alias"], function(x) as.character(x[[1]])))
+  }), use.names = FALSE)
+  topic <- db[["sas2r_runtime.Rd"]]
+  expect_false(is.null(topic))
+  topic_text <- paste(unlist(lapply(topic, function(x) paste(unlist(x), collapse = ""))), collapse = "")
 
   not_aliasable <- c("%+%", "%notin%", "$.sas2r_dataset", "[[.sas2r_dataset")
   expect_true(all(setdiff(SAS2R_HELPER_NAMES, not_aliasable) %in% aliases))
-  expect_true(grepl("%notin%", text, fixed = TRUE))
-  expect_true(grepl("%+%", text, fixed = TRUE))
-  expect_true(grepl("sas2r_dataset", text, fixed = TRUE))
-  # and nothing is documented that the template does not define
-  expect_true(all(setdiff(aliases, c("sas2r_runtime", "sas2r_helpers")) %in% SAS2R_HELPER_NAMES))
+  expect_true(grepl("%notin%", topic_text, fixed = TRUE))
+  expect_true(grepl("%+%", topic_text, fixed = TRUE))
+  expect_true(grepl("sas2r_dataset", topic_text, fixed = TRUE))
+  # every exported helper has a page of its own (a usage section), and every
+  # helper the runtime topic aliases is one the package deliberately keeps
+  # internal
+  exported <- intersect(SAS2R_HELPER_NAMES, getNamespaceExports("sas2r"))
+  own_page <- vapply(exported, function(nm) {
+    any(vapply(db, function(rd) {
+      nm %in% unlist(lapply(rd[rd_tags(rd) == "\\alias"], function(x) as.character(x[[1]]))) &&
+        any(rd_tags(rd) == "\\usage")
+    }, logical(1)))
+  }, logical(1))
+  expect_true(all(own_page), info = paste(exported[!own_page], collapse = ", "))
+  topic_aliases <- unlist(lapply(topic[rd_tags(topic) == "\\alias"], function(x) as.character(x[[1]])))
+  expect_length(intersect(topic_aliases, exported), 0L)
+})
+
+test_that("the vendored runtime is the package's runtime, function for function", {
+  # The bundle template is rendered from R/runtime-*.R; whatever the delivery
+  # form, the code must be identical. removeSource() strips srcrefs so the
+  # comparison is of code, not of comments or layout.
+  e <- new.env(parent = baseenv())
+  sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), e,
+             keep.source = FALSE)
+  ns <- asNamespace("sas2r")
+  for (nm in SAS2R_HELPER_NAMES) {
+    expect_identical(
+      deparse(removeSource(get(nm, envir = e, inherits = FALSE))),
+      deparse(removeSource(get(nm, envir = ns, inherits = FALSE))),
+      info = nm
+    )
+  }
+})
+
+test_that("the committed template is what the runtime sources render to", {
+  src <- test_path("..", "..", "R")
+  skip_if_not(dir.exists(src), "source-tree template contract")
+  rendered <- runtime_template_lines(src)
+  committed <- readLines(test_path("..", "..", "inst", "templates", "sas2r-helpers.R"), warn = FALSE)
+  expect_identical(
+    committed, rendered,
+    info = "inst/templates/sas2r-helpers.R is stale: run Rscript tools/build-runtime-template.R"
+  )
 })
 
 test_that("write_helpers() stamps the vendored runtime with the generating version", {

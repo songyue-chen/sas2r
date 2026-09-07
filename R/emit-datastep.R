@@ -9,25 +9,6 @@ sas_cond_to_r <- function(cond) {
   wrap_missing(tx, vars) |> tidy_expr()
 }
 
-#' Split dataset identifier into library and member
-#'
-#' @param ds Character dataset name (e.g. "work.out" or "adam.adsl").
-#' @param macro_vars Optional named character vector of macro variables to substitute.
-#' @return A named character vector with elements `lib` and `member`.
-#' @noRd
-split_ds <- function(ds, macro_vars = character()) {
-  if (length(macro_vars) > 0L && is.character(ds) && length(ds) == 1L) {
-    for (nm in names(macro_vars)) {
-      if (nzchar(nm)) {
-        ds <- gsub(paste0("&", nm, "\\b"), macro_vars[[nm]], ds)
-      }
-    }
-  }
-  p <- strsplit(ds, ".", fixed = TRUE)[[1]]
-  if (length(p) == 1L) c(lib = "work", member = p[1])
-  else c(lib = p[1], member = p[2])
-}
-
 #' Emit R pipeline code for a DATA step
 #'
 #' @param ir A `sas2r_ir` object with route `"datastep"` and 0 blockers.
