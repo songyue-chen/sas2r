@@ -30,9 +30,11 @@ run_20260907T120000Z_1a2b3c4d/
 
 The programs run **without sas2r installed**. Each starts with a bootstrap header that finds
 the bundle root -- the nearest directory at or above the program holding `_sas2r_registry.R`
--- and sources the three support files into the program's own environment. That is why
-`?lib_read` finds nothing until you attach sas2r: the runtime is not package code, it is code
-the bundle carries with it.
+-- and sources the three support files into the program's own environment. The runtime the
+bundle carries is the package's own runtime: `sas2r-helpers.R` is rendered from the same
+source files that define `lib_read()`, `sas_sort()` and the rest inside sas2r, and a test
+fails if the two ever differ. A bundle still always loads its own copy, so what it does never
+depends on which sas2r is installed.
 
 ## Running a program
 
@@ -52,18 +54,21 @@ and pasted code works too.
 
 ## Using the runtime interactively
 
-To explore a bundle's outputs at the console, load the same three files the programs load:
+The helpers are exported from sas2r, so at the console you attach the package and load the
+bundle's registry -- the list that says where each libref reads from and writes to:
 
 ```r
+library(sas2r)
 bundle <- "run_20260907T120000Z_1a2b3c4d"
-source(file.path(bundle, "_sas2r_registry.R"))
-source(file.path(bundle, "sas2r-helpers.R"))
-source(file.path(bundle, "_sas2r_formats.R"))
+source(file.path(bundle, "_sas2r_registry.R"))   # defines .sas2r_registry
 
 adsl <- lib_read("adam", "adsl")     # honours the registry's paths and formats
 adsl$USUBJID                         # column names resolve case-insensitively
 sas_sort(adsl, by = "usubjid")
 ```
+
+Without sas2r installed, `source()` the bundle's own `sas2r-helpers.R` (and
+`_sas2r_formats.R` if you use formats) after the registry; it is the same code.
 
 Two rules the data-access helpers enforce, because a wrong call in a translated program should
 fail loudly rather than be reinterpreted: `lib_read()` takes the libref and member as two
@@ -77,8 +82,8 @@ The full reference is the help topic:
 
 ```r
 library(sas2r)
-?sas2r_runtime      # every helper, grouped
-?lib_read           # each helper name is an alias of that topic
+?sas2r_runtime      # the overview, grouped
+?lib_read           # each exported helper has its own page and examples
 ```
 
 In brief, the runtime covers:
@@ -90,7 +95,7 @@ In brief, the runtime covers:
 | Sorting and merging | `sas_sort()`, `sas_merge()` |
 | Formats | `apply_format()`, `sas_put()` |
 | Includes | `sas2r_source_include()` |
-| Internal (generated code only) | `sas2r_lib_entry()`, `sas2r_lib_member_path()`, `sas2r_libref_stop()`, `split_ds()`, `emit_proc_sort()` |
+| Internal (generated code only, not exported) | `sas2r_registry_env()`, `sas2r_lib_entry()`, `sas2r_lib_member_path()`, `sas2r_libref_stop()`, `split_ds()` |
 
 Every one of them reproduces a SAS behavior R does not share by default: missing values sort
 low and compare the SAS way, trailing blanks are cosmetic, rounding is half away from zero,
@@ -118,7 +123,8 @@ The promise behind that:
 
 ## Where this is going
 
-The runtime is on its way to becoming an exported, versioned source of truth inside sas2r --
-vendored into bundles exactly as today -- and, when usage justifies it, a separate
-`sas2r.runtime` package that organizations can validate once. The decision and its phases are
-recorded in the repository at `docs/decisions/0003-runtime-helpers-distribution.md`.
+The runtime is now an exported, versioned source of truth inside sas2r, vendored into bundles
+from that source. When usage justifies it, it becomes a separate `sas2r.runtime` package that
+organizations can validate once, with an opt-in mode that writes `library(sas2r.runtime)` into
+bundles. The decision and its phases are recorded in the repository at
+`docs/decisions/0003-runtime-helpers-distribution.md`.

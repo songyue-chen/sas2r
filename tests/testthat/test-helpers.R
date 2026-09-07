@@ -182,9 +182,6 @@ test_that("lib_read and lib_write work with registry", {
   expect_identical(h$chr_cmp("ALT", NA), 1L)
   expect_identical(h$chr_cmp(NA, NA), 0L)
 
-  # emit_proc_sort alias works
-  df_sort <- data.frame(x = c(3, 1, 2))
-  expect_identical(h$emit_proc_sort(data = df_sort, by = "x")$x, c(1, 2, 3))
 
   # sas_display helper formats strings and numbers
   expect_identical(h$sas_display(c("a", NA)), c("a", ""))

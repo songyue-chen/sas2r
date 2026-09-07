@@ -3,46 +3,26 @@
 \name{sas2r_runtime}
 \alias{sas2r_runtime}
 \alias{sas2r_helpers}
-\alias{lib_read}
-\alias{lib_write}
-\alias{sas_sort}
-\alias{sas_merge}
-\alias{chr_cmp}
-\alias{sas_if_else}
-\alias{sas_sum}
-\alias{sas_mean}
-\alias{sas_min}
-\alias{sas_max}
-\alias{sas_round}
-\alias{sas_length}
-\alias{sas_substr}
-\alias{sas_compress}
-\alias{sas_display}
-\alias{sas_put}
-\alias{apply_format}
-\alias{sas2r_fold_names}
-\alias{sas2r_source_include}
-\alias{sas2r_libname_assign}
-\alias{sas2r_libname_clear}
+\alias{sas2r_registry_env}
 \alias{sas2r_lib_entry}
 \alias{sas2r_lib_member_path}
 \alias{sas2r_libref_stop}
 \alias{split_ds}
-\alias{emit_proc_sort}
 \title{The runtime every translated program carries}
 \description{
-Every program sas2r translates calls a small runtime of thirty functions --
-\code{lib_read()}, \code{lib_write()}, \code{sas_sort()}, \code{sas_merge()}, \code{chr_cmp()}, the
-format machinery and the rest. The runtime is \strong{not} part of the sas2r
-namespace: it ships as \code{sas2r-helpers.R} inside every generated bundle, and
-the bundle's programs load it at startup. That is what lets a translated
-program run without sas2r installed. This topic documents the runtime; the
-vignette \code{vignette("runtime-helpers", package = "sas2r")} explains how to
-use it interactively and the stability policy behind it.
+Every program sas2r translates calls a small runtime -- \code{\link[=lib_read]{lib_read()}},
+\code{\link[=lib_write]{lib_write()}}, \code{\link[=sas_sort]{sas_sort()}}, \code{\link[=sas_merge]{sas_merge()}}, \code{\link[=chr_cmp]{chr_cmp()}}, the format
+machinery and the rest. Since sas2r 0.2.0 that runtime is exported package
+code with a help page per helper, \strong{and} every bundle still carries its
+own copy as \code{sas2r-helpers.R}, rendered from the same source files
+(\verb{R/runtime-*.R}) so the two are identical function for function. A
+bundle always loads its own copy: its behavior depends only on its own
+contents, never on which sas2r is installed. That is what lets a
+translated program run without sas2r installed.
 
-Each vendored \code{sas2r-helpers.R} states the sas2r version that generated it.
-A bundle always loads its own copy: its behavior depends only on its own
-contents, never on which sas2r is installed.
+The vignette \code{vignette("runtime-helpers", package = "sas2r")} explains how
+to run programs, how to use the runtime interactively, and the stability
+policy behind it.
 }
 \section{How the runtime reaches a program}{
 
@@ -52,118 +32,44 @@ root (the nearest directory at or above the program holding
 environment: \verb{_sas2r_registry.R} (where each libref reads from and writes
 to), \code{sas2r-helpers.R} (this runtime), and \verb{_sas2r_formats.R} (the compiled
 format catalog). Run a program with \code{source("<bundle>/<program>.R")}, or
-with \code{Rscript} from any directory. To use the runtime at the console,
-\code{source()} the same three files from the bundle directory.
+with \code{Rscript} from any directory.
+
+To use the runtime at the console, attach sas2r and load the registry --
+\code{source("<bundle>/_sas2r_registry.R")} -- or \code{source()} the same three files
+the programs load.
 }
 
-\section{Data access}{
+\section{The helpers}{
 
 \describe{
-\item{\code{lib_read("lib", "member")}}{Read a dataset from a libref, as
-configured in the registry: the write path is tried first (so a
-dataset the bundle produced earlier wins), then the read path, for
-\code{.rds}, \code{.sas7bdat}, and \code{.xpt} in that order. The result carries class
-\code{sas2r_dataset}, whose \code{$} and \code{[[} methods resolve column names
-case-insensitively, as SAS variable names do. Exactly one call form is
-accepted; combined \code{"lib.member"} strings, single-argument calls, and
-\verb{dataset=}/\verb{table=} aliases fail with the canonical form in the message.}
-\item{\code{lib_write(df, "lib", "member")}}{Write a dataset to a libref's
-write path in its configured format (\code{rds} or \code{xpt}), creating the
-directory on demand. Data frame first; the same single call form.}
-\item{\code{sas2r_libname_assign(libref, read_path, write_path, engine, write)}}{
-A \code{LIBNAME} statement at its point of use: rebinds the libref from this
-point on, so a program that reassigns a libref part-way through behaves
-as it does in SAS.}
-\item{\code{sas2r_libname_clear(libref)}}{\verb{LIBNAME libref CLEAR}.}
-\item{\code{sas2r_fold_names(df)}}{Lower-case every column name. Deterministic
-translations fold frames at entry so lower-case source references find
-upper-case data columns.}
-}
-}
-
-\section{SAS semantics for values}{
-
-\describe{
-\item{\code{chr_cmp(a, b, op = NULL)}}{SAS comparison of possibly-missing
-values. Character operands ignore trailing blanks; a missing character
-value (\code{""} or \code{NA}) sorts below every non-missing one; numeric missing
-sorts below every number. With \code{op} \code{NULL} the result is \code{-1}/\code{0}/\code{1}
-(missing equals missing); with an operator such as \code{"=="} or \code{"<"} it
-is the logical SAS would produce -- never \code{NA}.}
-\item{\code{a \%notin\% b}}{\verb{NOT IN} with SAS missing semantics: a missing \code{a} is
-not in any list. Character comparison ignores trailing blanks.}
-\item{\code{a \%+\% b}}{\code{||} concatenation where a missing operand contributes
-nothing rather than \code{"NA"}. SAS pads fixed-width operands; this does not.}
-\item{\code{sas_if_else(cond, yes, no)}}{\code{IF/THEN/ELSE} assignment: a missing
-condition is false, and the result keeps the class (\code{Date}, labelled)
-of the branch that carries it, which \code{ifelse()} would strip.}
-\item{\code{sas_sum(...)}, \code{sas_mean(...)}}{Row-wise across the arguments, as
-the SAS functions are: each observation gets the sum or mean of its
-non-missing arguments, and only an all-missing observation is missing.
-Column aggregation (\verb{PROC MEANS}, \verb{PROC SQL}) is emitted inline and
-never routed through these.}
-\item{\code{sas_min(...)}, \code{sas_max(...)}}{Row-wise, ignoring missing; all
-missing yields missing; a single argument passes through elementwise.}
-\item{\code{sas_round(x, unit = 1)}}{\code{ROUND}: half away from zero, to a
-rounding unit -- not R's banker's rounding.}
-\item{\code{sas_length(x)}}{\code{LENGTH}: trailing blanks do not count, and a
-missing or blank value has length 1.}
-\item{\code{sas_substr(x, pos, len = NULL)}}{\code{SUBSTR}; \code{len} \code{NULL} reads to
-the end.}
-\item{\code{sas_compress(x, chars = " ")}}{\code{COMPRESS}: remove every character
-listed in \code{chars}.}
-\item{\code{sas_display(x)}}{Values as SAS prints them: numeric missing is
-\code{"."}, character missing is blank, no scientific notation.}
-}
-}
-
-\section{Sorting and merging}{
-
-\describe{
-\item{\code{sas_sort(df, by, descending = character())}}{\verb{PROC SORT}: stable,
-missing values lowest, \code{by} matched case-insensitively, variables named
-in \code{descending} sorted in reverse.}
-\item{\code{sas_merge(a, b, by, keep = "both")}}{\verb{MERGE a b; BY by;} with \verb{IN=}
-semantics chosen by \code{keep}: \code{"both"}, \code{"left"}, \code{"right"},
-\code{"left_only"}, \code{"right_only"}, \code{"full"}. Where both datasets carry a
-non-key column, the later dataset's value wins; columns follow
-statement order and rows follow SAS \code{BY} ordering. A many-to-many key
-is refused, because no join reproduces SAS's row walking there.}
-}
-}
-
-\section{Formats}{
-
-\describe{
-\item{\code{apply_format(x, fmt)}}{Apply a compiled format from
-\verb{_sas2r_formats.R}: exact \code{values} first, then \code{ranges} (\code{lo}..\code{hi} to a
-label), then \code{other} for anything unmatched. Missing input stays missing
-unless the format defines \code{other}.}
-\item{\code{sas_put(x, fmt)}}{\code{PUT(x, fmt.)}; the same as \code{apply_format()}.}
-}
-}
-
-\section{Includes}{
-
-\describe{
-\item{\code{sas2r_source_include(relative_path, envir = parent.frame())}}{An
-\verb{\%INCLUDE} at its call site: runs the included module, translated once
-into its own staged file, in the calling program's environment. The
-path is relative to the bundle root, never to the working directory;
-absolute paths, \code{.}/\code{..} components, and anything resolving outside the
-bundle are refused.}
+\item{Data access}{\code{\link[=lib_read]{lib_read()}}, \code{\link[=lib_write]{lib_write()}}, \code{\link[=sas2r_libname_assign]{sas2r_libname_assign()}},
+\code{\link[=sas2r_libname_clear]{sas2r_libname_clear()}}, \code{\link[=sas2r_fold_names]{sas2r_fold_names()}}; datasets read through
+\code{lib_read()} carry class \code{sas2r_dataset}, whose \code{$} and \code{[[} methods
+resolve column names case-insensitively.}
+\item{SAS value semantics}{\code{\link[=chr_cmp]{chr_cmp()}}, \code{\link[=sas_if_else]{sas_if_else()}}, \code{\link[=sas_sum]{sas_sum()}} and
+\code{\link[=sas_mean]{sas_mean()}}, \code{\link[=sas_min]{sas_min()}} and \code{\link[=sas_max]{sas_max()}}, \code{\link[=sas_round]{sas_round()}},
+\code{\link[=sas_length]{sas_length()}}, \code{\link[=sas_substr]{sas_substr()}}, \code{\link[=sas_compress]{sas_compress()}}, \code{\link[=sas_display]{sas_display()}}; and
+two operators the package defines but does not export: \code{a \%notin\% b}
+(\verb{NOT IN} with SAS missing semantics -- a missing \code{a} is in no list;
+character comparison ignores trailing blanks) and \code{a \%+\% b} (\code{||}
+concatenation where a missing operand contributes nothing rather than
+\code{"NA"}; SAS pads fixed-width operands, this does not).}
+\item{Sorting and merging}{\code{\link[=sas_sort]{sas_sort()}}, \code{\link[=sas_merge]{sas_merge()}}.}
+\item{Formats}{\code{\link[=apply_format]{apply_format()}}, \code{\link[=sas_put]{sas_put()}}.}
+\item{Includes}{\code{\link[=sas2r_source_include]{sas2r_source_include()}}.}
 }
 }
 
 \section{Internal helpers}{
 
-Generated code calls these; they are not meant for direct use and may change
-with the generator: \code{sas2r_lib_entry()} (the registry entry for a libref),
-\code{sas2r_lib_member_path()} (the file a member resolves to, refusing any name
-that is not a plain member name), \code{sas2r_libref_stop()} (classed libref
-errors), \code{split_ds()} (split a two-level SAS name after macro substitution),
-and \code{emit_proc_sort()}, a compatibility alias for \code{sas_sort()} kept for
-bundles generated by earlier versions and scheduled for retirement.
+Generated code calls these; they are not exported, not meant for direct
+use, and may change with the generator: \code{sas2r_registry_env()} (where the
+\code{.sas2r_registry} list lives -- lexically where the runtime was loaded,
+then the global environment, then any active frame), \code{sas2r_lib_entry()}
+(the registry entry for a libref), \code{sas2r_lib_member_path()} (the file a
+member resolves to, refusing any name that is not a plain member name),
+\code{sas2r_libref_stop()} (classed libref errors), \code{split_ds()} (split a
+two-level SAS name after macro substitution).
 }
 
 \section{Versioning and stability}{
@@ -172,10 +78,10 @@ The runtime follows the sas2r version, and every vendored copy states the
 version that generated it. Within a major version an existing helper never
 changes what it does for the same inputs; a helper is retired only after a
 replacement ships and the old name has warned for at least one minor
-version. The lint allowlist, this topic, and the template are held in sync
-by tests. The direction of travel -- one exported source of truth, vendored
-by default, and eventually a separate \code{sas2r.runtime} package -- is recorded
-in \code{docs/decisions/0003-runtime-helpers-distribution.md}.
+version. Tests hold the source files, the vendored template, the help
+pages, and the lint allowlist in sync. The direction of travel -- a
+separate \code{sas2r.runtime} package when usage justifies it -- is recorded in
+\code{docs/decisions/0003-runtime-helpers-distribution.md}.
 }
 
 \seealso{
