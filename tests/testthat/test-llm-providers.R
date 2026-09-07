@@ -303,6 +303,13 @@ test_that("gemini api_key mode never silently falls back to ADC or OAuth", {
 })
 
 test_that("new provider constructor and inventory arguments match ellmer formals", {
+  # Argument-shape assertions only; nothing here reaches ellmer. Pin the
+  # ellmer version they assume (github is retired from 0.5.0) so the installed
+  # ellmer cannot turn a github case into a retirement refusal.
+  testthat::local_mocked_bindings(
+    llm_installed_ellmer_version = function() package_version("0.4.2"),
+    .package = "sas2r"
+  )
   withr::local_envvar(c(
     ANTHROPIC_API_KEY = "offline-anthropic-key",
     DEEPSEEK_API_KEY = "offline-deepseek-key",
