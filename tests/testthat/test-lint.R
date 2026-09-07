@@ -74,6 +74,45 @@ test_that("SAS2R_HELPER_NAMES is in sync with sas2r-helpers.R template", {
   expect_setequal(SAS2R_HELPER_NAMES, ls(e, all.names = TRUE))
 })
 
+test_that("the ?sas2r_runtime topic documents every helper the template defines", {
+  # Documentation is the third leg of the contract: a helper cannot be added
+  # to the template and the allowlist without a place in the reference. The
+  # operators and the two S3 methods cannot be Rd aliases, so they are checked
+  # in the topic's text instead.
+  src_man <- test_path("..", "..", "man")
+  db <- if (dir.exists(src_man)) {
+    tools::Rd_db(dir = test_path("..", ".."))
+  } else {
+    tools::Rd_db("sas2r")
+  }
+  rd <- db[["sas2r_runtime.Rd"]]
+  expect_false(is.null(rd))
+  tags <- vapply(rd, function(x) attr(x, "Rd_tag") %||% "", character(1))
+  aliases <- unlist(lapply(rd[tags == "\\alias"], function(x) as.character(x[[1]])))
+  text <- paste(unlist(lapply(rd, function(x) paste(unlist(x), collapse = ""))), collapse = "")
+
+  not_aliasable <- c("%+%", "%notin%", "$.sas2r_dataset", "[[.sas2r_dataset")
+  expect_true(all(setdiff(SAS2R_HELPER_NAMES, not_aliasable) %in% aliases))
+  expect_true(grepl("%notin%", text, fixed = TRUE))
+  expect_true(grepl("%+%", text, fixed = TRUE))
+  expect_true(grepl("sas2r_dataset", text, fixed = TRUE))
+  # and nothing is documented that the template does not define
+  expect_true(all(setdiff(aliases, c("sas2r_runtime", "sas2r_helpers")) %in% SAS2R_HELPER_NAMES))
+})
+
+test_that("write_helpers() stamps the vendored runtime with the generating version", {
+  out <- withr::local_tempdir()
+  write_helpers(out)
+  lines <- readLines(file.path(out, "sas2r-helpers.R"), warn = FALSE)
+  expect_match(lines[[1]], "^# sas2r runtime helpers -- vendored by sas2r [0-9.]+")
+  # the stamp replaces the template's own first line and changes nothing else
+  template <- readLines(system.file("templates", "sas2r-helpers.R", package = "sas2r"), warn = FALSE)
+  expect_identical(lines[-1], template[-1])
+  e <- new.env(parent = baseenv())
+  sys.source(file.path(out, "sas2r-helpers.R"), e)
+  expect_setequal(SAS2R_HELPER_NAMES, ls(e, all.names = TRUE))
+})
+
 test_that("parenthesized negation !(is.na(v)) is recognized without false warning", {
   code <- "dplyr::filter(df, !(is.na(age)) & age > 65)"
   l <- lint_r_code(code)

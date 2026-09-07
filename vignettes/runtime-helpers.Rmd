@@ -1,0 +1,124 @@
+---
+title: "The Runtime Inside Every Translated Program"
+author: "Songyue Chen"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The Runtime Inside Every Translated Program}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+## What a bundle contains
+
+A run of `sas_translate()` leaves the translated programs at the top of its run folder,
+next to a few files they depend on:
+
+```
+run_20260907T120000Z_1a2b3c4d/
+├── adsl.R                 <- translated programs
+├── adae.R
+├── _sas2r_registry.R      <- where each libref reads from and writes to
+├── sas2r-helpers.R        <- the runtime: thirty functions the programs call
+├── _sas2r_formats.R       <- the compiled format catalog
+└── report.md
+```
+
+The programs run **without sas2r installed**. Each starts with a bootstrap header that finds
+the bundle root -- the nearest directory at or above the program holding `_sas2r_registry.R`
+-- and sources the three support files into the program's own environment. That is why
+`?lib_read` finds nothing until you attach sas2r: the runtime is not package code, it is code
+the bundle carries with it.
+
+## Running a program
+
+Any of these works, from any working directory:
+
+```r
+source("run_20260907T120000Z_1a2b3c4d/adsl.R")
+```
+
+```bash
+Rscript /full/path/run_20260907T120000Z_1a2b3c4d/adsl.R
+```
+
+Pasting a program into a console is the one launch mode the bootstrap cannot support -- pasted
+code has no file to locate itself by -- and it says so. `setwd()` into the run folder first,
+and pasted code works too.
+
+## Using the runtime interactively
+
+To explore a bundle's outputs at the console, load the same three files the programs load:
+
+```r
+bundle <- "run_20260907T120000Z_1a2b3c4d"
+source(file.path(bundle, "_sas2r_registry.R"))
+source(file.path(bundle, "sas2r-helpers.R"))
+source(file.path(bundle, "_sas2r_formats.R"))
+
+adsl <- lib_read("adam", "adsl")     # honours the registry's paths and formats
+adsl$USUBJID                         # column names resolve case-insensitively
+sas_sort(adsl, by = "usubjid")
+```
+
+Two rules the data-access helpers enforce, because a wrong call in a translated program should
+fail loudly rather than be reinterpreted: `lib_read()` takes the libref and member as two
+separate strings, and `lib_write()` takes the data frame first --
+`lib_write(df, "adam", "adsl")`. Combined `"lib.member"` strings and single-argument calls are
+rejected with the canonical form in the message.
+
+## The reference
+
+The full reference is the help topic:
+
+```r
+library(sas2r)
+?sas2r_runtime      # every helper, grouped
+?lib_read           # each helper name is an alias of that topic
+```
+
+In brief, the runtime covers:
+
+| Group | Helpers |
+|---|---|
+| Data access | `lib_read()`, `lib_write()`, `sas2r_libname_assign()`, `sas2r_libname_clear()`, `sas2r_fold_names()`, the `sas2r_dataset` `$`/`[[` methods |
+| SAS value semantics | `chr_cmp()`, `%notin%`, `%+%`, `sas_if_else()`, `sas_sum()`, `sas_mean()`, `sas_min()`, `sas_max()`, `sas_round()`, `sas_length()`, `sas_substr()`, `sas_compress()`, `sas_display()` |
+| Sorting and merging | `sas_sort()`, `sas_merge()` |
+| Formats | `apply_format()`, `sas_put()` |
+| Includes | `sas2r_source_include()` |
+| Internal (generated code only) | `sas2r_lib_entry()`, `sas2r_lib_member_path()`, `sas2r_libref_stop()`, `split_ds()`, `emit_proc_sort()` |
+
+Every one of them reproduces a SAS behavior R does not share by default: missing values sort
+low and compare the SAS way, trailing blanks are cosmetic, rounding is half away from zero,
+`SUM()` and `MEAN()` are row-wise, `MERGE` follows SAS's overlap and `IN=` rules.
+
+## Versioning and stability
+
+The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
+
+```
+# sas2r runtime helpers -- vendored by sas2r 0.2.0. Do not edit by hand.
+```
+
+A bundle is frozen on purpose. It always loads its own copy of the runtime, so what a
+validated bundle does depends only on its own contents -- never on which sas2r is installed,
+and never on an upgrade. Fixes to the runtime reach a bundle when it is translated again.
+
+The promise behind that:
+
+- Within a major version, an existing helper never changes what it does for the same inputs.
+- A helper is retired only after a replacement ships and the old name has warned for at least
+  one minor version.
+- The lint allowlist, the help topic, and the runtime file are held in sync by the package's
+  tests, so a helper cannot be added or removed in one place only.
+
+## Where this is going
+
+The runtime is on its way to becoming an exported, versioned source of truth inside sas2r --
+vendored into bundles exactly as today -- and, when usage justifies it, a separate
+`sas2r.runtime` package that organizations can validate once. The decision and its phases are
+recorded in the repository at `docs/decisions/0003-runtime-helpers-distribution.md`.

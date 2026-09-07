@@ -20,5 +20,6 @@ docs/*
 !docs/llm-providers.md
 !docs/migration-evidence.md
 !docs/output-evidence.md
+!docs/decisions/
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds
