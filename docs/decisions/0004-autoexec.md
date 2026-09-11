@@ -41,15 +41,17 @@ than as a program to translate, so the names correspond and cannot collide.
 - **No file-location search in the file.** It is always sourced with `chdir = TRUE` -- by the
   program header, by the executor, and by a person -- so its own folder is the working
   directory while it loads. One guard line explains itself when it is not.
-- **The program header follows the SAS convention.** Programs run where their `autoexec.R`
-  is. `Rscript` and `R CMD BATCH` name the file on the command line, so a batch launch finds the
-  folder from anywhere; in a session the working directory is the run folder, or `autoexec.R`
-  was sourced once already. The header is a guarded `source("autoexec.R", chdir = TRUE)` of
-  about ten lines that walks up to the folder holding `autoexec.R` and stops with a message
-  naming the fix when there is none. Idempotence and the `%INCLUDE` behaviour are unchanged.
-  What is given up, deliberately, is sourcing a program by path from an unrelated working
-  directory before the autoexec has run: that case now says what to do, instead of every
-  program carrying a 24-line file-location search to cover it.
+- **The program header is one guarded line.** Programs run where their `autoexec.R` is,
+  exactly as a SAS program runs with its `autoexec.sas`: from the run folder (`Rscript adsl.R`
+  there, or `source("adsl.R")` with the run folder as the working directory), or after
+  `source("<run folder>/autoexec.R", chdir = TRUE)` was run once in the session. The header
+  is `if (!exists(".sas2r_registry", ...)) source("autoexec.R", local = environment(), chdir =
+  TRUE)` under a two-line comment saying so. The guard keeps idempotence and the `%INCLUDE`
+  behaviour, and keeps an earlier program's `LIBNAME` in force when the executor runs programs
+  in sequence; `local = environment()` keeps a sandboxed run sandboxed. What is given up,
+  deliberately, is running a program from an unrelated working directory before the autoexec
+  has run -- by path, or `Rscript /elsewhere/adsl.R` -- which every earlier header bought
+  with a block of file-location plumbing at the top of every program.
 - **Sourcing it by hand is an autoexec.** `source("<bundle>/autoexec.R", chdir = TRUE)` once
   per session loads the runtime; every program then finds it loaded and skips its bootstrap,
   and pasted code works.
@@ -60,8 +62,9 @@ seed, exactly as in SAS.
 ## Consequences
 
 - A run folder can be moved or renamed as a whole. Moved source data means one edited line.
-- A single program copied out of its folder, or sourced by path from an unrelated working
-  directory before the autoexec has run, stops with a message naming the fix.
+- A single program copied out of its folder, or run from an unrelated working directory before
+  the autoexec has run, fails on its first line because `autoexec.R` is not there; the comment
+  above that line says what to do.
 - Re-translation writes a new run folder, so a maintained `autoexec.R` is never overwritten.
 - The runtime's include resolution keys on `autoexec.R` as the bundle marker. Older bundles
   keep their frozen runtime and their `_sas2r_registry.R`; the executor still loads those by
@@ -72,11 +75,13 @@ seed, exactly as in SAS.
 
 ## Alternatives considered
 
-- **A file-location search in every program** (the previous header: 24 lines, then 13).
+- **A file-location search in every program** (the earlier headers: 24 lines, then 12).
   Inspecting `source()`/`sys.source()` frames plus `--file=` let a program find its own folder
-  from any working directory, RStudio's Source button included. Robust, but half of a short
-  program was plumbing a maintainer skips over, and the convention it replaced is one every SAS
-  programmer already follows.
+  from any working directory, RStudio's Source button and `Rscript` from elsewhere included.
+  Robust, but a block of plumbing at the top of every program a maintainer skips over, and
+  `--file=` misled the moment the R process was launched with any script other than the
+  program itself (a test runner, a driver, a CI step). The convention it replaced is one every
+  SAS programmer already follows.
 - **A generated boot file beside a generated registry** (the first form of this change). Two
   files, one of them carrying a locator nobody should read, and neither labelled as the one to
   edit.

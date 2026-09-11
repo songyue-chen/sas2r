@@ -696,9 +696,10 @@ test_that("a dual-role module bootstraps standalone and skips it as an include",
     expect_true(exists(nm, envir = e1, inherits = FALSE), info = nm)
   # The bootstrap tidies its own scratch bindings away.
   expect_false(exists(".sas2r_dir", envir = e1, inherits = FALSE))
-  expect_error(
-    withr::with_dir(elsewhere, sys.source(file.path(out, "prep.R"),
-                                          envir = new.env(parent = globalenv()))),
+  expect_warning(
+    expect_error(withr::with_dir(elsewhere, sys.source(file.path(out, "prep.R"),
+                                                       envir = new.env(parent = globalenv()))),
+                 "cannot open"),
     "autoexec\\.R")
 
   withr::local_dir(out)
@@ -940,39 +941,39 @@ test_that("generated registry uses the same selected binding as project lineage"
     canonical(source_lib))
 })
 
-test_that("bootstrap finds its bundle via --file= when launched by Rscript elsewhere", {
-  # Pasting into a console and Rscript-from-another-directory both lack the
-  # source()/sys.source() frames the primary detection relies on; Rscript is
-  # recoverable through --file= on the command line, so a program launched as
-  # `Rscript /abs/path/prog.R` from any working directory must still boot.
+test_that("a program runs with Rscript from its folder, and not from elsewhere before the autoexec", {
+  # ADR 0004: programs run where their autoexec is, as SAS programs do. A batch
+  # job runs from the run folder; from anywhere else the first line fails
+  # because autoexec.R is not there.
   bundle <- withr::local_tempdir()
   write_helpers(bundle)
   write_formats(list(), bundle)
   write_autoexec(NULL, bundle)
-  writeLines(c(module_bootstrap("prog.R"), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
+  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
 
-  elsewhere <- withr::local_tempdir()
-  res <- callr::rscript(
-    file.path(bundle, "prog.R"),
-    wd = elsewhere, show = FALSE, fail_on_status = FALSE
-  )
+  res <- callr::rscript(file.path(bundle, "prog.R"), wd = bundle,
+                        show = FALSE, fail_on_status = FALSE)
   expect_identical(res$status, 0L)
   expect_match(res$stdout, "BOOT_OK", fixed = TRUE)
-})
-
-test_that("bootstrap failure tells the user how to launch the program", {
-  # With no registry anywhere above the anchor, the error must be actionable:
-  # name source() and setwd() rather than only reporting the search root.
-  lonely <- withr::local_tempdir()
-  writeLines(c(module_bootstrap("prog.R"), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
 
   elsewhere <- withr::local_tempdir()
+  res <- callr::rscript(file.path(bundle, "prog.R"), wd = elsewhere,
+                        show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(res$status, 0L))
+  expect_match(res$stderr, "autoexec\\.R")
+})
+
+test_that("a program without its autoexec fails naming the missing file", {
+  # A program copied out of its folder has no autoexec.R beside it; the
+  # failure names that file, and the comment above the line says what to do.
+  lonely <- withr::local_tempdir()
+  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
+
   res <- callr::rscript(
     file.path(lonely, "prog.R"),
-    wd = elsewhere, show = FALSE, fail_on_status = FALSE
+    wd = lonely, show = FALSE, fail_on_status = FALSE
   )
   expect_false(identical(res$status, 0L))
-  expect_match(res$stderr, "source\\(")
-  expect_match(res$stderr, "setwd\\(")
   expect_match(res$stderr, "autoexec\\.R")
+  expect_true(any(grepl('source\\("autoexec.R", chdir = TRUE\\)', readLines(file.path(lonely, "prog.R")))))
 })

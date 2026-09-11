@@ -16,18 +16,18 @@ autoexec_fixture <- function(bundle, program = character()) {
   write_formats(list(), bundle)
   write_autoexec(NULL, bundle)
   if (length(program)) {
-    writeLines(c(module_bootstrap("prog.R"), program), file.path(bundle, "prog.R"))
+    writeLines(c(module_bootstrap(), program), file.path(bundle, "prog.R"))
   }
   invisible(bundle)
 }
 
-test_that("the bootstrap header is short, and names only autoexec.R", {
-  hdr <- module_bootstrap("adsl.R")
+test_that("the bootstrap header is one guarded line under a two-line comment", {
+  hdr <- module_bootstrap()
   # The whole point: a reader opening a program meets the translation, not a
   # page of plumbing. No file-location search either (ADR 0004): programs run
   # where their autoexec is.
-  expect_lte(length(hdr), 12L)
-  expect_false(any(grepl("sys\\.frames|sys\\.function|ofile", hdr)))
+  expect_length(hdr, 3L)
+  expect_false(any(grepl("sys\\.frames|sys\\.function|ofile|commandArgs", hdr)))
   # Agent staging decides whether a module already carries the header by this
   # phrase, and the gate skips the block by its guard on `.sas2r_registry`.
   expect_true(any(grepl("sas2r bootstrap", hdr, fixed = TRUE)))
@@ -84,7 +84,7 @@ test_that("autoexec.R sourced from elsewhere without chdir stops with the fix; s
   expect_identical(e2$.sas2r_bundle_root, canonical(bundle))
 })
 
-test_that("a program runs from its folder, from Rscript anywhere, and after the autoexec; elsewhere it says what to do", {
+test_that("a program runs from its folder and after the autoexec; from elsewhere it fails on its first line", {
   bundle <- withr::local_tempdir()
   autoexec_fixture(bundle, c(
     "adsl <- data.frame(x = 1:3)",
@@ -104,50 +104,54 @@ test_that("a program runs from its folder, from Rscript anywhere, and after the 
   expect_identical(canonical(wd_after), canonical(bundle))
   expect_identical(e1$.sas2r_bundle_root, canonical(bundle))
   expect_true(file.exists(written))
-  expect_false(exists(".sas2r_dir", envir = e1, inherits = FALSE))
-  expect_false(exists(".sas2r_file", envir = e1, inherits = FALSE))
   expect_false(exists(".sas2r_registry", envir = globalenv(), inherits = FALSE))
 
-  # Rscript from elsewhere: the script path names the folder.
+  # Rscript from the run folder, as a batch job runs.
   unlink(file.path(bundle, "work"), recursive = TRUE)
-  r <- callr::rscript(file.path(bundle, "prog.R"), wd = elsewhere,
+  r <- callr::rscript(file.path(bundle, "prog.R"), wd = bundle,
                       show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
   expect_match(r$stdout, "BOOT_OK", fixed = TRUE)
   expect_true(file.exists(written))
-  expect_false(dir.exists(file.path(elsewhere, "work")))
 
-  # A module staged in a subfolder walks up to the bundle root.
+  # A module staged in a subfolder runs from the run folder too.
   dir.create(file.path(bundle, "inc"))
-  writeLines(c(module_bootstrap("sub.R"), 'cat("SUB_OK\\n")'), file.path(bundle, "inc", "sub.R"))
-  r2 <- callr::rscript(file.path(bundle, "inc", "sub.R"), wd = elsewhere,
+  writeLines(c(module_bootstrap(), 'cat("SUB_OK\\n")'), file.path(bundle, "inc", "sub.R"))
+  r2 <- callr::rscript(file.path(bundle, "inc", "sub.R"), wd = bundle,
                        show = FALSE, fail_on_status = FALSE)
   expect_identical(r2$status, 0L)
   expect_match(r2$stdout, "SUB_OK", fixed = TRUE)
 
-  # A driver launched as `Rscript driver.R` names the driver on the command
-  # line, not the program, so the working directory decides: from the run
-  # folder the program boots; from elsewhere it stops and says so. (A test
-  # runner and a GitHub Actions step are launched the same way.)
+  # A driver launched elsewhere works when its working directory is the run
+  # folder, which is the convention, and not otherwise.
   driver <- file.path(elsewhere, "driver.R")
   writeLines(sprintf("source(%s)", deparse(file.path(bundle, "prog.R"))), driver)
   unlink(file.path(bundle, "work"), recursive = TRUE)
   r3 <- callr::rscript(driver, wd = bundle, show = FALSE, fail_on_status = FALSE)
   expect_identical(r3$status, 0L)
   expect_true(file.exists(written))
-  r4 <- callr::rscript(driver, wd = elsewhere, show = FALSE, fail_on_status = FALSE)
-  expect_false(identical(r4$status, 0L))
-  expect_match(r4$stderr, "autoexec\\.R.*setwd\\(")
 
-  # Sourced by path from an unrelated working directory before the autoexec
-  # has run: the SAS convention, stated rather than worked around.
+  # From an unrelated working directory before the autoexec has run, the first
+  # line fails because autoexec.R is not there: Rscript, a driver, source(),
+  # and sys.source() alike.
+  r4 <- callr::rscript(file.path(bundle, "prog.R"), wd = elsewhere,
+                       show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(r4$status, 0L))
+  expect_match(r4$stderr, "autoexec\\.R")
+  r5 <- callr::rscript(driver, wd = elsewhere, show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(r5$status, 0L))
+  expect_match(r5$stderr, "autoexec\\.R")
+  # In-process, R's error says "cannot open the connection" and its warning
+  # names autoexec.R; both reach a person at the console.
   e2 <- new.env(parent = globalenv())
-  expect_error(
-    withr::with_dir(elsewhere, source(file.path(bundle, "prog.R"), local = e2)),
-    "autoexec\\.R.*setwd\\(")
-  expect_error(
-    withr::with_dir(elsewhere, sys.source(file.path(bundle, "prog.R"), envir = e2)),
-    "chdir = TRUE")
+  expect_warning(
+    expect_error(withr::with_dir(elsewhere, source(file.path(bundle, "prog.R"), local = e2)),
+                 "cannot open"),
+    "autoexec\\.R")
+  expect_warning(
+    expect_error(withr::with_dir(elsewhere, sys.source(file.path(bundle, "prog.R"), envir = e2)),
+                 "cannot open"),
+    "autoexec\\.R")
   expect_false(dir.exists(file.path(elsewhere, "work")))
 })
 
@@ -184,14 +188,12 @@ test_that("a run folder moved as a whole keeps working, and writes inside its ne
   moved <- file.path(withr::local_tempdir(), "moved_run")
   expect_true(file.rename(out, moved))
 
-  elsewhere <- withr::local_tempdir()
-  r <- callr::rscript(file.path(moved, "prep.R"), wd = elsewhere,
+  r <- callr::rscript(file.path(moved, "prep.R"), wd = moved,
                       show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
   expect_true(file.exists(file.path(moved, "work", "prepped.rds")))
   expect_identical(nrow(readRDS(file.path(moved, "work", "prepped.rds"))), 3L)
   expect_false(dir.exists(out))
-  expect_false(dir.exists(file.path(elsewhere, "work")))
 })
 
 test_that("paths inside the bundle are written relative, outside absolute, and a hand edit takes effect", {

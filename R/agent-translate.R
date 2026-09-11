@@ -849,7 +849,7 @@ generate_program_revision <- function(
 
       is_entry <- any(comp_nodes$type == "source_unit") && !any(comp_nodes$type == "setup")
       staged_lines <- if (is_entry && !any(grepl("sas2r bootstrap", tr_data$r_code))) {
-        c(BANNER, "", module_bootstrap(basename(staged_rel)), "", tr_data$r_code)
+        c(BANNER, "", module_bootstrap(), "", tr_data$r_code)
       } else {
         c(BANNER, "", tr_data$r_code)
       }

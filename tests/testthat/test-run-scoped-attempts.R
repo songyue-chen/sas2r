@@ -147,9 +147,8 @@ test_that("the materialized run folder re-runs standalone: helpers and librefs j
   reg <- readLines(file.path(run_dir, "autoexec.R"), warn = FALSE)
   expect_false(any(grepl("bundle_attempt", reg, fixed = TRUE)))
 
-  elsewhere <- withr::local_tempdir()
   r <- callr::rscript(file.path(run_dir, "prog.R"),
-                      wd = elsewhere, show = FALSE, fail_on_status = FALSE)
+                      wd = run_dir, show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
 
   b_path <- file.path(run_dir, "work", "b.rds")

@@ -40,10 +40,11 @@ depends on which sas2r is installed.
 
 ## Running a program
 
-Programs run the way SAS programs do: with their autoexec. Any of these works:
+Programs run the way SAS programs do: from their folder, with their autoexec. Each program
+opens with one guarded line, `source("autoexec.R", chdir = TRUE)`, and any of these works:
 
 ```bash
-Rscript /full/path/run_20260907T120000Z_1a2b3c4d/adsl.R        # batch, from any directory
+cd run_20260907T120000Z_1a2b3c4d && Rscript adsl.R     # batch
 ```
 
 ```r
@@ -56,8 +57,8 @@ source("run_20260907T120000Z_1a2b3c4d/autoexec.R", chdir = TRUE)   # once per se
 source("run_20260907T120000Z_1a2b3c4d/adsl.R")                     # ... then any program, from anywhere
 ```
 
-A program sourced from some other working directory before the autoexec has run stops with a
-message saying exactly that. Pasted code works after the autoexec has run, too.
+A program run from some other working directory before the autoexec has run fails on that
+first line, because `autoexec.R` is not there. Pasted code works after the autoexec has run.
 
 ## Maintaining `autoexec.R`
 
