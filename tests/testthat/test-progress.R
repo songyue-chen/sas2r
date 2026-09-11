@@ -177,3 +177,108 @@ test_that("progress defaults on everywhere except under testthat", {
   withr::local_options(sas2r.progress = TRUE)
   expect_true(sas2r_progress_enabled())
 })
+
+# ---- event lines: who is working, on what ---------------------------------
+
+test_that("an agent event names the agent, its target, and how it ended", {
+  lines <- character()
+  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
+  ctx <- list(purpose = "program_review", component_id = "demo",
+              revision_id = "r1", round = 1L)
+  withCallingHandlers({
+    signal_agent_event("agent_started", "reviewer", ctx)
+    signal_agent_event("agent_finished", "reviewer", ctx, status = "ok", tool_calls = 3L)
+    signal_agent_event("agent_started", "translator", list(purpose = "translation", unit_id = 12L, round = 0L))
+    signal_agent_event("agent_finished", "translator", list(purpose = "translation", unit_id = 12L),
+                       status = "tool_calling_unavailable", tool_calls = 0L)
+    signal_agent_event("agent_started", "fixer",
+                       list(purpose = "program_fix", mode = "bundle", component_id = "demo",
+                            revision_id = "r2", round = 2L))
+  }, sas2r_progress = handler)
+
+  expect_identical(lines, c(
+    "  reviewer  demo (r1, round 1): reviewing",
+    "  reviewer  demo (r1, round 1): ok, 3 tool calls",
+    "  translator  unit 12: translating",
+    "  translator  unit 12: tool_calling_unavailable",
+    "  fixer  demo (r2, round 2): repairing the bundle"
+  ))
+})
+
+test_that("coordinator events say what happened instead of counting to 1/1", {
+  lines <- character()
+  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
+  withCallingHandlers({
+    signal_immediate_coordinator_event("program_generated", "demo", "r1")
+    signal_immediate_coordinator_event("mechanical_pass", "demo", "r1")
+    signal_immediate_coordinator_event("program_reviewed", "demo", "r1")
+    signal_immediate_coordinator_event("agent_degraded", "demo", "r1",
+                                       reason = "tool_calling_unavailable")
+    signal_immediate_coordinator_event("program_fixed", "demo", "r2")
+    signal_immediate_coordinator_event("component_revisited", "demo")
+  }, sas2r_progress = handler)
+
+  expect_identical(lines, c(
+    "  coordinator  demo (r1): program generated",
+    "  coordinator  demo (r1): mechanical checks passed",
+    "  coordinator  demo (r1): reviewed",
+    "  coordinator  demo (r1): agent degraded -- tool_calling_unavailable",
+    "  coordinator  demo (r2): repaired",
+    "  coordinator  demo: revisited"
+  ))
+  expect_false(any(grepl("1/1", lines, fixed = TRUE)))
+})
+
+test_that("smoke and bundle events carry the attempt, the outcome, and a one-line reason", {
+  lines <- character()
+  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
+  long_reason <- paste0("Error in lib_read(): Dataset not found: work.stg1\n",
+                        "Calls: <Anonymous> ... more lines of traceback")
+  withCallingHandlers({
+    signal_program_smoke_event("program_smoke_started", "demo", attempt_id = "smoke_attempt_001")
+    signal_program_smoke_event("program_smoke_failed", "demo", attempt_id = "smoke_attempt_001",
+                               reason = long_reason)
+    signal_bundle_event("bundle_round_started", attempt_id = "bundle_attempt_001",
+                        round = 0L, status = "blocked")
+    signal_bundle_event("bundle_attempt_started", attempt_id = "bundle_attempt_001", round = 0L)
+    signal_bundle_event("bundle_attempt_completed", attempt_id = "bundle_attempt_001",
+                        round = 0L, passed = FALSE)
+    signal_bundle_event("bundle_gate_evaluated", attempt_id = "bundle_attempt_001",
+                        round = 0L, status = "blocked")
+    signal_bundle_event("bundle_fixer_invoked", attempt_id = "bundle_attempt_001",
+                        round = 1L, component_id = "demo")
+    signal_bundle_event("bundle_early_stop", attempt_id = "bundle_attempt_001",
+                        round = 1L, reason = "no_fixer_llm")
+  }, sas2r_progress = handler)
+
+  expect_identical(lines, c(
+    "  smoke  demo: started [smoke_attempt_001]",
+    "  smoke  demo: failed [smoke_attempt_001] -- Error in lib_read(): Dataset not found: work.stg1",
+    "  bundle  first pass started",
+    "  bundle  first pass: running bundle_attempt_001",
+    "  bundle  first pass: bundle_attempt_001 failed",
+    "  bundle  first pass: bundle_attempt_001 assessed -- blocked",
+    "  bundle  repair round 1: fixer invoked for demo",
+    "  bundle  repair round 1: stopping early -- no_fixer_llm"
+  ))
+})
+
+test_that("an identical consecutive event line is drawn once", {
+  lines <- character()
+  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
+  withCallingHandlers({
+    signal_immediate_coordinator_event("program_generated", "demo", "r1")
+    signal_immediate_coordinator_event("program_generated", "demo", "r1")
+    signal_immediate_coordinator_event("mechanical_pass", "demo", "r1")
+  }, sas2r_progress = handler)
+  expect_length(lines, 2L)
+})
+
+test_that("a very long reason is folded to its first line and cut", {
+  reason <- paste(rep("x", 200), collapse = "")
+  folded <- progress_reason(reason)
+  expect_lte(nchar(folded), 4L + 100L)
+  expect_match(folded, "\\.\\.\\.$")
+  expect_identical(progress_reason(NULL), "")
+  expect_identical(progress_reason("  first line  \nsecond"), " -- first line")
+})

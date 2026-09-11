@@ -907,3 +907,34 @@ test_that("transient transport failures retry with bounded backoff; terminal one
   expect_identical(r3$status, "authentication_failed")
   expect_identical(calls3, 1L)
 })
+
+test_that("run_agent announces itself and its outcome as progress events", {
+  seen <- list()
+  ctx <- list(purpose = "program_review", component_id = "demo", revision_id = "r1", round = 1L)
+  withCallingHandlers(
+    run_agent(spec_min(), mock_llm(list(good)), tools = list(),
+              user_content = "unit", log_dir = withr::local_tempdir(),
+              audit_context = ctx),
+    sas2r_agent_event = function(e) seen[[length(seen) + 1L]] <<- e
+  )
+  expect_length(seen, 2L)
+  expect_identical(seen[[1]]$event, "agent_started")
+  expect_identical(seen[[1]]$agent, "t")
+  expect_identical(seen[[1]]$component_id, "demo")
+  expect_identical(seen[[1]]$purpose, "program_review")
+  expect_identical(seen[[2]]$event, "agent_finished")
+  expect_identical(seen[[2]]$status, "ok")
+  expect_identical(seen[[2]]$tool_calls, 0L)
+})
+
+test_that("the finalization prompts tell the model its tools are closed", {
+  # The finalization request registers no tools but replays the tool calls
+  # the model just made; without being told, a model asks for one more and
+  # the transport answers "Unknown tool". Both routes into finalization --
+  # the model finishing gathering, and the tool allowance running out --
+  # say so.
+  expect_match(AGENT_FINALIZE_MESSAGE, "tools are now closed")
+  expect_match(AGENT_FINALIZE_MESSAGE, "required schema")
+  expect_match(AGENT_TOOL_LIMIT_MESSAGE, "tools are now closed")
+  expect_match(AGENT_TOOL_LIMIT_MESSAGE, "context already gathered")
+})

@@ -612,7 +612,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
   expect_identical(direct$request_ids[3:4], c("call_1", "call_1"))
   two_phase_final <- Filter(function(call) {
     identical(call$method, "chat_structured") &&
-      identical(call$prompt, "Return the complete final answer in the required schema.")
+      identical(call$prompt, sas2r:::AGENT_FINALIZE_MESSAGE)
   }, calls)
   expect_length(two_phase_final, 1L)
   expect_identical(

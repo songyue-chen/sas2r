@@ -91,7 +91,11 @@ test_that("sas_translate renders progress events when enabled", {
     res <- sas_translate(f, out_dir = out, execute = TRUE),
     type = "message"
   )
-  expect_true(any(grepl("\\d+/\\d+", msgs)))
+  # Each line says who did what to which component -- never a bare `1/1`.
+  expect_true(any(grepl("^  coordinator  .+: program generated$", msgs)))
+  expect_true(any(grepl("^  smoke  .+: (started|passed|failed|deferred)", msgs)))
+  expect_true(any(grepl("^  bundle  first pass", msgs)))
+  expect_false(any(grepl("\\d+/\\d+", msgs)))
 })
 
 test_that("sas_translate surfaces components whose agent path was unavailable", {
