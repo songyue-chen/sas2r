@@ -271,7 +271,7 @@ test_that("a wrong lib_write call in a bundle fails its run with the teaching me
   write_autoexec(NULL, bundle, library_map = list(
     work = list(read_path = bundle, write_path = bundle, engine = "rds", write = "rds")))
   writeLines(c(
-    module_bootstrap(),
+    module_bootstrap("prog.R"),
     "adsl <- data.frame(x = 1)",
     'lib_write("work.adsl", adsl)'
   ), file.path(bundle, "prog.R"))

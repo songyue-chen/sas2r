@@ -16,13 +16,13 @@ autoexec_fixture <- function(bundle, program = character()) {
   write_formats(list(), bundle)
   write_autoexec(NULL, bundle)
   if (length(program)) {
-    writeLines(c(module_bootstrap(), program), file.path(bundle, "prog.R"))
+    writeLines(c(module_bootstrap("prog.R"), program), file.path(bundle, "prog.R"))
   }
   invisible(bundle)
 }
 
 test_that("the bootstrap header is short, and names only autoexec.R", {
-  hdr <- module_bootstrap()
+  hdr <- module_bootstrap("adsl.R")
   # The whole point: a reader opening a program meets the translation, not a
   # page of plumbing. No file-location search either (ADR 0004): programs run
   # where their autoexec is.
@@ -119,11 +119,25 @@ test_that("a program runs from its folder, from Rscript anywhere, and after the 
 
   # A module staged in a subfolder walks up to the bundle root.
   dir.create(file.path(bundle, "inc"))
-  writeLines(c(module_bootstrap(), 'cat("SUB_OK\\n")'), file.path(bundle, "inc", "sub.R"))
+  writeLines(c(module_bootstrap("sub.R"), 'cat("SUB_OK\\n")'), file.path(bundle, "inc", "sub.R"))
   r2 <- callr::rscript(file.path(bundle, "inc", "sub.R"), wd = elsewhere,
                        show = FALSE, fail_on_status = FALSE)
   expect_identical(r2$status, 0L)
   expect_match(r2$stdout, "SUB_OK", fixed = TRUE)
+
+  # A driver launched as `Rscript driver.R` names the driver on the command
+  # line, not the program, so the working directory decides: from the run
+  # folder the program boots; from elsewhere it stops and says so. (A test
+  # runner and a GitHub Actions step are launched the same way.)
+  driver <- file.path(elsewhere, "driver.R")
+  writeLines(sprintf("source(%s)", deparse(file.path(bundle, "prog.R"))), driver)
+  unlink(file.path(bundle, "work"), recursive = TRUE)
+  r3 <- callr::rscript(driver, wd = bundle, show = FALSE, fail_on_status = FALSE)
+  expect_identical(r3$status, 0L)
+  expect_true(file.exists(written))
+  r4 <- callr::rscript(driver, wd = elsewhere, show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(r4$status, 0L))
+  expect_match(r4$stderr, "autoexec\\.R.*setwd\\(")
 
   # Sourced by path from an unrelated working directory before the autoexec
   # has run: the SAS convention, stated rather than worked around.

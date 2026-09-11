@@ -38,16 +38,30 @@ BANNER <- c(
 #' registry, `lib_read()`, and `sas2r_source_include()` inside that sandbox
 #' rather than leaking them into `globalenv()`.
 #'
+#' The header carries the program's own file name, and trusts the `--file=`
+#' on the command line only when it names that file: `Rscript adsl.R` from
+#' anywhere finds adsl.R's folder, while a test runner, a driver script, or a
+#' GitHub Actions step -- all launched as `Rscript <something else>` that then
+#' sources the program -- fall through to the working directory, which is
+#' where the convention says the program is run from.
+#'
+#' @param file The program's file name (no directory), as staged.
 #' @return A character vector of R source lines.
 #' @noRd
-module_bootstrap <- function() {
+module_bootstrap <- function(file) {
+  if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
+    cli::cli_abort("module_bootstrap() needs the program's file name",
+                   class = "sas2r_invalid_argument")
+  }
+  file <- basename(file)
   c(
     "# sas2r bootstrap: autoexec.R beside this program holds the library paths and loads the",
     "# runtime. Rscript finds it from anywhere; in a session, run from this folder, or",
     '# source("autoexec.R", chdir = TRUE) once first. Skipped when the runtime is already loaded.',
     'if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) {',
     '  .sas2r_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))',
-    "  .sas2r_dir <- if (length(.sas2r_file) == 1L) dirname(.sas2r_file) else getwd()",
+    sprintf("  .sas2r_dir <- if (length(.sas2r_file) == 1L && basename(.sas2r_file) == %s) dirname(.sas2r_file) else getwd()",
+            deparse(file)),
     '  while (!file.exists(file.path(.sas2r_dir, "autoexec.R")) && !identical(dirname(.sas2r_dir), .sas2r_dir)) .sas2r_dir <- dirname(.sas2r_dir)',
     '  if (!file.exists(file.path(.sas2r_dir, "autoexec.R")))',
     '    stop("sas2r: autoexec.R not found at or above ", normalizePath(.sas2r_dir, mustWork = FALSE), ": setwd() into this",',
@@ -545,7 +559,7 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
          "# a program either, so nothing in the staged bundle executes it and its",
          "# units are left as stubs rather than presented as translation.", "")
   } else if (bootstrap) {
-    list(BANNER, "", module_bootstrap(), "")
+    list(BANNER, "", module_bootstrap(basename(out_file)), "")
   } else if (unstaged_parent) {
     list(BANNER,
          "# Included module -- one per included SAS file. Every %INCLUDE site",

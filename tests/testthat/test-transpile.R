@@ -949,7 +949,7 @@ test_that("bootstrap finds its bundle via --file= when launched by Rscript elsew
   write_helpers(bundle)
   write_formats(list(), bundle)
   write_autoexec(NULL, bundle)
-  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
+  writeLines(c(module_bootstrap("prog.R"), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
 
   elsewhere <- withr::local_tempdir()
   res <- callr::rscript(
@@ -964,7 +964,7 @@ test_that("bootstrap failure tells the user how to launch the program", {
   # With no registry anywhere above the anchor, the error must be actionable:
   # name source() and setwd() rather than only reporting the search root.
   lonely <- withr::local_tempdir()
-  writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
+  writeLines(c(module_bootstrap("prog.R"), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
 
   elsewhere <- withr::local_tempdir()
   res <- callr::rscript(
