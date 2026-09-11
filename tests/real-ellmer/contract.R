@@ -811,9 +811,7 @@ wire_history_positions <- function(request) {
       contains_value(item, "gathered context")
     }),
     current_final_prompt = first_position(function(item) {
-      contains_value(
-        item, "Return the complete final answer in the required schema."
-      )
+      contains_value(item, sas2r:::AGENT_FINALIZE_MESSAGE)
     })
   )
 }
@@ -852,7 +850,9 @@ for (o in outputs) {
     stop("tool result on the wire is not the object the tool returned (double-encoded?): ", o)
   }
 }
-final_prompt <- "Return the complete final answer in the required schema."
+# The sentence the runner sends when the tool phase ends; pinned by the package,
+# not retyped here, so the wire assertion follows the runner.
+final_prompt <- sas2r:::AGENT_FINALIZE_MESSAGE
 finalization_requests <- Filter(function(request) {
   has_structured_format(request) && contains_value(request$body, final_prompt)
 }, transport_requests)
