@@ -343,9 +343,52 @@ agent_transient_backoff_seconds <- function(attempt) {
   min(base ^ attempt, 30)
 }
 
+#' What the model is told when the tool phase ends and the answer is due
+#'
+#' The finalization request registers no tools -- ellmer cannot combine
+#' registered tools with structured output -- but it replays the whole
+#' gathering conversation, tool calls included. Told only "return the final
+#' answer", a model that has just been calling `lookup_rulebook` may ask for
+#' one more, and the transport answers "Unknown tool" and warns. Saying that
+#' the tools are closed is what stops it reaching for them.
+#' @noRd
+AGENT_FINALIZE_MESSAGE <- paste(
+  "The tools are now closed and cannot be called again.",
+  "Return the complete final answer in the required schema,",
+  "using the context already gathered."
+)
+AGENT_TOOL_LIMIT_MESSAGE <- paste(
+  "The tool call allowance for this unit is used up and the tools are now closed.",
+  "Return the complete final answer in the required schema",
+  "using the context already gathered."
+)
+
 run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
                       prompt_vars = list(), on_charge = NULL,
                       usage_budget = NULL, audit_context = list()) {
+  # The console line a person watches names the agent and its target, so the
+  # signal carries the audit context the agent already has. A failure that
+  # escapes the loop is reported as one, then rethrown.
+  agent <- spec$name %||% "agent"
+  signal_agent_event("agent_started", agent, audit_context)
+  result <- tryCatch(
+    run_agent_impl(spec, llm, tools, user_content, log_dir = log_dir,
+                   prompt_vars = prompt_vars, on_charge = on_charge,
+                   usage_budget = usage_budget, audit_context = audit_context),
+    error = function(error) {
+      signal_agent_event("agent_finished", agent, audit_context,
+                         status = "error", reason = conditionMessage(error))
+      stop(error)
+    }
+  )
+  signal_agent_event("agent_finished", agent, audit_context,
+                     status = result$status, tool_calls = result$tool_calls)
+  result
+}
+
+run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
+                           prompt_vars = list(), on_charge = NULL,
+                           usage_budget = NULL, audit_context = list()) {
   if (is.null(usage_budget)) usage_budget <- new_usage_budget()
   assert_usage_budget(usage_budget)
   start_known <- usage_budget$known_amount
@@ -571,11 +614,7 @@ run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
           tool_limit_finalized <- TRUE
           messages <- c(messages, list(list(
             role = "user",
-            content = paste(
-              "The tool call allowance for this unit is used up.",
-              "Return the complete final answer in the required schema using",
-              "the context already gathered."
-            )
+            content = AGENT_TOOL_LIMIT_MESSAGE
           )))
           phase <- "finalization"
           parent_request_id <- request$request_id
@@ -635,7 +674,7 @@ run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       }
       messages <- c(messages, list(list(
         role = "user",
-        content = "Return the complete final answer in the required schema."
+        content = AGENT_FINALIZE_MESSAGE
       )))
       phase <- "finalization"
       parent_request_id <- request$request_id

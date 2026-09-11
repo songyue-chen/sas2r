@@ -102,6 +102,42 @@ signal_immediate_coordinator_event <- function(
   invisible(NULL)
 }
 
+#' Signal that an agent starts or finishes a piece of work
+#'
+#' Emitted around every [run_agent()] call, so the console can say which agent
+#' is working and on what (`reviewer  demo (r1, round 1): reviewing`), and how
+#' it ended. The fields are the agent's own audit context -- purpose,
+#' component, unit, revision, round -- rather than a second vocabulary.
+#'
+#' @param event `agent_started` or `agent_finished`.
+#' @param agent The agent name from its spec.
+#' @param context The audit context the agent runs with.
+#' @param status,tool_calls,reason How the agent ended, for `agent_finished`.
+#' @noRd
+signal_agent_event <- function(event, agent, context = list(), status = NULL,
+                               tool_calls = NULL, reason = NULL) {
+  condition <- structure(
+    class = c(as.character(event), "sas2r_agent_event", "sas2r_progress", "condition"),
+    list(
+      message = "", call = NULL,
+      event = as.character(event),
+      phase = "agent",
+      agent = as.character(agent),
+      purpose = context$purpose,
+      mode = context$mode,
+      component_id = context$component_id,
+      unit_id = context$unit_id,
+      revision_id = context$revision_id,
+      round = context$round,
+      status = status,
+      tool_calls = tool_calls,
+      reason = reason
+    )
+  )
+  signalCondition(condition)
+  invisible(NULL)
+}
+
 #' Signal a structured bundle execution or repair event
 #'
 #' Emits bundle events such as `bundle_round_started`, `bundle_attempt_started`,
@@ -205,12 +241,126 @@ with_sas2r_progress <- function(expr, handler = NULL) {
   )
 }
 
-#' Console renderer: one line per completed unit, tallied within a phase
+#' The target an event is about, as the console names it
 #'
-#' Position signals advance nothing on screen -- drawing both the entry and the
-#' outcome of every unit would double the output of a 300-unit run for no added
-#' information. Each phase keeps its own tally, so the reviewer's line reports
-#' what the reviewer has judged rather than inheriting the translator's counts.
+#' `demo (r2, round 1)`: the component (or `unit 12` when only a unit is
+#' known), then the revision and repair round when the event carries them.
+#' @noRd
+progress_target <- function(progress) {
+  present <- function(x) !is.null(x) && length(x) == 1L && !is.na(x) && nzchar(as.character(x))
+  name <- if (present(progress$component_id)) as.character(progress$component_id)
+          else if (present(progress$unit_id)) paste("unit", progress$unit_id)
+          else NULL
+  if (is.null(name)) return(NULL)
+  bits <- character()
+  if (present(progress$revision_id)) bits <- c(bits, as.character(progress$revision_id))
+  # Rounds are zero-based inside the pipeline: 0 is the first pass, and only a
+  # repair round is worth naming.
+  if (present(progress$round) && as.integer(progress$round) > 0L) {
+    bits <- c(bits, paste("round", progress$round))
+  }
+  if (length(bits)) paste0(name, " (", paste(bits, collapse = ", "), ")") else name
+}
+
+#' A reason, folded to one trimmed line for the console
+#' @noRd
+progress_reason <- function(reason, width = 100L) {
+  if (is.null(reason) || !length(reason)) return("")
+  text <- trimws(strsplit(paste(as.character(reason), collapse = " "), "\n", fixed = TRUE)[[1]][1])
+  if (is.na(text) || !nzchar(text)) return("")
+  if (nchar(text) > width) text <- paste0(substr(text, 1L, width - 3L), "...")
+  paste0(" -- ", text)
+}
+
+#' One console line for an event, or `NULL` for a signal that draws nothing
+#'
+#' Every event names who is working and on what, in a fixed shape:
+#' `<who>  <target>: <what>`. The old renderer drew `coordinator 1/1` for each
+#' of a component's lifecycle events, which told the person watching nothing
+#' about which agent was busy or what had just happened.
+#' @noRd
+format_sas2r_progress <- function(progress) {
+  event <- progress$event
+  if (is.null(event) || !length(event)) return(NULL)
+  target <- progress_target(progress) %||% "?"
+  switch(
+    progress$phase %||% "",
+    agent = {
+      verb <- switch(
+        progress$purpose %||% "",
+        translation = "translating",
+        reviewer = "reviewing",
+        program_review = "reviewing",
+        program_fix = if (identical(progress$mode, "bundle")) "repairing the bundle" else "repairing",
+        progress$purpose %||% "working"
+      )
+      if (identical(event, "agent_started")) {
+        sprintf("%s  %s: %s", progress$agent, target, verb)
+      } else {
+        calls <- progress$tool_calls
+        calls <- if (!is.null(calls) && length(calls) == 1L && !is.na(calls) && calls > 0)
+          sprintf(", %d tool call%s", as.integer(calls), if (calls == 1) "" else "s") else ""
+        sprintf("%s  %s: %s%s%s", progress$agent, target,
+                progress$status %||% "finished", calls, progress_reason(progress$reason))
+      }
+    },
+    coordinator = {
+      what <- switch(
+        event,
+        program_generated = "program generated",
+        agent_degraded = paste0("agent degraded", progress_reason(progress$reason)),
+        mechanical_pass = "mechanical checks passed",
+        mechanical_fail = "mechanical checks failed",
+        program_reviewed = "reviewed",
+        program_fixed = "repaired",
+        component_revisited = "revisited",
+        gsub("_", " ", event, fixed = TRUE)
+      )
+      sprintf("coordinator  %s: %s", target, what)
+    },
+    smoke = {
+      status <- progress$status %||% sub("^program_smoke_", "", event)
+      attempt <- if (!is.null(progress$attempt_id)) paste0(" [", progress$attempt_id, "]") else ""
+      sprintf("smoke  %s: %s%s%s", target, status, attempt, progress_reason(progress$reason))
+    },
+    bundle = {
+      round <- if (is.null(progress$round) || is.na(progress$round)) "round ?"
+        else if (as.integer(progress$round) > 0L) sprintf("repair round %d", as.integer(progress$round))
+        else "first pass"
+      attempt <- progress$attempt_id %||% "attempt"
+      component <- progress$component_id %||% "?"
+      what <- switch(
+        event,
+        bundle_round_started = sprintf("%s started", round),
+        bundle_attempt_started = sprintf("%s: running %s", round, attempt),
+        bundle_attempt_completed = sprintf("%s: %s %s", round, attempt,
+                                           if (isTRUE(progress$passed)) "ran to completion" else "failed"),
+        bundle_gate_evaluated = sprintf("%s: %s assessed -- %s", round, attempt,
+                                        progress$status %||% "unknown"),
+        bundle_attempt_selected = sprintf("%s: %s selected", round, attempt),
+        bundle_early_stop = sprintf("%s: stopping early%s", round, progress_reason(progress$reason)),
+        bundle_fixer_invoked = sprintf("%s: fixer invoked for %s", round, component),
+        bundle_fixer_completed = sprintf("%s: fixer done for %s%s", round, component,
+                                         if (!is.null(progress$cost) && length(progress$cost) == 1L &&
+                                             is.finite(progress$cost))
+                                           sprintf(" ($%.4f)", progress$cost) else ""),
+        gsub("_", " ", sub("^bundle_", "", event), fixed = TRUE)
+      )
+      paste0("bundle  ", what)
+    },
+    NULL
+  )
+}
+
+#' Console renderer: one line per event, one per unit entry, tallied by phase
+#'
+#' An event (an agent starting or finishing, a coordinator, smoke, or bundle
+#' step) draws one line naming who is working and on what, and an identical
+#' consecutive line is not repeated. Position signals draw on entry only --
+#' drawing both the entry and the outcome of every unit would double the
+#' output of a 300-unit run for no added information -- and each phase keeps
+#' its own tally, so the reviewer's line reports what the reviewer has judged
+#' rather than inheriting the translator's counts.
 #' @noRd
 sas2r_progress_cli_handler <- function(emit = NULL) {
   # stderr, not stdout: stdout is block-buffered when redirected to a file or a
@@ -222,7 +372,17 @@ sas2r_progress_cli_handler <- function(emit = NULL) {
   }
   tally <- new_sas2r_progress_tally()
   phase <- NULL
+  last <- NULL
   function(progress) {
+    line <- format_sas2r_progress(progress)
+    if (!is.null(line)) {
+      line <- paste0("  ", line)
+      if (!identical(line, last)) {
+        emit(line)
+        last <<- line
+      }
+      return(invisible(NULL))
+    }
     if (!identical(progress$phase, phase)) {
       phase <<- progress$phase
       tally <<- new_sas2r_progress_tally()
