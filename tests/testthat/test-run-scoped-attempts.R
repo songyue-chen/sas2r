@@ -43,9 +43,10 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
     run_root_files <- list.files(file.path(out, r$run_id))
     expect_true("sas2r-helpers.R" %in% run_root_files)
     expect_true("_sas2r_registry.R" %in% run_root_files)
+    expect_true("_sas2r_boot.R" %in% run_root_files)
     programs_at_root <- setdiff(
       grep("\\.R$", run_root_files, value = TRUE),
-      c("sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")
+      c("_sas2r_boot.R", "sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")
     )
     expect_gt(length(programs_at_root), 0L)
     expect_identical(grep("contract\\.json$", run_root_files, value = TRUE), character(0))

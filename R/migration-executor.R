@@ -681,13 +681,20 @@ run_bundle_attempt <- function(
   bundle_runner_fn <- function(bundle_dir, execution_order) {
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
+    # The bundle's own boot file loads the runtime trio, exactly as a program
+    # launched by a user would; an older bundle without one is loaded by hand.
+    boot_file <- file.path(bundle_dir, "_sas2r_boot.R")
     reg_file <- file.path(bundle_dir, "_sas2r_registry.R")
     helpers_file <- file.path(bundle_dir, "sas2r-helpers.R")
     formats_file <- file.path(bundle_dir, "_sas2r_formats.R")
 
-    if (file.exists(reg_file)) sys.source(reg_file, envir = globalenv())
-    if (file.exists(helpers_file)) sys.source(helpers_file, envir = globalenv())
-    if (file.exists(formats_file)) sys.source(formats_file, envir = globalenv())
+    if (file.exists(boot_file)) {
+      sys.source(boot_file, envir = globalenv())
+    } else {
+      if (file.exists(reg_file)) sys.source(reg_file, envir = globalenv())
+      if (file.exists(helpers_file)) sys.source(helpers_file, envir = globalenv())
+      if (file.exists(formats_file)) sys.source(formats_file, envir = globalenv())
+    }
 
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()

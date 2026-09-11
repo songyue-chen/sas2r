@@ -949,6 +949,7 @@ test_that("bootstrap finds its bundle via --file= when launched by Rscript elsew
   writeLines(".sas2r_registry <- list()", file.path(bundle, "_sas2r_registry.R"))
   writeLines("# helpers stub", file.path(bundle, "sas2r-helpers.R"))
   writeLines("# formats stub", file.path(bundle, "_sas2r_formats.R"))
+  write_boot(bundle)
   writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
 
   elsewhere <- withr::local_tempdir()
@@ -974,5 +975,5 @@ test_that("bootstrap failure tells the user how to launch the program", {
   expect_false(identical(res$status, 0L))
   expect_match(res$stderr, "source\\(")
   expect_match(res$stderr, "setwd\\(")
-  expect_match(res$stderr, "_sas2r_registry\\.R")
+  expect_match(res$stderr, "_sas2r_boot\\.R")
 })

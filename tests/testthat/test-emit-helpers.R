@@ -446,10 +446,12 @@ test_that("a LIBNAME naming work is shown but never rebinds the session library"
   expect_match(txt$module,
                "# sas2r:libref_session_library libref=work action=assign path='wk'")
   expect_false(grepl("libref_unrecognized", txt$module, fixed = TRUE))
-  # The bundle still runs, and `work` is still the directory the seed made.
+  # The bundle still runs, and `work` is still the directory the seed made:
+  # the bundle's own work folder, never the LIBNAME's `wk`.
   e <- new.env(parent = globalenv())
   withr::with_dir(out, sys.source("p.R", envir = e))
-  expect_identical(e$.sas2r_registry$work$read_path, "work")
+  expect_identical(e$.sas2r_registry$work$read_path,
+                   file.path(normalizePath(out, winslash = "/", mustWork = FALSE), "work"))
   expect_true(dir.exists(file.path(out, "work")))
   expect_no_error(withr::with_dir(out, {
     environment(e$lib_write) <- e

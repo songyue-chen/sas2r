@@ -335,6 +335,7 @@ snapshot_selected_bundle <- function(state, attempt) {
   } else {
     writeLines(c("# sas2r: no format catalog definitions", ""), file.path(bundle_dir, "_sas2r_formats.R"))
   }
+  write_boot(bundle_dir)
 
   # 3. Attempt registry with copy-on-write mapping
   if (!is.null(state$project)) {

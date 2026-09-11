@@ -22,16 +22,17 @@ next to a few files they depend on:
 run_20260907T120000Z_1a2b3c4d/
 ├── adsl.R                 <- translated programs
 ├── adae.R
+├── _sas2r_boot.R          <- loads the three files below; every program sources it
 ├── _sas2r_registry.R      <- where each libref reads from and writes to
 ├── sas2r-helpers.R        <- the runtime: thirty functions the programs call
 ├── _sas2r_formats.R       <- the compiled format catalog
 └── report.md
 ```
 
-The programs run **without sas2r installed**. Each starts with a bootstrap header that finds
-the bundle root -- the nearest directory at or above the program holding `_sas2r_registry.R`
--- and sources the three support files into the program's own environment. The runtime the
-bundle carries is the package's own runtime: `sas2r-helpers.R` is rendered from the same
+The programs run **without sas2r installed**. Each opens with a short bootstrap block that
+finds `_sas2r_boot.R` -- in the nearest directory at or above the program -- and sources it
+into the program's own environment; the boot file loads the registry, the helpers, and the
+formats, in that order. The runtime the bundle carries is the package's own runtime: `sas2r-helpers.R` is rendered from the same
 source files that define `lib_read()`, `sas_sort()` and the rest inside sas2r, and a test
 fails if the two ever differ. A bundle still always loads its own copy, so what it does never
 depends on which sas2r is installed.
@@ -50,25 +51,33 @@ Rscript /full/path/run_20260907T120000Z_1a2b3c4d/adsl.R
 
 Pasting a program into a console is the one launch mode the bootstrap cannot support -- pasted
 code has no file to locate itself by -- and it says so. `setwd()` into the run folder first,
-and pasted code works too.
+or source `_sas2r_boot.R` once (see below), and pasted code works too.
+
+A run folder can be moved or renamed **as a whole**. The registry records the session `work`
+library and every library the programs write relative to the folder, and the boot file binds
+that root when it loads. Only the source data the programs read is recorded as an absolute
+path: edit `_sas2r_registry.R` if that moves. A single program moved out of its folder stops
+with a message, because its runtime stayed behind.
 
 ## Using the runtime interactively
 
-The helpers are exported from sas2r, so at the console you attach the package and load the
-bundle's registry -- the list that says where each libref reads from and writes to:
+Source the bundle's boot file once per session -- the R counterpart of a SAS autoexec. It
+loads the registry (the list that says where each libref reads from and writes to), the
+helpers, and the formats into your session, and every program's header then finds the
+runtime already loaded and skips its own bootstrap:
 
 ```r
-library(sas2r)
 bundle <- "run_20260907T120000Z_1a2b3c4d"
-source(file.path(bundle, "_sas2r_registry.R"))   # defines .sas2r_registry
+source(file.path(bundle, "_sas2r_boot.R"))   # registry, helpers, formats, once
 
 adsl <- lib_read("adam", "adsl")     # honours the registry's paths and formats
 adsl$USUBJID                         # column names resolve case-insensitively
 sas_sort(adsl, by = "usubjid")
 ```
 
-Without sas2r installed, `source()` the bundle's own `sas2r-helpers.R` (and
-`_sas2r_formats.R` if you use formats) after the registry; it is the same code.
+The helpers the boot file loads are the bundle's own copy, which is the same code sas2r
+exports, so this works with or without sas2r installed; attach the package (`library(sas2r)`)
+when you want the help pages.
 
 Two rules the data-access helpers enforce, because a wrong call in a translated program should
 fail loudly rather than be reinterpreted: `lib_read()` takes the libref and member as two

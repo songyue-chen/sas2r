@@ -273,6 +273,7 @@ test_that("a wrong lib_write call in a bundle fails its run with the teaching me
     ")"
   ), file.path(bundle, "_sas2r_registry.R"))
   writeLines("# no formats", file.path(bundle, "_sas2r_formats.R"))
+  write_boot(bundle)
   writeLines(c(
     module_bootstrap(),
     "adsl <- data.frame(x = 1)",
