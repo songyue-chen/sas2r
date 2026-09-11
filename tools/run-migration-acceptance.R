@@ -251,7 +251,7 @@ run_fixture_acceptance <- function(artifacts_dir) {
   file.copy(list.files(res$bundle_dir, full.names = TRUE), fresh2, recursive = TRUE)
 
   for (fdir in list(fresh1, fresh2)) {
-    reg_p <- file.path(fdir, "_sas2r_registry.R")
+    reg_p <- file.path(fdir, "autoexec.R")
     if (file.exists(reg_p)) {
       reg_lines <- readLines(reg_p)
       reg_lines <- gsub("write_path = \"[^\"]*\"", paste0("write_path = \"", file.path(fdir, "out_libs"), "\""), reg_lines)
@@ -262,9 +262,13 @@ run_fixture_acceptance <- function(artifacts_dir) {
   # Execute in fresh root 1
   res1 <- tryCatch(
     callr::r(function(bdir) {
-      if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
-      if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
-      if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
+      if (file.exists(file.path(bdir, "autoexec.R"))) {
+        sys.source(file.path(bdir, "autoexec.R"), envir = globalenv(), chdir = TRUE)
+      } else {
+        if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
+        if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
+        if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
+      }
       r_files <- sort(list.files(bdir, pattern = "^0.*[.]R$", full.names = TRUE))
       for (f in r_files) sys.source(f, envir = globalenv())
       TRUE
@@ -275,9 +279,13 @@ run_fixture_acceptance <- function(artifacts_dir) {
   # Execute in fresh root 2
   res2 <- tryCatch(
     callr::r(function(bdir) {
-      if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
-      if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
-      if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
+      if (file.exists(file.path(bdir, "autoexec.R"))) {
+        sys.source(file.path(bdir, "autoexec.R"), envir = globalenv(), chdir = TRUE)
+      } else {
+        if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
+        if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
+        if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
+      }
       r_files <- sort(list.files(bdir, pattern = "^0.*[.]R$", full.names = TRUE))
       for (f in r_files) sys.source(f, envir = globalenv())
       TRUE

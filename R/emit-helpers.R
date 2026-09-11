@@ -1,15 +1,16 @@
-#' The fixed-name files every staged bundle carries, in bootstrap order
+#' The fixed-name files every staged bundle carries
 #'
-#' Written by [write_registry()], [write_helpers()], and [write_formats()], and
-#' sourced in this order by the bootstrap header [module_bootstrap()] emits.
-#' Their names are fixed, so they are not derived from any source file and
-#' cannot be renamed out of the way of one: a scanned source that happens to
-#' carry one of these names is guarded against in
-#' [guard_staged_paths_against_sources()] before anything is written.
+#' `autoexec.R` ([write_autoexec()]) is what the header [module_bootstrap()]
+#' emits sources; it in turn sources `sas2r-helpers.R` ([write_helpers()]) and
+#' `_sas2r_formats.R` ([write_formats()]) from its own folder. Their names are
+#' fixed, so they are not derived from any source file and cannot be renamed
+#' out of the way of one: a scanned source that happens to carry one of these
+#' names is guarded against in [guard_staged_paths_against_sources()] before
+#' anything is written. (A project's own `autoexec.sas` is an environment
+#' file, never a staged module, so it does not collide.)
 #'
 #' @noRd
-SAS2R_BUNDLE_FILES <- c("_sas2r_registry.R", "sas2r-helpers.R",
-                        "_sas2r_formats.R")
+SAS2R_BUNDLE_FILES <- c("autoexec.R", "sas2r-helpers.R", "_sas2r_formats.R")
 
 #' Emit runtime helpers script
 #'
@@ -69,6 +70,57 @@ write_helpers <- function(out_dir) {
   invisible(dest)
 }
 
+#' Canonicalize a path that may not exist yet
+#'
+#' `normalizePath()` resolves symlinks only for a path that exists, so a
+#' library directory a bundle has yet to create (`run/adam`) keeps whatever
+#' spelling it was built from while its root, which does exist, resolves --
+#' on macOS, `/var/...` against `/private/var/...`. Resolving the longest
+#' existing ancestor and reattaching the rest gives both the same spelling.
+#'
+#' @param path One absolute path.
+#' @return The path, canonical as far as it exists.
+#' @noRd
+canonical_future_path <- function(path) {
+  rest <- character()
+  dir <- path
+  while (!file.exists(dir)) {
+    parent <- dirname(dir)
+    if (identical(parent, dir)) break
+    rest <- c(basename(dir), rest)
+    dir <- parent
+  }
+  canon <- normalizePath(dir, winslash = "/", mustWork = FALSE)
+  if (length(rest)) file.path(canon, paste(rest, collapse = "/")) else canon
+}
+
+#' Spell one registry path as `autoexec.R` writes it
+#'
+#' A path inside the bundle is written relative to the bundle folder
+#' (`"work"`, `"adam"`), which is how a person reads and edits it and what lets
+#' a run folder move as a whole; [sas2r_resolve_registry()] makes it absolute
+#' again when `autoexec.R` loads. A path outside the bundle -- the source data
+#' a program reads -- is written as configured, absolute. A path that is not
+#' absolute (the bare `"work"` seed, or a configured directory that did not
+#' exist at translation time) is bundle-relative too: resolved against the
+#' working directory, as it used to be, it named a different folder on every
+#' launch.
+#'
+#' @param path One confined path.
+#' @param root The bundle root, canonical, or `NULL` to write the path as it
+#'   is (the commented `<FILL>` entries, which are not paths yet).
+#' @return One R string literal.
+#' @noRd
+registry_path_literal <- function(path, root = NULL) {
+  if (is.null(root)) return(deparse(path))
+  absolute <- grepl("^(/|[A-Za-z]:[/\\\\]|\\\\\\\\|~)", path)
+  if (!absolute) return(deparse(path))
+  canon <- canonical_future_path(path)
+  if (identical(canon, root)) return(deparse("."))
+  if (startsWith(canon, paste0(root, "/"))) return(deparse(substring(canon, nchar(root) + 2L)))
+  deparse(path)
+}
+
 #' Spell one libref as an R list-element name
 #'
 #' A libref is `[A-Za-z_]\w*` lower-cased, so it is always syntactic and the
@@ -84,15 +136,20 @@ libref_list_key <- function(libref) {
 #' Emit one `.sas2r_registry` entry
 #'
 #' Every value is [deparse()]d rather than pasted, so an arbitrary directory
-#' name cannot become code. See [confine_libref_path()].
+#' name cannot become code. See [confine_libref_path()] and, for the paths,
+#' [registry_path_literal()].
 #'
-#' @param libref,path,engine,write The entry's four fields.
+#' @param libref,read_path,write_path,engine,write The entry's fields.
 #' @param comma Whether a trailing comma follows.
+#' @param root The bundle root the paths are written relative to when they lie
+#'   inside it; `NULL` writes them literally.
 #' @return One line of R code.
 #' @noRd
-libref_registry_entry <- function(libref, read_path, write_path, engine, write, comma = TRUE) {
+libref_registry_entry <- function(libref, read_path, write_path, engine, write,
+                                  comma = TRUE, root = NULL) {
   sprintf("  %s = list(read_path = %s, write_path = %s, engine = %s, write = %s)%s",
-          libref_list_key(libref), deparse(read_path), deparse(write_path),
+          libref_list_key(libref), registry_path_literal(read_path, root),
+          registry_path_literal(write_path, root),
           deparse(engine), deparse(write), if (comma) "," else "")
 }
 
@@ -168,11 +225,13 @@ undeclared_registry_entry <- function(libref, bindings) {
     paste0("#", libref_registry_entry(libref, exprs[1], exprs[1], "sas7bdat", "rds")))
 }
 
-#' Emit libref registry script
+#' Emit `autoexec.R`: the bundle's library settings, then its loader
 #'
-#' Emits `_sas2r_registry.R`, the *seed* of the generated bundle's runtime
-#' registry: the libraries configuration declares, plus a session `work`
-#' directory. It is deliberately no longer a static project-wide map of every
+#' Emits `autoexec.R`, the file every program in a bundle sources first and
+#' the one a person maintains afterwards (`docs/decisions/0004-autoexec.md`).
+#' Its LIBRARIES section is the *seed* of the bundle's runtime registry: the
+#' libraries configuration declares, plus a session `work` directory. It is
+#' deliberately not a static project-wide map of every
 #' `LIBNAME` the scan saw. A libref is bound at a point in an execution, not
 #' once per project, so the bindings a source `LIBNAME` establishes are emitted
 #' where those statements stand -- see [emit_libref_statement()] -- and this
@@ -203,7 +262,8 @@ undeclared_registry_entry <- function(libref, bindings) {
 #' `LIBNAME` anywhere names -- the environment-provided case -- has no path to
 #' record, and only that one falls back to a bare placeholder.
 #'
-#' @param project A `sas2r_project` object.
+#' @param project A `sas2r_project` object, or `NULL` for a bundle with a
+#'   `work` library only (a test fixture, or an attempt with no project).
 #' @param out_dir Output directory path.
 #' @param effective The projection from [effective_librefs()]. Defaulted so a
 #'   caller holding only a project still works; [sas_transpile()] passes the
@@ -212,8 +272,10 @@ undeclared_registry_entry <- function(libref, bindings) {
 #'   override default staged library entries with attempt-specific paths.
 #' @return Invisible destination path.
 #' @noRd
-write_registry <- function(project, out_dir, effective = effective_librefs(project),
+write_autoexec <- function(project, out_dir, effective = effective_librefs(project),
                            library_map = NULL) {
+  root <- normalizePath(out_dir, winslash = "/", mustWork = FALSE)
+  if (is.null(project) && is.null(library_map)) library_map <- list()
   if (!is.null(library_map)) {
     work <- library_map[["work"]]
     configured <- library_map[setdiff(names(library_map), "work")]
@@ -222,16 +284,19 @@ write_registry <- function(project, out_dir, effective = effective_librefs(proje
       r_path <- confine_libref_path(entry$read_path %||% entry$path, libref)
       w_path <- confine_libref_path(entry$write_path %||% entry$path, libref)
       libref_registry_entry(libref, r_path, w_path,
-                            entry$engine %||% "sas7bdat", entry$write %||% "rds")
+                            entry$engine %||% "sas7bdat", entry$write %||% "rds",
+                            root = root)
     }, character(1), USE.NAMES = FALSE)
     undec_entries <- character()
     work_entry <- if (is.null(work)) {
-      libref_registry_entry("work", "work", "work", "rds", "rds", comma = FALSE)
+      libref_registry_entry("work", "work", "work", "rds", "rds", comma = FALSE,
+                            root = root)
     } else {
       r_path <- confine_libref_path(work$read_path %||% work$path, "work")
       w_path <- confine_libref_path(work$write_path %||% work$path, "work")
       libref_registry_entry("work", r_path, w_path,
-                            work$engine %||% "rds", work$write %||% "rds", comma = FALSE)
+                            work$engine %||% "rds", work$write %||% "rds", comma = FALSE,
+                            root = root)
     }
   } else {
     seed <- effective$seed
@@ -242,40 +307,72 @@ write_registry <- function(project, out_dir, effective = effective_librefs(proje
       r_path <- confine_libref_path(entry$read_path %||% entry$path, libref)
       w_path <- confine_libref_path(entry$write_path %||% entry$path, libref)
       libref_registry_entry(libref, r_path, w_path,
-                            entry$engine, entry$write)
+                            entry$engine, entry$write, root = root)
     }, character(1), USE.NAMES = FALSE)
     undec_entries <- unlist(lapply(effective$undeclared, function(libref) {
       undeclared_registry_entry(libref, effective$bindings)
     }), use.names = FALSE)
     work_entry <- if (is.null(work)) {
-      libref_registry_entry("work", "work", "work", "rds", "rds", comma = FALSE)
+      libref_registry_entry("work", "work", "work", "rds", "rds", comma = FALSE,
+                            root = root)
     } else {
       r_path <- confine_libref_path(work$read_path %||% work$path, "work")
       w_path <- confine_libref_path(work$write_path %||% work$path, "work")
       libref_registry_entry("work", r_path, w_path,
-                            work$engine, work$write, comma = FALSE)
+                            work$engine, work$write, comma = FALSE, root = root)
     }
   }
-  lines <- c(
-    "# Generated by sas2r -- libref registry. Edit paths as needed.",
+  writeLines(autoexec_lines(entries, undec_entries, work_entry),
+             file.path(out_dir, "autoexec.R"))
+  invisible(file.path(out_dir, "autoexec.R"))
+}
+
+#' The text of `autoexec.R`
+#'
+#' Settings first, loading last, because the file is read and edited by a
+#' person far more often than it is written by sas2r. The LOAD section has no
+#' file-location search: the header sources this file with `chdir = TRUE`,
+#' and a person does the same, so its own folder is the working directory
+#' while it loads; one guard line says so when it is not.
+#'
+#' @param entries,undeclared,work_entry The LIBRARIES lines, from
+#'   [libref_registry_entry()] and [undeclared_registry_entry()].
+#' @return A character vector of R source lines.
+#' @noRd
+autoexec_lines <- function(entries, undeclared, work_entry) {
+  version <- tryCatch(as.character(utils::packageVersion("sas2r")),
+                      error = function(e) "unknown")
+  c(
+    sprintf("# autoexec.R -- generated by sas2r %s, then yours to maintain.", version),
     "#",
-    "# This is the seed: the libraries your configuration declares, plus the",
-    "# session `work` directory. A libref a LIBNAME statement binds is not listed",
-    "# here -- the staged module carries an sas2r_libname_assign() or",
-    "# sas2r_libname_clear() call where that statement stands, so a libref that",
-    "# is rebound or cleared part-way through a program behaves the way it does",
-    "# in SAS.",
+    "# Every program in this folder sources this file first, the way SAS runs",
+    "# autoexec.sas. Edit the paths under LIBRARIES when data moves: a relative",
+    "# path means inside this folder, an absolute path is used as is. Nothing",
+    "# under LOAD needs editing.",
     "#",
-    "# A commented <FILL> entry below is a library something reads and nothing",
-    "# binds. Uncommenting it is enough unless the program itself clears the",
-    "# libref; to survive a LIBNAME ... CLEAR, name the library under",
-    "# `libraries:` in your sas2r configuration and translate again.",
+    "# These are the libraries in force before a program runs. A LIBNAME inside",
+    "# a program still binds its libref where it stands (the program carries an",
+    "# sas2r_libname_assign() call there), exactly as in SAS. A commented <FILL>",
+    "# entry is a library some program reads and nothing binds: set its path",
+    "# and uncomment it.",
+    "",
+    "# ---- LIBRARIES --------------------------------------------------------------",
+    "# read_path: where programs read the library; write_path: where they write it;",
+    "# engine: how members are stored there (sas7bdat or rds); write: how new",
+    "# members are written (rds).",
     ".sas2r_registry <- list(",
-    entries, undec_entries, work_entry, ")",
-    "dir.create(.sas2r_registry$work$write_path, showWarnings = FALSE, recursive = TRUE)"
+    entries, undeclared, work_entry,
+    ")",
+    "",
+    "# ---- LOAD (nothing to edit) -------------------------------------------------",
+    'if (!file.exists("sas2r-helpers.R"))',
+    '  stop("autoexec.R: source() it with chdir = TRUE, or setwd() into its folder first",',
+    "       call. = FALSE)",
+    '.sas2r_bundle_root <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)',
+    'source("sas2r-helpers.R", local = environment())',
+    ".sas2r_registry <- sas2r_resolve_registry(.sas2r_registry, .sas2r_bundle_root)",
+    'if (file.exists("_sas2r_formats.R")) source("_sas2r_formats.R", local = environment())'
   )
-  writeLines(lines, file.path(out_dir, "_sas2r_registry.R"))
-  invisible(file.path(out_dir, "_sas2r_registry.R"))
 }
 
 #' Emit the runtime registry change one source `LIBNAME` statement makes

@@ -17,7 +17,7 @@ gate_parse <- function(code) {
 #'
 #' @param r_path Path to the generated R program file.
 #' @param contract Behavioral contract list or object.
-#' @param registry Optional path to `_sas2r_registry.R` or registry object.
+#' @param registry Optional path to `autoexec.R` or registry object.
 #' @return A list with `pass` (logical), `errors` (character vector),
 #'   `warnings` (character vector), and `lint` (lint tibble).
 #' @noRd

@@ -4,7 +4,7 @@ test_that("transpile writes staged files with banner, helpers, and stubs", {
   tr <- sas_transpile(p, out)
   expect_s3_class(tr, "sas2r_transpilation")
   expect_true(file.exists(file.path(out, "sas2r-helpers.R")))
-  expect_true(file.exists(file.path(out, "_sas2r_registry.R")))
+  expect_true(file.exists(file.path(out, "autoexec.R")))
   staged <- readLines(file.path(out, "03_t1.R"))
   expect_match(staged[1:3], "NOT VERIFIED", all = FALSE)
   expect_true(any(grepl("sas_sort", staged)))
@@ -107,7 +107,7 @@ test_that("libname paths with backslashes escape safely in registry", {
   writeLines("libname adam 'C:\\data\\adam'; data a; set adam.adsl; run;", file.path(dir, "lib.sas"))
   out <- withr::local_tempdir()
   tr <- sas_transpile(sas_project(dir), out)
-  reg_lines <- readLines(file.path(out, "_sas2r_registry.R"))
+  reg_lines <- readLines(file.path(out, "autoexec.R"))
   reg <- paste(reg_lines, collapse = "\n")
   expect_no_error(parse(text = reg))
   expect_true(grepl("C:\\\\data\\\\adam", reg, fixed = TRUE))
@@ -495,7 +495,7 @@ test_that("the upward bundle-root walk stops at its level bound", {
   sys.source(file.path(out, "sas2r-helpers.R"), e)
 
   top <- withr::local_tempdir()
-  writeLines("# registry above the bound", file.path(top, "_sas2r_registry.R"))
+  writeLines("# bundle marker above the bound", file.path(top, "autoexec.R"))
   deep <- top
   for (i in seq_len(70L)) {
     deep <- file.path(deep, "d")
@@ -511,7 +511,7 @@ test_that("a symlink inside the bundle cannot reach outside it", {
   skip_on_os("windows")
   out <- withr::local_tempdir()
   write_helpers(out)
-  writeLines("_sas2r_registry_marker <- TRUE", file.path(out, "_sas2r_registry.R"))
+  writeLines("autoexec_marker <- TRUE", file.path(out, "autoexec.R"))
   outside <- withr::local_tempdir()
   writeLines("escaped <- TRUE", file.path(outside, "mod.R"))
   linked <- file.symlink(outside, file.path(out, "link"))
@@ -684,22 +684,23 @@ test_that("a dual-role module bootstraps standalone and skips it as an include",
   expect_false(any(vapply(watched, exists, logical(1),
                           envir = globalenv(), inherits = FALSE)))
 
-  # (a) Standalone, and from a working directory that is not the bundle root:
-  # the module finds the bundle from its own location and runs.
+  # (a) Standalone, from the run folder, into a sandbox: the module loads the
+  # runtime there. From an unrelated working directory it stops and says so
+  # (ADR 0004: programs run where their autoexec is).
   elsewhere <- withr::local_tempdir()
-  for (d in c(out, elsewhere)) {
-    dir.create(file.path(d, "work"), showWarnings = FALSE)
-    saveRDS(data.frame(x = 1:3), file.path(d, "work", "input.rds"))
-  }
-  withr::with_dir(elsewhere, {
-    e1 <- new.env(parent = globalenv())
-    sys.source(file.path(out, "prep.R"), envir = e1)
-    for (nm in c(".sas2r_registry", "lib_read", "sas2r_source_include", "prepped"))
-      expect_true(exists(nm, envir = e1, inherits = FALSE), info = nm)
-    # The bootstrap tidies its own scratch bindings away.
-    expect_false(exists(".sas2r_boot_root", envir = e1, inherits = FALSE))
-    expect_false(exists(".sas2r_boot_file", envir = e1, inherits = FALSE))
-  })
+  dir.create(file.path(out, "work"), showWarnings = FALSE)
+  saveRDS(data.frame(x = 1:3), file.path(out, "work", "input.rds"))
+  e1 <- new.env(parent = globalenv())
+  withr::with_dir(out, sys.source("prep.R", envir = e1))
+  for (nm in c(".sas2r_registry", "lib_read", "sas2r_source_include", "prepped"))
+    expect_true(exists(nm, envir = e1, inherits = FALSE), info = nm)
+  # The bootstrap tidies its own scratch bindings away.
+  expect_false(exists(".sas2r_dir", envir = e1, inherits = FALSE))
+  expect_warning(
+    expect_error(withr::with_dir(elsewhere, sys.source(file.path(out, "prep.R"),
+                                                       envir = new.env(parent = globalenv()))),
+                 "cannot open"),
+    "autoexec\\.R")
 
   withr::local_dir(out)
   # (b) Reached as an include, the header loads nothing: a caller's own
@@ -771,7 +772,7 @@ test_that("an aborting in-place transpile writes no bundle file into the source"
   writeLines("%include 'prep.R';", file.path(root, "driver.sas"))
   expect_error(sas_transpile(sas_project(root), root),
                class = "sas2r_staged_path_overwrites_source")
-  for (nm in c("sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")) {
+  for (nm in c("autoexec.R", "sas2r-helpers.R", "_sas2r_formats.R")) {
     expect_false(file.exists(file.path(root, nm)), info = nm)
   }
   expect_identical(setdiff(list.files(root), c("prep.R", "driver.sas")),
@@ -781,17 +782,17 @@ test_that("an aborting in-place transpile writes no bundle file into the source"
 test_that("a scanned source named like a bundle file is refused, not overwritten", {
   # M2: a fixed name cannot be renamed out of the way, so it has to be guarded.
   root <- withr::local_tempdir()
-  writeLines("libname raw 'data';", file.path(root, "_sas2r_registry.R"))
-  writeLines(c("environment:", "  autoexec:", "    - _sas2r_registry.R"),
+  writeLines("libname raw 'data';", file.path(root, "autoexec.R"))
+  writeLines(c("environment:", "  autoexec:", "    - autoexec.R"),
              file.path(root, "_sas2r.yml"))
   writeLines("data work.a; set work.input; run;", file.path(root, "prog.sas"))
-  before <- readLines(file.path(root, "_sas2r_registry.R"), warn = FALSE)
+  before <- readLines(file.path(root, "autoexec.R"), warn = FALSE)
 
   p <- sas_project(root)
   expect_true("environment" %in% p$files$origin)   # the shape under test
   expect_error(sas_transpile(p, root),
                class = "sas2r_staged_path_overwrites_source")
-  expect_identical(readLines(file.path(root, "_sas2r_registry.R"), warn = FALSE),
+  expect_identical(readLines(file.path(root, "autoexec.R"), warn = FALSE),
                    before)
 })
 
@@ -940,39 +941,39 @@ test_that("generated registry uses the same selected binding as project lineage"
     canonical(source_lib))
 })
 
-test_that("bootstrap finds its bundle via --file= when launched by Rscript elsewhere", {
-  # Pasting into a console and Rscript-from-another-directory both lack the
-  # source()/sys.source() frames the primary detection relies on; Rscript is
-  # recoverable through --file= on the command line, so a program launched as
-  # `Rscript /abs/path/prog.R` from any working directory must still boot.
+test_that("a program runs with Rscript from its folder, and not from elsewhere before the autoexec", {
+  # ADR 0004: programs run where their autoexec is, as SAS programs do. A batch
+  # job runs from the run folder; from anywhere else the first line fails
+  # because autoexec.R is not there.
   bundle <- withr::local_tempdir()
-  writeLines(".sas2r_registry <- list()", file.path(bundle, "_sas2r_registry.R"))
-  writeLines("# helpers stub", file.path(bundle, "sas2r-helpers.R"))
-  writeLines("# formats stub", file.path(bundle, "_sas2r_formats.R"))
+  write_helpers(bundle)
+  write_formats(list(), bundle)
+  write_autoexec(NULL, bundle)
   writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(bundle, "prog.R"))
 
-  elsewhere <- withr::local_tempdir()
-  res <- callr::rscript(
-    file.path(bundle, "prog.R"),
-    wd = elsewhere, show = FALSE, fail_on_status = FALSE
-  )
+  res <- callr::rscript(file.path(bundle, "prog.R"), wd = bundle,
+                        show = FALSE, fail_on_status = FALSE)
   expect_identical(res$status, 0L)
   expect_match(res$stdout, "BOOT_OK", fixed = TRUE)
+
+  elsewhere <- withr::local_tempdir()
+  res <- callr::rscript(file.path(bundle, "prog.R"), wd = elsewhere,
+                        show = FALSE, fail_on_status = FALSE)
+  expect_false(identical(res$status, 0L))
+  expect_match(res$stderr, "autoexec\\.R")
 })
 
-test_that("bootstrap failure tells the user how to launch the program", {
-  # With no registry anywhere above the anchor, the error must be actionable:
-  # name source() and setwd() rather than only reporting the search root.
+test_that("a program without its autoexec fails naming the missing file", {
+  # A program copied out of its folder has no autoexec.R beside it; the
+  # failure names that file, and the comment above the line says what to do.
   lonely <- withr::local_tempdir()
   writeLines(c(module_bootstrap(), 'cat("BOOT_OK")'), file.path(lonely, "prog.R"))
 
-  elsewhere <- withr::local_tempdir()
   res <- callr::rscript(
     file.path(lonely, "prog.R"),
-    wd = elsewhere, show = FALSE, fail_on_status = FALSE
+    wd = lonely, show = FALSE, fail_on_status = FALSE
   )
   expect_false(identical(res$status, 0L))
-  expect_match(res$stderr, "source\\(")
-  expect_match(res$stderr, "setwd\\(")
-  expect_match(res$stderr, "_sas2r_registry\\.R")
+  expect_match(res$stderr, "autoexec\\.R")
+  expect_true(any(grepl('source\\("autoexec.R", chdir = TRUE\\)', readLines(file.path(lonely, "prog.R")))))
 })

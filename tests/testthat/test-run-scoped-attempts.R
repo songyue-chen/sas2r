@@ -42,10 +42,11 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
   for (r in list(r1, r2)) {
     run_root_files <- list.files(file.path(out, r$run_id))
     expect_true("sas2r-helpers.R" %in% run_root_files)
-    expect_true("_sas2r_registry.R" %in% run_root_files)
+    expect_true("autoexec.R" %in% run_root_files)
+    expect_false("_sas2r_registry.R" %in% run_root_files)
     programs_at_root <- setdiff(
       grep("\\.R$", run_root_files, value = TRUE),
-      c("sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")
+      c("autoexec.R", "sas2r-helpers.R", "_sas2r_formats.R")
     )
     expect_gt(length(programs_at_root), 0L)
     expect_identical(grep("contract\\.json$", run_root_files, value = TRUE), character(0))
@@ -73,7 +74,7 @@ test_that("staging lives under .sas2r/ and no programs surface at the out_dir ro
 
   staging <- file.path(out, ".sas2r", "staging")
   expect_true(dir.exists(staging))
-  expect_true(file.exists(file.path(staging, "_sas2r_registry.R")))
+  expect_true(file.exists(file.path(staging, "autoexec.R")))
 
   # The out_dir root shows finished artifacts only -- no staged R programs
   # that a user could mistake for the selected translation.
@@ -142,13 +143,12 @@ test_that("the materialized run folder re-runs standalone: helpers and librefs j
   run_dir <- file.path(out, res$run_id)
   expect_true(file.exists(file.path(run_dir, "prog.R")))
 
-  # The regenerated registry points work at the run folder, not the attempt.
-  reg <- readLines(file.path(run_dir, "_sas2r_registry.R"), warn = FALSE)
+  # The regenerated autoexec points work at the run folder, not the attempt.
+  reg <- readLines(file.path(run_dir, "autoexec.R"), warn = FALSE)
   expect_false(any(grepl("bundle_attempt", reg, fixed = TRUE)))
 
-  elsewhere <- withr::local_tempdir()
   r <- callr::rscript(file.path(run_dir, "prog.R"),
-                      wd = elsewhere, show = FALSE, fail_on_status = FALSE)
+                      wd = run_dir, show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
 
   b_path <- file.path(run_dir, "work", "b.rds")

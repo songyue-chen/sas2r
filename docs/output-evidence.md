@@ -9,7 +9,7 @@
 ### Use Case 1: Source Only (No LLM, No Data)
 - **Inputs**: SAS source files (`.sas`). No data files, no configuration, no LLM required.
 - **Internal Work**: Scanner parses source, isolates translation units (DATA steps, PROCs, macros), extracts lineage, and applies deterministic transpiler rules. Generates baseline R scripts and helper runtimes.
-- **Observable Outputs**: Staged R scripts, standalone runtime helpers (`sas2r-helpers.R`, `_sas2r_registry.R`), and execution logs.
+- **Observable Outputs**: Staged R scripts, standalone runtime files (`autoexec.R`, `sas2r-helpers.R`, `_sas2r_formats.R`), and execution logs.
 
 ### Use Case 2: Source Plus LLM (No Data)
 - **Inputs**: SAS source files plus an active LLM configuration (`_sas2r.yml`). No customer data required.

@@ -893,7 +893,7 @@ generate_program_revision <- function(
   writeLines(final_r_code_lines, r_path)
   atomic_write_json(contract, contract_path)
 
-  registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "_sas2r_registry.R")
+  registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "autoexec.R")
   checks <- check_program_revision(r_path, contract = contract, registry = registry_path)
 
   list(

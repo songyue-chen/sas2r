@@ -504,7 +504,7 @@ sas_code <- function(x, file = 1L) {
   }
 
   all_files <- list.files(b_dir, pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
-  prog_files <- all_files[!basename(all_files) %in% c("sas2r-helpers.R", "_sas2r_registry.R", "_sas2r_formats.R")]
+  prog_files <- all_files[!basename(all_files) %in% SAS2R_BUNDLE_FILES]
   if (length(prog_files) == 0L) {
     prog_files <- all_files
   }

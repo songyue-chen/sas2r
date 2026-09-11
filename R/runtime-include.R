@@ -8,7 +8,7 @@
 #' environment, exactly where the `%INCLUDE` stood.
 #'
 #' The path is always relative to the staged bundle root -- the nearest
-#' ancestor of the running script holding `_sas2r_registry.R` -- and never to
+#' ancestor of the running script holding `autoexec.R` -- and never to
 #' the working directory, so the bundle can be run from anywhere. Absolute
 #' paths and `.` or `..` components are rejected, and the file the joined path
 #' actually resolves to is then required to lie under the root: rejecting the
@@ -77,7 +77,7 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
   dir <- normalizePath(start, winslash = "/", mustWork = FALSE)
   root <- NULL
   for (level in seq_len(64L)) {
-    if (file.exists(file.path(dir, "_sas2r_registry.R"))) {
+    if (file.exists(file.path(dir, "autoexec.R"))) {
       root <- dir
       break
     }
@@ -87,7 +87,7 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
   }
   if (is.null(root)) {
     fail("sas2r_include_root_error",
-         paste0("no staged bundle root (_sas2r_registry.R) at or above ", start))
+         paste0("no staged bundle root (autoexec.R) at or above ", start))
   }
 
   target <- file.path(root, path)
