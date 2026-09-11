@@ -15,7 +15,7 @@ attempt_runtime_fixture <- function(envir = parent.frame()) {
   project <- sas_project(prog_file, config = list(libraries = list(adam = input_dir)))
 
   lib_map <- build_attempt_library_map(project, candidate_root)
-  write_registry(project, staged_dir, library_map = lib_map)
+  write_autoexec(project, staged_dir, library_map = lib_map)
   write_helpers(staged_dir)
   before_objs <- ls(envir = globalenv(), all.names = TRUE)
   withr::defer({
@@ -36,7 +36,7 @@ attempt_runtime_fixture <- function(envir = parent.frame()) {
     input_dir = input_dir,
     candidate_root = candidate_root,
     staged_dir = staged_dir,
-    registry = file.path(staged_dir, "_sas2r_registry.R"),
+    autoexec = file.path(staged_dir, "autoexec.R"),
     helpers = file.path(staged_dir, "sas2r-helpers.R")
   )
 }
@@ -44,8 +44,7 @@ attempt_runtime_fixture <- function(envir = parent.frame()) {
 test_that("attempt runtime uses candidate-first copy-on-write libraries", {
   fx <- attempt_runtime_fixture()
   before <- unname(tools::md5sum(fx$input_file))
-  source(fx$registry)
-  source(fx$helpers)
+  source(fx$autoexec, chdir = TRUE)
 
   original <- lib_read("adam", "adsl")
   changed <- transform(original, TRT = "candidate")

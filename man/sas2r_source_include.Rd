@@ -21,7 +21,7 @@ environment, exactly where the \verb{\%INCLUDE} stood.
 }
 \details{
 The path is always relative to the staged bundle root -- the nearest
-ancestor of the running script holding \verb{_sas2r_registry.R} -- and never to
+ancestor of the running script holding \code{autoexec.R} -- and never to
 the working directory, so the bundle can be run from anywhere. Absolute
 paths and \code{.} or \code{..} components are rejected, and the file the joined path
 actually resolves to is then required to lie under the root: rejecting the
@@ -42,6 +42,7 @@ Other runtime helpers:
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},
+\code{\link{sas2r_resolve_registry}()},
 \code{\link{sas_compress}()},
 \code{\link{sas_display}()},
 \code{\link{sas_if_else}()},

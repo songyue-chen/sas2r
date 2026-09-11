@@ -50,6 +50,7 @@ Other runtime helpers:
 \code{\link{chr_cmp}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
+\code{\link{sas2r_resolve_registry}()},
 \code{\link{sas2r_source_include}()},
 \code{\link{sas_compress}()},
 \code{\link{sas_display}()},

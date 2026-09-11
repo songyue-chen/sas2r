@@ -1,8 +1,8 @@
 # Runtime helpers: librefs and data access. Part of the runtime every
 # translated program carries; see ?sas2r_runtime.
 
-# The libref registry is the `.sas2r_registry` list the bundle's
-# _sas2r_registry.R defines. The runtime finds it where it was loaded:
+# The libref registry is the `.sas2r_registry` list the bundle's autoexec.R
+# defines. The runtime finds it where it was loaded:
 # lexically first -- the environment the runtime was sourced into, which is
 # how a bundle program and a test harness both work -- then, for the package
 # form of the runtime, out through the global environment, and finally in any
@@ -21,8 +21,63 @@ sas2r_registry_env <- function() {
   }
   sas2r_libref_stop(
     "sas2r_no_registry",
-    "No libref registry is loaded: source the bundle's _sas2r_registry.R first"
+    "No libref registry is loaded: source the bundle's autoexec.R first (with chdir = TRUE)"
   )
+}
+
+#' Resolve a bundle's libref registry against its folder
+#'
+#' `autoexec.R` lists each libref's directories the way a person writes them:
+#' an absolute path is used as is, and a relative path means inside the bundle
+#' folder. This turns the relative ones into absolute paths against `root`,
+#' creates every write directory, and returns the registry ready for
+#' [lib_read()] and [lib_write()]. `autoexec.R` calls it once, after the
+#' helpers are loaded; call it yourself only when building a registry by hand.
+#'
+#' A `<FILL>` placeholder left in a path -- the commented entries `autoexec.R`
+#' carries for a library nothing binds -- is refused with the libref named,
+#' rather than becoming a directory called `<FILL...>`.
+#'
+#' @param registry The `.sas2r_registry` list as written in `autoexec.R`.
+#' @param root The bundle folder, as an absolute path.
+#' @return The registry, with every `read_path` and `write_path` absolute.
+#' @family runtime helpers
+#' @examples
+#' root <- tempfile("bundle"); dir.create(root)
+#' reg <- sas2r_resolve_registry(
+#'   list(work = list(read_path = "work", write_path = "work",
+#'                    engine = "rds", write = "rds")),
+#'   root)
+#' reg$work$write_path      # <root>/work, and the directory now exists
+#' @export
+sas2r_resolve_registry <- function(registry, root) {
+  if (!is.list(registry)) {
+    sas2r_libref_stop("sas2r_registry_error", "registry must be a list of libref entries")
+  }
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root)) {
+    sas2r_libref_stop("sas2r_registry_error", "root must be one directory path")
+  }
+  absolute <- function(p) grepl("^(/|[A-Za-z]:[/\\\\]|\\\\\\\\|~)", p)
+  for (libref in names(registry)) {
+    entry <- registry[[libref]]
+    for (field in intersect(c("read_path", "write_path", "path"), names(entry))) {
+      p <- entry[[field]]
+      if (!is.character(p) || length(p) != 1L || is.na(p) || !nzchar(p)) next
+      if (startsWith(p, "<FILL")) {
+        sas2r_libref_stop(
+          "sas2r_registry_fill",
+          paste0("autoexec.R: libref ", libref, " still has a <FILL> placeholder for ",
+                 field, "; set the path"))
+      }
+      entry[[field]] <- if (absolute(p)) path.expand(p) else file.path(root, p)
+    }
+    w <- if (!is.null(entry$write_path)) entry$write_path else entry$path
+    if (is.character(w) && length(w) == 1L && !is.na(w) && nzchar(w)) {
+      dir.create(w, showWarnings = FALSE, recursive = TRUE)
+    }
+    registry[[libref]] <- entry
+  }
+  registry
 }
 
 #' Bind or clear a libref at its point of use
@@ -162,9 +217,10 @@ sas2r_fold_names <- function(df) {
 #' the canonical form in the message, so a wrong call in an agent translation
 #' becomes repair feedback instead of being silently reinterpreted.
 #'
-#' The registry is the `.sas2r_registry` list a bundle's `_sas2r_registry.R`
+#' The registry is the `.sas2r_registry` list a bundle's `autoexec.R`
 #' defines; in a translated program it is loaded by the bootstrap header. To
-#' use these helpers interactively, source that file first.
+#' use these helpers interactively, source that file first, with
+#' `chdir = TRUE`.
 #'
 #' @param libref The libref, as a single string.
 #' @param member The dataset member name, as a single string.

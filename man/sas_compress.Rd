@@ -42,6 +42,7 @@ Other runtime helpers:
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},
+\code{\link{sas2r_resolve_registry}()},
 \code{\link{sas2r_source_include}()},
 \code{\link{sas_display}()},
 \code{\link{sas_if_else}()},

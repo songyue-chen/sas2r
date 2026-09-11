@@ -86,7 +86,7 @@ test_that("snapshot_selected_bundle copies programs, helpers, formats and emits 
 
   expect_true(dir.exists(attempt$bundle_dir))
   expect_true(file.exists(file.path(attempt$bundle_dir, "sas2r-helpers.R")))
-  expect_true(file.exists(file.path(attempt$bundle_dir, "_sas2r_registry.R")))
+  expect_true(file.exists(file.path(attempt$bundle_dir, "autoexec.R")))
   expect_true(file.exists(file.path(attempt$bundle_dir, "_sas2r_formats.R")))
   expect_true(file.exists(file.path(attempt$bundle_dir, "prog_a.R")))
   expect_true(file.exists(file.path(attempt$bundle_dir, "prog_b.R")))

@@ -37,9 +37,10 @@ strings, single-argument calls, and \verb{dataset=}/\verb{table=} aliases fail w
 the canonical form in the message, so a wrong call in an agent translation
 becomes repair feedback instead of being silently reinterpreted.
 
-The registry is the \code{.sas2r_registry} list a bundle's \verb{_sas2r_registry.R}
+The registry is the \code{.sas2r_registry} list a bundle's \code{autoexec.R}
 defines; in a translated program it is loaded by the bootstrap header. To
-use these helpers interactively, source that file first.
+use these helpers interactively, source that file first, with
+\code{chdir = TRUE}.
 }
 \examples{
 lib <- tempfile("lib"); dir.create(lib)
@@ -57,6 +58,7 @@ Other runtime helpers:
 \code{\link{chr_cmp}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},
+\code{\link{sas2r_resolve_registry}()},
 \code{\link{sas2r_source_include}()},
 \code{\link{sas_compress}()},
 \code{\link{sas_display}()},

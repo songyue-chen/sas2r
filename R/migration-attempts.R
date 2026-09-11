@@ -268,7 +268,7 @@ input_hash_manifest <- function(project) {
 #' @param bundle_dir The selected attempt's bundle directory.
 #' @param run_dir The run folder root.
 #' @param project Optional `sas2r_project`. When supplied, the materialized
-#'   copy gets its own registry anchored at the run folder -- `work` and every
+#'   copy gets its own `autoexec.R` anchored at the run folder -- `work` and every
 #'   configured libref's write path point beside the programs, not into the
 #'   attempt evidence directories (which pruning may already have emptied) --
 #'   so `lib_read()`/`lib_write()` work when the user re-runs the programs in
@@ -286,7 +286,7 @@ materialize_run_translation <- function(bundle_dir, run_dir, project = NULL) {
   rels <- list.files(bundle_dir, recursive = TRUE)
   keep <- !grepl("\\.contract\\.json$", rels) &
     rels != "_sas2r_bundle_progress.json"
-  if (fresh_registry) keep <- keep & rels != "_sas2r_registry.R"
+  if (fresh_registry) keep <- keep & rels != "autoexec.R"
   for (rel in rels[keep]) {
     dest <- file.path(run_dir, rel)
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
@@ -294,7 +294,7 @@ materialize_run_translation <- function(bundle_dir, run_dir, project = NULL) {
   }
   if (fresh_registry) {
     lib_map <- build_attempt_library_map(project, run_dir)
-    write_registry(project, run_dir, library_map = lib_map)
+    write_autoexec(project, run_dir, library_map = lib_map)
   }
   invisible(run_dir)
 }
@@ -335,12 +335,11 @@ snapshot_selected_bundle <- function(state, attempt) {
   } else {
     writeLines(c("# sas2r: no format catalog definitions", ""), file.path(bundle_dir, "_sas2r_formats.R"))
   }
-  write_boot(bundle_dir)
 
   # 3. Attempt registry with copy-on-write mapping
   if (!is.null(state$project)) {
     lib_map <- build_attempt_library_map(state$project, attempt_dir)
-    write_registry(state$project, bundle_dir, library_map = lib_map)
+    write_autoexec(state$project, bundle_dir, library_map = lib_map)
     for (libref in names(lib_map)) {
       w_dir <- lib_map[[libref]]$write_path
       if (!is.null(w_dir) && nzchar(w_dir)) {
@@ -348,14 +347,9 @@ snapshot_selected_bundle <- function(state, attempt) {
       }
     }
   } else {
-    reg_lines <- c(
-      ".sas2r_registry <- list(",
-      sprintf("  work = list(read_path = %s, write_path = %s, engine = 'rds', write = 'rds')",
-              deparse(file.path(attempt_dir, "work")), deparse(file.path(attempt_dir, "work"))),
-      ")",
-      "dir.create(.sas2r_registry$work$write_path, showWarnings = FALSE, recursive = TRUE)"
-    )
-    writeLines(reg_lines, file.path(bundle_dir, "_sas2r_registry.R"))
+    work_dir <- file.path(attempt_dir, "work")
+    write_autoexec(NULL, bundle_dir, library_map = list(
+      work = list(read_path = work_dir, write_path = work_dir, engine = "rds", write = "rds")))
   }
 
   # 4. Active generated programs and contracts

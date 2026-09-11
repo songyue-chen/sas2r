@@ -195,11 +195,12 @@ test_that("write_helpers copies template to output directory", {
   expect_identical(basename(dest), "sas2r-helpers.R")
 })
 
-test_that("registry writer emits a sourceable registry with WORK", {
+test_that("the autoexec writer emits a sourceable registry with WORK", {
   p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
   out <- withr::local_tempdir()
-  write_registry(p, out)
-  e <- new.env(); sys.source(file.path(out, "_sas2r_registry.R"), e)
+  write_helpers(out)
+  write_autoexec(p, out)
+  e <- new.env(); sys.source(file.path(out, "autoexec.R"), e, chdir = TRUE)
   expect_true("adam" %in% names(e$.sas2r_registry))
   expect_true(dir.exists(e$.sas2r_registry$work$write_path))
 })
@@ -266,14 +267,9 @@ test_that("a wrong lib_write call in a bundle fails its run with the teaching me
   # canonical signature must reach stderr when a real bundle program runs.
   bundle <- withr::local_tempdir()
   write_helpers(bundle)
-  writeLines(c(
-    ".sas2r_registry <- list(",
-    sprintf("  work = list(read_path = %s, write_path = %s, engine = 'rds', write = 'rds')",
-            deparse(bundle), deparse(bundle)),
-    ")"
-  ), file.path(bundle, "_sas2r_registry.R"))
-  writeLines("# no formats", file.path(bundle, "_sas2r_formats.R"))
-  write_boot(bundle)
+  write_formats(list(), bundle)
+  write_autoexec(NULL, bundle, library_map = list(
+    work = list(read_path = bundle, write_path = bundle, engine = "rds", write = "rds")))
   writeLines(c(
     module_bootstrap(),
     "adsl <- data.frame(x = 1)",

@@ -19,7 +19,7 @@ libref_emit_fixture <- function(root, sas, libraries = NULL, dirs = character())
 transpiled_text <- function(project, out) {
   suppressMessages(sas_transpile(project, out))
   list(module = paste(readLines(file.path(out, "p.R")), collapse = "\n"),
-       registry = paste(readLines(file.path(out, "_sas2r_registry.R")),
+       registry = paste(readLines(file.path(out, "autoexec.R")),
                         collapse = "\n"))
 }
 
@@ -32,7 +32,7 @@ test_that("the registry seeds configured libraries and work, never a source bind
   out <- withr::local_tempdir()
   txt <- transpiled_text(p, out)
 
-  e <- new.env(); sys.source(file.path(out, "_sas2r_registry.R"), e)
+  e <- new.env(); sys.source(file.path(out, "autoexec.R"), e, chdir = TRUE)
   # The seed is exactly the configured library plus `work`. `adam` is bound by
   # a statement, so it belongs in the module, not in the seed.
   expect_setequal(names(e$.sas2r_registry), c("sdtm", "work"))
@@ -42,10 +42,10 @@ test_that("the registry seeds configured libraries and work, never a source bind
   expect_match(txt$module, "sas2r_libname_assign\\(\"adam\"")
 })
 
-test_that("write_registry reads the projection rather than reparsing librefs", {
+test_that("write_autoexec reads the projection rather than reparsing librefs", {
   # The discriminating test for "no independent reparse": the projection is
   # doctored so its seed disagrees with everything in the project, and the file
-  # has to follow the projection. A write_registry() that still built entries
+  # has to follow the projection. A write_autoexec() that still built entries
   # from project$librefs or project$flags would ignore both edits.
   root <- withr::local_tempdir()
   p <- libref_emit_fixture(
@@ -58,11 +58,12 @@ test_that("write_registry reads the projection rather than reparsing librefs", {
   effective$undeclared <- "phantom"
 
   out <- withr::local_tempdir()
-  sas2r:::write_registry(p, out, effective)
-  e <- new.env(); sys.source(file.path(out, "_sas2r_registry.R"), e)
+  sas2r:::write_helpers(out)
+  sas2r:::write_autoexec(p, out, effective)
+  e <- new.env(); sys.source(file.path(out, "autoexec.R"), e, chdir = TRUE)
   expect_setequal(names(e$.sas2r_registry), c("ghost", "work"))
   expect_identical(e$.sas2r_registry$ghost$write, "xpt")
-  expect_match(paste(readLines(file.path(out, "_sas2r_registry.R")),
+  expect_match(paste(readLines(file.path(out, "autoexec.R")),
                      collapse = "\n"),
                "#  phantom = list\\(read_path = \"<FILL")
 })
@@ -83,7 +84,7 @@ test_that("a seed path is confined on the way into the registry, as a statement 
                                     write = "rds")))) {
     doctored <- effective
     doctored$seed <- bad
-    expect_error(sas2r:::write_registry(p, out, doctored),
+    expect_error(sas2r:::write_autoexec(p, out, doctored),
                  class = "sas2r_libref_path_error")
   }
   # A configured path that is merely absolute and outside the project is not
@@ -91,7 +92,7 @@ test_that("a seed path is confined on the way into the registry, as a statement 
   doctored <- effective
   doctored$seed <- list(ghost = list(read_path = tempdir(), write_path = tempdir(), engine = "sas7bdat",
                                      write = "rds"))
-  expect_no_error(sas2r:::write_registry(p, out, doctored))
+  expect_no_error(sas2r:::write_autoexec(p, out, doctored))
 })
 
 test_that("the runtime registry follows the program's own rebinding", {
@@ -204,7 +205,7 @@ test_that("an unbound libref keeps translation complete behind a visible stub", 
   out <- withr::local_tempdir()
   tr <- suppressMessages(sas_transpile(p, out))
   txt <- list(module = paste(readLines(file.path(out, "p.R")), collapse = "\n"),
-              registry = paste(readLines(file.path(out, "_sas2r_registry.R")),
+              registry = paste(readLines(file.path(out, "autoexec.R")),
                                collapse = "\n"))
   # Visible in the module, visible in the registry, and no invented path.
   expect_match(txt$module,

@@ -48,10 +48,10 @@ new_migration_state <- function(
   write_helpers(staged_dir)
 
   lib_map <- build_attempt_library_map(p, attempt$attempt_dir)
-  write_registry(p, staged_dir, library_map = lib_map)
+  write_autoexec(p, staged_dir, library_map = lib_map)
 
   runtime <- list(
-    registry = file.path(staged_dir, "_sas2r_registry.R"),
+    autoexec = file.path(staged_dir, "autoexec.R"),
     helpers = file.path(staged_dir, "sas2r-helpers.R")
   )
 
@@ -137,8 +137,8 @@ normalize_migration_state <- function(
     if (is.null(state$translator_llm) && !is.null(state$llm)) state$translator_llm <- state$llm
     if (is.null(state$runtime) && !is.null(state$paths)) {
       helpers_file <- system.file("templates", "sas2r-helpers.R", package = "sas2r")
-      reg_file <- file.path(state$paths$state, "_sas2r_registry.R")
-      state$runtime <- list(registry = reg_file, helpers = helpers_file)
+      state$runtime <- list(autoexec = file.path(state$paths$staging, "autoexec.R"),
+                            helpers = helpers_file)
     }
   }
 

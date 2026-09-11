@@ -19,7 +19,7 @@ BANNER <- c(
 #'   Entered directly, that is a fresh environment and the bootstrap runs;
 #'   reached through `sas2r_source_include()`, the including program has
 #'   already bootstrapped *that same environment*, so it is skipped -- as it is
-#'   when a user sourced `_sas2r_boot.R` by hand first. Nothing is sourced
+#'   when a person sourced `autoexec.R` by hand first. Nothing is sourced
 #'   twice, and a caller that supplied its own registry or helpers keeps them.
 #'   The guard checks only for the registry, so a caller that pre-binds
 #'   `.sas2r_registry` without also pre-binding the helpers gets neither, and
@@ -29,13 +29,13 @@ BANNER <- c(
 #'   `sas2r_source_include()` performs -- so a module in a subdirectory, or one
 #'   run from anywhere other than the bundle root, still finds the bundle.
 #'
-#' The header itself does one thing: locate `_sas2r_boot.R` and source it into
-#' `environment()`, the module's own evaluation environment. The boot file
-#' loads the registry, helpers, and formats (see [boot_file_lines()]), so a
-#' program opens with a short block rather than a page of plumbing, and a
-#' driver sourced into a sandbox keeps its registry, `lib_read()`, and
-#' `sas2r_source_include()` inside that sandbox rather than leaking them into
-#' `globalenv()`.
+#' The header itself does one thing: locate `autoexec.R` and source it, with
+#' `chdir = TRUE`, into `environment()`, the module's own evaluation
+#' environment. `autoexec.R` holds the library paths and loads the helpers and
+#' formats (see [autoexec_lines()]), so a program opens with a short block
+#' rather than a page of plumbing, and a driver sourced into a sandbox keeps
+#' its registry, `lib_read()`, and `sas2r_source_include()` inside that sandbox
+#' rather than leaking them into `globalenv()`.
 #'
 #' The file-location search ([bundle_locator_lines()]) is inlined rather than
 #' called from the runtime, because it has to run *before* anything is loaded.
@@ -44,20 +44,20 @@ BANNER <- c(
 #' @noRd
 module_bootstrap <- function() {
   c(
-    "# sas2r bootstrap: loads this bundle's runtime once, through _sas2r_boot.R,",
-    "# found from this file's own location, so source(), Rscript, and R CMD BATCH",
-    "# all work from any working directory. Loads nothing if already loaded.",
+    "# sas2r bootstrap: loads this bundle's runtime once through autoexec.R, which",
+    "# holds the library paths, found from this file's own location so source(),",
+    "# Rscript, and R CMD BATCH work from any directory. Skipped if already loaded.",
     'if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) {',
     "  .sas2r_boot_root <- local({",
     bundle_locator_lines(indent = "    "),
-    '    while (!file.exists(file.path(dir, "_sas2r_boot.R")) && !identical(dirname(dir), dir)) dir <- dirname(dir)',
-    '    if (!file.exists(file.path(dir, "_sas2r_boot.R")))',
-    '      stop("sas2r bootstrap: no bundle root (_sas2r_boot.R) found at or above ", here, ". Run this program",',
-    '           " with source(\'<its folder>/<its name>.R\'), or setwd() into the folder containing _sas2r_boot.R",',
+    '    while (!file.exists(file.path(dir, "autoexec.R")) && !identical(dirname(dir), dir)) dir <- dirname(dir)',
+    '    if (!file.exists(file.path(dir, "autoexec.R")))',
+    '      stop("sas2r bootstrap: no bundle root (autoexec.R) found at or above ", here, ". Run this program",',
+    '           " with source(\'<its folder>/<its name>.R\'), or setwd() into the folder containing autoexec.R",',
     '           " first: pasted code cannot discover which folder its file lives in.", call. = FALSE)',
     "    dir",
     "  })",
-    '  source(file.path(.sas2r_boot_root, "_sas2r_boot.R"), local = environment())',
+    '  source(file.path(.sas2r_boot_root, "autoexec.R"), local = environment(), chdir = TRUE)',
     "  rm(.sas2r_boot_root)",
     "}"
   )
@@ -793,10 +793,9 @@ sas_transpile <- function(project, out_dir) {
   effective <- effective_librefs(project)
 
   write_helpers(out_dir)
-  write_registry(project, out_dir, effective)
+  write_autoexec(project, out_dir, effective)
   fcat <- compile_format_catalog(project)
   write_formats(fcat$catalog, out_dir)
-  write_boot(out_dir)
 
   plan <- include_emission_plan(project, modules)
   emit_units <- include_emitting_units(project)

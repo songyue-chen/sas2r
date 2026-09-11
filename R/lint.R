@@ -29,7 +29,8 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas2r_libname_clear", "sas2r_lib_entry",
                         "sas2r_lib_member_path", "sas2r_libref_stop",
                         "$.sas2r_dataset", "[[.sas2r_dataset", "split_ds",
-                        "sas_display", "sas2r_registry_env")
+                        "sas_display", "sas2r_registry_env",
+                        "sas2r_resolve_registry")
 
 
 BANNED_FUNCTIONS <- c("system", "system2", "shell", "download.file", "url",

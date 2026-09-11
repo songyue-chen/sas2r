@@ -28,8 +28,8 @@ test_that("project flags and registry surface the gap actionably", {
   expect_identical(fl$detail, "adam")
 
   reg_dir <- withr::local_tempdir()
-  sas2r:::write_registry(p, reg_dir)
-  reg <- paste(readLines(file.path(reg_dir, "_sas2r_registry.R")), collapse = "\n")
+  sas2r:::write_autoexec(p, reg_dir)
+  reg <- paste(readLines(file.path(reg_dir, "autoexec.R")), collapse = "\n")
   expect_match(reg, "#  adam = list\\(read_path = \"<FILL")
 })
 

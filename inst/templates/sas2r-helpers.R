@@ -225,8 +225,8 @@ sas_display <- function(x) {
 # Runtime helpers: librefs and data access. Part of the runtime every
 # translated program carries; see ?sas2r_runtime.
 
-# The libref registry is the `.sas2r_registry` list the bundle's
-# _sas2r_registry.R defines. The runtime finds it where it was loaded:
+# The libref registry is the `.sas2r_registry` list the bundle's autoexec.R
+# defines. The runtime finds it where it was loaded:
 # lexically first -- the environment the runtime was sourced into, which is
 # how a bundle program and a test harness both work -- then, for the package
 # form of the runtime, out through the global environment, and finally in any
@@ -245,8 +245,38 @@ sas2r_registry_env <- function() {
   }
   sas2r_libref_stop(
     "sas2r_no_registry",
-    "No libref registry is loaded: source the bundle's _sas2r_registry.R first"
+    "No libref registry is loaded: source the bundle's autoexec.R first (with chdir = TRUE)"
   )
+}
+
+sas2r_resolve_registry <- function(registry, root) {
+  if (!is.list(registry)) {
+    sas2r_libref_stop("sas2r_registry_error", "registry must be a list of libref entries")
+  }
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root)) {
+    sas2r_libref_stop("sas2r_registry_error", "root must be one directory path")
+  }
+  absolute <- function(p) grepl("^(/|[A-Za-z]:[/\\\\]|\\\\\\\\|~)", p)
+  for (libref in names(registry)) {
+    entry <- registry[[libref]]
+    for (field in intersect(c("read_path", "write_path", "path"), names(entry))) {
+      p <- entry[[field]]
+      if (!is.character(p) || length(p) != 1L || is.na(p) || !nzchar(p)) next
+      if (startsWith(p, "<FILL")) {
+        sas2r_libref_stop(
+          "sas2r_registry_fill",
+          paste0("autoexec.R: libref ", libref, " still has a <FILL> placeholder for ",
+                 field, "; set the path"))
+      }
+      entry[[field]] <- if (absolute(p)) path.expand(p) else file.path(root, p)
+    }
+    w <- if (!is.null(entry$write_path)) entry$write_path else entry$path
+    if (is.character(w) && length(w) == 1L && !is.na(w) && nzchar(w)) {
+      dir.create(w, showWarnings = FALSE, recursive = TRUE)
+    }
+    registry[[libref]] <- entry
+  }
+  registry
 }
 
 sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
@@ -561,7 +591,7 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
   dir <- normalizePath(start, winslash = "/", mustWork = FALSE)
   root <- NULL
   for (level in seq_len(64L)) {
-    if (file.exists(file.path(dir, "_sas2r_registry.R"))) {
+    if (file.exists(file.path(dir, "autoexec.R"))) {
       root <- dir
       break
     }
@@ -571,7 +601,7 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
   }
   if (is.null(root)) {
     fail("sas2r_include_root_error",
-         paste0("no staged bundle root (_sas2r_registry.R) at or above ", start))
+         paste0("no staged bundle root (autoexec.R) at or above ", start))
   }
 
   target <- file.path(root, path)

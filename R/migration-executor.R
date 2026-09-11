@@ -259,18 +259,21 @@ run_program_smoke <- function(
   stdout_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_stdout.log")), winslash = "/", mustWork = FALSE)
   stderr_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_stderr.log")), winslash = "/", mustWork = FALSE)
 
-  # Resolve runtime files
+  # Resolve runtime files: a bundle's own autoexec.R when there is one (it
+  # loads the helpers and formats beside it), else the files named one by one.
+  autoexec_file <- NULL
   registry_file <- NULL
   helpers_file <- NULL
   formats_file <- NULL
 
   if (is.list(runtime)) {
+    autoexec_file <- runtime$autoexec
     registry_file <- runtime$registry
     helpers_file <- runtime$helpers
     formats_file <- runtime$formats
   } else if (is.character(runtime) && length(runtime) == 1L) {
-    if (file.exists(file.path(runtime, "_sas2r_registry.R"))) {
-      registry_file <- file.path(runtime, "_sas2r_registry.R")
+    if (file.exists(file.path(runtime, "autoexec.R"))) {
+      autoexec_file <- file.path(runtime, "autoexec.R")
     }
     if (file.exists(file.path(runtime, "sas2r-helpers.R"))) {
       helpers_file <- file.path(runtime, "sas2r-helpers.R")
@@ -317,18 +320,22 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(registry_file, helpers_file, formats_file, dep_codes, target_code, call_site) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site) {
     # Initialize fresh environment
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
-    if (!is.null(registry_file) && nzchar(registry_file) && file.exists(registry_file)) {
-      sys.source(registry_file, envir = globalenv())
-    }
-    if (!is.null(helpers_file) && nzchar(helpers_file) && file.exists(helpers_file)) {
-      sys.source(helpers_file, envir = globalenv())
-    }
-    if (!is.null(formats_file) && nzchar(formats_file) && file.exists(formats_file)) {
-      sys.source(formats_file, envir = globalenv())
+    if (!is.null(autoexec_file) && nzchar(autoexec_file) && file.exists(autoexec_file)) {
+      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
+    } else {
+      if (!is.null(registry_file) && nzchar(registry_file) && file.exists(registry_file)) {
+        sys.source(registry_file, envir = globalenv())
+      }
+      if (!is.null(helpers_file) && nzchar(helpers_file) && file.exists(helpers_file)) {
+        sys.source(helpers_file, envir = globalenv())
+      }
+      if (!is.null(formats_file) && nzchar(formats_file) && file.exists(formats_file)) {
+        sys.source(formats_file, envir = globalenv())
+      }
     }
 
     executed_components <- character()
@@ -361,6 +368,7 @@ run_program_smoke <- function(
     callr::r(
       smoke_runner_fn,
       args = list(
+        autoexec_file = autoexec_file,
         registry_file = registry_file,
         helpers_file = helpers_file,
         formats_file = formats_file,
@@ -681,15 +689,15 @@ run_bundle_attempt <- function(
   bundle_runner_fn <- function(bundle_dir, execution_order) {
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
-    # The bundle's own boot file loads the runtime trio, exactly as a program
-    # launched by a user would; an older bundle without one is loaded by hand.
-    boot_file <- file.path(bundle_dir, "_sas2r_boot.R")
+    # The bundle's own autoexec.R loads the runtime, exactly as a program
+    # launched by a person would; an older bundle without one is loaded by hand.
+    autoexec_file <- file.path(bundle_dir, "autoexec.R")
     reg_file <- file.path(bundle_dir, "_sas2r_registry.R")
     helpers_file <- file.path(bundle_dir, "sas2r-helpers.R")
     formats_file <- file.path(bundle_dir, "_sas2r_formats.R")
 
-    if (file.exists(boot_file)) {
-      sys.source(boot_file, envir = globalenv())
+    if (file.exists(autoexec_file)) {
+      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
     } else {
       if (file.exists(reg_file)) sys.source(reg_file, envir = globalenv())
       if (file.exists(helpers_file)) sys.source(helpers_file, envir = globalenv())
