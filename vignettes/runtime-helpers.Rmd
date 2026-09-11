@@ -40,19 +40,24 @@ depends on which sas2r is installed.
 
 ## Running a program
 
-Any of these works, from any working directory:
-
-```r
-source("run_20260907T120000Z_1a2b3c4d/adsl.R")
-```
+Programs run the way SAS programs do: with their autoexec. Any of these works:
 
 ```bash
-Rscript /full/path/run_20260907T120000Z_1a2b3c4d/adsl.R
+Rscript /full/path/run_20260907T120000Z_1a2b3c4d/adsl.R        # batch, from any directory
 ```
 
-Pasting a program into a console is the one launch mode the bootstrap cannot support -- pasted
-code has no file to locate itself by -- and it says so. `setwd()` into the run folder first,
-or source `autoexec.R` once (see below), and pasted code works too.
+```r
+setwd("run_20260907T120000Z_1a2b3c4d")     # or open the run folder as the working directory
+source("adsl.R")
+```
+
+```r
+source("run_20260907T120000Z_1a2b3c4d/autoexec.R", chdir = TRUE)   # once per session ...
+source("run_20260907T120000Z_1a2b3c4d/adsl.R")                     # ... then any program, from anywhere
+```
+
+A program sourced from some other working directory before the autoexec has run stops with a
+message saying exactly that. Pasted code works after the autoexec has run, too.
 
 ## Maintaining `autoexec.R`
 

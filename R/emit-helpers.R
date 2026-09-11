@@ -70,45 +70,6 @@ write_helpers <- function(out_dir) {
   invisible(dest)
 }
 
-#' The lines that find the folder of the file now being run
-#'
-#' Generated R has no `__file__`, so a file that must find a sibling without
-#' depending on the working directory carries this search itself. Every
-#' program's header carries it to locate `autoexec.R`; `autoexec.R` itself
-#' needs none, because it is always sourced with `chdir = TRUE`, so its own
-#' folder is the working directory while it loads. Three launch modes are told
-#' apart; the first that applies wins:
-#'
-#' * `source()` and `sys.source()` each keep the path they were given in a
-#'   local of their own frame (`ofile` and `file`), so the innermost such frame
-#'   names the file being run -- including a module reached through an
-#'   include. Only a frame whose function *is* `base::source` or
-#'   `base::sys.source` is read, so an unrelated caller holding a variable
-#'   named `file` cannot be mistaken for the launcher.
-#' * `Rscript file.R` and `R CMD BATCH file.R` have no such frame but record
-#'   the script as `--file=` on the command line.
-#' * Pasted code has neither, and the working directory is the documented
-#'   fallback.
-#'
-#' The lines bind `here` (the folder found) and `dir` (its canonical form).
-#'
-#' @param indent The indentation to prefix each line with.
-#' @return A character vector of R source lines.
-#' @noRd
-bundle_locator_lines <- function(indent = "    ") {
-  paste0(indent, c(
-    'args <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))',
-    "here <- if (length(args) == 1L && nzchar(args)) dirname(args) else getwd()",
-    "for (i in rev(seq_len(sys.nframe()))) {",
-    "  fn <- tryCatch(sys.function(i), error = function(e) NULL)",
-    '  slot <- if (identical(fn, base::source)) "ofile" else if (identical(fn, base::sys.source)) "file" else next',
-    "  f <- get0(slot, envir = sys.frame(i), inherits = FALSE)",
-    "  if (is.character(f) && length(f) == 1L && !is.na(f) && nzchar(f)) { here <- dirname(f); break }",
-    "}",
-    'dir <- normalizePath(here, winslash = "/", mustWork = FALSE)'
-  ))
-}
-
 #' Canonicalize a path that may not exist yet
 #'
 #' `normalizePath()` resolves symlinks only for a path that exists, so a

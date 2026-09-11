@@ -41,10 +41,15 @@ than as a program to translate, so the names correspond and cannot collide.
 - **No file-location search in the file.** It is always sourced with `chdir = TRUE` -- by the
   program header, by the executor, and by a person -- so its own folder is the working
   directory while it loads. One guard line explains itself when it is not.
-- **The program header shrinks to the search.** It locates `autoexec.R` from the program's
-  own path (`source()`/`sys.source()` frames, then `--file=`, then the working directory),
-  walks up to the folder holding it, and sources it with `chdir = TRUE` into the program's own
-  environment. Idempotence and the `%INCLUDE` behaviour are unchanged.
+- **The program header follows the SAS convention.** Programs run where their `autoexec.R`
+  is. `Rscript` and `R CMD BATCH` name the file on the command line, so a batch launch finds the
+  folder from anywhere; in a session the working directory is the run folder, or `autoexec.R`
+  was sourced once already. The header is a guarded `source("autoexec.R", chdir = TRUE)` of
+  about ten lines that walks up to the folder holding `autoexec.R` and stops with a message
+  naming the fix when there is none. Idempotence and the `%INCLUDE` behaviour are unchanged.
+  What is given up, deliberately, is sourcing a program by path from an unrelated working
+  directory before the autoexec has run: that case now says what to do, instead of every
+  program carrying a 24-line file-location search to cover it.
 - **Sourcing it by hand is an autoexec.** `source("<bundle>/autoexec.R", chdir = TRUE)` once
   per session loads the runtime; every program then finds it loaded and skips its bootstrap,
   and pasted code works.
@@ -55,7 +60,8 @@ seed, exactly as in SAS.
 ## Consequences
 
 - A run folder can be moved or renamed as a whole. Moved source data means one edited line.
-- A single program copied out of its folder stops with a message naming the fix.
+- A single program copied out of its folder, or sourced by path from an unrelated working
+  directory before the autoexec has run, stops with a message naming the fix.
 - Re-translation writes a new run folder, so a maintained `autoexec.R` is never overwritten.
 - The runtime's include resolution keys on `autoexec.R` as the bundle marker. Older bundles
   keep their frozen runtime and their `_sas2r_registry.R`; the executor still loads those by
@@ -66,8 +72,11 @@ seed, exactly as in SAS.
 
 ## Alternatives considered
 
-- **A plain `source("_sas2r_boot.R")` one-liner in each program.** Resolves against the working
-  directory, which breaks the RStudio Source button in a project and `Rscript` from elsewhere.
+- **A file-location search in every program** (the previous header: 24 lines, then 13).
+  Inspecting `source()`/`sys.source()` frames plus `--file=` let a program find its own folder
+  from any working directory, RStudio's Source button included. Robust, but half of a short
+  program was plumbing a maintainer skips over, and the convention it replaced is one every SAS
+  programmer already follows.
 - **A generated boot file beside a generated registry** (the first form of this change). Two
   files, one of them carrying a locator nobody should read, and neither labelled as the one to
   edit.

@@ -684,22 +684,22 @@ test_that("a dual-role module bootstraps standalone and skips it as an include",
   expect_false(any(vapply(watched, exists, logical(1),
                           envir = globalenv(), inherits = FALSE)))
 
-  # (a) Standalone, and from a working directory that is not the bundle root:
-  # the module finds the bundle from its own location and runs.
+  # (a) Standalone, from the run folder, into a sandbox: the module loads the
+  # runtime there. From an unrelated working directory it stops and says so
+  # (ADR 0004: programs run where their autoexec is).
   elsewhere <- withr::local_tempdir()
-  for (d in c(out, elsewhere)) {
-    dir.create(file.path(d, "work"), showWarnings = FALSE)
-    saveRDS(data.frame(x = 1:3), file.path(d, "work", "input.rds"))
-  }
-  withr::with_dir(elsewhere, {
-    e1 <- new.env(parent = globalenv())
-    sys.source(file.path(out, "prep.R"), envir = e1)
-    for (nm in c(".sas2r_registry", "lib_read", "sas2r_source_include", "prepped"))
-      expect_true(exists(nm, envir = e1, inherits = FALSE), info = nm)
-    # The bootstrap tidies its own scratch bindings away.
-    expect_false(exists(".sas2r_boot_root", envir = e1, inherits = FALSE))
-    expect_false(exists(".sas2r_boot_file", envir = e1, inherits = FALSE))
-  })
+  dir.create(file.path(out, "work"), showWarnings = FALSE)
+  saveRDS(data.frame(x = 1:3), file.path(out, "work", "input.rds"))
+  e1 <- new.env(parent = globalenv())
+  withr::with_dir(out, sys.source("prep.R", envir = e1))
+  for (nm in c(".sas2r_registry", "lib_read", "sas2r_source_include", "prepped"))
+    expect_true(exists(nm, envir = e1, inherits = FALSE), info = nm)
+  # The bootstrap tidies its own scratch bindings away.
+  expect_false(exists(".sas2r_dir", envir = e1, inherits = FALSE))
+  expect_error(
+    withr::with_dir(elsewhere, sys.source(file.path(out, "prep.R"),
+                                          envir = new.env(parent = globalenv()))),
+    "autoexec\\.R")
 
   withr::local_dir(out)
   # (b) Reached as an include, the header loads nothing: a caller's own

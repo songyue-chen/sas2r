@@ -24,8 +24,10 @@ autoexec_fixture <- function(bundle, program = character()) {
 test_that("the bootstrap header is short, and names only autoexec.R", {
   hdr <- module_bootstrap()
   # The whole point: a reader opening a program meets the translation, not a
-  # page of plumbing.
-  expect_lte(length(hdr), 24L)
+  # page of plumbing. No file-location search either (ADR 0004): programs run
+  # where their autoexec is.
+  expect_lte(length(hdr), 12L)
+  expect_false(any(grepl("sys\\.frames|sys\\.function|ofile", hdr)))
   # Agent staging decides whether a module already carries the header by this
   # phrase, and the gate skips the block by its guard on `.sas2r_registry`.
   expect_true(any(grepl("sas2r bootstrap", hdr, fixed = TRUE)))
@@ -82,7 +84,7 @@ test_that("autoexec.R sourced from elsewhere without chdir stops with the fix; s
   expect_identical(e2$.sas2r_bundle_root, canonical(bundle))
 })
 
-test_that("a program boots from source(), sys.source(), and Rscript, from any working directory", {
+test_that("a program runs from its folder, from Rscript anywhere, and after the autoexec; elsewhere it says what to do", {
   bundle <- withr::local_tempdir()
   autoexec_fixture(bundle, c(
     "adsl <- data.frame(x = 1:3)",
@@ -92,32 +94,46 @@ test_that("a program boots from source(), sys.source(), and Rscript, from any wo
   elsewhere <- withr::local_tempdir()
   written <- file.path(bundle, "work", "adsl.rds")
 
-  # source() from elsewhere, into a sandbox: the runtime lands in the sandbox,
-  # and the working directory is back where it was afterwards.
+  # From the run folder, into a sandbox: the runtime lands in the sandbox, and
+  # the working directory is back where it was afterwards.
   e1 <- new.env(parent = globalenv())
-  wd_after <- withr::with_dir(elsewhere, {
-    source(file.path(bundle, "prog.R"), local = e1)
+  wd_after <- withr::with_dir(bundle, {
+    source("prog.R", local = e1)
     getwd()
   })
-  expect_identical(canonical(wd_after), canonical(elsewhere))
+  expect_identical(canonical(wd_after), canonical(bundle))
   expect_identical(e1$.sas2r_bundle_root, canonical(bundle))
   expect_true(file.exists(written))
-  expect_false(exists(".sas2r_boot_root", envir = e1, inherits = FALSE))
+  expect_false(exists(".sas2r_dir", envir = e1, inherits = FALSE))
+  expect_false(exists(".sas2r_file", envir = e1, inherits = FALSE))
   expect_false(exists(".sas2r_registry", envir = globalenv(), inherits = FALSE))
 
-  # sys.source() from elsewhere.
-  unlink(file.path(bundle, "work"), recursive = TRUE)
-  e2 <- new.env(parent = globalenv())
-  withr::with_dir(elsewhere, sys.source(file.path(bundle, "prog.R"), envir = e2))
-  expect_true(file.exists(written))
-
-  # Rscript from elsewhere.
+  # Rscript from elsewhere: the script path names the folder.
   unlink(file.path(bundle, "work"), recursive = TRUE)
   r <- callr::rscript(file.path(bundle, "prog.R"), wd = elsewhere,
                       show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
   expect_match(r$stdout, "BOOT_OK", fixed = TRUE)
   expect_true(file.exists(written))
+  expect_false(dir.exists(file.path(elsewhere, "work")))
+
+  # A module staged in a subfolder walks up to the bundle root.
+  dir.create(file.path(bundle, "inc"))
+  writeLines(c(module_bootstrap(), 'cat("SUB_OK\\n")'), file.path(bundle, "inc", "sub.R"))
+  r2 <- callr::rscript(file.path(bundle, "inc", "sub.R"), wd = elsewhere,
+                       show = FALSE, fail_on_status = FALSE)
+  expect_identical(r2$status, 0L)
+  expect_match(r2$stdout, "SUB_OK", fixed = TRUE)
+
+  # Sourced by path from an unrelated working directory before the autoexec
+  # has run: the SAS convention, stated rather than worked around.
+  e2 <- new.env(parent = globalenv())
+  expect_error(
+    withr::with_dir(elsewhere, source(file.path(bundle, "prog.R"), local = e2)),
+    "autoexec\\.R.*setwd\\(")
+  expect_error(
+    withr::with_dir(elsewhere, sys.source(file.path(bundle, "prog.R"), envir = e2)),
+    "chdir = TRUE")
   expect_false(dir.exists(file.path(elsewhere, "work")))
 })
 

@@ -10,55 +10,49 @@ BANNER <- c(
 #' same file can be both a program the project lists as an entry point *and*
 #' the target of a `%INCLUDE`, and the header has to serve both without a flag
 #' telling it which is happening, because both can happen to the same bundle
-#' on different days.
+#' on different days. So it is **idempotent**: the bootstrap runs only when
+#' `.sas2r_registry` is not already bound in the environment the module is
+#' being evaluated in. Entered directly, that is a fresh environment and the
+#' bootstrap runs; reached through `sas2r_source_include()`, the including
+#' program has already bootstrapped *that same environment*, so it is skipped
+#' -- as it is when a person sourced `autoexec.R` by hand first. Nothing is
+#' sourced twice, and a caller that supplied its own registry or helpers keeps
+#' them. The guard checks only for the registry, so a caller that pre-binds
+#' `.sas2r_registry` without also pre-binding the helpers gets neither, and the
+#' module fails on its first `lib_read()`.
 #'
-#' Two properties make that possible:
+#' The header follows the SAS convention (ADR 0004): programs run where their
+#' `autoexec.R` is. `Rscript` and `R CMD BATCH` name the file on the command
+#' line, so a batch launch finds the folder from anywhere; in a session the
+#' working directory is the run folder, or `autoexec.R` was sourced once
+#' already. A program run from somewhere else stops with a message that says
+#' exactly that, rather than resolving against a folder it was never in. The
+#' walk upward lets a module staged in a subfolder -- an include target run on
+#' its own -- find the bundle root. R has no `__file__`; the previous header
+#' recovered the file's own path from `source()` frames at the cost of a
+#' 24-line block in every program, and the convention is what a SAS
+#' programmer already follows.
 #'
-#' * **Idempotent.** The bootstrap runs only when `.sas2r_registry` is not
-#'   already bound in the environment the module is being evaluated in.
-#'   Entered directly, that is a fresh environment and the bootstrap runs;
-#'   reached through `sas2r_source_include()`, the including program has
-#'   already bootstrapped *that same environment*, so it is skipped -- as it is
-#'   when a person sourced `autoexec.R` by hand first. Nothing is sourced
-#'   twice, and a caller that supplied its own registry or helpers keeps them.
-#'   The guard checks only for the registry, so a caller that pre-binds
-#'   `.sas2r_registry` without also pre-binding the helpers gets neither, and
-#'   the module fails on its first `lib_read()`.
-#' * **Anchored on the module, not on the working directory.** The bundle root
-#'   is found by walking up from the file being sourced -- the same search
-#'   `sas2r_source_include()` performs -- so a module in a subdirectory, or one
-#'   run from anywhere other than the bundle root, still finds the bundle.
-#'
-#' The header itself does one thing: locate `autoexec.R` and source it, with
-#' `chdir = TRUE`, into `environment()`, the module's own evaluation
-#' environment. `autoexec.R` holds the library paths and loads the helpers and
-#' formats (see [autoexec_lines()]), so a program opens with a short block
-#' rather than a page of plumbing, and a driver sourced into a sandbox keeps
-#' its registry, `lib_read()`, and `sas2r_source_include()` inside that sandbox
+#' Everything is sourced with `local = environment()`, the module's own
+#' evaluation environment, so a driver sourced into a sandbox keeps its
+#' registry, `lib_read()`, and `sas2r_source_include()` inside that sandbox
 #' rather than leaking them into `globalenv()`.
-#'
-#' The file-location search ([bundle_locator_lines()]) is inlined rather than
-#' called from the runtime, because it has to run *before* anything is loaded.
 #'
 #' @return A character vector of R source lines.
 #' @noRd
 module_bootstrap <- function() {
   c(
-    "# sas2r bootstrap: loads this bundle's runtime once through autoexec.R, which",
-    "# holds the library paths, found from this file's own location so source(),",
-    "# Rscript, and R CMD BATCH work from any directory. Skipped if already loaded.",
+    "# sas2r bootstrap: autoexec.R beside this program holds the library paths and loads the",
+    "# runtime. Rscript finds it from anywhere; in a session, run from this folder, or",
+    '# source("autoexec.R", chdir = TRUE) once first. Skipped when the runtime is already loaded.',
     'if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) {',
-    "  .sas2r_boot_root <- local({",
-    bundle_locator_lines(indent = "    "),
-    '    while (!file.exists(file.path(dir, "autoexec.R")) && !identical(dirname(dir), dir)) dir <- dirname(dir)',
-    '    if (!file.exists(file.path(dir, "autoexec.R")))',
-    '      stop("sas2r bootstrap: no bundle root (autoexec.R) found at or above ", here, ". Run this program",',
-    '           " with source(\'<its folder>/<its name>.R\'), or setwd() into the folder containing autoexec.R",',
-    '           " first: pasted code cannot discover which folder its file lives in.", call. = FALSE)',
-    "    dir",
-    "  })",
-    '  source(file.path(.sas2r_boot_root, "autoexec.R"), local = environment(), chdir = TRUE)',
-    "  rm(.sas2r_boot_root)",
+    '  .sas2r_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))',
+    "  .sas2r_dir <- if (length(.sas2r_file) == 1L) dirname(.sas2r_file) else getwd()",
+    '  while (!file.exists(file.path(.sas2r_dir, "autoexec.R")) && !identical(dirname(.sas2r_dir), .sas2r_dir)) .sas2r_dir <- dirname(.sas2r_dir)',
+    '  if (!file.exists(file.path(.sas2r_dir, "autoexec.R")))',
+    '    stop("sas2r: autoexec.R not found at or above ", normalizePath(.sas2r_dir, mustWork = FALSE), ": setwd() into this",',
+    '         " program\'s folder, or source(\\"<folder>/autoexec.R\\", chdir = TRUE) once per session.", call. = FALSE)',
+    '  source(file.path(.sas2r_dir, "autoexec.R"), local = environment(), chdir = TRUE); rm(.sas2r_file, .sas2r_dir)',
     "}"
   )
 }
