@@ -90,19 +90,28 @@ sas_translate <- function(
 ) {
   agent_evidence <- if (is.character(agent_evidence)) match.arg(agent_evidence, c("code_only", "bounded")) else "code_only"
 
+  # Validate configuration, assertions and budget before any output/cache writes.
+  cfg <- translation_config(path, config)
+  output_overrides <- validate_output_overrides(outputs %||% cfg$outputs)
+  validate_effective_qc(output_overrides, cfg$comparison_rules)
+
   # 1. Output directory setup
   if (is.null(out_dir)) {
     out_dir <- tempfile(pattern = "sas2r_out_")
   }
   paths <- migration_paths(out_dir)
+  # 6. Usage budget and accounting
+  budget <- translation_budget(
+    budget_usd, budget_mode, pricing_source, pricing_rates, usage_limits,
+    ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
+  )
+
+
   # Only the root and state directories are needed before the run identifier
   # exists; the run-scoped directories (runs/<run_id>/...) are created by
   # new_migration_state() once the budget has minted the run id.
   dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
-
-  # 2. Configuration resolution
-  cfg <- translation_config(path, config)
 
   # 3. Project normalization (single file wrapped into 1-module project or multi-module directory)
   project <- if (inherits(path, "sas2r_project")) {
@@ -112,21 +121,15 @@ sas_translate <- function(
   }
 
   # 4. Output contracts discovery and override merge
-  output_overrides <- outputs %||% cfg$outputs
-  output_contracts <- infer_output_contracts(project, overrides = output_overrides)
+  plan <- translation_plan(project, output_overrides)
+  output_contracts <- plan$contracts
   output_contracts_path <- file.path(paths$state, "output-contracts.json")
   write_output_contracts(output_contracts, output_contracts_path)
 
   # 5. Dependency graph and stable schedule
-  graph <- build_dependency_graph(project, output_contracts = output_contracts)
+  graph <- plan$graph
   atomic_write_json(graph, paths$graph)
-  schedule <- stable_dependency_schedule(graph)
-
-  # 6. Usage budget and accounting
-  budget <- translation_budget(
-    budget_usd, budget_mode, pricing_source, pricing_rates, usage_limits,
-    ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
-  )
+  schedule <- plan$schedule
 
   # 7. Resolve LLM adapter from argument or config
   resolved_llm <- if (!is.null(llm)) {
@@ -196,7 +199,7 @@ sas_translate <- function(
   }
 
   outputs_dir <- if (isTRUE(execute) && !is.null(selected_att) && !is.null(selected_att$attempt_dir)) {
-    destination <- file.path(paths$attempts, "generated-outputs")
+    destination <- paths$generated_outputs
     copy_output_inventory(selected_att$attempt_dir, destination, selected_att$output_hashes)
     destination
   } else {

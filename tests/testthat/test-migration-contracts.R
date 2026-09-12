@@ -5,13 +5,13 @@ test_that("migration records have deterministic identities and paths", {
 
   p <- migration_paths(file.path(tempdir(), "out"))
   expect_named(p, c(
-    "root", "state", "graph", "programs", "staging", "attempts",
+    "root", "state", "graph", "programs", "staging", "attempts", "generated_outputs",
     "selected", "usage", "report_json", "report_md"
   ))
   expect_identical(p$staging, file.path(p$state, "staging"))
   expect_identical(p$attempts, file.path(p$root, "runs"))
 
-  # A run-scoped view nests attempts, program evidence, and the markdown
+  # A run-scoped view nests attempts, generated outputs, program evidence, and the markdown
   # report under the run id; nothing else moves (report_json in particular
   # stays at the state level -- resume reads it there).
   scoped <- migration_paths(file.path(tempdir(), "out"), run_id = "run_abc")
@@ -19,7 +19,8 @@ test_that("migration records have deterministic identities and paths", {
   expect_identical(scoped$programs, file.path(scoped$root, "run_abc", "programs"))
   expect_identical(scoped$report_md, file.path(scoped$root, "run_abc", "report.md"))
   expect_identical(scoped$report_json, p$report_json)
-  moved <- c("attempts", "programs", "report_md")
+  expect_identical(scoped$generated_outputs, file.path(scoped$attempts, "generated-outputs"))
+  moved <- c("attempts", "programs", "generated_outputs", "report_md")
   expect_identical(scoped[setdiff(names(scoped), moved)],
                    p[setdiff(names(p), moved)])
   expect_identical(COMPONENT_EVIDENCE_LEVELS, c(

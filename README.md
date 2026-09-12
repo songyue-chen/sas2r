@@ -132,7 +132,7 @@ check <- sas_preflight(
   usage_limits = list(max_calls = 20)
 )
 print(check)
-check$inputs       # available, missing, unresolved, or generated upstream
+check$inputs       # available, missing, unresolved, no_producer, or generated
 check$budget       # effective limits; no model calls are made
 ```
 
@@ -148,9 +148,9 @@ column order, keys, uniqueness, row counts, and per-variable tolerances.
 library(sas2r)
 
 result <- sas_translate(
-  path = "programs/",              # one .sas file or a whole directory
+  path = check$project,            # reuse the unchanged source scan
   out_dir = "migration_output",
-  config = "_sas2r.yml",
+  usage_limits = list(max_calls = 20),
   execute = TRUE,                  # actually run the translated programs
   max_program_repair_rounds = 1,   # immediate repair attempts per program
   max_bundle_repair_rounds = 2,    # full-pipeline repair attempts

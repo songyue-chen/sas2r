@@ -113,6 +113,7 @@ migration_paths <- function(out_dir, run_id = NULL) {
     # it at the top level made users mistake it for the final translation.
     staging = file.path(state, "staging"),
     attempts = attempts,
+    generated_outputs = file.path(attempts, "generated-outputs"),
     selected = file.path(state, "selected.json"),
     usage = file.path(state, "usage.json"),
     # The machine report stays at a fixed state-level path: resume reads it

@@ -280,7 +280,7 @@ write_migration_report <- function(state) {
       t_req <- output_contracts$required[i]
       ass <- if (!is.null(output_assessments[[t_key]])) output_assessments[[t_key]] else NULL
       t_stat <- ass$status %||% "unverified"
-      t_rsn <- ass$reason %||% "(none)"
+      t_rsn <- ass$reason %||% output_checks_reason(ass$checks)
       target_rows[[length(target_rows) + 1L]] <- list(
         target = t_key,
         kind = t_kind,

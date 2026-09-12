@@ -1,6 +1,6 @@
 # Shared offline configuration and budget resolution for migration and preflight.
 translation_config <- function(path, config) {
-  if (inherits(config, "sas2r_config")) {
+  cfg <- if (inherits(config, "sas2r_config")) {
     config
   } else if (is.character(config) && length(config) == 1L) {
     if (is.na(config) || !file.exists(config) || dir.exists(config)) {
@@ -9,6 +9,8 @@ translation_config <- function(path, config) {
     sas_config(path = config)
   } else if (is.list(config)) {
     structure(config, class = "sas2r_config")
+  } else if (is.null(config) && inherits(path, "sas2r_project")) {
+    path$config
   } else {
     start_dir <- if (inherits(path, "sas2r_project")) {
       path$project_dir
@@ -19,8 +21,18 @@ translation_config <- function(path, config) {
     }
     sas_config(start = start_dir)
   }
-
+  root <- if (inherits(path, "sas2r_project")) path$project_dir else
+    if (dir.exists(path)) path else dirname(path)
+  cfg$outputs <- normalize_outputs_config(cfg$outputs)
+  if (is.list(cfg$outputs) && length(cfg$outputs$references)) {
+    cfg$outputs$references <- lapply(cfg$outputs$references, config_resolve_paths, base = root)
+  }
+  cfg$comparison_rules <- normalize_comparison_rules(cfg$comparison_rules, base = root)
+  validate_effective_qc(cfg$outputs, cfg$comparison_rules)
+  cfg
 }
+
+usage_limit_names <- function() grep("^max_", names(formals(new_usage_budget)), value = TRUE)
 
 translation_budget <- function(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits,
@@ -55,8 +67,7 @@ translation_budget <- function(budget_usd, budget_mode, pricing_source,
   pricing_source_norm <- if (identical(pricing_source, "catalog")) "adapter" else pricing_source
 
   usage_limits_map <- usage_limits %||% list()
-  limit_names <- setdiff(names(formals(new_usage_budget)),
-                         c("mode", "max_usd", "rates", "pricing_source", "ledger_path", "run_id", "resume"))
+  limit_names <- setdiff(usage_limit_names(), "max_usd")
   if (!is.list(usage_limits_map) ||
       (length(usage_limits_map) && (is.null(names(usage_limits_map)) ||
        any(!names(usage_limits_map) %in% limit_names) || anyDuplicated(names(usage_limits_map))))) {
@@ -72,4 +83,14 @@ translation_budget <- function(budget_usd, budget_mode, pricing_source,
     resume = isTRUE(resume)
   ), usage_limits_map))
 
+}
+
+translation_plan <- function(project, overrides) {
+  contracts <- if (identical(overrides, project$config$outputs)) project$output_contracts else
+    infer_output_contracts(project, overrides)
+  if (!is.null(project$graph) && identical(contracts, project$output_contracts)) {
+    return(list(contracts = contracts, graph = project$graph, schedule = project$schedule))
+  }
+  graph <- build_dependency_graph(project, output_contracts = contracts)
+  list(contracts = contracts, graph = graph, schedule = stable_dependency_schedule(graph))
 }

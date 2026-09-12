@@ -38,9 +38,8 @@ test_that("semantic reference corpus preserves values or explicitly defers a who
     # from our R implementation. Absence is documented rather than called parity.
     sas_reference <- file.path(root, "sas-generated", paste0(case$id, ".csv"))
     if (file.exists(sas_reference)) {
-      reference <- semantic_frame(sas_reference)
-      names(reference) <- tolower(names(reference))
-      expect_equal(reference, expected, ignore_attr = TRUE, info = paste(case$id, "SAS reference"))
+      expect_identical(semantic_reference_difference(sas_reference, file.path(dir, "expected.csv")),
+                       TRUE, info = paste(case$id, "SAS reference"))
     }
   }
 })

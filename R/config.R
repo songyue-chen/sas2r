@@ -240,17 +240,17 @@ normalize_budget_config <- function(config) {
   out
 }
 
-assert_exact_names <- function(x, allowed, context = "config") {
+assert_exact_names <- function(x, allowed, context = "config", class = "sas2r_config_error") {
   if (!is.list(x)) {
     cli::cli_abort("{.field {context}} must be a mapping",
-                   class = "sas2r_config_error")
+                   class = class)
   }
   unknown <- setdiff(names(x), allowed)
   if (length(unknown)) {
     cli::cli_abort(
       c("Unknown or unsupported field in {.field {context}}: {.val {unknown}}",
         "i" = "Allowed: {.val {allowed}}."),
-      class = "sas2r_config_error"
+      class = class
     )
   }
 }
@@ -318,7 +318,11 @@ normalize_output_review_config <- function(raw, config_file) {
 
 normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
   if (is.null(raw_outputs)) return(NULL)
-  validate_output_overrides(raw_outputs)
+  outputs <- validate_output_overrides(raw_outputs)
+  if (is.list(outputs) && length(outputs$references)) {
+    outputs$references <- lapply(outputs$references, config_rebase_paths, src = config_file)
+  }
+  outputs
 }
 
 find_config <- function(start = ".") {
@@ -341,10 +345,11 @@ find_config <- function(start = ".") {
 #' primary supported case: built-in defaults let a bare SAS script be
 #' scanned, assessed, and translated with no setup at all.
 #' Every relative configured path -- `libraries`, `macros.search_path`,
-#' `includes.roots`, and `environment.autoexec` -- is resolved against the
+#' `includes.roots`, `environment.autoexec`, and output/comparison reference
+#' paths -- is resolved against the
 #' configuration file's own directory, never against the working directory:
 #' those roots reach `%include` occurrence identity, which must not depend on
-#' where the scan was launched from. One anchoring rule governs all four, so a
+#' where the scan was launched from. One anchoring rule governs these paths, so a
 #' `~`-prefixed entry is treated as already carrying its own base everywhere
 #' rather than in some keys only, because R expands `~` against the user's home
 #' directory and prefixing a base onto it would corrupt the path.
@@ -399,7 +404,8 @@ sas_config <- function(path = NULL, start = ".") {
     autoexec = config_rebase_paths(autoexec, src),
     outputs = outputs,
     output_review = output_review,
-    comparison_rules = raw$comparison_rules %||% list(),
+    comparison_rules = normalize_comparison_rules(raw$comparison_rules,
+      base = if (is.na(src)) NULL else dirname(normalizePath(src, mustWork = FALSE))),
     llm = llm,
     budget = budget,
     source = src,

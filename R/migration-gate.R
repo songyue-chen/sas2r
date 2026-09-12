@@ -229,9 +229,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
 
   # Target requirements override global defaults; all dataset quality checks
   # use the same evaluator, including expanded named profiles.
-  qc_assertions <- comparison_rules
-  qc_assertions[names(assertions)] <- assertions
-  checks <- c(checks, check_dataset_qc(cand_data, qc_assertions))
+  policy <- effective_dataset_policy(comparison_rules, assertions)
+  checks <- c(checks, check_dataset_qc(cand_data, policy))
 
   # 3. Reference dataset comparison
   ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
@@ -286,28 +285,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         # policy (its unspecified half stays 0); with nothing configured the
         # defaults come from compare_profile(), defined once, so the gate and
         # direct compare_datasets() calls judge by the same rules.
-        num_tol <- assertions$numeric_tolerance %||% comparison_rules$numeric_tolerance
-        abs_tol <- comparison_rules$tol_abs %||% num_tol
-        rel_tol <- comparison_rules$tol_rel
-        if (!is.null(abs_tol)) abs_tol <- suppressWarnings(as.numeric(abs_tol))
-        if (!is.null(rel_tol)) rel_tol <- suppressWarnings(as.numeric(rel_tol))
-        if (is.null(abs_tol) && is.null(rel_tol)) {
-          prof_defaults <- compare_profile()
-          abs_tol <- prof_defaults$numeric$abs
-          rel_tol <- prof_defaults$numeric$rel
-        } else {
-          abs_tol <- abs_tol %||% 0.0
-          rel_tol <- rel_tol %||% 0.0
-        }
-        keys <- assertions$keys %||% comparison_rules$keys %||% NULL
-
-        prof <- compare_profile(
-          abs = abs_tol,
-          rel = rel_tol,
-          padding = "cosmetic",
-          sas_null_equals_na = TRUE,
-          overrides = assertions$tolerances %||% comparison_rules$tolerances %||% list()
-        )
+        keys <- policy$keys
+        prof <- dataset_comparison_profile(policy)
 
         # Engine alignment: configured keys steer row identity, and with none
         # configured the keys are inferred and validated -- a content-equal
@@ -363,10 +342,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     "failed"
   }
 
-  failed_checks <- Filter(function(chk) isFALSE(chk$passed), checks)
-  reason <- if (length(failed_checks)) paste(vapply(failed_checks, function(chk) {
-    paste0(chk$name, ": ", chk$details %||% "requirement failed")
-  }, character(1)), collapse = "; ") else "All configured output checks passed"
+  reason <- output_checks_reason(checks)
 
   list(
     target_id = t_id,

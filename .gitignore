@@ -21,6 +21,7 @@ docs/*
 !docs/migration-evidence.md
 !docs/output-evidence.md
 !docs/clinical-qc-preflight.md
+!docs/review-clinical-qc-preflight.md
 !docs/decisions/
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds

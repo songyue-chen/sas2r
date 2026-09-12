@@ -8,25 +8,16 @@ if ("--source" %in% args) pkgload::load_all(repo, quiet = TRUE) else library(sas
 
 files <- c("README.md", "docs/output-evidence.md", "docs/clinical-qc-preflight.md",
            "vignettes/dependency-aware-migration.Rmd", "vignettes/runtime-helpers.Rmd")
-blocks <- list()
-for (file in files) {
-  lines <- readLines(file.path(repo, file), warn = FALSE)
-  i <- 1L
-  while (i <= length(lines)) {
-    if (!lines[i] %in% c("```r", "```yaml")) { i <- i + 1L; next }
-    language <- substring(lines[i], 4L)
-    start <- i
-    end <- which(lines == "```" & seq_along(lines) > i)[1L]
-    if (is.na(end)) stop("Unclosed code fence in ", file, ":", i)
-    marker <- if (i > 1L) lines[i - 1L] else ""
-    if (language == "r" && !grepl("^<!-- sas2r-example: (offline|network) [a-z0-9-]+ -->$", marker)) {
-      stop("Classify the R example as offline or network: ", file, ":", start)
-    }
-    code <- paste(lines[seq.int(start + 1L, end - 1L)], collapse = "\n")
-    blocks[[length(blocks) + 1L]] <- list(file = file, line = start, language = language,
-                                         offline = grepl(": offline ", marker), code = code)
-    i <- end + 1L
+source(file.path(repo, "tests/testthat/helper-documentation.R"))
+blocks <- unlist(lapply(files, function(file) {
+  doc_code_blocks(readLines(file.path(repo, file), warn = FALSE), file)
+}), recursive = FALSE)
+for (i in seq_along(blocks)) {
+  block <- blocks[[i]]
+  if (block$language == "r" && !grepl("^<!-- sas2r-example: (offline|network) [a-z0-9-]+ -->$", block$marker)) {
+    stop("Classify the R example as offline or network: ", block$file, ":", block$line)
   }
+  blocks[[i]]$offline <- grepl(": offline ", block$marker)
 }
 
 workspace <- tempfile("sas2r-doc-examples-")
@@ -89,7 +80,7 @@ for (block in blocks) {
 }
 stopifnot(counts["executed"] >= 6L, counts["configurations"] >= 4L,
           file.exists("adsl-comparison.md"), file.exists("aligned-comparison.json"),
-          env$check$model_calls == 0L)
+          identical(env$check$model_calls, 0L))
 cat("\nDocumentation checks passed; synthetic study and saved-output fixtures.\n")
 print(counts)
 setwd(old)

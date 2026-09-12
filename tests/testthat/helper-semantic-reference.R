@@ -14,11 +14,7 @@ semantic_reference_audit <- function(root, generated = file.path(root, "sas-gene
     path <- file.path(generated, paste0(case$id, ".csv"))
     if (!file.exists(path)) return(data.frame(id = case$id, status = "missing", detail = path))
     difference <- tryCatch({
-      actual <- semantic_frame(path)
-      expected <- semantic_frame(file.path(root, case$id, "expected.csv"))
-      names(actual) <- tolower(names(actual))
-      if (!identical(names(actual), names(expected))) "Column names or order differ" else
-        all.equal(actual, expected, check.attributes = FALSE, tolerance = 1e-8)
+      semantic_reference_difference(path, file.path(root, case$id, "expected.csv"))
     }, error = function(e) conditionMessage(e))
     data.frame(id = case$id, status = if (isTRUE(difference)) "passed" else "failed",
                detail = if (isTRUE(difference)) path else paste(difference, collapse = "; "))
@@ -38,4 +34,12 @@ semantic_reference_audit <- function(root, generated = file.path(root, "sas-gene
   list(status = status, coverage = coverage, missing_evidence = evidence_missing,
        sas_errors = errors, provenance = provenance_text,
        scope = "Fixture output agreement only; inspect SAS log and provenance before treating files as SAS evidence.")
+}
+
+semantic_reference_difference <- function(path, expected_path) {
+  actual <- semantic_frame(path)
+  expected <- semantic_frame(expected_path)
+  names(actual) <- tolower(names(actual))
+  if (!identical(names(actual), names(expected))) return("Column names or order differ")
+  all.equal(actual, expected, check.attributes = FALSE, tolerance = 1e-8)
 }

@@ -51,18 +51,26 @@ stopifnot(check$model_calls == 0L,
 The example declares an AGE label requirement; preflight records that requirement
 but does not inspect the data to check it. The migration output gate evaluates
 it on each candidate. Use the same `config`, `outputs`, and budget arguments
-when calling `sas_translate()` on your study. `config$budget` is not consumed by
+when calling `sas_translate(check$project, ...)` on your study. The returned
+project reuses the scan; run preflight again if sources change. `config$budget` is not consumed by
 these entry points; their explicit budget arguments determine the effective
 limits. Preflight displays planned locations; run and attempt IDs are assigned
 when translation starts.
 
 `inputs$status` distinguishes an existing file (`available`), a missing file,
-a library that could not be resolved (`unresolved`), and data with a known
-in-project producer (`generated`). Generated inputs still depend on that
+a library that could not be resolved (`unresolved`), a WORK member with no known
+earlier producer (`no_producer`), and data with a known in-project producer
+(`generated`). WORK members need an earlier creation step, not a disk file. Generated inputs still depend on that
 producer running successfully. `unsupported` lists constructs the deterministic
 emitter defers; the AI workflow may translate them. Runtime-only restrictions,
 data values, reference comparability, and model credentials remain unchecked.
-Scanner findings, including dependency cycles, are retained for investigation.
+Macro variables in dataset names produce a `dynamic_dataset_reference` finding;
+preflight does not expand them or certify those inputs as available. Unresolved
+includes and library bindings also require attention. Within-file step handoffs
+are ordered normally; cycles between files remain findings that need attention.
+`status` summarizes these setup findings. `schedule` shows the file order,
+`configured_libraries` the configured seeds, and `notes` the inspection limits.
+`destinations$report_json` and `$report_md` identify the authoritative reports.
 An empty unsupported list is not an accuracy assessment.
 
 For a missing input, inspect `searched_paths` and correct the library binding or
@@ -80,7 +88,7 @@ outputs:
     subject:
       required_columns: [USUBJID, AGE, ADT]
       labels: {AGE: Age in years}
-      formats: {ADT: DATE9.}
+      formats: {ADT: "DATE9."}
       types: {USUBJID: character, AGE: numeric, ADT: Date}
       column_order: [USUBJID, AGE, ADT]
       keys: [USUBJID]
@@ -98,12 +106,23 @@ outputs:
       row_count: 306
 ```
 
-A target assertion overrides the entire corresponding profile field. Column
-names are case-insensitive. Labels and `format.sas` attributes must match exactly
+A target assertion overrides the entire corresponding profile field; profile
+fields override `comparison_rules` defaults. R and YAML profiles contain only
+supplied fields: omitted/NULL fields inherit, while explicit `FALSE` or empty
+mappings override. Unknown assertion fields fail before translation. Empty
+metadata mappings impose no requirement. Column names are case-insensitive.
+Quote YAML metadata keys and string values, for example `labels: {"N": "Count"}`
+and `formats: {"AVAL": "8."}`. YAML otherwise converts `N` to a boolean key and
+`8.` to a number; the original spelling cannot be recovered after parsing.
+Non-character metadata values are rejected, including mixed mappings. Labels and `format.sas` attributes must match exactly
 when declared. `numeric` accepts integer or double columns, while `Date` and
-`POSIXct` require those classes. `column_order` specifies the complete ordered
-column list. Key columns must exist. `unique_keys: true` additionally requires
-nonmissing, nonblank key values and a unique combined key, using the comparator's
+`POSIXct` require those classes. These are physical R type requirements:
+factors fail `character` even if the comparator can match their text values.
+Malformed metadata attributes fail QC and retain the observed values in the
+report. `column_order` specifies the complete ordered column list.
+Keys guide reference alignment; without a reference they impose no requirement
+unless `unique_keys: true` is set. That requires the columns to exist and have
+nonmissing, nonblank values and a unique combined key, using the comparator's
 SAS trailing-space normalization. Declaring alignment keys alone still permits
 missing values and repeated keys. Row count requirements can be exact or bounded.
 Checks report expected/actual metadata, affected columns, missing key counts,
@@ -120,3 +139,11 @@ CI runs the marked offline R and configuration examples directly from these
 documents using `Rscript tools/run-doc-examples.R --installed`. Study-dependent
 saved-output examples use synthetic fixtures; provider and installation examples
 are parsed but are not advertised as offline execution tests.
+
+An explicit R configuration list is a complete configuration for preflight and
+translation; it does not silently inherit a discovered model provider. To keep
+file configuration while making changes, start with `sas_config()` and edit that
+object. A supplied project retains its own configuration unless explicitly
+overridden. Configured reference paths resolve against the YAML file directory;
+paths in R configuration lists resolve against the project directory. Direct
+`outputs` argument paths remain relative to the calling working directory.

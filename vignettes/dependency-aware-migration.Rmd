@@ -9,6 +9,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+<!-- sas2r-example: offline knitr-setup -->
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -91,7 +92,8 @@ stopifnot(check$model_calls == 0L)
 ```
 
 This reads source files and directory listings without model calls, dataset
-reads, program execution, or output writes. Reuse its arguments for translation.
+reads, program execution, or output writes. Reuse `check$project` and the same
+budget arguments for translation while sources remain unchanged.
 Use `qc_profile()` with `outputs$profiles` and a named `profile` in each target's
 assertions to require labels, formats, types/order, keys, uniqueness, row counts,
 and per-variable reference tolerances. These checks add study requirements;
@@ -110,9 +112,9 @@ readRenviron("~/.Renviron")
 
 # Translate and execute the study migration
 result <- sas_translate(
-  path = "programs/",
+  path = check$project,
   out_dir = "migration_output",
-  config = "_sas2r.yml",
+  usage_limits = list(max_calls = 20),
   execute = TRUE,
   max_program_repair_rounds = 1L,
   max_bundle_repair_rounds = 2L

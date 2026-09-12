@@ -45,8 +45,10 @@ request activity; unknown names and invalid values raise a configuration error.}
 }
 \value{
 A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries},
-\code{inputs} (available, missing, unresolved, or generated), \code{references}, \code{unsupported},
+\code{inputs} (available, missing, unresolved, no_producer, or generated), \code{references}, \code{unsupported},
 scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
+Also includes \code{status}, \code{configured_libraries}, \code{schedule}, explanatory \code{notes},
+and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.
 \code{ready_for_translation} means no known missing inputs or unresolved scan
 findings; it does not mean execution or reference validation has passed.
 }

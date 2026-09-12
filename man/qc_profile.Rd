@@ -44,7 +44,10 @@ set, the relative tolerance defaults to zero, as for target assertions.}
 the same policy as \code{\link[=compare_profile]{compare_profile()}}. Only evaluated with a reference.}
 }
 \value{
-A list of assertions of class \code{sas2r_qc_profile}.
+A plain list containing only explicitly supplied, non-NULL fields.
+Omitted fields inherit global settings. Explicit \code{FALSE} and empty lists
+override them. Types describe physical R columns: factors do not satisfy
+\code{character}, even when their values compare equal to character data.
 }
 \description{
 Assign a profile a name in \code{outputs$profiles}, then select it with

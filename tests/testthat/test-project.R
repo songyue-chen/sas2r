@@ -36,12 +36,15 @@ test_that("single .sas file with no config works (zero-config path)", {
     unit_type = character(), file = character()))
 })
 
-test_that("cycle falls back to file order with a flag", {
+test_that("an in-file future producer preserves order and needs an input remedy", {
   dir <- withr::local_tempdir()
   writeLines("data a; set b; run;\ndata b; set a; run;", file.path(dir, "x.sas"))
   p <- sas_project(dir)
-  expect_true("dependency_cycle" %in% p$flags$kind)
+  expect_false("dependency_cycle" %in% p$flags$kind)
   expect_identical(p$order, p$units$unit_id)
+  check <- sas_preflight(p)
+  expect_identical(check$status, "needs_attention")
+  expect_true("no_producer" %in% check$inputs$status)
 })
 
 test_that("empty directory returns valid 0-row project tibbles", {
