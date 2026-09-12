@@ -170,6 +170,13 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
   config$macro_search_path <- config_resolve_paths(
     config$macro_search_path %||% character(), root)
 
+  config$outputs <- normalize_outputs_config(config$outputs)
+  if (is.list(config$outputs) && length(config$outputs$references)) {
+    config$outputs$references <- lapply(config$outputs$references, config_resolve_paths, base = root)
+  }
+  config$comparison_rules <- normalize_comparison_rules(config$comparison_rules, base = root)
+  validate_effective_qc(config$outputs, config$comparison_rules)
+
   cache_file <- file.path(root, ".sas2r", "scan_cache.rds")
   scan_cache <- if (cache && file.exists(cache_file)) {
     res <- tryCatch(readRDS(cache_file), error = function(e) list())
@@ -786,9 +793,9 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
 
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
 
+  proj_graph <- build_dependency_graph(draft_proj, output_contracts = output_contracts)
+  proj_sched <- stable_dependency_schedule(proj_graph)
   if (nrow(units) > 0L) {
-    proj_graph <- build_dependency_graph(draft_proj, output_contracts = output_contracts)
-    proj_sched <- stable_dependency_schedule(proj_graph)
     if (any(proj_sched$group_kind == "cycle")) {
       flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
         kind = "dependency_cycle",
@@ -836,6 +843,8 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
       kind = "libref_engine_unsupported", detail = detail)
   }
 
+  dynamic <- dynamic_dataset_findings(statements)
+  if (nrow(dynamic)) flags_list[[length(flags_list) + 1L]] <- dynamic
   flags <- if (length(flags_list) > 0L) {
     do.call(rbind, flags_list)
   } else {
@@ -880,6 +889,7 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
     includes = includes, include_graph = include_graph,
     macros = list(defs = defs, calls = calls, resolution = resolution),
     lineage = lineage, output_contracts = output_contracts, order = ord, flags = flags, config = config,
+    graph = proj_graph, schedule = proj_sched,
     dependency_facts = dependency_facts, source_hashes = source_hashes,
     project_dir = root
   ), class = "sas2r_project")

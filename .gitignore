@@ -14,12 +14,14 @@ scratch/
 phuse-validation/
 AGENTS.md
 
-# docs/: publish only the three user-facing guides; everything else is
+# docs/: publish only user-facing guides; everything else is
 # internal working material (plans, specs, review rounds, decision notes).
 docs/*
 !docs/llm-providers.md
 !docs/migration-evidence.md
 !docs/output-evidence.md
+!docs/clinical-qc-preflight.md
+!docs/review-clinical-qc-preflight.md
 !docs/decisions/
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds

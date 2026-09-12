@@ -674,7 +674,6 @@ stable_dependency_schedule <- function(graph) {
 
   # Build adjacency list (provider -> consumer)
   adj <- stats::setNames(vector("list", length(cids)), cids)
-  self_loops <- stats::setNames(logical(length(cids)), cids)
   for (cid in cids) adj[[cid]] <- character()
 
   if (nrow(edges) > 0L) {
@@ -685,9 +684,7 @@ stable_dependency_schedule <- function(graph) {
       for (i in seq_len(nrow(valid_edges))) {
         u <- from_c[i]
         v <- to_c[i]
-        if (identical(u, v)) {
-          self_loops[[u]] <- TRUE
-        } else {
+        if (!identical(u, v)) {
           adj[[u]] <- unique(c(adj[[u]], v))
         }
       }
@@ -757,7 +754,7 @@ stable_dependency_schedule <- function(graph) {
 
   for (k in seq_len(n_sccs)) {
     members <- scc_list[[k]]
-    is_cycle <- length(members) > 1L || isTRUE(self_loops[[members[1L]]])
+    is_cycle <- length(members) > 1L
     if (is_cycle) {
       scc_grp_kind[k] <- "cycle"
     } else {

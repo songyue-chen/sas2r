@@ -227,46 +227,10 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     )
   }
 
-  # 1. Assertions: Required columns check
-  req_cols <- assertions$required_columns %||% comparison_rules$required_columns %||% character()
-  if (length(req_cols) > 0L) {
-    req_cols_folded <- tolower(as.character(req_cols))
-    cand_cols_folded <- tolower(names(cand_data))
-    missing_cols <- setdiff(req_cols_folded, cand_cols_folded)
-
-    if (length(missing_cols) > 0L) {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = FALSE,
-        missing_columns = missing_cols,
-        details = paste0("Missing required column(s): ", paste(missing_cols, collapse = ", "))
-      )
-    } else {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = TRUE,
-        details = "All required columns present"
-      )
-    }
-  }
-
-  # 2. Assertions: Row count / min_rows check
-  if (!is.null(assertions$min_rows)) {
-    min_r <- as.integer(assertions$min_rows)
-    if (nrow(cand_data) < min_r) {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = FALSE,
-        details = sprintf("Expected at least %d rows, got %d", min_r, nrow(cand_data))
-      )
-    } else {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = TRUE,
-        details = "Row count requirement met"
-      )
-    }
-  }
+  # Target requirements override global defaults; all dataset quality checks
+  # use the same evaluator, including expanded named profiles.
+  policy <- effective_dataset_policy(comparison_rules, assertions)
+  checks <- c(checks, check_dataset_qc(cand_data, policy))
 
   # 3. Reference dataset comparison
   ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
@@ -321,27 +285,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         # policy (its unspecified half stays 0); with nothing configured the
         # defaults come from compare_profile(), defined once, so the gate and
         # direct compare_datasets() calls judge by the same rules.
-        num_tol <- assertions$numeric_tolerance %||% comparison_rules$numeric_tolerance
-        abs_tol <- comparison_rules$tol_abs %||% num_tol
-        rel_tol <- comparison_rules$tol_rel
-        if (!is.null(abs_tol)) abs_tol <- suppressWarnings(as.numeric(abs_tol))
-        if (!is.null(rel_tol)) rel_tol <- suppressWarnings(as.numeric(rel_tol))
-        if (is.null(abs_tol) && is.null(rel_tol)) {
-          prof_defaults <- compare_profile()
-          abs_tol <- prof_defaults$numeric$abs
-          rel_tol <- prof_defaults$numeric$rel
-        } else {
-          abs_tol <- abs_tol %||% 0.0
-          rel_tol <- rel_tol %||% 0.0
-        }
-        keys <- assertions$keys %||% comparison_rules$keys %||% NULL
-
-        prof <- compare_profile(
-          abs = abs_tol,
-          rel = rel_tol,
-          padding = "cosmetic",
-          sas_null_equals_na = TRUE
-        )
+        keys <- policy$keys
+        prof <- dataset_comparison_profile(policy)
 
         # Engine alignment: configured keys steer row identity, and with none
         # configured the keys are inferred and validated -- a content-equal
@@ -397,6 +342,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     "failed"
   }
 
+  reason <- output_checks_reason(checks)
+
   list(
     target_id = t_id,
     target_key = t_key,
@@ -404,6 +351,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     required = required,
     passed = all_checks_passed,
     status = status,
+    reason = reason,
     has_reference = has_ref && isTRUE(checks$reference_exists$passed),
     reference_passed = if (has_ref) ref_passed else FALSE,
     has_assertions = length(assertions) > 0L,

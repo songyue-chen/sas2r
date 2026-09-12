@@ -551,7 +551,7 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
   for (uid in unique(st_f$unit_id)) {
     us <- st_f[st_f$unit_id == uid, ]
     ut <- us$unit_type[1]
-    em <- NULL; reason <- NA_character_; ir <- NULL
+    em <- NULL; reason <- NA_character_
     first <- tolower(us$first_token[1])
 
     target_ds <- project$lineage$dataset[project$lineage$role == "creates" & project$lineage$unit_id == uid][1]
@@ -601,21 +601,11 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
     }
 
     tryCatch({
-      if (ut == "data_step") {
-        ir <- parse_data_step(us)
-        if (is.na(target_ds) && length(ir$outputs) > 0L) {
-          target_ds <- ir$outputs[1]
-        }
-        if (nrow(ir$blockers)) {
-          reason <- ir$blockers$reason[1]
-        } else {
-          em <- if (ir$route == "merge") emit_merge_step(ir)
-                else emit_data_step(ir, src_file = f)
-        }
-      } else if (ut == "proc_step") {
-        dp <- dispatch_proc(us, rulebook)
+      if (ut %in% c("data_step", "proc_step")) {
+        dp <- deterministic_unit_translation(us, rulebook, f)
         em <- dp$em
         reason <- dp$reason
+        if (is.na(target_ds) && length(dp$outputs)) target_ds <- dp$outputs[1L]
       } else if (ut == "macro_def") {
         reason <- "macro_deferred"
       } else if (uid %in% emit_units) {
@@ -635,24 +625,14 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
       } else {
         reason <- "global_deferred"
       }
-    }, sas2r_expr_unmapped_function = function(e) {
-      reason <<- paste0("unmapped_function:", e$fname %||% "unknown")
-      em <<- NULL
-    }, sas2r_expr_parse_error = function(e) {
-      reason <<- "expr_parse_failed"
-      em <<- NULL
     }, error = function(e) {
-      reason <<- "emission_failed"
+      reason <<- deterministic_failure_reason(e)
       em <<- NULL
     })
 
-    # Post-dispatch validation: check if code is NA or empty
-    if (!is.null(em) && (is.na(em$code[1]) || !nzchar(trimws(em$code[1])))) {
-      reason <- if ("merge_unsupported_shape" %in% em$flags) "merge_unsupported_shape"
-                else if (length(em$flags) && nzchar(em$flags[1])) em$flags[1]
-                else "emission_failed"
-      em <- NULL
-    }
+    checked <- deterministic_emission_result(list(em = em, reason = reason))
+    em <- checked$em
+    reason <- checked$reason
 
     # Lint check on emitted code: if parse error or banned function, fallback to stub
     lint <- NULL
@@ -880,4 +860,37 @@ print.sas2r_transpilation <- function(x, ...) {
   }
   cli::cli_text("staged in {.file {x$out_dir}} -- NOT verified; run the ladder next")
   invisible(x)
+}
+
+# The deterministic DATA/PROC decision is shared by emission and preflight.
+# It generates text only; no translated program or dataset read is executed.
+deterministic_failure_reason <- function(e) {
+  if (inherits(e, "sas2r_expr_unmapped_function")) {
+    paste0("unmapped_function:", e$fname %||% "unknown")
+  } else if (inherits(e, "sas2r_expr_parse_error")) "expr_parse_failed" else "emission_failed"
+}
+
+deterministic_emission_result <- function(out) {
+  em <- out$em
+  if (!is.null(em) && (!length(em$code) || is.na(em$code[1L]) || !nzchar(trimws(em$code[1L])))) {
+    out$reason <- if ("merge_unsupported_shape" %in% em$flags) "merge_unsupported_shape" else
+      if (length(em$flags) && nzchar(em$flags[1L])) em$flags[1L] else "emission_failed"
+    out$em <- NULL
+  }
+  out
+}
+
+deterministic_unit_translation <- function(us, rulebook, file = us$file[1L]) {
+  out <- tryCatch({
+    if (us$unit_type[1L] == "macro_def") return(list(em = NULL, reason = "macro_deferred"))
+    if (us$unit_type[1L] == "proc_step") {
+      dispatch_proc(us, rulebook)
+    } else {
+      ir <- parse_data_step(us)
+      if (nrow(ir$blockers)) return(list(em = NULL, reason = ir$blockers$reason[1L], outputs = ir$outputs))
+      em <- if (ir$route == "merge") emit_merge_step(ir) else emit_data_step(ir, src_file = file)
+      list(em = em, reason = NULL, outputs = ir$outputs)
+    }
+  }, error = function(e) list(em = NULL, reason = deterministic_failure_reason(e)))
+  deterministic_emission_result(out)
 }

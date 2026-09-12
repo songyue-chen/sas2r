@@ -472,3 +472,24 @@ extract_function_uses <- function(units) {
   )
 }
 
+
+# Macro expansion is outside static lineage analysis. Preserve uncertainty at
+# dataset positions instead of silently dropping those references. Dataset
+# options/expressions are excluded so `where=(x=&limit)` is not a dynamic name.
+dynamic_dataset_findings <- function(statements) {
+  text <- vapply(statements$text, mask_strings, character(1))
+  candidates <- statements$first_token %in%
+    c("data", "set", "merge", "update", "proc", "output", "table", "tables",
+      "create", "select", "insert", "delete")
+  dynamic <- "[^[:space:];(),=]*[&%][^[:space:];(),=]*"
+  patterns <- c(
+    paste0("^\\s*(data|set|merge|update)\\s+([^;()]*\\s+)?", dynamic),
+    paste0("\\b(data|out|base)\\s*=\\s*", dynamic),
+    paste0("\\b(from|join|table)\\s+", dynamic)
+  )
+  hit <- Reduce(`|`, lapply(patterns, function(pattern) grepl(pattern, text, ignore.case = TRUE, perl = TRUE)))
+  selected <- which(hit & candidates & statements$type == "code")
+  tibble::tibble(kind = rep("dynamic_dataset_reference", length(selected)),
+    detail = paste0(statements$file[selected], ":", statements$line_start[selected],
+                    ": ", statements$text[selected]))
+}

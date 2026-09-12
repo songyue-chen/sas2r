@@ -21,10 +21,11 @@ environment variable overrides discovery. No config file is the
 primary supported case: built-in defaults let a bare SAS script be
 scanned, assessed, and translated with no setup at all.
 Every relative configured path -- \code{libraries}, \code{macros.search_path},
-\code{includes.roots}, and \code{environment.autoexec} -- is resolved against the
+\code{includes.roots}, \code{environment.autoexec}, and output/comparison reference
+paths -- is resolved against the
 configuration file's own directory, never against the working directory:
 those roots reach \verb{\%include} occurrence identity, which must not depend on
-where the scan was launched from. One anchoring rule governs all four, so a
+where the scan was launched from. One anchoring rule governs these paths, so a
 \code{~}-prefixed entry is treated as already carrying its own base everywhere
 rather than in some keys only, because R expands \code{~} against the user's home
 directory and prefixing a base onto it would corrupt the path.

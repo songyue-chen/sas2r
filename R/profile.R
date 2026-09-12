@@ -91,6 +91,13 @@ compare_profile <- function(abs = 1e-8, rel = 1e-8,
         cli::cli_abort("Invalid override parameter(s) for variable {.val {v}}: {.val {invalid_names}}. Must be {.val abs} and/or {.val rel}.")
       }
 
+      for (field in intersect(names(ov), c("abs", "rel"))) {
+        if (is.character(ov[[field]]) && length(ov[[field]]) == 1L) {
+          number <- suppressWarnings(as.numeric(ov[[field]]))
+          if (!is.na(number)) ov[[field]] <- number
+        }
+      }
+      overrides[[v]] <- ov
       if ("abs" %in% names(ov)) {
         if (!is.numeric(ov$abs) || length(ov$abs) != 1L || is.na(ov$abs) || ov$abs < 0) {
           cli::cli_abort("Override {.arg abs} for variable {.val {v}} must be a single non-negative number.")

@@ -64,6 +64,7 @@ and result type:
 
 This example runs entirely offline:
 
+<!-- sas2r-example: offline keyed-comparison -->
 ```r
 library(sas2r)
 
@@ -77,6 +78,7 @@ comparison <- compare_datasets(
 )
 passed(comparison)
 write_comparison_report(comparison, file = "dataset-comparison.md")
+stopifnot(passed(comparison), file.exists("dataset-comparison.md"))
 ```
 
 For a saved migration, substitute
@@ -88,6 +90,7 @@ bundle or change its recorded status.
 
 ### Compare repeated records or infer row keys
 
+<!-- sas2r-example: offline aligned-comparison -->
 ```r
 reference <- data.frame(USUBJID = c("01", "01", "02"), AVAL = c(10, 11, 20))
 candidate <- reference[c(2, 3, 1), ]
@@ -105,6 +108,8 @@ report$mismatches$total_mismatch_cells
 report$resource_state
 report$truncated_fields
 write_comparison_report(report, file = "aligned-comparison.json")
+stopifnot(report$mismatches$total_mismatch_cells == 0L,
+          file.exists("aligned-comparison.json"))
 ```
 
 `passed()` does not accept this report class. Inspect missing/extra columns,
@@ -167,3 +172,6 @@ Nothing has to be taken on trust: the privacy boundary is inspectable after the 
 
 > [!WARNING]
 > **THIS IS NOT PARITY**: Output comparison reports evaluate equivalence against supplied reference files under specified tolerances. Successful comparison does not replace required clinical programming double-programming or regulatory validation procedures.
+
+For required metadata and structure checks in a migration, see
+[clinical QC profiles and preflight](clinical-qc-preflight.md).

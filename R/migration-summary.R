@@ -31,8 +31,7 @@ migration_coverage <- function(targets = list(), histories = list()) {
 }
 
 migration_usage_summary <- function(budget) {
-  limits <- c("max_usd", "max_calls", "max_retries", "max_tool_calls", "max_wall_time",
-              "max_request_bytes", "max_request_chars", "max_input_tokens", "max_output_tokens")
+  limits <- usage_limit_names()
   list(
     known_amount = budget$known_amount %||% 0,
     billed_amount = budget$billed_amount %||% 0,
