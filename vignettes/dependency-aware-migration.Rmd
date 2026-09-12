@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 
 `sas2r` provides a dependency-aware migration framework that translates SAS programs and multi-module clinical pipelines into modular, reproducible R bundles.
 
-Rather than translating single programs in isolation without context, `sas2r` analyzes macro definitions, `%include` relationships, dataset lineages, and configured outputs across the entire codebase to guarantee correct execution ordering and reproducible artifact generation.
+`sas2r` analyzes macro definitions, `%include` relationships, dataset lineages, and configured outputs to schedule programs in dependency order. Unresolved dependencies and unsupported source constructs remain visible in the report.
 
 ## Migration Pipeline Architecture
 
@@ -28,7 +28,7 @@ A complete migration workflow follows six coordinated phases:
 
 1. **Dependency Analysis**: Discovers module dependencies, macro definitions, and data references to construct a Directed Acyclic Graph (DAG) and topological execution schedule.
 2. **Deterministic Baseline Transpilation**: Parses SAS statements into robust base R / tidyverse idioms with format catalog compilation (`_sas2r_formats.R`) and runtime helper bindings (`sas2r-helpers.R`).
-3. **Immediate Component Repair**: Translates and checks program units, verifying syntax and running independent static reviews without reasoning bias.
+3. **Immediate Component Repair**: Translates and checks program units, verifies syntax, and asks a separate reviewer to evaluate the candidate against the original SAS source.
 4. **Subprocess Attempt Execution**: Executes the complete generated R bundle inside an isolated subprocess using copy-on-write library registries.
 5. **Output Verification Gate**: Evaluates generated candidate datasets and Table/Listing/Figure (TLF) outputs against structural assertions and optional SAS reference datasets (`.xpt`, `.sas7bdat`, `.rds`).
 6. **Authoritative Reporting**: Produces machine-readable (`.sas2r/report.json`) and human-readable (`report.md`) audit documentation.
@@ -99,34 +99,75 @@ result <- sas_translate(
 print(result)
 cat("Status:", result$status, "\n")
 cat("Bundle Directory:", result$bundle_dir, "\n")
+cat("Outputs Directory:", result$outputs_dir, "\n")
+cat("Report:", result$report_path, "\n")
 
 # View generated R code
 cat(sas_code(result))
 
-# Export clean production R bundle
+# Export selected code, generated outputs, reports, and the dependency/input guide
 sas_write(result, "production_r/")
 ```
 
-An interrupted or amended run can pick up where it left off: `sas_translate(..., resume = TRUE)` reconciles the prior run's artifacts and re-translates only components whose source or bindings changed, leaving completed work in place.
+Outputs preserve library subdirectories: ADSL is at
+`file.path(result$outputs_dir, "adam", "adsl.rds")`. The export contains a
+dependency-ordered `run.R`, `run-order.json`, and `outputs-manifest.json`.
+If a source program already occupies `run.R`, the run-order file identifies the
+renamed launcher. From the export directory, use `Rscript run.R` or
+`source("run.R", chdir = TRUE)`. Install the R dependencies listed in its guide
+and update input paths in `autoexec.R` and explicit source LIBNAME statements
+when inputs move. Input datasets are external dependencies; the exported report
+describes the original selected execution and is not refreshed by a manual rerun.
+
+Repeat the same migration call with `resume = TRUE` to reuse saved revisions and
+completed reviews when source, inputs, configuration, runtime, and prompts still
+match. Missing or changed artifacts regenerate, unavailable reviews are retried,
+and smoke execution and full output checks rerun in fresh attempts. The usage
+ledger remains cumulative across resumed runs. Set, for example,
+`usage_limits = list(max_calls = 20)` to cap provider requests; unknown-cost calls
+must not be read as zero spend.
 
 ### Four Canonical Bundle Statuses
 
 Each translation attempt resolves to one of four authoritative statuses:
 
-- **`validated`**: All required candidate datasets match reference SAS data files (`.xpt`, `.sas7bdat`, `.rds`) within defined numerical and multiset key tolerances.
-- **`migration_ready`**: All required candidate datasets and TLFs were generated and structurally validated in isolated execution attempts.
-- **`needs_review`**: Staged code is syntactically valid but execution was skipped (`execute = FALSE`), or reviewer findings require manual review.
-- **`blocked`**: Unresolved compilation errors, syntax defects, or failing smoke executions prevent artifact generation.
+- **`validated`**: Execution, required output checks, and lineage requirements pass, with a passing reference comparison for at least one required target. Other outputs can remain unreferenced.
+- **`migration_ready`**: Execution, required output checks, and lineage requirements pass without passing reference evidence for a required target.
+- **`needs_review`**: Execution was deferred (`execute = FALSE`), or required review/lineage evidence is incomplete or blocked. Programs may still have executed successfully.
+- **`blocked`**: Bundle execution failed or required output checks failed, including missing/unreadable datasets and reference mismatches. Dependency cycles also prevent execution.
+
+Inspect coverage as well as status. The reports separate produced,
+reference-compared, passed, and reference-passed outputs and list
+`validated_targets` and `unreferenced_targets`. A `validated` bundle is not a
+claim that every output was compared.
+
+### Review completion and reference comparability
+
+`reviewer ...: ok` means the agent call completed. Its semantic verdict is in the
+review record; `coordinator ...: reviewed` can still be followed by repair.
+Mechanical checks and smoke tests can pass while the reviewer finds a logic
+issue. A new repaired revision is checked and reviewed again.
+
+Reference datasets must correspond to the supplied SAS source, input snapshot,
+formats, macros, and parameters. Different subject inclusion rules, KEEP lists,
+or analysis visit definitions can produce discrepancies even when the generated
+R follows the source. Trace differences to the source and inputs before treating
+them as translation errors. Independent R reconstruction is useful diagnostic
+evidence but is not an execution by SAS.
 
 ## Component Evidence Ladder
 
-Within each bundle, individual components accumulate immutable evidence records:
+Within each bundle, individual components begin without an evidence level and
+accumulate evidence bound to their revision:
 
-- `transpiled_only`: Deterministically translated baseline R code and contracts.
 - `reviewed_only`: Evaluated by an independent reviewer without material issues.
-- `smoke_verified`: Verified in an isolated subprocess with its upstream dependency chain.
-- `runtime_verified`: Executed during a complete bundle run with verified downstream outputs.
-- `reference_validated`: Validated against golden SAS reference outputs with zero differences.
+- `runtime_verified`: A reviewed revision has execution coverage from a smoke attempt or full bundle execution.
+- `output_verified`: The component's output requirements passed the migration gate.
+- `reference_validated`: Output lineage has passing reference-comparison evidence under configured tolerances.
+
+Smoke outcomes are recorded separately. A smoke pass with unavailable review
+does not earn a higher evidence level. Reference provenance is established
+separately from the comparison result.
 
 ## Attempt Isolation & Copy-on-Write
 
@@ -147,4 +188,3 @@ Within each bundle, individual components accumulate immutable evidence records:
 ## Parity Disclaimer
 
 > **THIS IS NOT PARITY**: Automated translation by `sas2r` does not guarantee regulatory equivalence or replace independent statistical validation. All migrated R code and generated artifacts must be formally validated according to standard clinical operating procedures prior to regulatory submission.
-
