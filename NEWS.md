@@ -1,5 +1,10 @@
 # sas2r (development)
 
+* README and evidence guides now distinguish agent completion, semantic review,
+  execution, and reference coverage. Examples use library-qualified output paths
+  and the correct comparison APIs; export, resume, and reference-provenance
+  guidance reflects the current migration workflow.
+
 * Mechanical interface checks compare declared parameters with the component's
   named function, never an unrelated helper. Scripts with external path inputs
   no longer fail because they define a helper such as `is_not_missing(x)`;

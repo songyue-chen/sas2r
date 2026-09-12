@@ -7,7 +7,7 @@
 
 **sas2r** is an open-source R package for **clinical statistical programmers and biostatisticians** in pharmaceutical, biotech, and CRO organizations. It runs a **coordinated multi-agent workflow** that moves clinical trial data pipelines (SDTM, ADaM, Tables, Listings, and Figures) from SAS to R — an AI translator, an independent AI reviewer, and an AI fixer, each with a defined role inside a deterministic process — and shows you the evidence for every step it took.
 
-`sas2r` does not require SAS. No license, no installation, no connection to a SAS server. Everything runs in R, on your own computer or your organization's own infrastructure.
+`sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the evidence described below. Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
 
 > **Also check out [sas2r.ai](https://sas2r.ai)** — a web-based companion tool for quick, browser-based SAS to R code translation. While sas2r.ai currently uses direct model translation for rapid code conversions, we plan to bring this R package's multi-agent workflow and dataset QC capabilities to the cloud platform in the future!
 
@@ -19,7 +19,7 @@
 - **Honest about what it can't do.** SAS patterns the rules cannot prove — `RETAIN`, `FIRST.` / `LAST.` logic, `OUTPUT` statements, `PROC TRANSPOSE`, macros — are never silently guessed. Each one is clearly marked and handed to an AI translator, and a second, independent AI reviewer reads the result against your original SAS before it is accepted.
 - **Automated dataset QC.** If you provide reference SAS datasets (`.sas7bdat`, `.xpt`, or `.rds`), `sas2r` compares each generated R dataset against them: it lines up rows even when their order differs, understands duplicate key values, applies SAS missing-value and blank-padding rules, and checks numbers to configurable tolerances.
 - **Your source data is never touched.** Input libraries are opened read-only, and every run writes into its own separate working copy (copy-on-write), so a failed attempt can never contaminate your data or a previous good result.
-- **Standalone R programs you can take anywhere.** The result is a directory of plain R scripts plus `autoexec.R` — the library paths, yours to maintain, the way a SAS autoexec is — and two small runtime files. The folder can be moved as a whole, and the programs run on Posit Workbench, a laptop, a server, or a batch system — without `sas2r` installed. The runtime is documented and versioned: see `?sas2r_runtime` and `vignette("runtime-helpers")`.
+- **Standalone R programs you can take anywhere.** Export plain R scripts, `autoexec.R`, runtime files, and a dependency-ordered launcher with `sas_write()`. The exported guide lists required R packages and external input libraries; `sas2r` itself is not required to run the bundle. The runtime is documented and versioned: see `?sas2r_runtime` and `vignette("runtime-helpers")`.
 - **Repairs with evidence, not guesswork.** When a translated program errors or an output doesn't match its reference, an AI fixer receives a focused summary of what went wrong, patches the one program responsible, and the whole pipeline re-runs from scratch to prove the patch actually helped.
 
 ---
@@ -139,26 +139,84 @@ result <- sas_translate(
 # What you get back
 result$status        # one of the four statuses below
 result$bundle_dir    # the finished, standalone R programs
-result$outputs_dir   # the datasets the selected run produced
+result$outputs_dir   # selected outputs, e.g. adam/adsl.rds or outputs/table.html
 result$report_path   # a readable report of everything that happened
 
 # Read a translated program
 cat(sas_code(result, 1))
 
-# Copy the finished bundle and report to your production folder
+# Export the selected code, generated outputs, reports, and run guide
 sas_write(result, "r_production/")
 ```
+
+The export includes `run.R`, `run-order.json`, `outputs-manifest.json`, and a
+README describing its inputs and R dependencies. From the exported folder, run
+`Rscript run.R`, or use `source("run.R", chdir = TRUE)` in R. If a source program
+already occupies `run.R`, `run-order.json` identifies the renamed launcher.
+Input data is not copied: update `autoexec.R` and any explicit source LIBNAME
+paths if those inputs move. A manual rerun does not update the exported report.
 
 ### The four statuses
 
 Every run ends in exactly one status. It is decided from what actually executed and what the output checks found — never from what an AI model claims:
 
 - **`blocked`** — something required went wrong: a program failed to run, or a required output is missing or doesn't match. The report names the program and shows the evidence.
-- **`needs_review`** — code was produced but nothing has demonstrated the outputs yet (for example, you set `execute = FALSE`, or the AI review could not be completed).
-- **`migration_ready`** — every program ran cleanly and every required output passed its checks. No reference comparison was involved.
-- **`validated`** — on top of `migration_ready`, the outputs were compared against the reference SAS datasets you configured, and the comparison passed within your tolerances.
+- **`needs_review`** — execution was deferred, or required review/lineage evidence remains incomplete or blocked. Programs may still have run successfully; read the reported reason.
+- **`migration_ready`** — bundle execution, required output checks, and lineage requirements passed, without passing reference evidence for a required target. This can mean only existence/readability checks were available.
+- **`validated`** — those requirements passed and at least one required target supplied a passing reference comparison. Other outputs can remain unreferenced.
+
+Check coverage alongside the status: `print(result)` and the reports distinguish
+outputs produced, reference-compared, passed, and reference-passed. The JSON
+report lists `validated_targets` and `unreferenced_targets` under `coverage`.
+For example, one passing referenced output and two unreferenced outputs can
+produce `validated`; it does not mean all three were compared.
 
 **THIS IS NOT PARITY.** `validated` means your configured reference comparisons passed under the tolerances you declared. It is not proof of SAS equivalence, and it does not replace double programming or independent statistical QC.
+
+### Reading the progress log
+
+| Log message | What it establishes |
+| --- | --- |
+| `reviewer ...: ok, 3 tool calls` | The reviewer agent call completed successfully. This is not its semantic verdict. The tool count describes tool use, not findings. |
+| `coordinator ...: mechanical checks passed` | Generated code passed syntax and mechanical contract checks. |
+| `coordinator ...: reviewed` | A review result was recorded. Inspect its verdict and findings; it can still require repair. |
+| `coordinator ...: review unavailable` | No usable review was obtained. The reason is recorded, and smoke execution may continue. |
+| `smoke ...: passed` | The program executed in its smoke attempt. This does not establish agreement with SAS reference data. |
+| `bundle ... assessed -- migration_ready` | The selected bundle met the requirements described above. Read reference coverage separately. |
+
+Review findings can trigger a fixer even after mechanical checks and smoke tests
+pass. A repaired revision is checked and reviewed again. The elapsed-time and
+usage summary distinguishes known spend from unknown-cost calls: `$0.0000`
+known spend with unknown-cost calls does not mean the run was free.
+
+### Reference differences: translation error or different specification?
+
+Use references generated by the same SAS programs, input snapshot, formats,
+macros, and parameters. A similarly named ADaM dataset is not sufficient: a
+reference may exclude subjects the source retains, derive additional variables,
+or use a different analysis visit definition.
+
+When a comparison fails, inspect schema differences and unmatched rows before
+cell examples, then trace the affected derivations back to SAS and the inputs.
+Verify that row keys have the same meaning on both sides. An independent R
+reconstruction can help diagnose a discrepancy, but it is not a SAS execution.
+Resolve source/reference mismatches before using them to drive translation
+repairs. See the [comparison guide](docs/output-evidence.md) for saved-output
+checks and ambiguous alignment.
+
+### Resume and limit provider calls
+
+Repeat the same `sas_translate()` call with `resume = TRUE` to reuse saved
+translation revisions and completed reviews when source, inputs, configuration,
+runtime, and worker prompts still match. Changed or missing artifacts regenerate;
+smoke execution and full output checks rerun in fresh attempts. An unavailable
+review is retried.
+
+Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
+`usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are
+reported explicitly; the usage ledger is cumulative across resumed runs.
+See `?sas_translate` and the [migration evidence guide](docs/migration-evidence.md)
+for the complete limits and reuse contract.
 
 ---
 
@@ -320,18 +378,24 @@ sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 # Does my sign-in actually work?
 sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 
-# Compare any two datasets directly, the same way the pipeline does.
-# (result$outputs_dir points into the selected attempt of the latest run --
-# each run gets its own run_<timestamp>_<hash>/ folder in the output
-# directory, with the translated programs and report at its top, so reruns
-# never overwrite each other.)
-report <- compare_datasets(
+# Compare saved outputs with known unique subject keys. This makes no AI calls.
+# result$outputs_dir is the selected output snapshot for this run;
+# named-library datasets retain their library subdirectory.
+comparison <- compare_datasets(
   base = haven::read_xpt("data/reference/adsl.xpt"),
-  comp = readRDS(file.path(result$outputs_dir, "adsl.rds")),
-  keys = c("STUDYID", "USUBJID")
+  comp = readRDS(file.path(result$outputs_dir, "adam", "adsl.rds")),
+  keys = c("STUDYID", "USUBJID"),
+  profile = compare_profile(abs = 1e-8, rel = 1e-8)
 )
-print(report$passed)
+passed(comparison)
+write_comparison_report(comparison, file = "adsl-comparison.md")
 ```
+
+`compare_datasets()` uses row order when keys are omitted and pairs duplicate
+keys by occurrence. For repeated records or inferred keys, use
+`compare_aligned_outputs()` as shown in the [comparison guide](docs/output-evidence.md).
+These standalone checks produce comparison evidence without changing the saved
+migration status or rerunning the bundle.
 
 ---
 

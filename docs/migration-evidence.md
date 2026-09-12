@@ -4,13 +4,14 @@
 
 ## Component Evidence Ladder
 
-Every component in a SAS project traverses an evidence hierarchy based on accumulated static, mechanical, and execution evidence:
+Newly translated components start without an evidence level. A successful smoke
+attempt is recorded separately; it does not substitute for a completed review.
+The four evidence levels are:
 
-1. **`transpiled_only`**: The component has been mechanically parsed or translated into R code and behavioral contracts, but has not yet undergone independent static review or isolated smoke testing.
-2. **`reviewed_only`**: An independent reviewer agent has evaluated the candidate R code and contract against the source SAS, with no blocking semantic or runnability defects identified.
-3. **`runtime_verified`**: The component executed as part of an isolated subprocess run or smoke verification step with its upstream dependency chain.
-4. **`output_verified`**: The component and its generated candidate outputs were evaluated and satisfied at the migration gate.
-5. **`reference_validated`**: The component outputs have been compared against authentic SAS reference datasets within specified numerical and structural tolerances.
+1. **`reviewed_only`**: An independent reviewer evaluated the candidate R code and contract against the source SAS, with no material findings.
+2. **`runtime_verified`**: The reviewed revision has execution coverage from an isolated subprocess run or smoke attempt with its upstream dependency chain.
+3. **`output_verified`**: The component's output requirements passed the migration gate.
+4. **`reference_validated`**: The output lineage has passing reference-comparison evidence within the configured tolerances. Reference provenance must be established separately.
 
 Evidence is strictly immutable per revision binding: any source, code, or helper modification resets evidence for the new revision.
 
@@ -18,18 +19,31 @@ Evidence is strictly immutable per revision binding: any source, code, or helper
 
 When `sas_translate()` processes a project or SAS file, the final bundle is assigned one of four canonical states:
 
-- **`blocked`**: Hard syntax/lint errors remain, unresolvable circular dependencies exist, or execution failed without a working candidate bundle.
-- **`needs_review`**: The bundle is statically valid and ready for inspectability, but execution was disabled (`execute = FALSE`), reviewer findings require human sign-off, or non-blocking warnings remain.
-- **`migration_ready`**: All required candidate datasets and TLF outputs were successfully produced and structurally validated across copy-on-write attempt directories.
+- **`blocked`**: Bundle execution failed, or a required output is missing, unreadable, or fails its checks, including a configured reference comparison. Dependency cycles also prevent execution.
+- **`needs_review`**: Execution was deferred (`execute = FALSE`), or required review/lineage evidence is incomplete or blocked. This can occur even when smoke execution succeeds; the status reason identifies the missing evidence.
+- **`migration_ready`**: Bundle execution, required output checks, and lineage requirements passed, without passing reference evidence for a required target. Existence and readability checks alone do not establish matching dataset values.
 - **`validated`**: Required output checks and lineage requirements pass, and at least one required target has a passing reference comparison. Other targets can remain unreferenced. This status does not mean every output was compared.
 
 ## Reviewer Outcomes & Authority
 
 Independent LLM review is designed to assist human engineers, not to grant unearned certification:
 
-- **`reviewed_no_material_finding`**: Reviewer confirms the R code faithfully implements the SAS logic and complies with target conventions.
+- **`reviewed_no_material_finding`**: The reviewer reported no material issues in the candidate code and contract. This remains an AI review outcome, not an independent SAS execution.
 - **`repair_required`**: Reviewer identified material issues (e.g. inverted logic, missing condition, incorrect library mapping) that trigger immediate component repair.
-- **`review_unavailable`**: When no LLM is configured or budget limits are reached, review is recorded as unavailable. This is treated honestly as an observability notice and does not block smoke verification or claim unverified equivalence.
+- **`review_unavailable`**: No usable review was obtained, for example because no LLM is configured, a request failed, or a budget limit was reached. Smoke verification can continue, but required lineage with unavailable review keeps the final bundle at `needs_review` unless an execution/output failure makes it `blocked`.
+
+### Reading progress messages
+
+`reviewer ...: ok` records successful completion of the agent call; it is not the
+review verdict. `coordinator ...: reviewed` means the coordinator recorded a
+review result, which can still contain `repair_required` findings. The report
+and component review history contain the verdict and findings.
+
+Mechanical checks, reviews, smoke execution, and bundle output checks establish
+different facts. A smoke pass does not clear a mechanical failure or missing
+review. A later successful review resolves prior review-specific blockers while
+preserving their history. Repairing code creates a new revision whose evidence
+must be collected again.
 
 ## Dual Repair Loops & Attempt Isolation
 
