@@ -13,8 +13,14 @@ macros:
 #   region: us-west-2
 #   model: us.anthropic.claude-example-v1:0
 #   cache: auto
+#   # Reasoning uses endpoint defaults: ellmer 0.4.2 does not forward effort
+#   # on Bedrock. Use a recommended direct-provider profile for explicit high.
+#   # See docs/llm-providers.md; choose an output allowance your model supports.
+#   max_output_tokens: 32768
 #   capabilities:
-#     structured_output: native
+#     structured_output: fallback
 #     tool_calling: native
+#     reasoning_effort: unsupported
+#     max_output_tokens: supported
 #   # ellmer gathers with tools before structured finalization; no
 #   # tools_with_structured_output override is needed or honored.

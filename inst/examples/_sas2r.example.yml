@@ -84,46 +84,77 @@ environment:
 # NOTE: github (GitHub Models) was retired upstream on 2026-07-30 and needs
 # ellmer < 0.5.0; on newer ellmer sas2r refuses it before building a request.
 #
-# Active example: OpenAI
+# Recommended translation profiles. Keep exactly one llm block active.
+# High reasoning is explicit where ellmer 0.4.2 maps it. DeepSeek uses its
+# documented server default; its reasoning_effort flag alone has no effect.
+# max_output_tokens is a per-response allowance for reasoning plus the answer
+# where the provider counts both. 32768 is a starting point, not a guarantee
+# against truncation; increase within the selected model's supported limit.
+# Both the requested value AND its supported capability are needed.
+# Do not add temperature/top_p overrides to these reasoning profiles.
+# Cloud/local providers and connector limitations: docs/llm-providers.md.
+#
+# Active example: OpenAI (OPENAI_API_KEY)
 llm:
   provider: openai
-  auth_mode: api_key                    # Uses OPENAI_API_KEY environment variable
+  auth_mode: api_key
   model: gpt-5.6-terra
-  tiers:
-    frontier: gpt-5.6-terra
-    cheap: gpt-5.6-luna
+  reasoning_effort: high
+  max_output_tokens: 32768
   capabilities:
+    structured_output: native
     tool_calling: native
-  # Absolute ceiling for each HTTP transfer attempt. It is not an inactivity
-  # timer: receiving output does not reset it. sas2r defaults to 300 seconds.
+    reasoning_effort: supported
+    max_output_tokens: supported
   timeout_seconds: 900
-  # Transport attempts per HTTP request. sas2r defaults to 1 so retries stay
-  # visible; values above 1 can multiply elapsed time and ambiguous spend.
   max_tries: 1
 
-# Alternative Provider Examples (uncomment to use):
-#
-# Anthropic:
+# Alternative: Anthropic (ANTHROPIC_API_KEY)
 # llm:
 #   provider: anthropic
-#   auth_mode: api_key                  # Uses ANTHROPIC_API_KEY environment variable
-#   model: claude-3-5-sonnet-20241022
-#
-# AWS Bedrock:
+#   auth_mode: api_key
+#   model: claude-sonnet-4-6
+#   reasoning_effort: high
+#   max_output_tokens: 32768
+#   capabilities:
+#     structured_output: fallback
+#     tool_calling: native
+#     reasoning_effort: supported
+#     max_output_tokens: supported
+#   cache: 1h
+#   timeout_seconds: 900
+#   max_tries: 1
+
+# Alternative: Google Gemini (GEMINI_API_KEY or GOOGLE_API_KEY)
 # llm:
-#   provider: bedrock
-#   auth_mode: ambient                  # Uses ambient AWS credential chain
-#   profile: clinical-dev
-#   region: us-east-1
-#   model: us.anthropic.claude-3-5-sonnet-20241022-v2:0
-#
-# Azure OpenAI:
+#   provider: gemini
+#   auth_mode: api_key
+#   model: gemini-3.8-flash
+#   reasoning_effort: high
+#   max_output_tokens: 32768
+#   capabilities:
+#     structured_output: fallback
+#     tool_calling: native
+#     reasoning_effort: supported
+#     max_output_tokens: supported
+#   timeout_seconds: 900
+#   max_tries: 1
+
+# Alternative: DeepSeek (DEEPSEEK_API_KEY)
 # llm:
-#   provider: azure
-#   auth_mode: ambient                  # Or api_key with AZURE_OPENAI_API_KEY
-#   endpoint: https://example-resource.openai.azure.com
-#   api_version: 2024-10-21
-#   model: sas2r-deployment
+#   provider: deepseek
+#   auth_mode: api_key
+#   model: deepseek-flash              # or deepseek-v4-pro
+#   # DeepSeek currently defaults to thinking enabled, high effort.
+#   # ellmer 0.4.2 does not forward reasoning_effort on this route.
+#   max_output_tokens: 32768
+#   capabilities:
+#     structured_output: fallback
+#     tool_calling: native
+#     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
+#     max_output_tokens: supported
+#   timeout_seconds: 900
+#   max_tries: 1
 
 # ------------------------------------------------------------------------------
 # 7. Usage Budget & Policy (Optional)

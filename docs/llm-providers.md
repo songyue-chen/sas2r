@@ -42,6 +42,19 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 
 ## 2. Configuration Examples (`_sas2r.yml`)
 
+Use a reasoning model for translation, review, and repair. The four direct-provider
+examples below match the [recommended README profiles](../README.md#recommended-_sas2ryml-profiles).
+Copy one complete `llm:` block. Explicit effort and token ceilings need their
+`capabilities: ...: supported` flags, or sas2r withholds them. An initial
+`max_output_tokens: 32768` leaves space for reasoning and the final response;
+increase it for long programs within the chosen model's supported limit.
+Leaving it unset uses connector/provider defaults, not necessarily the model's
+maximum. No temperature or top-p override is needed for these profiles.
+
+The cloud/local examples also identify reasoning limitations. Their model or
+deployment names are examples; select a model available to your account. These
+are connector contracts checked with ellmer 0.4.2, not live translation results.
+
 Never commit literal API keys, tokens, or private secrets into `_sas2r.yml`. Always supply secrets via shell environment variables. Every configuration should specify an explicit `model` or `tiers` definition rather than relying on changing library defaults.
 
 ### OpenAI
@@ -52,10 +65,16 @@ export OPENAI_API_KEY="sk-..."
 llm:
   provider: openai
   auth_mode: api_key
-  model: gpt-4o
-  tiers:
-    frontier: gpt-4o
-    cheap: gpt-4o-mini
+  model: gpt-5.6-terra
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: native
+    tool_calling: native
+    reasoning_effort: supported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Anthropic
@@ -66,11 +85,17 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 llm:
   provider: anthropic
   auth_mode: api_key
-  model: claude-3-5-sonnet-20241022
-  cache: 1h                             # 5m | 1h | none (default: 1h -- migration turns outlive a 5m TTL)
-  tiers:
-    frontier: claude-3-5-sonnet-20241022
-    cheap: claude-3-5-haiku-20241022
+  model: claude-sonnet-4-6
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: supported
+    max_output_tokens: supported
+  cache: 1h
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### AWS Bedrock
@@ -81,8 +106,18 @@ llm:
   auth_mode: ambient
   profile: clinical-dev
   region: us-east-1
-  model: us.anthropic.claude-3-5-sonnet-20241022-v2:0
-  cache: auto                           # auto | 5m | 1h | none
+  model: us.anthropic.claude-sonnet-4-6-v1:0
+  cache: auto
+  # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
+  # If explicitly requested high reasoning is required, use a supported route.
+  max_output_tokens: 32768           # requires this allowance on your endpoint
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Azure OpenAI
@@ -93,7 +128,17 @@ llm:
   auth_mode: ambient
   endpoint: https://my-resource.openai.azure.com
   api_version: 2024-10-21
-  model: my-gpt4o-deployment
+  model: my-reasoning-model-deployment
+  # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
+  # If explicitly requested high reasoning is required, use a supported route.
+  max_output_tokens: 32768           # requires this allowance on your endpoint
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Databricks
@@ -103,7 +148,17 @@ llm:
   provider: databricks
   auth_mode: ambient
   workspace: https://my-org.cloud.databricks.com
-  model: databricks-meta-llama-3-3-70b-instruct
+  model: databricks-claude-sonnet-4-6
+  # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
+  # If explicitly requested high reasoning is required, use a supported route.
+  max_output_tokens: 32768           # requires this allowance on your endpoint
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### DeepSeek
@@ -114,14 +169,28 @@ export DEEPSEEK_API_KEY="sk-..."
 llm:
   provider: deepseek
   auth_mode: api_key
-  model: deepseek-flash
+  model: deepseek-flash              # or deepseek-v4-pro
+  # DeepSeek currently defaults to thinking enabled, high effort.
+  # ellmer 0.4.2 does not forward reasoning_effort on this route.
+  max_output_tokens: 32768
   capabilities:
-    tool_calling: native      # see section 5; without it the agent layer is skipped
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported    # connector limitation; thinking is not disabled
+    max_output_tokens: supported
   timeout_seconds: 900
+  max_tries: 1
 ```
 
-DeepSeek ships `structured_output: fallback` deliberately. Do not override it
-to `native` -- the provider answers HTTP 400.
+DeepSeek uses `structured_output: fallback` on this sas2r/ellmer Chat Completions
+route. Native-schema support on another DeepSeek API is not evidence that this
+route accepts sas2r's structured-output request.
+
+DeepSeek currently defaults to thinking enabled with high effort; the profile
+relies on that [documented server default](https://api-docs.deepseek.com/guides/thinking_mode/).
+ellmer 0.4.2 drops an explicit `reasoning_effort` on this route, so do not mark
+that parameter supported to try to enable it. The `unsupported` declaration
+above describes the connector and does not disable the model's thinking.
 
 Model names checked September 12, 2026: `deepseek-flash` serves
 DeepSeek-V4.1-Flash. `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are
@@ -145,7 +214,10 @@ export GITHUB_PAT="ghp_..."
 llm:
   provider: github
   auth_mode: api_key
-  model: gpt-4o
+  model: gpt-4o                  # historical connection example, not a reasoning profile
+  capabilities:
+    structured_output: native
+    tool_calling: native
 ```
 
 ### Google Gemini API
@@ -156,7 +228,16 @@ export GEMINI_API_KEY="..." # or GOOGLE_API_KEY
 llm:
   provider: gemini
   auth_mode: api_key
-  model: gemini-1.5-pro
+  model: gemini-3.8-flash
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: supported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Google Vertex AI
@@ -167,16 +248,33 @@ llm:
   auth_mode: ambient
   project_id: my-gcp-project
   location: us-central1
-  model: gemini-1.5-pro
+  model: gemini-3.8-flash
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: supported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Ollama (Local)
+This is a connection example, not a recommended reasoning profile. The shown
+Llama model does not establish support for configurable thinking. Ollama's
+reasoning and output-limit behavior depends on the served model and connector;
+verify both before declaring their capabilities. Do not copy the cloud effort
+flags onto an arbitrary local model.
 ```yaml
 llm:
   provider: ollama
   auth_mode: none
   base_url: http://localhost:11434
   model: llama3.1:8b
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
 ```
 
 ### Posit AI
@@ -185,7 +283,17 @@ Authenticate via Posit Workbench/Connect OAuth:
 llm:
   provider: posit
   auth_mode: ambient
-  model: claude-3-5-sonnet
+  model: claude-sonnet-4-6           # selects ellmer's Anthropic route
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: supported
+    max_output_tokens: supported
+  cache: 1h
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ### Snowflake Cortex
@@ -195,7 +303,17 @@ llm:
   provider: snowflake
   auth_mode: ambient
   account: my-org-account
-  model: llama3.1-70b
+  model: claude-sonnet-4-6
+  # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
+  # If explicitly requested high reasoning is required, use a supported route.
+  max_output_tokens: 32768           # requires this allowance on your endpoint
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported
+    max_output_tokens: supported
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
 ---
@@ -304,9 +422,33 @@ llm:
     tool_calling: native        # required to run the agent layer at all
 ```
 
-Declare only what your endpoint genuinely supports. `structured_output` in
-particular is provider-specific: DeepSeek ships `fallback` deliberately, and
-forcing `native` there makes the provider reject the request with HTTP 400.
+Declare only what the selected model **and connector** support. DeepSeek uses
+`fallback` on the current Chat Completions route; do not infer native-schema
+support from another API or provider.
+
+### Reasoning support in the recommended profiles
+
+Checked against the installed ellmer 0.4.2 connector code on September 12, 2026:
+
+| Provider/route | What happens to `reasoning_effort: high` |
+|---|---|
+| OpenAI, GPT-5.6 Terra | Forwarded to the Responses API reasoning effort. |
+| Anthropic, Claude Sonnet/Opus 4.6 | Enables `thinking: {type: adaptive}` and `output_config.effort: high`. |
+| Gemini / Vertex, Gemini 3 thinking models | Forwarded as `thinkingConfig.thinkingLevel: high`. |
+| Posit, Claude route | Uses the Anthropic mapping above. Posit's OpenAI-compatible route drops effort. |
+| DeepSeek | Dropped by this connector. Current DeepSeek models default to thinking enabled at high effort. |
+| Azure / Bedrock / Databricks / Snowflake | Dropped by these connectors; only endpoint/model defaults apply. |
+| Ollama | Model-dependent; the connection example is not a verified reasoning profile. |
+| GitHub | Retired; do not start new translation runs with it. |
+
+Sources for model behavior:
+[OpenAI Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
+[Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
+[DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
+Use reasoning-capable models in every active `tiers` entry: the capability flags
+are shared across tiers. These settings encourage reasoning; they do not prove
+SAS-to-R equivalence. Defaults can change, and a withheld effort setting does not mean reasoning is off.
 
 ### Optional parameters are withheld unless confirmed
 
@@ -315,7 +457,11 @@ when their capability is exactly `supported`. Requesting `temperature: 0`
 against a provider whose capability is `unknown` does not error -- the request
 is answered at the provider default. Every such omission is named in the
 `withheld_parameters` field of the audit record, so what was actually sent is
-always recoverable from the log.
+recoverable at the sas2r-to-ellmer handoff from the log. In
+`<out_dir>/.sas2r/llm_log.jsonl`, inspect `requested_parameters`,
+`effective_parameters`, and `withheld_parameters`. Also inspect connector
+warnings: `effective_parameters` does not prove that ellmer or the endpoint
+accepted a setting after that handoff.
 
 An optional parameter can be set per project, and an agent spec overrides it
 where the spec speaks -- the shipped translator sets `temperature: 0` for
@@ -334,7 +480,8 @@ llm:
 > with an `Ignoring unsupported parameters` warning. As of ellmer 0.4.2,
 > `reasoning_effort` is not mapped for `chat_deepseek()`, so declaring it has
 > no effect there and ellmer warns. `sas2r` does not work around this: the
-> parameter starts working when ellmer adds support, with no change here.
+> re-check the mapping after an ellmer upgrade before changing the capability
+> to `supported` and requesting an explicit effort.
 
 > **Reasoning tokens are not counted.** ellmer's public token surface reports
 > `input`, `output`, and `cached_input` only. Where a provider bills reasoning
