@@ -92,7 +92,7 @@ compare_profile <- function(abs = 1e-8, rel = 1e-8,
       }
 
       for (field in intersect(names(ov), c("abs", "rel"))) {
-        if (is.character(ov[[field]]) && length(ov[[field]]) == 1L) {
+        if (is_scalar_character(ov[[field]])) {
           number <- suppressWarnings(as.numeric(ov[[field]]))
           if (!is.na(number)) ov[[field]] <- number
         }

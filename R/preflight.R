@@ -10,7 +10,7 @@
 #' @param out_dir Planned migration output root. `NULL` reports a temporary
 #'   output root, as used by `sas_translate()`, without creating it.
 #' @return A `sas2r_preflight` list with `sources`, point-of-use `libraries`,
-#'   `inputs` (available, missing, unresolved, no_producer, or generated), `references`, `unsupported`,
+#'   `inputs` (available, missing, unresolved, no_producer, backward_dependency, or generated), `references`, `unsupported`,
 #'   scanner `findings`, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
 #'   Also includes `status`, `configured_libraries`, `schedule`, explanatory `notes`,
 #'   and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
@@ -28,20 +28,19 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                           budget_usd = Inf, budget_mode = "stop",
                           pricing_source = "catalog", pricing_rates = NULL,
                           usage_limits = NULL, recursive = FALSE) {
-  cfg <- translation_config(path, config)
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits)
-  project <- if (inherits(path, "sas2r_project")) path else
-    sas_project(path, config = cfg, cache = FALSE, recursive = recursive)
-  overrides <- validate_output_overrides(outputs %||% cfg$outputs)
-  validate_effective_qc(overrides, cfg$comparison_rules)
-  plan <- translation_plan(project, overrides)
+  setup <- translation_setup(path, config, outputs, recursive)
+  cfg <- setup$config
+  project <- setup$project
+  plan <- setup$plan
   contracts <- plan$contracts
   effective <- effective_librefs(project)
   inputs <- preflight_inputs(project, effective)
   unsupported <- preflight_unsupported(project)
   limits <- c("mode", usage_limit_names(), "pricing_source")
-  reference_paths <- contracts$reference_path
+  reference_paths <- vapply(seq_len(nrow(contracts)), function(i)
+    output_reference_path(contracts[i, ], cfg$comparison_rules), character(1))
   keep_refs <- which(!is.na(reference_paths) & nzchar(reference_paths))
   references <- tibble::tibble(
     target_key = contracts$target_key[keep_refs],
@@ -50,19 +49,15 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
       file.exists(reference_paths[keep_refs]) & !dir.exists(reference_paths[keep_refs]))]
   )
   findings <- project$flags
-  unresolved <- findings$kind %in% c(
-    "autoexec_missing", "unresolved_include", "dynamic_include", "include_cycle",
-    "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
-    "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
-    "dynamic_dataset_reference")
-  needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer")) || any(unresolved) || any(references$status == "missing")
+  unresolved <- findings$kind %in% preflight_blocking_findings()
+  needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing")
   root <- if (is.null(out_dir)) "<temporary output root>" else
-    config_resolve_paths(out_dir, getwd())
+    config_anchor_paths(out_dir, getwd())
   paths <- migration_paths(root, "<run_id>")
   destinations <- list(root = root, run = paths$attempts, state = paths$state,
                        generated_outputs = paths$generated_outputs,
                        bundle = file.path(paths$attempts, "<bundle_attempt_id>", "bundle"),
-                       report = paths$report_json, report_json = paths$report_json,
+                       report_json = paths$report_json,
                        report_md = paths$report_md)
   sources <- project$files
   sources$file <- config_resolve_paths(sources$file, getwd())
@@ -75,6 +70,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     budget = as.list(budget)[limits], model_calls = 0L,
     next_actions = c(
       if (any(inputs$status == "missing")) "Supply missing input members or correct their library paths; inspect $inputs$searched_paths.",
+      if (any(inputs$status == "backward_dependency")) "Move the producer before its read in the same source file; an existing output does not establish correct execution order.",
       if (any(inputs$status == "no_producer")) "Identify or supply the earlier step that creates the WORK input; inspect $inputs source locations.",
       if (any(inputs$status == "unresolved")) "Resolve input library bindings at the reported source locations; inspect $libraries.",
       if (any(references$status == "missing")) "Supply the configured SAS reference files or correct their paths; inspect $references.",
@@ -89,16 +85,8 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
 
 preflight_inputs <- function(project, effective) {
   lineage <- project$lineage
-  bindings <- effective$bindings
-  # Binding identity is already resolved by the scanner, including conflicting
-  # include contexts. Resolve each lineage row once, then index producers.
-  idx <- match(lineage$binding_id, bindings$binding_id)
-  paths <- bindings$selected_path[idx]
-  paths[is.na(lineage$binding_status) | lineage$binding_status != "bound"] <- NA_character_
-  paths[startsWith(lineage$dataset, "work.")] <- "<session work>"
-  identities <- paste(lineage$dataset, paths, sep = "\r")
-  writers <- which(lineage$role == "creates" & !is.na(paths))
-  producers <- split(writers, identities[writers])
+  producers <- dataset_producers(project, effective)
+  paths <- producers$path
   reads <- which(lineage$role == "reads")
   n <- length(reads)
   status <- rep("unresolved", n)
@@ -108,12 +96,8 @@ preflight_inputs <- function(project, effective) {
     row <- reads[i]
     path <- paths[row]
     if (is.na(path) || !nzchar(path)) next
-    candidates <- producers[[identities[row]]]
-    # A later statement in the same program cannot supply an earlier read.
-    generated <- any(lineage$unit_id[candidates] != lineage$unit_id[row] &
-      (lineage$file[candidates] != lineage$file[row] |
-       lineage$unit_id[candidates] < lineage$unit_id[row]))
-    if (generated) { status[i] <- "generated"; next }
+    if (producers$backward[row]) { status[i] <- "backward_dependency"; next }
+    if (!is.na(producers$writer[row])) { status[i] <- "generated"; next }
     if (path == "<session work>") { status[i] <- "no_producer"; next }
     member <- sub("^[^.]+\\.", "", lineage$dataset[row])
     candidates <- file.path(path, paste0(member, c(".rds", ".sas7bdat", ".xpt")))
@@ -158,3 +142,9 @@ print.sas2r_preflight <- function(x, ...) {
   cli::cli_text("Static inspection only; inspect $libraries, $outputs, $budget for full details.")
   invisible(x)
 }
+
+preflight_blocking_findings <- function() c(
+    "autoexec_missing", "unresolved_include", "dynamic_include", "include_cycle",
+    "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
+    "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
+    "dynamic_dataset_reference", "backward_dependency")

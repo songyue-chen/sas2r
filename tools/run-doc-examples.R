@@ -69,10 +69,13 @@ for (block in blocks) {
     parts <- if (length(grep("^provider:", strsplit(block$code, "\n")[[1L]])) > 1L)
       strsplit(block$code, "\n\n")[[1L]] else block$code
     for (part in parts) {
-      config <- yaml::yaml.load(part)
-      if (!is.null(config$provider)) config <- list(llm = config)
+      # Keep the published YAML bytes: reserializing through yaml's default
+      # handlers would change true/false booleans and metadata keys.
+      if (grepl("(?m)^provider:", part, perl = TRUE)) {
+        part <- paste(c("llm:", paste0("  ", strsplit(part, "\n")[[1L]])), collapse = "\n")
+      }
       file <- tempfile(fileext = ".yml")
-      yaml::write_yaml(config, file)
+      writeLines(part, file)
       sas_config(file)
       counts["configurations"] <- counts["configurations"] + 1L
     }

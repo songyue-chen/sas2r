@@ -11,12 +11,12 @@ qc_profile(
   types = NULL,
   column_order = NULL,
   keys = NULL,
-  unique_keys = FALSE,
+  unique_keys = NULL,
   row_count = NULL,
   min_rows = NULL,
   max_rows = NULL,
   numeric_tolerance = NULL,
-  tolerances = list()
+  tolerances = NULL
 )
 }
 \arguments{
@@ -26,7 +26,8 @@ qc_profile(
 labels and \code{format.sas} attributes. Missing attributes fail the check.}
 
 \item{types}{Named character vector: \code{numeric} (integer or double),
-\code{double}, \code{integer}, \code{character}, \code{logical}, \code{Date}, or \code{POSIXct}.}
+\code{double}, \code{integer}, \code{character}, \code{factor} (including ordered factors),
+\code{logical}, \code{Date}, or \code{POSIXct}.}
 
 \item{column_order}{Exact ordered vector of all expected column names.}
 

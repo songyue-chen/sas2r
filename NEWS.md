@@ -1,5 +1,21 @@
 # sas2r (development)
 
+* Preflight and translation now share normalized configuration and a reusable
+  output/dependency plan. Relative references remain stable across project reuse,
+  global reference fallbacks are inspected, and invalid configuration fails
+  before migration/cache writes. Changed scan settings require a source rescan.
+* QC profiles inherit omitted fields from global rules; explicit false/empty
+  fields override them. Keys guide alignment unless uniqueness is requested.
+  Validate inherited uniqueness requirements, accept factor types and scientific
+  row counts, preserve YAML metadata keys, and require `true`/`false` booleans.
+* Dataset detection distinguishes names from expressions and uncalled macro
+  bodies. Preflight reports unknown WORK producers and backward dependencies;
+  duplicate filenames retain separate components. Graph and preflight share
+  library-aware producer selection without redundant historical write edges.
+* JSON and Markdown output assessments share reasons and distinguish unavailable
+  checks from failures. Resume explains incompatible checkpoints before new
+  provider calls; checkpoints from the previous planning policy are regenerated.
+
 * Add `sas_preflight()` to inspect source/library resolution, input availability,
   deterministic limitations, outputs, and effective budgets with zero model
   calls and no migration artifacts.

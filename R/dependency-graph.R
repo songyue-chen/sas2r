@@ -48,14 +48,7 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
     migration_hash(paste(u_stmts$text, collapse = ";"))
   }
 
-  # Helper: file component id
-  file_comp_id <- function(f, origin) {
-    if (is.null(f) || is.na(f) || !nzchar(f)) return("unknown")
-    if (identical(origin, "environment") || tolower(basename(f)) == "autoexec.sas") {
-      return("setup")
-    }
-    tools::file_path_sans_ext(basename(f))
-  }
+  component_ids <- project_component_ids(units$file, units$origin)
 
   # 1. Setup and Source Unit nodes
   unit_node_map <- list() # maps unit_id -> node_id
@@ -69,7 +62,7 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
       l_start <- as.integer(units$line_start[i])
       is_env <- identical(orig, "environment") || tolower(basename(f)) == "autoexec.sas"
       n_type <- if (is_env) "setup" else "source_unit"
-      c_id <- file_comp_id(f, orig)
+      c_id <- component_ids[i]
 
       n_id <- paste0("node_", if (is_env) "setup_" else "unit_",
                      substr(migration_hash(list(file = f, line = l_start, unit_id = u_id, type = n_type)), 1L, 16L))
@@ -94,11 +87,11 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
 
   # Helper: register or get external input node
   external_nodes <- list()
-  get_external_node <- function(ds_name) {
+  get_external_node <- function(ds_name, identity = ds_name) {
     norm_name <- tolower(ds_name)
-    n_id <- paste0("node_input_", substr(migration_hash(list(type = "external_input", name = norm_name)), 1L, 16L))
-    if (is.null(external_nodes[[norm_name]])) {
-      external_nodes[[norm_name]] <<- n_id
+    n_id <- paste0("node_input_", substr(migration_hash(list(type = "external_input", name = identity)), 1L, 16L))
+    if (is.null(external_nodes[[identity]])) {
+      external_nodes[[identity]] <<- n_id
       node_list[[length(node_list) + 1L]] <<- list(
         node_id = n_id,
         component_id = norm_name,
@@ -106,7 +99,7 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
         source_file = NA_character_,
         line = NA_integer_,
         original_index = NA_integer_,
-        content_hash = migration_hash(list(type = "external_input", name = norm_name))
+        content_hash = migration_hash(list(type = "external_input", name = identity))
       )
     }
     n_id
@@ -319,99 +312,39 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
     }
   }
 
-  # 5. Add edges: reads_dataset and writes_dataset
-  if (nrow(lineage) > 0L) {
-    all_creates <- lineage[lineage$role == "creates", ]
-    all_reads <- lineage[lineage$role == "reads", ]
-
-    # For each read
-    if (nrow(all_reads) > 0L) {
-      for (r_idx in seq_len(nrow(all_reads))) {
-        ds <- all_reads$dataset[r_idx]
-        r_uid <- all_reads$unit_id[r_idx]
-        r_file <- all_reads$file[r_idx]
-        r_line <- all_reads$line[r_idx]
-        consumer_id <- unit_node_map[[as.character(r_uid)]] %||% find_unit_node_at(r_file, r_line)
-        if (is.null(consumer_id)) next
-
-        # Find writers of this dataset
-        w_matches <- all_creates[all_creates$dataset == ds, ]
-        if (nrow(w_matches) > 0L) {
-          # Closest writer before reader, or first writer
-          w_before <- w_matches[w_matches$unit_id < r_uid, ]
-          chosen_w <- if (nrow(w_before) > 0L) w_before[nrow(w_before), ] else w_matches[1, ]
-          provider_id <- unit_node_map[[as.character(chosen_w$unit_id)]] %||%
-            find_unit_node_at(chosen_w$file, chosen_w$line)
-          if (!is.null(provider_id)) {
-            edge_list[[length(edge_list) + 1L]] <- list(
-              from = provider_id,
-              to = consumer_id,
-              type = "reads_dataset",
-              resolution = "resolved",
-              source_file = r_file,
-              line = r_line,
-              detail = ds
-            )
-          }
-        } else {
-          # External dataset input
-          input_id <- get_external_node(ds)
-          edge_list[[length(edge_list) + 1L]] <- list(
-            from = input_id,
-            to = consumer_id,
-            type = "reads_dataset",
-            resolution = "external",
-            source_file = r_file,
-            line = r_line,
-            detail = ds
-          )
-        }
-      }
+  # 5. Each read depends on its selected producer, using the same bound
+  # dataset identity as preflight. Superseded writers are not dependencies.
+  producers <- dataset_producers(project)
+  used_writers <- integer()
+  for (row in which(lineage$role == "reads")) {
+    consumer_id <- unit_node_map[[as.character(lineage$unit_id[row])]]
+    if (is.null(consumer_id)) next
+    writer <- producers$writer[row]
+    ds <- lineage$dataset[row]
+    if (!is.na(writer)) {
+      provider_id <- unit_node_map[[as.character(lineage$unit_id[writer])]]
+      if (is.null(provider_id)) next
+      used_writers <- c(used_writers, writer)
+      edge_list[[length(edge_list) + 1L]] <- list(
+        from = provider_id, to = consumer_id, type = "writes_dataset",
+        resolution = "resolved", source_file = lineage$file[writer],
+        line = lineage$line[writer], detail = ds)
+    } else {
+      provider_id <- get_external_node(ds, producers$identity[row])
     }
-
-    # For each write: connect to downstream readers or final output
-    if (nrow(all_creates) > 0L) {
-      for (w_idx in seq_len(nrow(all_creates))) {
-        ds <- all_creates$dataset[w_idx]
-        w_uid <- all_creates$unit_id[w_idx]
-        w_file <- all_creates$file[w_idx]
-        w_line <- all_creates$line[w_idx]
-        provider_id <- unit_node_map[[as.character(w_uid)]] %||% find_unit_node_at(w_file, w_line)
-        if (is.null(provider_id)) next
-
-        # Downstream readers in project
-        readers_downstream <- all_reads[all_reads$dataset == ds & all_reads$unit_id > w_uid, ]
-        if (nrow(readers_downstream) > 0L) {
-          for (rd_idx in seq_len(nrow(readers_downstream))) {
-            consumer_id <- unit_node_map[[as.character(readers_downstream$unit_id[rd_idx])]] %||%
-              find_unit_node_at(readers_downstream$file[rd_idx], readers_downstream$line[rd_idx])
-            if (!is.null(consumer_id)) {
-              edge_list[[length(edge_list) + 1L]] <- list(
-                from = provider_id,
-                to = consumer_id,
-                type = "writes_dataset",
-                resolution = "resolved",
-                source_file = w_file,
-                line = w_line,
-                detail = ds
-              )
-            }
-          }
-        } else {
-          # Terminal write: connect to final output node
-          out_node_id <- get_output_node(ds, w_file, w_line)
-          edge_list[[length(edge_list) + 1L]] <- list(
-            from = provider_id,
-            to = out_node_id,
-            type = "writes_dataset",
-            resolution = "resolved",
-            source_file = w_file,
-            line = w_line,
-            detail = ds
-          )
-        }
-      }
-    }
+    edge_list[[length(edge_list) + 1L]] <- list(
+      from = provider_id, to = consumer_id, type = "reads_dataset",
+      resolution = if (is.na(writer)) "external" else "resolved",
+      source_file = lineage$file[row], line = lineage$line[row], detail = ds)
+  }
+  for (row in setdiff(which(lineage$role == "creates"), used_writers)) {
+    provider_id <- unit_node_map[[as.character(lineage$unit_id[row])]]
+    if (is.null(provider_id)) next
+    ds <- lineage$dataset[row]
+    edge_list[[length(edge_list) + 1L]] <- list(
+      from = provider_id, to = get_output_node(ds, lineage$file[row], lineage$line[row]),
+      type = "writes_dataset", resolution = "resolved", source_file = lineage$file[row],
+      line = lineage$line[row], detail = ds)
   }
 
   # 6. Add edges: uses_format
@@ -1004,3 +937,49 @@ requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred =
   intersect(cids, requeue)
 }
 
+
+# Basenames remain readable IDs unless two physical files would collide.
+project_component_ids <- function(files, origins) {
+  ids <- tools::file_path_sans_ext(basename(files))
+  unique_files <- unique(files)
+  basenames <- tools::file_path_sans_ext(basename(unique_files))
+  collision_files <- unique_files[duplicated(basenames) | duplicated(basenames, fromLast = TRUE)]
+  for (file in collision_files) ids[files == file] <- paste0(
+    tools::file_path_sans_ext(basename(file)), "__", substr(cli::hash_sha256(file), 1L, 8L))
+  ids[origins == "environment" | tolower(basename(files)) == "autoexec.sas"] <- "setup"
+  ids
+}
+
+# One producer policy for graph and preflight. WORK is shared by the bundle;
+# permanent libraries additionally require the same point-of-use directory.
+dataset_producers <- function(project, effective = effective_librefs(project)) {
+  lineage <- project$lineage
+  n <- nrow(lineage)
+  paths <- rep(NA_character_, n)
+  if ("binding_id" %in% names(lineage)) {
+    paths <- effective$bindings$selected_path[match(lineage$binding_id, effective$bindings$binding_id)]
+    paths[is.na(lineage$binding_status) | lineage$binding_status != "bound"] <- NA_character_
+  }
+  paths[startsWith(lineage$dataset, "work.")] <- "<session work>"
+  identity <- paste(lineage$dataset, paths, sep = "\r")
+  candidates <- which(lineage$role == "creates" & !is.na(paths))
+  index <- split(candidates, identity[candidates])
+  writer <- rep(NA_integer_, n)
+  backward <- rep(FALSE, n)
+  for (row in which(lineage$role == "reads" & !is.na(paths))) {
+    matches <- index[[identity[row]]]
+    matches <- matches[lineage$unit_id[matches] != lineage$unit_id[row]]
+    same_file <- lineage$file[matches] == lineage$file[row]
+    prior <- matches[same_file & lineage$unit_id[matches] < lineage$unit_id[row]]
+    other <- matches[!same_file]
+    if (length(prior)) writer[row] <- utils::tail(prior, 1L)
+    else if (length(other)) {
+      before <- other[lineage$unit_id[other] < lineage$unit_id[row]]
+      writer[row] <- if (length(before)) utils::tail(before, 1L) else other[1L]
+    } else if (length(matches)) {
+      writer[row] <- matches[1L]
+      backward[row] <- TRUE
+    }
+  }
+  list(path = paths, identity = identity, writer = writer, backward = backward)
+}

@@ -62,14 +62,6 @@ doc_chunk_calls <- function(chunk) {
   unique(pd$text[setdiff(calls, qualified)])
 }
 
-doc_prose_calls <- function(lines) {
-  fence <- grepl("^\\s*```", lines)
-  prose <- paste(lines[cumsum(fence) %% 2L == 0L & !fence], collapse = "\n")
-  hits <- unlist(regmatches(
-    prose, gregexpr("`[A-Za-z._][A-Za-z0-9._]*\\(\\)`", prose)))
-  unique(gsub("[`()]", "", hits))
-}
-
 unexported_api_references <- function(lines) {
   ns <- asNamespace("sas2r")
   exported <- getNamespaceExports("sas2r")

@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "2.0"
+SCAN_CACHE_SCHEMA_VERSION <- "3.0"
 
 # Attach retained source comments to the translation units that own their
 # private character spans. Comments between units belong to the next unit;
@@ -138,44 +138,14 @@ attach_comments_to_units <- function(comments, spanned_units) {
 #'   precedence, and source approval identity is derived from code only.
 #' @noRd
 sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
-  if (!is.character(path) || length(path) != 1L || !nzchar(path) || (!dir.exists(path) && !file.exists(path))) {
-    stop("Path does not exist or is invalid: '", path, "'")
-  }
+  cfg <- translation_config(path, config)
+  scan_project(path, config = cfg, recursive = recursive, cache = cache)
+}
+
+# Configuration has been resolved by the calling entry point before scanning.
+scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   is_dir <- dir.exists(path)
-  root <- if (is_dir) path else dirname(path)
-
-  base_cfg <- sas_config(start = root)
-  config <- if (is.null(config)) {
-    base_cfg
-  } else if (inherits(config, "sas2r_config")) {
-    config
-  } else if (is.list(config)) {
-    for (nm in names(config)) {
-      base_cfg[[nm]] <- config[[nm]]
-    }
-    base_cfg
-  } else {
-    base_cfg
-  }
-  # sas_config() has already resolved everything read from `_sas2r.yml` against
-  # the configuration file's directory. What can still be relative here came
-  # from a caller-supplied config list, which has no file of its own, so the
-  # project root is its base -- the same rule include_roots follows below.
-  # Re-normalizing an already-normalized entry is a no-op. The base is taken
-  # canonical, matching what normalize_library_config() does with a
-  # configuration file's directory, so a library directory comes back spelled
-  # one way whichever authority named it.
-  config$libraries <- normalize_library_entries(config$libraries,
-                                                include_normalize_path(root))
-  config$macro_search_path <- config_resolve_paths(
-    config$macro_search_path %||% character(), root)
-
-  config$outputs <- normalize_outputs_config(config$outputs)
-  if (is.list(config$outputs) && length(config$outputs$references)) {
-    config$outputs$references <- lapply(config$outputs$references, config_resolve_paths, base = root)
-  }
-  config$comparison_rules <- normalize_comparison_rules(config$comparison_rules, base = root)
-  validate_effective_qc(config$outputs, config$comparison_rules)
+  root <- project_input_root(path)
 
   cache_file <- file.path(root, ".sas2r", "scan_cache.rds")
   scan_cache <- if (cache && file.exists(cache_file)) {
@@ -626,15 +596,6 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
     includes_list[[length(includes_list) + 1L]] <- inc
   }
 
-  if (cache && cache_dirty) {
-    tryCatch({
-      atomic_write_file(function(tf) saveRDS(scan_cache, tf), cache_file, pattern = "scan_cache_")
-    }, error = function(e) {
-      cli::cli_warn("cannot write scan cache to {.file {cache_file}}: {conditionMessage(e)}",
-                    class = "sas2r_cache_write_failed")
-    })
-  }
-
   # Harvest sasautos from environment and program files
   all_scanned_files <- unlist(scanned_files, use.names = FALSE) %||% character()
   for (f in all_scanned_files) {
@@ -738,6 +699,11 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
     name = character(), line = integer(), unit_id = integer(), file = character()
   ))
 
+  if (nrow(calls)) {
+    component_ids <- project_component_ids(units$file, units$origin)
+    calls$component_id <- component_ids[match(calls$source_file, units$file)]
+  }
+
   resolution <- resolve_macro_calls(calls, defs, config, project_dir = root)
 
   # One execution context per root program, with the configured autoexec files
@@ -771,6 +737,7 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
   lineage <- bound$lineage
 
   draft_proj <- structure(list(
+    project_dir = root, librefs = librefs, libref_registry = libref_registry,
     units = units,
     statements = statements,
     lineage = lineage,
@@ -792,8 +759,25 @@ sas_project <- function(path, config = NULL, recursive = FALSE, cache = FALSE) {
   ), class = "sas2r_project")
 
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
+  validate_effective_qc(config$outputs, config$comparison_rules, output_contracts)
+
+  if (cache && cache_dirty) {
+    tryCatch({
+      atomic_write_file(function(tf) saveRDS(scan_cache, tf), cache_file, pattern = "scan_cache_")
+    }, error = function(e) {
+      cli::cli_warn("cannot write scan cache to {.file {cache_file}}: {conditionMessage(e)}",
+                    class = "sas2r_cache_write_failed")
+    })
+  }
+
 
   proj_graph <- build_dependency_graph(draft_proj, output_contracts = output_contracts)
+  producer_plan <- dataset_producers(draft_proj)
+  for (row in which(producer_plan$backward)) {
+    flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
+      kind = "backward_dependency", detail = paste0(lineage$file[row], ":", lineage$line[row],
+        ": ", lineage$dataset[row], " is only created later in the same file"))
+  }
   proj_sched <- stable_dependency_schedule(proj_graph)
   if (nrow(units) > 0L) {
     if (any(proj_sched$group_kind == "cycle")) {

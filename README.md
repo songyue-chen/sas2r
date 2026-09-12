@@ -132,12 +132,14 @@ check <- sas_preflight(
   usage_limits = list(max_calls = 20)
 )
 print(check)
-check$inputs       # available, missing, unresolved, no_producer, or generated
+check$inputs       # availability and producer-order status
 check$budget       # effective limits; no model calls are made
 ```
 
 Preflight reports setup findings before translation. It does not read dataset
-contents or test model credentials. [The preflight and QC guide](docs/clinical-qc-preflight.md)
+contents or test model credentials. `check$project` preserves its configuration
+and output requirements for translation. Rescan the source path when sources or
+library settings change. [The preflight and QC guide](docs/clinical-qc-preflight.md)
 has a self-contained example and reusable profiles for labels, formats, types,
 column order, keys, uniqueness, row counts, and per-variable tolerances.
 

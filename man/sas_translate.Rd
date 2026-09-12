@@ -29,7 +29,10 @@ sas_translate(
 
 \item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.}
 
-\item{config}{Optional project configuration list or \code{sas2r_config} object.}
+\item{config}{Optional configuration list, YAML path, or \code{sas2r_config} object.
+Reused projects retain their configuration; changing library or source-search
+settings requires rescanning the source path. Reference paths in YAML resolve
+from its directory; paths in R lists resolve from the project directory.}
 
 \item{execute}{Logical; whether to run meaningful program smoke and full bundle execution. Defaults to TRUE.}
 
@@ -37,7 +40,9 @@ sas_translate(
 
 \item{max_bundle_repair_rounds}{Maximum repair rounds for full bundle repair loop. Defaults to 2L.}
 
-\item{outputs}{Optional character vector or list specifying output contract overrides.}
+\item{outputs}{Optional character vector or list specifying output contract overrides.
+Reference paths supplied here resolve from the calling working directory.
+Output overrides are retained in the returned project for reuse.}
 
 \item{agent_evidence}{Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".}
 
@@ -62,7 +67,8 @@ request activity; unknown names and invalid values raise a configuration error.}
 \item{resume}{Logical; reuse saved translation revisions and completed reviews
 when source, input data, configuration, helpers, and worker prompts still
 match. Execution and output checks always run again in a fresh attempt.
-Missing or edited revision files trigger regeneration. Defaults to FALSE.}
+Missing or edited revision files trigger regeneration. Older planning versions
+also regenerate; resume explains why before new provider calls. Defaults to FALSE.}
 
 \item{keep_raw_attempts}{Logical; whether to retain raw outputs from unselected attempts. Defaults to FALSE.}
 }

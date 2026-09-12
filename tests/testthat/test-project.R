@@ -44,7 +44,7 @@ test_that("an in-file future producer preserves order and needs an input remedy"
   expect_identical(p$order, p$units$unit_id)
   check <- sas_preflight(p)
   expect_identical(check$status, "needs_attention")
-  expect_true("no_producer" %in% check$inputs$status)
+  expect_true("backward_dependency" %in% check$inputs$status)
 })
 
 test_that("empty directory returns valid 0-row project tibbles", {
@@ -173,12 +173,15 @@ test_that("quoted include matching top-level file is not duplicated or cycled", 
   expect_false("unresolved_include" %in% p$flags$kind)
 })
 
-test_that("config list overlays over discovered _sas2r.yml", {
+test_that("explicit config replaces discovery and loaded configs can be edited", {
   dir <- withr::local_tempdir()
   writeLines("data a; run;", file.path(dir, "a.sas"))
   writeLines("includes:\n  roots:\n    - /path/from/yaml", file.path(dir, "_sas2r.yml"))
   p <- sas_project(dir, config = list(provider = "custom_provider"))
-  expect_identical(p$config$include_roots, "/path/from/yaml")
+  expect_identical(p$config$include_roots, character())
+  loaded <- sas_config(file.path(dir, "_sas2r.yml"))
+  loaded$provider <- "custom_provider"
+  expect_identical(sas_project(dir, config = loaded)$config$include_roots, "/path/from/yaml")
   expect_identical(p$config$provider, "custom_provider")
 })
 

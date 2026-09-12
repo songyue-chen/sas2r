@@ -9,7 +9,8 @@
 #' @param labels,formats Named character vectors of exact required variable
 #'   labels and `format.sas` attributes. Missing attributes fail the check.
 #' @param types Named character vector: `numeric` (integer or double),
-#'   `double`, `integer`, `character`, `logical`, `Date`, or `POSIXct`.
+#'   `double`, `integer`, `character`, `factor` (including ordered factors),
+#'   `logical`, `Date`, or `POSIXct`.
 #' @param column_order Exact ordered vector of all expected column names.
 #' @param keys Row alignment columns, matched case-insensitively. Requiring
 #'   uniqueness also requires nonmissing, nonblank key values.
@@ -33,15 +34,14 @@
 #' @export
 qc_profile <- function(required_columns = NULL, labels = NULL, formats = NULL,
                        types = NULL, column_order = NULL, keys = NULL,
-                       unique_keys = FALSE, row_count = NULL, min_rows = NULL,
+                       unique_keys = NULL, row_count = NULL, min_rows = NULL,
                        max_rows = NULL, numeric_tolerance = NULL,
-                       tolerances = list()) {
-  supplied <- names(match.call(expand.dots = FALSE))[-1L]
-  value <- as.list(environment())[supplied]
+                       tolerances = NULL) {
+  value <- as.list(environment())
   validate_qc_assertions(value)
 }
 
-validate_qc_assertions <- function(x) {
+validate_qc_assertions <- function(x, complete = FALSE) {
   x <- unclass(x)
   x <- x[!vapply(x, is.null, logical(1))]
   fail <- function(field, detail) {
@@ -58,15 +58,15 @@ validate_qc_assertions <- function(x) {
     if (is.null(v)) next
     if (!length(v)) { x[[field]] <- list(); next }
     if (is.list(v) && any(!vapply(v, function(value) {
-      is.character(value) && length(value) == 1L && !is.na(value)
+      is_scalar_character(value, allow_empty = TRUE)
     }, logical(1)))) fail(field, "must contain character values; quote YAML labels, formats and types")
-    if (is.list(v)) v <- unlist(v, use.names = TRUE)
+    if (is.list(v)) v <- vapply(v, unname, character(1))
     if (!is.character(v) || is.null(names(v)) || anyNA(names(v)) || anyNA(v) ||
         any(!nzchar(names(v))) || anyDuplicated(tolower(names(v)))) {
       fail(field, "must be a named character mapping")
     }
     if (field == "types" && any(!v %in% c("numeric", "double", "integer",
-                                         "character", "logical", "Date", "POSIXct"))) {
+                                         "character", "factor", "logical", "Date", "POSIXct"))) {
       fail(field, "contains an unsupported column type")
     }
     x[[field]] <- as.list(v)
@@ -75,11 +75,13 @@ validate_qc_assertions <- function(x) {
       (!is.logical(x$unique_keys) || length(x$unique_keys) != 1L || is.na(x$unique_keys))) {
     fail("unique_keys", "must be true or false")
   }
-  if (isTRUE(x$unique_keys) && !length(x$keys)) fail("unique_keys", "requires keys")
+  if (complete && isTRUE(x$unique_keys) && !length(x$keys)) fail("unique_keys", "requires keys")
   for (field in c("row_count", "min_rows", "max_rows")) {
     v <- x[[field]]
+    if (is_scalar_character(v)) v <- suppressWarnings(as.numeric(v))
     if (!is.null(v) && (!is.numeric(v) || length(v) != 1L || !is.finite(v) ||
                        v < 0 || v != floor(v))) fail(field, "must be a nonnegative integer")
+    if (!is.null(v)) x[[field]] <- unname(v)
   }
   if ((x$min_rows %||% 0) > (x$max_rows %||% Inf) ||
       (!is.null(x$row_count) && (x$row_count < (x$min_rows %||% 0) ||
@@ -110,14 +112,14 @@ resolve_qc_profiles <- function(overrides) {
     profiles[[name]] <- validate_qc_assertions(p)
   }
   for (target in names(overrides$assertions)) {
-    a <- overrides$assertions[[target]]
+    a <- overrides$assertions[[target]] %||% list()
     allowed <- if (classify_target_kind(target) == "dataset")
       c(names(formals(qc_profile)), "profile") else "required_text"
     assert_exact_names(a, allowed, paste0("outputs.assertions.", target),
                        class = "sas2r_output_contract_error")
     if (!is.null(a$profile)) {
       name <- a$profile
-      if (!is.character(name) || length(name) != 1L || is.na(name) || !name %in% names(profiles)) {
+      if (!is_scalar_character(name) || !name %in% names(profiles)) {
         cli::cli_abort("Unknown QC profile for {.val {target}}: {.val {name}}",
                        class = "sas2r_output_contract_error")
       }
@@ -154,7 +156,8 @@ check_dataset_qc <- function(data, assertions) {
       if (is.na(idx)) return(NA_character_)
       v <- data[[idx]]
       if (field == "types") {
-        if (inherits(v, "Date")) "Date"
+        if (is.factor(v)) "factor"
+        else if (inherits(v, "Date")) "Date"
         else if (inherits(v, "POSIXct")) "POSIXct"
         else if (is.object(v) && !inherits(v, "haven_labelled")) class(v)[1L]
         else typeof(v)
@@ -163,7 +166,7 @@ check_dataset_qc <- function(data, assertions) {
     names(actual) <- names(expected)
     matches <- vapply(seq_along(expected), function(i) {
       value <- actual[[i]]
-      is.character(value) && length(value) == 1L && !is.na(value) &&
+      is_scalar_character(value, allow_empty = TRUE) &&
         (identical(unname(value), unname(expected[i])) ||
          (field == "types" && expected[i] == "numeric" && value %in% c("double", "integer")))
     }, logical(1))
@@ -247,28 +250,49 @@ normalize_comparison_rules <- function(rules, base = NULL) {
     if (!is.null(rules$tol_abs)) rules$tol_abs <- profile$numeric$abs
     if (!is.null(rules$tol_rel)) rules$tol_rel <- profile$numeric$rel
   }
-  if (!is.null(rules$references)) validate_output_overrides(list(references = rules$references))
-  if (!is.null(rules$reference_path)) validate_output_overrides(list(references = list(default = rules$reference_path)))
+  validate_reference_paths(rules$references, "comparison_rules$references")
+  if (!is.null(rules$reference_path) && !is_scalar_character(rules$reference_path)) {
+    cli::cli_abort("comparison_rules$reference_path must be one nonempty path",
+                   class = "sas2r_output_contract_error")
+  }
   if (!is.null(base)) {
-    if (!is.null(rules$reference_path)) rules$reference_path <- config_resolve_paths(rules$reference_path, base)
-    if (length(rules$references)) rules$references <- lapply(rules$references, config_resolve_paths, base = base)
+    if (!is.null(rules$reference_path)) rules$reference_path <- config_anchor_paths(rules$reference_path, base)
+    if (length(rules$references)) rules$references <- lapply(rules$references, config_anchor_paths, base = base)
   }
   rules
 }
 
-validate_effective_qc <- function(outputs, rules) {
-  if (is.list(outputs)) for (target in names(outputs$assertions)) {
+validate_effective_qc <- function(outputs, rules, contracts = NULL) {
+  targets <- if (!is.null(contracts)) stats::setNames(contracts$assertions, contracts$target_key) else
+    if (is.list(outputs)) outputs$assertions else list()
+  for (target in names(targets)) {
     if (classify_target_kind(target) == "dataset") {
-      validate_qc_assertions(effective_dataset_policy(rules, outputs$assertions[[target]]))
+      validate_qc_assertions(effective_dataset_policy(rules, targets[[target]]), complete = TRUE)
     }
   }
   invisible(outputs)
 }
 
+validate_reference_paths <- function(paths, context) {
+  if (is.null(paths) || !length(paths)) return(invisible(NULL))
+  if ((!is.list(paths) && !is.character(paths)) || is.null(names(paths)) ||
+      anyNA(names(paths)) || any(!nzchar(names(paths))) ||
+      any(!vapply(paths, is_scalar_character, logical(1)))) {
+    cli::cli_abort("{.field {context}} must contain one nonempty path per named target",
+                   class = "sas2r_output_contract_error")
+  }
+  invisible(NULL)
+}
+
 output_checks_reason <- function(checks) {
   if (!length(checks)) return("No output checks available")
-  failed <- Filter(function(chk) !isTRUE(chk$passed), checks)
-  if (!length(failed)) return("All configured output checks passed")
+  failed <- Filter(function(chk) isFALSE(chk$passed), checks)
+  if (!length(failed)) {
+    unavailable <- Filter(function(chk) !isTRUE(chk$passed), checks)
+    if (length(unavailable)) return(paste0("Available checks passed; not evaluated: ",
+      paste(vapply(unavailable, function(chk) paste0(chk$name, " (", chk$details %||% "unavailable", ")"), character(1)), collapse = "; ")))
+    return("All configured output checks passed")
+  }
   paste(vapply(failed, function(chk) paste0(chk$name, ": ",
     chk$details %||% chk$status %||% "requirement failed"), character(1)), collapse = "; ")
 }

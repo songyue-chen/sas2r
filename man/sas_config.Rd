@@ -35,6 +35,10 @@ A caller-supplied configuration list has no file of its own, so
 \code{sas_project()} resolves whatever is still relative against the project
 root. Both bases are facts about the project's layout, and both travel with
 the checkout.
+
+YAML boolean settings use \code{true} and \code{false}. Tokens such as \code{N},
+\code{Y}, \code{yes}, and \code{no} remain strings, preserving clinical metadata keys.
+Quote string metadata values that look numeric, such as SAS format \code{"8."}.
 }
 \examples{
 # Read the demo project configuration shipped with the package.

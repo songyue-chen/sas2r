@@ -23,9 +23,14 @@ sas_preflight(
 \item{out_dir}{Planned migration output root. \code{NULL} reports a temporary
 output root, as used by \code{sas_translate()}, without creating it.}
 
-\item{config}{Optional project configuration list or \code{sas2r_config} object.}
+\item{config}{Optional configuration list, YAML path, or \code{sas2r_config} object.
+Reused projects retain their configuration; changing library or source-search
+settings requires rescanning the source path. Reference paths in YAML resolve
+from its directory; paths in R lists resolve from the project directory.}
 
-\item{outputs}{Optional character vector or list specifying output contract overrides.}
+\item{outputs}{Optional character vector or list specifying output contract overrides.
+Reference paths supplied here resolve from the calling working directory.
+Output overrides are retained in the returned project for reuse.}
 
 \item{budget_usd}{Dollar threshold for LLM spend. Defaults to Inf (unlimited).}
 
@@ -45,7 +50,7 @@ request activity; unknown names and invalid values raise a configuration error.}
 }
 \value{
 A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries},
-\code{inputs} (available, missing, unresolved, no_producer, or generated), \code{references}, \code{unsupported},
+\code{inputs} (available, missing, unresolved, no_producer, backward_dependency, or generated), \code{references}, \code{unsupported},
 scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
 Also includes \code{status}, \code{configured_libraries}, \code{schedule}, explanatory \code{notes},
 and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.

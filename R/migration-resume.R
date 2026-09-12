@@ -15,13 +15,13 @@ migration_resume_fingerprint <- function(state) {
   skills <- agent_skill_catalog()
   llm <- state$translator_llm
   migration_hash(list(
-    version = 1L,
+    version = 2L,
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),
     graph = state$graph,
     inputs = input_hash_manifest(state$project),
-    config = state$config,
+    config = state$config[setdiff(names(state$config), c("raw", "source"))],
     outputs = state$output_contracts,
     helper = paste(readLines(state$runtime$helpers, warn = FALSE), collapse = "\n"),
     workers = lapply(roles, worker_binding_hash, skills = skills,
@@ -33,8 +33,18 @@ migration_resume_fingerprint <- function(state) {
 
 restore_migration_checkpoint <- function(state, fingerprint) {
   path <- file.path(state$paths$state, "resume.rds")
-  checkpoint <- if (file.exists(path)) tryCatch(readRDS(path), error = function(e) NULL) else NULL
-  if (is.null(checkpoint) || !identical(checkpoint$fingerprint, fingerprint)) return(state)
+  if (!file.exists(path)) return(state)
+  invalidate <- function(reason) {
+    state$diagnostics$resume_invalidated <- reason
+    cli::cli_inform(c("Resume checkpoint not reused: {reason}",
+      "i" = "Translation will regenerate revisions and may make new provider calls."),
+      class = "sas2r_resume_invalidated")
+    state
+  }
+  checkpoint <- tryCatch(readRDS(path), error = function(e) NULL)
+  if (is.null(checkpoint)) return(invalidate("checkpoint is unreadable"))
+  if (!identical(checkpoint$version, 2L)) return(invalidate("checkpoint uses an older planning policy"))
+  if (!identical(checkpoint$fingerprint, fingerprint)) return(invalidate("sources, inputs, configuration, or worker settings changed"))
   revisions <- checkpoint$selected_revisions
   # Missing or locally edited artifacts are cheap to regenerate. Do not rebuild
   # paths from revision labels, which need not match the on-disk directory name.
@@ -43,7 +53,7 @@ restore_migration_checkpoint <- function(state, fingerprint) {
     !is.null(rev$r_path) && file.exists(rev$r_path) &&
       identical(paste(readLines(rev$r_path, warn = FALSE), collapse = "\n"), rev$r_code)
   }, logical(1)))
-  if (!intact) return(state)
+  if (!intact) return(invalidate("generated revisions are missing, changed, or incomplete"))
   state$selected_revisions <- revisions
   state$histories <- checkpoint$histories
   writeLines(checkpoint$helper_code, state$runtime$helpers)
@@ -55,6 +65,7 @@ restore_migration_checkpoint <- function(state, fingerprint) {
 
 write_migration_checkpoint <- function(state, fingerprint) {
   checkpoint <- list(
+    version = 2L,
     fingerprint = fingerprint,
     selected_revisions = state$selected_revisions,
     histories = state$histories,

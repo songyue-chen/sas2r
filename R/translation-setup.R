@@ -1,35 +1,58 @@
 # Shared offline configuration and budget resolution for migration and preflight.
+project_input_root <- function(path) {
+  if (inherits(path, "sas2r_project")) return(include_normalize_path(path$project_dir))
+  if (!is_scalar_character(path) || (!dir.exists(path) && !file.exists(path))) {
+    cli::cli_abort("Path does not exist or is invalid: {.val {path}}", class = "sas2r_invalid_argument")
+  }
+  include_normalize_path(if (dir.exists(path)) path else dirname(path))
+}
+
+# Config provenance is kept for reports; scan decisions use normalized values.
+scan_config_fields <- function(config) {
+  config[c("libraries", "macro_search_path", "include_roots", "autoexec")]
+}
+
 translation_config <- function(path, config) {
-  cfg <- if (inherits(config, "sas2r_config")) {
-    config
-  } else if (is.character(config) && length(config) == 1L) {
-    if (is.na(config) || !file.exists(config) || dir.exists(config)) {
+  root <- project_input_root(path)
+  cfg <- if (inherits(config, "sas2r_config")) config else if (is.character(config)) {
+    if (!is_scalar_character(config) || !file.exists(config) || dir.exists(config)) {
       cli::cli_abort("Configuration file not found: {.file {config}}", class = "sas2r_config_error")
     }
     sas_config(path = config)
-  } else if (is.list(config)) {
-    structure(config, class = "sas2r_config")
-  } else if (is.null(config) && inherits(path, "sas2r_project")) {
-    path$config
-  } else {
-    start_dir <- if (inherits(path, "sas2r_project")) {
-      path$project_dir
-    } else if (is.character(path) && length(path) == 1L) {
-      if (dir.exists(path)) path else dirname(path)
-    } else {
-      "."
-    }
-    sas_config(start = start_dir)
+  } else if (is.list(config)) config else if (is.null(config)) {
+    if (inherits(path, "sas2r_project")) path$config else sas_config(start = root)
+  } else cli::cli_abort("config must be a mapping or configuration file", class = "sas2r_config_error")
+  cfg <- normalize_project_config(cfg, root)
+  if (inherits(path, "sas2r_project") && !is.null(config) &&
+      !identical(scan_config_fields(cfg), scan_config_fields(path$config))) {
+    cli::cli_abort(c("Configuration changes the supplied project's source or library bindings.",
+      "i" = "Run sas_preflight() or sas_translate() on the source path with the new config to rescan."),
+      class = "sas2r_config_error")
   }
-  root <- if (inherits(path, "sas2r_project")) path$project_dir else
-    if (dir.exists(path)) path else dirname(path)
-  cfg$outputs <- normalize_outputs_config(cfg$outputs)
-  if (is.list(cfg$outputs) && length(cfg$outputs$references)) {
-    cfg$outputs$references <- lapply(cfg$outputs$references, config_resolve_paths, base = root)
-  }
-  cfg$comparison_rules <- normalize_comparison_rules(cfg$comparison_rules, base = root)
-  validate_effective_qc(cfg$outputs, cfg$comparison_rules)
   cfg
+}
+
+translation_setup <- function(path, config, outputs, recursive, cache = FALSE) {
+  cfg <- translation_config(path, config)
+  overrides <- if (is.null(outputs)) cfg$outputs else validate_output_overrides(outputs)
+  if (!is.null(outputs) && is.list(overrides) && length(overrides$references)) {
+    overrides$references <- lapply(overrides$references, config_anchor_paths, base = getwd())
+  }
+  cfg$outputs <- overrides
+  validate_effective_qc(overrides, cfg$comparison_rules)
+  project <- if (inherits(path, "sas2r_project")) path else
+    scan_project(path, config = cfg, recursive = recursive, cache = cache)
+  if (!inherits(path, "sas2r_project")) cfg <- project$config
+  plan <- translation_plan(project, overrides)
+  validate_effective_qc(overrides, cfg$comparison_rules, plan$contracts)
+  # The returned project represents this complete plan, including explicit
+  # output overrides, so reusing it does not silently lose preflight settings.
+  cfg$outputs <- overrides
+  project$config <- cfg
+  project$output_contracts <- plan$contracts
+  project$graph <- plan$graph
+  project$schedule <- plan$schedule
+  list(config = cfg, project = project, plan = plan)
 }
 
 usage_limit_names <- function() grep("^max_", names(formals(new_usage_budget)), value = TRUE)

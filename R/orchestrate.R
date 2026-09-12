@@ -15,6 +15,7 @@
 #' @param max_bundle_repair_rounds Maximum repair rounds for full bundle (default 2L).
 #' @param usage_budget Optional shared usage budget.
 #' @return A `sas2r_migration_state` list object.
+#' @param plan Optional resolved contracts, graph and schedule from translation setup.
 #' @noRd
 new_migration_state <- function(
   project,
@@ -24,7 +25,8 @@ new_migration_state <- function(
   execute = TRUE,
   max_program_repair_rounds = 1L,
   max_bundle_repair_rounds = 2L,
-  usage_budget = NULL
+  usage_budget = NULL,
+  plan = NULL
 ) {
   p <- if (inherits(project, "sas2r_project")) project else sas_project(project)
   # The budget carries the run identifier, and attempt directories are scoped
@@ -39,8 +41,9 @@ new_migration_state <- function(
   init_migration_paths(out_dir, run_id = budget$run_id)
 
   baseline <- sas_transpile(p, paths$staging)
-  graph <- build_dependency_graph(p)
-  schedule <- stable_dependency_schedule(graph)
+  plan <- plan %||% translation_plan(p, p$config$outputs)
+  graph <- plan$graph
+  schedule <- plan$schedule
   attempt <- init_attempt(paths, kind = "smoke", sequence = 1L)
 
   staged_dir <- file.path(attempt$attempt_dir, "staged")

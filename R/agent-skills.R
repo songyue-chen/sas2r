@@ -577,9 +577,14 @@ component_statements <- function(project, component_id) {
     return(NULL)
   }
   stmts <- project$statements
-  base <- basename(as.character(stmts$file))
-  hit <- base == paste0(component_id, ".sas") |
-    tools::file_path_sans_ext(base) == component_id
+  if (!is.null(project$graph$nodes)) {
+    nodes <- project$graph$nodes
+    files <- nodes$source_file[nodes$component_id == component_id & nodes$type %in% c("source_unit", "setup")]
+    hit <- stmts$file %in% files
+  } else {
+    base <- basename(as.character(stmts$file))
+    hit <- base == paste0(component_id, ".sas") | tools::file_path_sans_ext(base) == component_id
+  }
   rows <- stmts[!is.na(hit) & hit, , drop = FALSE]
   if (nrow(rows)) rows else NULL
 }

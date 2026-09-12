@@ -50,7 +50,8 @@ test_that("profiles resolve in R and YAML with whole-field target overrides", {
   expect_equal(out$assertions[[1]]$row_count, 3)
   expect_identical(out$assertions[[1]]$labels, list(AGE = "Age in years"))
   file <- withr::local_tempfile(fileext = ".yml")
-  yaml::write_yaml(list(outputs = overrides), file)
+  yaml::write_yaml(list(outputs = overrides), file, handlers = list(logical = function(x)
+    structure(tolower(as.character(x)), class = "verbatim")))
   cfg <- sas_config(file)
   from_yaml <- infer_output_contracts(NULL, cfg$outputs)$assertions[[1]]
   expect_identical(unname(unlist(from_yaml$labels)), "Age in years")
@@ -58,7 +59,7 @@ test_that("profiles resolve in R and YAML with whole-field target overrides", {
     within(from_yaml, row_count <- 2)), `[[`, logical(1), "passed")))
   overrides$assertions[[1]]$profile <- "typo"
   expect_error(infer_output_contracts(NULL, overrides), "Unknown QC profile")
-  expect_error(qc_profile(unique_keys = TRUE), "requires keys")
+  expect_identical(qc_profile(unique_keys = TRUE), list(unique_keys = TRUE))
   expect_error(qc_profile(min_rows = 3, max_rows = 1), "contradict")
   expect_error(qc_profile(types = c(AGE = "number")), "unsupported")
   expect_error(qc_profile(tolerances = list(AGE = list(abs = -1))), "non-negative")

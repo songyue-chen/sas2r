@@ -50,16 +50,19 @@ stopifnot(check$model_calls == 0L,
 
 The example declares an AGE label requirement; preflight records that requirement
 but does not inspect the data to check it. The migration output gate evaluates
-it on each candidate. Use the same `config`, `outputs`, and budget arguments
-when calling `sas_translate(check$project, ...)` on your study. The returned
-project reuses the scan; run preflight again if sources change. `config$budget` is not consumed by
+it on each candidate. `sas_translate(check$project, ...)` reuses the scan,
+configuration, and output requirements, including explicit `outputs` overrides.
+Supply the same budget arguments again. Run preflight on the source path if
+sources or library settings change; changing scan settings on an existing
+project is rejected with a rescan instruction. `config$budget` is not consumed by
 these entry points; their explicit budget arguments determine the effective
 limits. Preflight displays planned locations; run and attempt IDs are assigned
 when translation starts.
 
 `inputs$status` distinguishes an existing file (`available`), a missing file,
 a library that could not be resolved (`unresolved`), a WORK member with no known
-earlier producer (`no_producer`), and data with a known in-project producer
+earlier producer (`no_producer`), a read whose only producer occurs later in
+the same file (`backward_dependency`), and data with a known in-project producer
 (`generated`). WORK members need an earlier creation step, not a disk file. Generated inputs still depend on that
 producer running successfully. `unsupported` lists constructs the deterministic
 emitter defers; the AI workflow may translate them. Runtime-only restrictions,
@@ -67,7 +70,14 @@ data values, reference comparability, and model credentials remain unchecked.
 Macro variables in dataset names produce a `dynamic_dataset_reference` finding;
 preflight does not expand them or certify those inputs as available. Unresolved
 includes and library bindings also require attention. Within-file step handoffs
-are ordered normally; cycles between files remain findings that need attention.
+are ordered normally; a later write cannot supply an earlier read, even if an
+old output file exists. Files with identical basenames retain separate identities.
+Cycles between files remain findings that need attention. The file-level
+scheduler can also flag a valid include handoff as a cycle when the parent
+writes before an include and consumes its output afterward; this case requires
+manual scheduling review. Macro definitions are deferred constructs, not executed
+input reads. Preflight does not expand macro calls. The migration demo therefore
+has unresolved dynamic inputs and can report `needs_attention`.
 `status` summarizes these setup findings. `schedule` shows the file order,
 `configured_libraries` the configured seeds, and `notes` the inspection limits.
 `destinations$report_json` and `$report_md` identify the authoritative reports.
@@ -109,15 +119,21 @@ outputs:
 A target assertion overrides the entire corresponding profile field; profile
 fields override `comparison_rules` defaults. R and YAML profiles contain only
 supplied fields: omitted/NULL fields inherit, while explicit `FALSE` or empty
-mappings override. Unknown assertion fields fail before translation. Empty
+mappings override. `unique_keys` is checked against inherited keys after these
+fields are combined. Unknown fields and non-mapping assertion sequences fail
+before translation; a NULL target entry is an empty mapping. Empty
 metadata mappings impose no requirement. Column names are case-insensitive.
-Quote YAML metadata keys and string values, for example `labels: {"N": "Count"}`
-and `formats: {"AVAL": "8."}`. YAML otherwise converts `N` to a boolean key and
-`8.` to a number; the original spelling cannot be recovered after parsing.
+The config loader preserves YAML keys such as `N`, `Y`, `yes`, and `no` as
+strings. Use `true` and `false` for boolean settings; `yes`/`no`/`on`/`off` are
+strings rather than boolean aliases. When generating YAML with the R `yaml`
+package, use a logical handler that emits literal `true`/`false`. Quote metadata
+string values such as `formats: {AVAL: "8."}` so YAML does not turn them into
+numbers. Scientific notation is accepted for finite, nonnegative whole row counts.
 Non-character metadata values are rejected, including mixed mappings. Labels and `format.sas` attributes must match exactly
 when declared. `numeric` accepts integer or double columns, while `Date` and
 `POSIXct` require those classes. These are physical R type requirements:
-factors fail `character` even if the comparator can match their text values.
+`factor` accepts ordinary and ordered factors; factors fail `character` even
+if the comparator can match their text values.
 Malformed metadata attributes fail QC and retain the observed values in the
 report. `column_order` specifies the complete ordered column list.
 Keys guide reference alignment; without a reference they impose no requirement
@@ -143,7 +159,16 @@ are parsed but are not advertised as offline execution tests.
 An explicit R configuration list is a complete configuration for preflight and
 translation; it does not silently inherit a discovered model provider. To keep
 file configuration while making changes, start with `sas_config()` and edit that
-object. A supplied project retains its own configuration unless explicitly
-overridden. Configured reference paths resolve against the YAML file directory;
+object. A supplied project retains its configuration. Output/QC/provider settings
+can be changed, but changed library, include, macro-search, or autoexec settings
+require rescanning the source path. Configured reference paths resolve against the YAML file directory;
 paths in R configuration lists resolve against the project directory. Direct
-`outputs` argument paths remain relative to the calling working directory.
+`outputs` argument paths are anchored to the calling working directory. Stored
+paths are absolute so project reuse does not prefix them again. Preflight and
+output gates both honor target references and the `comparison_rules$reference_path`
+or `comparison_rules$references` fallback.
+
+All output assessment records carry a `reason` in JSON and Markdown. Unavailable
+checks are labeled as not evaluated, separately from failures. Checkpoints from
+older planning versions are regenerated; resume reports the reason before new
+provider calls. Matching current checkpoints reuse completed revisions.

@@ -58,8 +58,8 @@ test_that("SAS collection audit distinguishes missing, partial, failed and compl
   generated <- withr::local_tempdir()
   audit <- semantic_reference_audit(root, generated)
   expect_identical(audit$status, "incomplete")
-  expect_equal(sum(audit$coverage$status == "missing"), 14)
   cases <- jsonlite::read_json(file.path(root, "manifest.json"))
+  expect_equal(sum(audit$coverage$status == "missing"), length(cases))
   for (case in cases) file.copy(file.path(root, case$id, "expected.csv"),
                                 file.path(generated, paste0(case$id, ".csv")))
   # This deliberately synthetic collection exercises the verifier, not SAS.

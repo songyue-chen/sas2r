@@ -160,7 +160,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         passed = FALSE,
         details = "Candidate dataset file not found"
       )
-      return(list(
+      return(output_assessment(
         target_id = t_id,
         target_key = t_key,
         kind = "dataset",
@@ -203,7 +203,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         passed = FALSE,
         details = "Failed to read candidate dataset file"
       )
-      return(list(
+      return(output_assessment(
         target_id = t_id,
         target_key = t_key,
         kind = "dataset",
@@ -233,10 +233,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
   checks <- c(checks, check_dataset_qc(cand_data, policy))
 
   # 3. Reference dataset comparison
-  ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
-  if (is.null(ref_path) || is.na(ref_path) || !nzchar(ref_path)) {
-    ref_path <- comparison_rules$reference_path %||% comparison_rules$references[[t_key]] %||% NA_character_
-  }
+  ref_path <- output_reference_path(contract, comparison_rules)
 
   has_ref <- !is.na(ref_path) && nzchar(ref_path)
   ref_passed <- FALSE
@@ -342,16 +339,13 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     "failed"
   }
 
-  reason <- output_checks_reason(checks)
-
-  list(
+  output_assessment(
     target_id = t_id,
     target_key = t_key,
     kind = "dataset",
     required = required,
     passed = all_checks_passed,
     status = status,
-    reason = reason,
     has_reference = has_ref && isTRUE(checks$reference_exists$passed),
     reference_passed = if (has_ref) ref_passed else FALSE,
     has_assertions = length(assertions) > 0L,
@@ -396,7 +390,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       passed = FALSE,
       details = "Candidate TLF file not found"
     )
-    return(list(
+    return(output_assessment(
       target_id = t_id,
       target_key = t_key,
       kind = "tlf",
@@ -428,7 +422,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       passed = FALSE,
       details = "Candidate TLF file is empty (0 bytes)"
     )
-    return(list(
+    return(output_assessment(
       target_id = t_id,
       target_key = t_key,
       kind = "tlf",
@@ -630,10 +624,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   }
 
   # Reference comparison
-  ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
-  if (is.null(ref_path) || is.na(ref_path) || !nzchar(ref_path)) {
-    ref_path <- comparison_rules$reference_path %||% comparison_rules$references[[t_key]] %||% NA_character_
-  }
+  ref_path <- output_reference_path(contract, comparison_rules)
 
   has_ref <- !is.na(ref_path) && nzchar(ref_path) && file.exists(ref_path)
   ref_passed <- FALSE
@@ -663,7 +654,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
     "failed"
   }
 
-  list(
+  output_assessment(
     target_id = t_id,
     target_key = t_key,
     kind = "tlf",
@@ -995,4 +986,17 @@ derive_bundle_status <- function(assessment) {
   }
 
   "migration_ready"
+}
+
+# All assessment exits serialize the same explanation used by Markdown.
+output_assessment <- function(...) {
+  result <- list(...)
+  result$reason <- output_checks_reason(result$checks)
+  result
+}
+
+output_reference_path <- function(contract, rules = list()) {
+  path <- contract$reference_path
+  if (is_scalar_character(path)) return(path)
+  rules$reference_path %||% rules$references[[contract$target_key]] %||% NA_character_
 }

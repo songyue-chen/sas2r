@@ -600,39 +600,28 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
       next
     }
 
-    tryCatch({
-      if (ut %in% c("data_step", "proc_step")) {
-        dp <- deterministic_unit_translation(us, rulebook, f)
-        em <- dp$em
-        reason <- dp$reason
-        if (is.na(target_ds) && length(dp$outputs)) target_ds <- dp$outputs[1L]
-      } else if (ut == "macro_def") {
-        reason <- "macro_deferred"
-      } else if (uid %in% emit_units) {
-        site <- include_plan[[as.character(uid)]]
-        calls <- site$calls %||% character()
-        emitted <- grepl("^sas2r_source_include\\(", calls)
-        if (any(emitted)) {
-          # Every site the unit could emit is kept; a site it could not is left
-          # in place as a marked comment, so a mixed unit loses nothing.
-          em <- list(code = paste(calls, collapse = "\n"),
-                     stmt_map = as.integer(us$stmt_id),
-                     flags = if (all(emitted)) character()
-                             else "include_site_not_emitted")
-        } else {
-          reason <- site$reason %||% "include_statement"
-        }
+    if (ut %in% c("data_step", "proc_step", "macro_def")) {
+      dp <- deterministic_unit_translation(us, rulebook, f)
+      em <- dp$em
+      reason <- dp$reason
+      if (is.na(target_ds) && length(dp$outputs)) target_ds <- dp$outputs[1L]
+    } else if (uid %in% emit_units) {
+      site <- include_plan[[as.character(uid)]]
+      calls <- site$calls %||% character()
+      emitted <- grepl("^sas2r_source_include\\(", calls)
+      if (any(emitted)) {
+        # Every site the unit could emit is kept; a site it could not is left
+        # in place as a marked comment, so a mixed unit loses nothing.
+        em <- list(code = paste(calls, collapse = "\n"),
+                   stmt_map = as.integer(us$stmt_id),
+                   flags = if (all(emitted)) character()
+                           else "include_site_not_emitted")
       } else {
-        reason <- "global_deferred"
+        reason <- site$reason %||% "include_statement"
       }
-    }, error = function(e) {
-      reason <<- deterministic_failure_reason(e)
-      em <<- NULL
-    })
-
-    checked <- deterministic_emission_result(list(em = em, reason = reason))
-    em <- checked$em
-    reason <- checked$reason
+    } else {
+      reason <- "global_deferred"
+    }
 
     # Lint check on emitted code: if parse error or banned function, fallback to stub
     lint <- NULL

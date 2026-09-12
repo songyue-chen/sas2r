@@ -100,12 +100,7 @@ validate_output_overrides <- function(overrides) {
       }
     }
 
-    if (length(overrides$references) && any(!vapply(overrides$references, function(path) {
-      is.character(path) && length(path) == 1L && !is.na(path) && nzchar(path)
-    }, logical(1)))) {
-      cli::cli_abort("outputs$references must contain one nonempty path per target",
-                     class = "sas2r_output_contract_error")
-    }
+    validate_reference_paths(overrides$references, "outputs$references")
 
     if (!is.null(overrides$assertions)) {
       if (!is.list(overrides$assertions) || is.null(names(overrides$assertions))) {

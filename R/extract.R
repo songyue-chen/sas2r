@@ -133,32 +133,96 @@ extract_includes <- function(stmts) {
   )
 }
 
-#' Tokenize dataset names from statement body
-#'
-#' Iteratively strips nested parentheses to avoid leaking options tokens.
-#' @param rest Statement string after initial keyword.
-#' @return Character vector of dataset token names.
-#' @noRd
-ds_tokens <- function(rest) {
-  while (grepl("\\([^()]*\\)", rest)) {
-    rest <- gsub("\\([^()]*\\)", " ", rest)
+# Read dataset positions once for both static lineage and unresolved-name
+# findings. Quoted physical names stay intact; parenthesized dataset options
+# are skipped without interpreting their expressions.
+dataset_candidate_tokens <- function() c("data", "set", "merge", "update", "proc",
+  "output", "table", "tables", "create", "select", "insert", "delete")
+
+dataset_statement_refs <- function(text, token, unit_type) {
+  empty <- list(creates = character(), reads = character(), proc = "")
+  if (!token %in% dataset_candidate_tokens() || unit_type == "macro_def") return(empty)
+  lex <- regmatches(text, gregexpr(
+    "\"(?:[^\"]|\"\")*\"|'(?:[^']|'')*'|[(),=;]|[^[:space:](),=;]+",
+    text, perl = TRUE))[[1L]]
+  # Strip balanced options, preserving quoted strings (which are single tokens).
+  depth <- 0L
+  keep <- logical(length(lex))
+  for (i in seq_along(lex)) {
+    if (lex[i] == "(") depth <- depth + 1L
+    keep[i] <- depth == 0L && lex[i] != ")"
+    if (lex[i] == ")") depth <- max(0L, depth - 1L)
   }
-  toks <- strsplit(trimws(rest), "\\s+")[[1]]
-  toks[grepl("^[A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)?$", toks) & !grepl("=", toks)]
+  flat <- lex[keep & lex != ";"]
+  low <- tolower(flat)
+  option <- function(key) {
+    i <- which(low == key & c(utils::tail(low, -1L), "") == "=") + 2L
+    flat[i[i <= length(flat)]]
+  }
+  bare <- function() {
+    values <- flat[-1L]
+    equals <- match("=", values)
+    if (!is.na(equals)) values <- if (equals > 2L) values[seq_len(equals - 2L)] else character()
+    values[!values %in% c(",", "/")]
+  }
+  if (unit_type == "data_step") {
+    if (token == "data") empty$creates <- setdiff(bare(), "_null_")
+    if (token %in% c("set", "merge", "update")) empty$reads <- bare()
+  } else if (unit_type == "proc_step") {
+    if (token == "proc") {
+      empty$proc <- if (length(low) >= 2L) low[2L] else ""
+      empty$reads <- c(option("data"), option("base"))
+      empty$creates <- option("out")
+    } else if (token %in% c("output", "table", "tables")) {
+      empty$creates <- option("out")
+    } else {
+      # FROM/JOIN positions include comma-separated tables; SET assignment
+      # values and FREQ/TABULATE variables are not dataset positions.
+      from <- FALSE
+      want <- FALSE
+      after_dataset <- FALSE
+      option_depth <- 0L
+      for (i in seq_along(lex)) {
+        word <- tolower(lex[i])
+        if (option_depth > 0L || (after_dataset && word == "(")) {
+          if (word == "(") option_depth <- option_depth + 1L
+          if (word == ")") option_depth <- option_depth - 1L
+          after_dataset <- FALSE
+          next
+        }
+        after_dataset <- FALSE
+        if (want && !word %in% c("(", ")", ",")) {
+          if (!word %in% c("select", "table", "view")) {
+            empty$reads <- c(empty$reads, lex[i])
+            after_dataset <- TRUE
+          }
+          want <- FALSE
+        }
+        if (word %in% c("select", "where", "on", "group", "order", "having", "set", "union", ";")) from <- FALSE
+        if (word %in% c("from", "join")) { want <- TRUE; from <- TRUE }
+        if (word == "," && from) want <- TRUE
+      }
+      if (token == "create" && length(flat) >= 3L && low[2L] %in% c("table", "view")) empty$creates <- flat[3L]
+      if (token == "update" && length(flat) >= 2L) empty$reads <- c(flat[2L], empty$reads)
+      if (token == "insert" && length(flat) >= 3L && low[2L] == "into") empty$creates <- flat[3L]
+    }
+  }
+  empty
 }
 
-#' Extract key=value option targets
-#'
-#' @param text Statement text.
-#' @param key Parameter keyword (e.g. "data", "out").
-#' @return Character vector of dataset names.
-#' @noRd
+static_dataset_names <- function(x) {
+  x[grepl("^[A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)?$", x) & tolower(x) != "_null_"]
+}
+
+# Compatibility for deterministic rules that already use these token helpers.
+ds_tokens <- function(rest) {
+  static_dataset_names(dataset_statement_refs(paste("set", rest), "set", "data_step")$reads)
+}
+
 eq_captures <- function(text, key) {
-  hits <- regmatches(text, gregexpr(
-    paste0("\\b", key, "\\s*=\\s*([A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)?)"),
-    text, ignore.case = TRUE))[[1]]
-  if (!length(hits)) return(character(0))
-  sub("^.*?=\\s*", "", hits)
+  hits <- regmatches(text, gregexpr(paste0("\\b", key, "\\s*=\\s*[^[:space:]();,]+"),
+    text, ignore.case = TRUE, perl = TRUE))[[1L]]
+  static_dataset_names(sub("^.*?=\\s*", "", hits))
 }
 
 #' Extract dataset references and lineage
@@ -180,7 +244,7 @@ extract_dataset_refs <- function(units) {
   unit_id_vec <- code$unit_id
   line_start_vec <- code$line_start
 
-  cand_idx <- which(first_token_vec %in% c("data", "set", "merge", "update", "proc", "output", "table", "tables", "create", "select", "insert", "delete"))
+  cand_idx <- which(first_token_vec %in% dataset_candidate_tokens() & unit_type_vec != "macro_def")
   if (length(cand_idx) == 0L) {
     return(tibble::tibble(unit_id = integer(), dataset = character(),
                           role = character(), line = integer(),
@@ -191,34 +255,10 @@ extract_dataset_refs <- function(units) {
     tok <- first_token_vec[k]
     ut <- unit_type_vec[k]
     txt <- text_vec[k]
-    creates <- character(); reads <- character()
-    proc_name <- ""
-    if (ut == "data_step" && tok == "data") {
-      t <- ds_tokens(sub("^data(\\s+|$)", "", txt, ignore.case = TRUE))
-      creates <- t[tolower(t) != "_null_"]
-    } else if (ut == "data_step" && tok %in% c("set", "merge", "update")) {
-      reads <- ds_tokens(sub("^(set|merge|update)(\\s+|$)", "", txt, ignore.case = TRUE))
-    } else if (ut == "proc_step" && tok == "proc") {
-      m_p <- regmatches(txt, regexec("^proc\\s+([A-Za-z_]\\w*)", txt, ignore.case = TRUE))[[1]]
-      if (length(m_p) >= 2L && m_p[1] != "") proc_name <- tolower(m_p[2])
-      reads <- eq_captures(txt, "data")
-      creates <- eq_captures(txt, "out")
-    } else if (ut == "proc_step" && tok %in% c("output", "table", "tables")) {
-      creates <- eq_captures(txt, "out")
-    } else if (ut == "proc_step" && tok %in% c("create", "select", "insert", "update", "delete")) {
-      if (tok == "create") {
-        m <- regmatches(txt, regexec(
-          "\\bcreate\\s+(?:table|view)\\s+([A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)?)",
-          txt, ignore.case = TRUE))[[1]]
-        if (length(m) >= 2L && m[1] != "") creates <- m[2]
-      }
-      fr <- regmatches(txt, gregexpr(
-        "\\b(?:from|join)\\s+([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)?)",
-        txt, ignore.case = TRUE, perl = TRUE))[[1]]
-      if (length(fr) && fr[1] != "") {
-        reads <- sub("^\\S+\\s+", "", fr)
-      }
-    }
+    refs <- dataset_statement_refs(txt, tok, ut)
+    creates <- static_dataset_names(refs$creates)
+    reads <- static_dataset_names(refs$reads)
+    proc_name <- refs$proc
     if (!length(creates) && !length(reads)) return(NULL)
     total_len <- length(creates) + length(reads)
     list(
@@ -477,18 +517,12 @@ extract_function_uses <- function(units) {
 # dataset positions instead of silently dropping those references. Dataset
 # options/expressions are excluded so `where=(x=&limit)` is not a dynamic name.
 dynamic_dataset_findings <- function(statements) {
-  text <- vapply(statements$text, mask_strings, character(1))
-  candidates <- statements$first_token %in%
-    c("data", "set", "merge", "update", "proc", "output", "table", "tables",
-      "create", "select", "insert", "delete")
-  dynamic <- "[^[:space:];(),=]*[&%][^[:space:];(),=]*"
-  patterns <- c(
-    paste0("^\\s*(data|set|merge|update)\\s+([^;()]*\\s+)?", dynamic),
-    paste0("\\b(data|out|base)\\s*=\\s*", dynamic),
-    paste0("\\b(from|join|table)\\s+", dynamic)
-  )
-  hit <- Reduce(`|`, lapply(patterns, function(pattern) grepl(pattern, text, ignore.case = TRUE, perl = TRUE)))
-  selected <- which(hit & candidates & statements$type == "code")
+  candidates <- which(statements$type == "code" & statements$unit_type != "macro_def" &
+    statements$first_token %in% dataset_candidate_tokens() & grepl("[&%]", statements$text))
+  selected <- candidates[vapply(candidates, function(i) {
+    refs <- dataset_statement_refs(statements$text[i], statements$first_token[i], statements$unit_type[i])
+    any(grepl("[&%]", c(refs$creates, refs$reads)))
+  }, logical(1))]
   tibble::tibble(kind = rep("dynamic_dataset_reference", length(selected)),
     detail = paste0(statements$file[selected], ":", statements$line_start[selected],
                     ": ", statements$text[selected]))

@@ -1,5 +1,5 @@
 # One fence grammar for the documentation contract tests and executable runner.
-doc_code_blocks <- function(lines, file = "<text>") {
+doc_code_blocks <- function(lines, file = "<text>", all_languages = FALSE) {
   lines <- strsplit(paste(lines, collapse = "\n"), "\n", fixed = TRUE)[[1L]]
   blocks <- list()
   i <- 1L
@@ -12,9 +12,9 @@ doc_code_blocks <- function(lines, file = "<text>") {
     end <- ends[1L]
     header <- trimws(opener[3L])
     language <- if (grepl("^(\\{\\s*[rR][ ,}]|[rR]$)", header)) "r" else tolower(header)
-    if (language %in% c("r", "yaml")) {
+    if (all_languages || language %in% c("r", "yaml")) {
       code <- if (end == i + 1L) "" else paste(lines[seq.int(i + 1L, end - 1L)], collapse = "\n")
-      blocks[[length(blocks) + 1L]] <- list(file = file, line = i, language = language,
+      blocks[[length(blocks) + 1L]] <- list(file = file, line = i, end_line = end, language = language,
         marker = if (i > 1L) lines[i - 1L] else "", code = code)
     }
     i <- end + 1L
@@ -25,4 +25,13 @@ doc_code_blocks <- function(lines, file = "<text>") {
 doc_r_chunks <- function(lines) {
   blocks <- Filter(function(b) b$language == "r", doc_code_blocks(lines))
   vapply(blocks, `[[`, character(1), "code")
+}
+
+doc_prose_calls <- function(lines) {
+  code <- unlist(lapply(doc_code_blocks(lines, all_languages = TRUE),
+    function(block) seq.int(block$line, block$end_line)))
+  prose <- paste(lines[setdiff(seq_along(lines), code)], collapse = "\n")
+  hits <- unlist(regmatches(
+    prose, gregexpr("`[A-Za-z._][A-Za-z0-9._]*\\(\\)`", prose)))
+  unique(gsub("[`()]", "", hits))
 }

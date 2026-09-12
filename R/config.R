@@ -218,12 +218,7 @@ normalize_budget_config <- function(config) {
     cli::cli_abort("budget configuration must be a mapping",
                    class = "sas2r_budget_config_error")
   }
-  allowed <- c(
-    "mode", "max_usd", "pricing_source", "rates", "max_calls",
-    "max_retries", "max_tool_calls", "max_wall_time",
-    "max_request_bytes", "max_request_chars", "max_input_tokens",
-    "max_output_tokens"
-  )
+  allowed <- c("mode", "pricing_source", "rates", usage_limit_names())
   unknown <- setdiff(names(config), allowed)
   if (length(unknown)) {
     cli::cli_abort(
@@ -241,8 +236,9 @@ normalize_budget_config <- function(config) {
 }
 
 assert_exact_names <- function(x, allowed, context = "config", class = "sas2r_config_error") {
-  if (!is.list(x)) {
-    cli::cli_abort("{.field {context}} must be a mapping",
+  if (!is.list(x) || (length(x) && (is.null(names(x)) || anyNA(names(x)) ||
+      any(!nzchar(names(x))) || anyDuplicated(names(x))))) {
+    cli::cli_abort("{.field {context}} must be a named mapping with distinct fields",
                    class = class)
   }
   unknown <- setdiff(names(x), allowed)
@@ -319,10 +315,33 @@ normalize_output_review_config <- function(raw, config_file) {
 normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
   if (is.null(raw_outputs)) return(NULL)
   outputs <- validate_output_overrides(raw_outputs)
-  if (is.list(outputs) && length(outputs$references)) {
-    outputs$references <- lapply(outputs$references, config_rebase_paths, src = config_file)
+  if (is.list(outputs) && length(outputs$references) && !is.na(config_file)) {
+    outputs$references <- lapply(outputs$references,
+      config_anchor_paths, base = dirname(config_file))
   }
   outputs
+}
+
+normalize_project_config <- function(config, root) {
+  root <- include_normalize_path(root)
+  config$libraries <- normalize_library_entries(config$libraries, root)
+  for (field in c("macro_search_path", "include_roots", "autoexec")) {
+    config[[field]] <- config_anchor_paths(config[[field]], root)
+  }
+  config$outputs <- normalize_outputs_config(config$outputs)
+  if (is.list(config$outputs) && length(config$outputs$references)) {
+    config$outputs$references <- lapply(config$outputs$references, config_anchor_paths, base = root)
+  }
+  config$comparison_rules <- normalize_comparison_rules(config$comparison_rules, base = root)
+  if (!is.null(config$llm)) config$llm <- normalize_llm_config(config$llm)
+  structure(config, class = "sas2r_config")
+}
+
+# Absolute bases make repeated normalization idempotent, including nonexistent
+# reference files and R-list configurations passed with a relative study path.
+config_anchor_paths <- function(paths, base) {
+  paths <- config_resolve_paths(paths %||% character(), include_normalize_path(base))
+  if (length(paths)) vapply(paths, include_normalize_path, character(1), USE.NAMES = FALSE) else character()
 }
 
 find_config <- function(start = ".") {
@@ -358,6 +377,9 @@ find_config <- function(start = ".") {
 #' `sas_project()` resolves whatever is still relative against the project
 #' root. Both bases are facts about the project's layout, and both travel with
 #' the checkout.
+#' @details YAML boolean settings use `true` and `false`. Tokens such as `N`,
+#'   `Y`, `yes`, and `no` remain strings, preserving clinical metadata keys.
+#'   Quote string metadata values that look numeric, such as SAS format `"8."`.
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
@@ -378,7 +400,10 @@ sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)
   raw <- list()
   if (!is.na(src)) {
-    raw <- yaml::read_yaml(src)
+    raw <- yaml::read_yaml(src, handlers = list(
+      "bool#yes" = function(value) if (tolower(value) == "true") TRUE else value,
+      "bool#no" = function(value) if (tolower(value) == "false") FALSE else value
+    ))
     if (is.null(raw)) raw <- list()
     unknown <- setdiff(names(raw), KNOWN_CONFIG_KEYS)
     if (length(unknown)) {

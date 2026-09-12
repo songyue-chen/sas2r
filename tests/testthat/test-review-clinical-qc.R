@@ -1,9 +1,3 @@
-review_source <- function(root, code) {
-  file <- file.path(root, "main.sas")
-  writeLines(code, file)
-  file
-}
-
 test_that("global alignment hints do not impose keys on unreferenced summaries", {
   contract <- list(target_key = "adam.summary", required = TRUE, assertions = list())
   data <- data.frame(TRT = "A", N = 2)
@@ -44,7 +38,7 @@ test_that("invalid rules, assertions and budget arguments fail before writes or 
   testthat::local_mocked_bindings(sas_llm = function(...) stop("must not construct adapter"))
   bad <- list(list(required_columns = list("USUBJID")),
     list(required_columns = c("USUBJID", "usubjid")), list(tolerances = list(AGE = 0.01)),
-    list(min_rows = "1"), list(keys = list("USUBJID")), list(unique_keys = TRUE))
+    list(min_rows = "many"), list(keys = list("USUBJID")), list(unique_keys = "maybe"))
   for (rules in bad) {
     yaml <- file.path(root, "bad.yml"); yaml::write_yaml(list(comparison_rules = rules), yaml)
     if (is.list(rules$required_columns) || is.list(rules$keys)) {
@@ -58,7 +52,7 @@ test_that("invalid rules, assertions and budget arguments fail before writes or 
   }
   for (args in list(list(budget_mode = "typo"), list(pricing_source = "typo"),
                    list(usage_limits = list(max_calls = -1)))) {
-    expect_error(do.call(sas_translate, c(list(path = file, out_dir = file.path(root, "out")), args)))
+    expect_error(do.call(sas_translate, c(list(path = file, out_dir = file.path(root, "out")), args)), class = if ("usage_limits" %in% names(args)) "sas2r_budget_config_error" else "sas2r_invalid_argument")
     expect_false(dir.exists(file.path(root, "out")))
     expect_false(dir.exists(file.path(root, ".sas2r")))
   }
@@ -66,7 +60,7 @@ test_that("invalid rules, assertions and budget arguments fail before writes or 
   state <- file.path(root, "out", ".sas2r"); dir.create(state, recursive = TRUE)
   prior <- c("graph.json", "output-contracts.json")
   for (name in prior) writeLines("previous run", file.path(state, name))
-  expect_error(sas_translate(file, out_dir = dirname(state), resume = TRUE, budget_mode = "typo"))
+  expect_error(sas_translate(file, out_dir = dirname(state), resume = TRUE, budget_mode = "typo"), class = "sas2r_invalid_argument")
   for (name in prior) expect_identical(readLines(file.path(state, name)), "previous run")
   expect_false(dir.exists(file.path(root, ".sas2r")))
 })
@@ -158,7 +152,7 @@ test_that("preflight distinguishes ordered in-file work, unknown producers and r
 
 test_that("unknown WORK producers get a source remedy rather than a file remedy", {
   root <- withr::local_tempdir()
-  for (code in c("data out; set nowhere; run;", "data out; set stage; run; data stage; x=1; run;")) {
+  for (code in "data out; set nowhere; run;") {
     check <- sas_preflight(review_source(root, code))
     expect_identical(check$inputs$status, "no_producer")
     expect_identical(check$status, "needs_attention")
@@ -175,7 +169,7 @@ test_that("preflight retains cross-file cycles and unresolved setup findings", {
   expect_true("dependency_cycle" %in% check$findings$kind)
   expect_identical(check$status, "needs_attention")
   for (code in c("data undeclared.out; x=1; run;", "%include &prog;",
-                 "libname remote oracle user=test; data remote.out; x=1; run;")) {
+                 "libname remote xml 'remote'; data remote.out; x=1; run;")) {
     check <- sas_preflight(review_source(root, code))
     expect_identical(check$status, "needs_attention")
     expect_true(length(check$next_actions) > 0L)
@@ -206,7 +200,10 @@ test_that("preflight and deterministic emission use identical failure reasons", 
     file <- review_source(root, paste("data out; set raw.dm; x=", expression, "; run;"))
     check <- sas_preflight(file)
     result <- sas_transpile(check$project, out_dir = file.path(root, "out"))
-    expect_true(check$unsupported$reason[1L] %in% result$manifest$reason)
+    expect_gt(nrow(check$unsupported), 0L)
+    expected <- if (expression == "scan(name, 2)") "unmapped_function:scan" else "expr_parse_failed"
+    expect_identical(check$unsupported$reason, expected)
+    expect_true(expected %in% result$manifest$reason)
   }
 })
 

@@ -87,9 +87,8 @@ fix_program_revision <- function(
 
   sas_text <- revision$sas_text %||% revision$sas_source %||% contract$sas_text %||% ""
   if (!nzchar(sas_text) && !is.null(project) && !is.null(project$statements)) {
-    stmts <- project$statements[project$statements$file == paste0(component_id, ".sas") |
-                                tools::file_path_sans_ext(basename(project$statements$file)) == component_id, , drop = FALSE]
-    if (nrow(stmts) > 0L) {
+    stmts <- component_statements(project, component_id)
+    if (!is.null(stmts) && nrow(stmts) > 0L) {
       sas_text <- format_sas_statements(stmts$text)
     }
   }
