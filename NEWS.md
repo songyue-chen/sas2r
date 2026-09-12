@@ -1,5 +1,14 @@
 # sas2r (development)
 
+* Add `sas_preflight()` to inspect source/library resolution, input availability,
+  deterministic limitations, outputs, and effective budgets with zero model
+  calls and no migration artifacts.
+* Add reusable `qc_profile()` output requirements for labels, formats, types,
+  column order, keys, uniqueness, row counts, and variable-specific tolerances.
+* Execute documented offline R and YAML examples against the installed package
+  in CI. Add a complete SAS fixture collection verifier; actual SAS execution
+  remains pending because no SAS runtime is available.
+
 * README and evidence guides now distinguish agent completion, semantic review,
   execution, and reference coverage. Examples use library-qualified output paths
   and the correct comparison APIs; export, resume, and reference-provenance

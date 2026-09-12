@@ -62,7 +62,7 @@ validate_output_overrides <- function(overrides) {
   }
 
   if (is.list(overrides)) {
-    allowed <- c("datasets", "tlfs", "references", "assertions")
+    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles")
     unknown <- setdiff(names(overrides), allowed)
     if (length(unknown) > 0L) {
       cli::cli_abort(
@@ -109,7 +109,7 @@ validate_output_overrides <- function(overrides) {
       }
     }
 
-    return(overrides)
+    return(resolve_qc_profiles(overrides))
   }
 
   cli::cli_abort(

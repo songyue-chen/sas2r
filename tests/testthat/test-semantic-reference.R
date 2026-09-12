@@ -6,13 +6,6 @@ semantic_emit <- function(source) {
   if (ir$route == "merge") emit_merge_step(ir) else emit_data_step(ir)
 }
 
-semantic_frame <- function(path) {
-  frame <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE,
-                          na.strings = "", blank.lines.skip = FALSE)
-  # All-missing numeric columns otherwise get inferred as logical by read.csv.
-  for (nm in names(frame)) if (is.logical(frame[[nm]]) && all(is.na(frame[[nm]]))) frame[[nm]] <- as.numeric(frame[[nm]])
-  frame
-}
 
 test_that("semantic reference corpus preserves values or explicitly defers a whole unit", {
   root <- test_path("fixtures", "semantic-reference")
@@ -59,4 +52,30 @@ test_that("all variants of extra MERGE body statements defer", {
     expect_true(is.na(em$code), info = body)
     expect_identical(em$flags, "merge_body_deferred", info = body)
   }
+})
+
+test_that("SAS collection audit distinguishes missing, partial, failed and complete evidence", {
+  root <- test_path("fixtures", "semantic-reference")
+  generated <- withr::local_tempdir()
+  audit <- semantic_reference_audit(root, generated)
+  expect_identical(audit$status, "incomplete")
+  expect_equal(sum(audit$coverage$status == "missing"), 14)
+  cases <- jsonlite::read_json(file.path(root, "manifest.json"))
+  for (case in cases) file.copy(file.path(root, case$id, "expected.csv"),
+                                file.path(generated, paste0(case$id, ".csv")))
+  # This deliberately synthetic collection exercises the verifier, not SAS.
+  expect_identical(semantic_reference_audit(root, generated)$status, "incomplete")
+  writeLines("synthetic provenance for verifier unit test", file.path(generated, "provenance.txt"))
+  writeLines("synthetic log for verifier unit test", file.path(generated, "sas.log"))
+  expect_identical(semantic_reference_audit(root, generated)$status, "passed")
+  file <- file.path(generated, "missing_assignment.csv")
+  csv <- readLines(file)
+  writeLines(c("renamed,flag", csv[-1]), file)
+  expect_identical(semantic_reference_audit(root, generated)$status, "failed")
+  writeLines(csv, file)
+  writeLines("ERROR: export failed", file.path(generated, "sas.log"))
+  expect_identical(semantic_reference_audit(root, generated)$status, "failed")
+  writeLines("synthetic log", file.path(generated, "sas.log"))
+  writeLines(c("x,flag", "999,999"), file.path(generated, "missing_assignment.csv"))
+  expect_identical(semantic_reference_audit(root, generated)$status, "failed")
 })

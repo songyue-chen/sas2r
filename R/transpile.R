@@ -551,7 +551,7 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
   for (uid in unique(st_f$unit_id)) {
     us <- st_f[st_f$unit_id == uid, ]
     ut <- us$unit_type[1]
-    em <- NULL; reason <- NA_character_; ir <- NULL
+    em <- NULL; reason <- NA_character_
     first <- tolower(us$first_token[1])
 
     target_ds <- project$lineage$dataset[project$lineage$role == "creates" & project$lineage$unit_id == uid][1]
@@ -601,21 +601,11 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
     }
 
     tryCatch({
-      if (ut == "data_step") {
-        ir <- parse_data_step(us)
-        if (is.na(target_ds) && length(ir$outputs) > 0L) {
-          target_ds <- ir$outputs[1]
-        }
-        if (nrow(ir$blockers)) {
-          reason <- ir$blockers$reason[1]
-        } else {
-          em <- if (ir$route == "merge") emit_merge_step(ir)
-                else emit_data_step(ir, src_file = f)
-        }
-      } else if (ut == "proc_step") {
-        dp <- dispatch_proc(us, rulebook)
+      if (ut %in% c("data_step", "proc_step")) {
+        dp <- deterministic_unit_translation(us, rulebook, f)
         em <- dp$em
         reason <- dp$reason
+        if (is.na(target_ds) && length(dp$outputs)) target_ds <- dp$outputs[1L]
       } else if (ut == "macro_def") {
         reason <- "macro_deferred"
       } else if (uid %in% emit_units) {
@@ -880,4 +870,14 @@ print.sas2r_transpilation <- function(x, ...) {
   }
   cli::cli_text("staged in {.file {x$out_dir}} -- NOT verified; run the ladder next")
   invisible(x)
+}
+
+# The deterministic DATA/PROC decision is shared by emission and preflight.
+# It generates text only; no translated program or dataset read is executed.
+deterministic_unit_translation <- function(us, rulebook, file = us$file[1L]) {
+  if (us$unit_type[1L] == "proc_step") return(dispatch_proc(us, rulebook))
+  ir <- parse_data_step(us)
+  if (nrow(ir$blockers)) return(list(em = NULL, reason = ir$blockers$reason[1L], outputs = ir$outputs))
+  em <- if (ir$route == "merge") emit_merge_step(ir) else emit_data_step(ir, src_file = file)
+  list(em = em, reason = NULL, outputs = ir$outputs)
 }

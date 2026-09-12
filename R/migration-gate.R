@@ -227,46 +227,11 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     )
   }
 
-  # 1. Assertions: Required columns check
-  req_cols <- assertions$required_columns %||% comparison_rules$required_columns %||% character()
-  if (length(req_cols) > 0L) {
-    req_cols_folded <- tolower(as.character(req_cols))
-    cand_cols_folded <- tolower(names(cand_data))
-    missing_cols <- setdiff(req_cols_folded, cand_cols_folded)
-
-    if (length(missing_cols) > 0L) {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = FALSE,
-        missing_columns = missing_cols,
-        details = paste0("Missing required column(s): ", paste(missing_cols, collapse = ", "))
-      )
-    } else {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = TRUE,
-        details = "All required columns present"
-      )
-    }
-  }
-
-  # 2. Assertions: Row count / min_rows check
-  if (!is.null(assertions$min_rows)) {
-    min_r <- as.integer(assertions$min_rows)
-    if (nrow(cand_data) < min_r) {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = FALSE,
-        details = sprintf("Expected at least %d rows, got %d", min_r, nrow(cand_data))
-      )
-    } else {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = TRUE,
-        details = "Row count requirement met"
-      )
-    }
-  }
+  # Target requirements override global defaults; all dataset quality checks
+  # use the same evaluator, including expanded named profiles.
+  qc_assertions <- comparison_rules
+  qc_assertions[names(assertions)] <- assertions
+  checks <- c(checks, check_dataset_qc(cand_data, qc_assertions))
 
   # 3. Reference dataset comparison
   ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
@@ -340,7 +305,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
           abs = abs_tol,
           rel = rel_tol,
           padding = "cosmetic",
-          sas_null_equals_na = TRUE
+          sas_null_equals_na = TRUE,
+          overrides = assertions$tolerances %||% comparison_rules$tolerances %||% list()
         )
 
         # Engine alignment: configured keys steer row identity, and with none
@@ -397,6 +363,11 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     "failed"
   }
 
+  failed_checks <- Filter(function(chk) isFALSE(chk$passed), checks)
+  reason <- if (length(failed_checks)) paste(vapply(failed_checks, function(chk) {
+    paste0(chk$name, ": ", chk$details %||% "requirement failed")
+  }, character(1)), collapse = "; ") else "All configured output checks passed"
+
   list(
     target_id = t_id,
     target_key = t_key,
@@ -404,6 +375,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     required = required,
     passed = all_checks_passed,
     status = status,
+    reason = reason,
     has_reference = has_ref && isTRUE(checks$reference_exists$passed),
     reference_passed = if (has_ref) ref_passed else FALSE,
     has_assertions = length(assertions) > 0L,

@@ -47,11 +47,13 @@ opens with one guarded line, `source("autoexec.R", chdir = TRUE)`, and any of th
 cd run_20260907T120000Z_1a2b3c4d && Rscript adsl.R     # batch
 ```
 
+<!-- sas2r-example: offline runtime-1 -->
 ```r
 setwd("run_20260907T120000Z_1a2b3c4d")     # or open the run folder as the working directory
 source("adsl.R")
 ```
 
+<!-- sas2r-example: offline runtime-2 -->
 ```r
 source("run_20260907T120000Z_1a2b3c4d/autoexec.R", chdir = TRUE)   # once per session ...
 source("run_20260907T120000Z_1a2b3c4d/adsl.R")                     # ... then any program, from anywhere
@@ -64,6 +66,7 @@ first line, because `autoexec.R` is not there. Pasted code works after the autoe
 
 Open it when data moves. The LIBRARIES section reads like this:
 
+<!-- sas2r-example: offline runtime-3 -->
 ```r
 .sas2r_registry <- list(
   adam = list(read_path = "/study/data/adam", write_path = "adam", engine = "sas7bdat", write = "rds"),
@@ -86,6 +89,7 @@ directory while it loads -- the R counterpart of running a SAS autoexec. It load
 paths, the helpers, and the formats into your session, and every program's header then finds
 the runtime already loaded and skips its own bootstrap:
 
+<!-- sas2r-example: offline runtime-4 -->
 ```r
 bundle <- "run_20260907T120000Z_1a2b3c4d"
 source(file.path(bundle, "autoexec.R"), chdir = TRUE)   # paths, helpers, formats, once
@@ -109,6 +113,7 @@ rejected with the canonical form in the message.
 
 The full reference is the help topic:
 
+<!-- sas2r-example: offline runtime-5 -->
 ```r
 library(sas2r)
 ?sas2r_runtime      # the overview, grouped

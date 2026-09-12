@@ -87,6 +87,7 @@ A repaired run only replaces a previous one if it is genuinely better — a patc
 
 ### 1. Install
 
+<!-- sas2r-example: network install -->
 ```r
 # install.packages("remotes")
 remotes::install_github("songyue-chen/sas2r")
@@ -121,8 +122,28 @@ llm:                  # the AI model (see the provider guide below)
   model: claude-sonnet-4-6
 ```
 
-### 3. Run it
+### 3. Check the setup offline
 
+<!-- sas2r-example: offline readme-preflight -->
+```r
+library(sas2r)
+check <- sas_preflight(
+  "programs/", config = "_sas2r.yml", out_dir = "migration_output",
+  usage_limits = list(max_calls = 20)
+)
+print(check)
+check$inputs       # available, missing, unresolved, or generated upstream
+check$budget       # effective limits; no model calls are made
+```
+
+Preflight reports setup findings before translation. It does not read dataset
+contents or test model credentials. [The preflight and QC guide](docs/clinical-qc-preflight.md)
+has a self-contained example and reusable profiles for labels, formats, types,
+column order, keys, uniqueness, row counts, and per-variable tolerances.
+
+### 4. Run it
+
+<!-- sas2r-example: network migration -->
 ```r
 library(sas2r)
 
@@ -310,7 +331,7 @@ api_version: 2024-10-21
 provider: bedrock
 model: us.anthropic.claude-sonnet-4-6-v1:0    # a Bedrock model id from your account
 region: us-east-1
-base_url: https://bedrock-runtime.us-east-1.amazonaws.com
+# base_url: https://bedrock-runtime.us-east-1.amazonaws.com  # alternative to region
 # profile: my-aws-profile
 # cache: auto
 
@@ -365,6 +386,7 @@ All data reading, program execution, and output comparison happen in your local 
 
 ## Handy Checks Before a Long Run
 
+<!-- sas2r-example: network connectivity -->
 ```r
 library(sas2r)
 
@@ -378,6 +400,10 @@ sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 # Does my sign-in actually work?
 sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 
+```
+
+<!-- sas2r-example: offline readme-comparison -->
+```r
 # Compare saved outputs with known unique subject keys. This makes no AI calls.
 # result$outputs_dir is the selected output snapshot for this run;
 # named-library datasets retain their library subdirectory.
@@ -389,6 +415,7 @@ comparison <- compare_datasets(
 )
 passed(comparison)
 write_comparison_report(comparison, file = "adsl-comparison.md")
+stopifnot(passed(comparison))
 ```
 
 `compare_datasets()` uses row order when keys are omitted and pairs duplicate

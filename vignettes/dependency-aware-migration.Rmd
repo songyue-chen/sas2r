@@ -75,10 +75,33 @@ llm:
   reasoning_effort: high
 ```
 
+## Inspect the setup offline
+
+<!-- sas2r-example: offline vignette-preflight -->
+```r
+library(sas2r)
+check <- sas_preflight("programs/", config = "_sas2r.yml",
+                       out_dir = "migration_output",
+                       usage_limits = list(max_calls = 20))
+print(check)
+check$libraries
+check$inputs
+check$unsupported
+stopifnot(check$model_calls == 0L)
+```
+
+This reads source files and directory listings without model calls, dataset
+reads, program execution, or output writes. Reuse its arguments for translation.
+Use `qc_profile()` with `outputs$profiles` and a named `profile` in each target's
+assertions to require labels, formats, types/order, keys, uniqueness, row counts,
+and per-variable reference tolerances. These checks add study requirements;
+passing them alone does not establish SAS reference agreement.
+
 ## Running a Migration in R
 
 To migrate a single SAS script or an entire directory of SAS files, call `sas_translate()`:
 
+<!-- sas2r-example: network migration -->
 ```r
 library(sas2r)
 

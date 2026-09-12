@@ -90,23 +90,6 @@ sas_translate <- function(
 ) {
   agent_evidence <- if (is.character(agent_evidence)) match.arg(agent_evidence, c("code_only", "bounded")) else "code_only"
 
-  # A mistyped mode must refuse, not fall through to a weaker default: budget
-  # enforcement and cost provenance are safety knobs on a paid path.
-  if (!is.character(budget_mode) || length(budget_mode) != 1L ||
-      !budget_mode %in% c("stop", "strict", "soft", "observe")) {
-    cli::cli_abort(
-      "budget_mode must be one of \"stop\", \"strict\", \"soft\", or \"observe\", not {.val {budget_mode}}",
-      class = "sas2r_invalid_argument"
-    )
-  }
-  if (!is.character(pricing_source) || length(pricing_source) != 1L ||
-      !pricing_source %in% c("catalog", "adapter", "organization", "external")) {
-    cli::cli_abort(
-      "pricing_source must be one of \"catalog\", \"adapter\", \"organization\", or \"external\", not {.val {pricing_source}}",
-      class = "sas2r_invalid_argument"
-    )
-  }
-
   # 1. Output directory setup
   if (is.null(out_dir)) {
     out_dir <- tempfile(pattern = "sas2r_out_")
@@ -119,22 +102,7 @@ sas_translate <- function(
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
 
   # 2. Configuration resolution
-  cfg <- if (inherits(config, "sas2r_config")) {
-    config
-  } else if (is.character(config) && length(config) == 1L && file.exists(config)) {
-    sas_config(path = config)
-  } else if (is.list(config)) {
-    structure(config, class = "sas2r_config")
-  } else {
-    start_dir <- if (inherits(path, "sas2r_project")) {
-      path$project_dir
-    } else if (is.character(path) && length(path) == 1L) {
-      if (dir.exists(path)) path else dirname(path)
-    } else {
-      "."
-    }
-    sas_config(start = start_dir)
-  }
+  cfg <- translation_config(path, config)
 
   # 3. Project normalization (single file wrapped into 1-module project or multi-module directory)
   project <- if (inherits(path, "sas2r_project")) {
@@ -155,35 +123,10 @@ sas_translate <- function(
   schedule <- stable_dependency_schedule(graph)
 
   # 6. Usage budget and accounting
-  budget_mode_norm <- if (!is.finite(budget_usd)) {
-    if (identical(budget_mode, "soft")) "soft" else "observe"
-  } else if (identical(budget_mode, "stop") || identical(budget_mode, "strict")) {
-    "strict"
-  } else if (identical(budget_mode, "soft")) {
-    "soft"
-  } else {
-    "observe"
-  }
-
-  pricing_source_norm <- if (identical(pricing_source, "catalog")) "adapter" else pricing_source
-
-  usage_limits_map <- usage_limits %||% list()
-  limit_names <- setdiff(names(formals(new_usage_budget)),
-                         c("mode", "max_usd", "rates", "pricing_source", "ledger_path", "run_id", "resume"))
-  if (!is.list(usage_limits_map) ||
-      (length(usage_limits_map) && (is.null(names(usage_limits_map)) ||
-       any(!names(usage_limits_map) %in% limit_names) || anyDuplicated(names(usage_limits_map))))) {
-    cli::cli_abort("usage_limits must be a named list of request limits: {.val {limit_names}}",
-                   class = "sas2r_budget_config_error")
-  }
-  budget <- do.call(new_usage_budget, c(list(
-    mode = budget_mode_norm,
-    max_usd = budget_usd,
-    pricing_source = pricing_source_norm,
-    rates = pricing_rates,
-    ledger_path = file.path(paths$state, "usage.jsonl"),
-    resume = isTRUE(resume)
-  ), usage_limits_map))
+  budget <- translation_budget(
+    budget_usd, budget_mode, pricing_source, pricing_rates, usage_limits,
+    ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
+  )
 
   # 7. Resolve LLM adapter from argument or config
   resolved_llm <- if (!is.null(llm)) {
