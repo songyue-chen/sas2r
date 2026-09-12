@@ -10,9 +10,12 @@
 #' @param path Path to a SAS file or directory containing SAS files, or a `sas2r_project`.
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
 #' @param config Optional configuration list, YAML path, or `sas2r_config` object.
-#'   Reused projects retain their configuration; changing library or source-search
-#'   settings requires rescanning the source path. Reference paths in YAML resolve
-#'   from its directory; paths in R lists resolve from the project directory.
+#'   With a reused project, a plain list replaces only its supplied top-level
+#'   fields; omitted fields inherit, and explicit `NULL` resets a field. A YAML
+#'   path or `sas2r_config` object supplies a complete configuration, as does a
+#'   plain list with a source path. Changing library or source-search settings
+#'   requires rescanning the source path. Reference paths in YAML resolve from
+#'   its directory; paths in R lists resolve from the project directory.
 #' @param execute Logical; whether to run meaningful program smoke and full bundle execution. Defaults to TRUE.
 #' @param max_program_repair_rounds Maximum repair rounds per component in immediate loop. Defaults to 1L.
 #' @param max_bundle_repair_rounds Maximum repair rounds for full bundle repair loop. Defaults to 2L.

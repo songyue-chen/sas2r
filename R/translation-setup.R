@@ -19,7 +19,16 @@ translation_config <- function(path, config) {
       cli::cli_abort("Configuration file not found: {.file {config}}", class = "sas2r_config_error")
     }
     sas_config(path = config)
-  } else if (is.list(config)) config else if (is.null(config)) {
+  } else if (is.list(config)) {
+    # Plain lists update a reused project's whole top-level fields. Omission
+    # inherits; an explicit NULL or empty value remains an intentional override.
+    assert_exact_names(config, names(config))
+    if (inherits(path, "sas2r_project")) {
+      updated <- path$config
+      updated[names(config)] <- config
+      updated
+    } else config
+  } else if (is.null(config)) {
     if (inherits(path, "sas2r_project")) path$config else sas_config(start = root)
   } else cli::cli_abort("config must be a mapping or configuration file", class = "sas2r_config_error")
   cfg <- normalize_project_config(cfg, root)

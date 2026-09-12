@@ -626,9 +626,16 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   # Reference comparison
   ref_path <- output_reference_path(contract, comparison_rules)
 
-  has_ref <- !is.na(ref_path) && nzchar(ref_path) && file.exists(ref_path)
+  has_ref <- !is.na(ref_path) && nzchar(ref_path)
   ref_passed <- FALSE
   if (has_ref) {
+    checks$reference_exists <- list(
+      name = "reference_exists",
+      passed = file.exists(ref_path) && !dir.exists(ref_path),
+      details = paste("Reference file:", ref_path)
+    )
+  }
+  if (has_ref && isTRUE(checks$reference_exists$passed)) {
     # No TLF content comparator exists yet, so a reference that merely exists
     # is recorded honestly as not compared; it must never count as validation
     # evidence. passed = NA keeps the target flowing without claiming a pass.
@@ -661,7 +668,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
     required = required,
     passed = all_checks_passed && !has_unavail,
     status = status,
-    has_reference = has_ref,
+    has_reference = has_ref && isTRUE(checks$reference_exists$passed),
     reference_passed = ref_passed,
     has_assertions = length(assertions) > 0L,
     dimensions = dimensions,

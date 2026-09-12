@@ -1,5 +1,12 @@
 # sas2r (development)
 
+* Partial configuration lists on reused projects update supplied top-level fields
+  without discarding library, output, or provider settings. Explicitly changing
+  or clearing scan settings still requires rescanning the source path.
+* Configured TLF references that are missing or directories now fail the output
+  gate with their paths retained in diagnostics. Existing TLF references remain
+  uncompared and do not count as reference-validation evidence.
+
 * Preflight and translation now share normalized configuration and a reusable
   output/dependency plan. Relative references remain stable across project reuse,
   global reference fallbacks are inspected, and invalid configuration fails

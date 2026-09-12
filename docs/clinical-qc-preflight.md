@@ -156,17 +156,28 @@ documents using `Rscript tools/run-doc-examples.R --installed`. Study-dependent
 saved-output examples use synthetic fixtures; provider and installation examples
 are parsed but are not advertised as offline execution tests.
 
-An explicit R configuration list is a complete configuration for preflight and
-translation; it does not silently inherit a discovered model provider. To keep
-file configuration while making changes, start with `sas_config()` and edit that
-object. A supplied project retains its configuration. Output/QC/provider settings
-can be changed, but changed library, include, macro-search, or autoexec settings
-require rescanning the source path. Configured reference paths resolve against the YAML file directory;
+With a source path, an explicit R configuration list supplies the complete
+configuration; it does not inherit a discovered model provider. With a reused
+project, a plain list updates only the supplied top-level fields. For example,
+`sas_preflight(check$project, config = list(comparison_rules = list(min_rows = 10)))`
+replaces the global comparison rules while retaining libraries, output
+requirements, and model settings. Nested fields are not merged; an explicit
+`NULL` resets that top-level field, and `list()` leaves the project unchanged.
+A YAML path or `sas2r_config` object always supplies a complete configuration.
+To edit file configuration, start with `sas_config()` and modify that object.
+Changed library, include, macro-search, or autoexec settings, including explicit
+clearing, require rescanning the source path.
+
+Configured reference paths resolve against the YAML file directory;
 paths in R configuration lists resolve against the project directory. Direct
 `outputs` argument paths are anchored to the calling working directory. Stored
 paths are absolute so project reuse does not prefix them again. Preflight and
 output gates both honor target references and the `comparison_rules$reference_path`
-or `comparison_rules$references` fallback.
+or `comparison_rules$references` fallback. A configured reference must be a file;
+a missing path or directory fails the output gate, including for tables,
+listings, and figures (TLFs). TLF reference content comparison remains unavailable:
+an existing reference is recorded as not compared and supplies no equivalence
+evidence.
 
 All output assessment records carry a `reason` in JSON and Markdown. Unavailable
 checks are labeled as not evaluated, separately from failures. Checkpoints from
