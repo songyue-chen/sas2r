@@ -342,7 +342,7 @@ test_that("a geometric include fan-out is truncated and reported, not walked", {
   expect_identical(nrow(p$libref_registry$frames), LIBREF_MAX_CONTEXT_FRAMES)
   expect_true("libref_context_truncated" %in% p$flags$kind)
   expect_identical(p$flags$detail[p$flags$kind == "libref_context_truncated"],
-                   file.path(root, "L0.sas"))
+                   include_normalize_path(file.path(root, "L0.sas")))
   # the scan itself is unaffected: each physical file is still read once
   expect_identical(nrow(p$files), depth + 1L)
 })

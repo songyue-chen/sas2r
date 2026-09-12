@@ -898,6 +898,7 @@ generate_program_revision <- function(
   list(
     component_id = component_id,
     revision_id = revision_id,
+    staged_file = staged_rel,
     r_path = r_path,
     contract_path = contract_path,
     contract = contract,

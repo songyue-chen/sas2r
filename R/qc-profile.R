@@ -78,7 +78,9 @@ validate_qc_assertions <- function(x, complete = FALSE) {
   if (complete && isTRUE(x$unique_keys) && !length(x$keys)) fail("unique_keys", "requires keys")
   for (field in c("row_count", "min_rows", "max_rows")) {
     v <- x[[field]]
-    if (is_scalar_character(v)) v <- suppressWarnings(as.numeric(v))
+    if (is_scalar_character(v)) {
+      v <- if (grepl("^\\s*\\+?[0-9]+(?:[eE]\\+?[0-9]+)?\\s*$", v, perl = TRUE)) as.numeric(v) else NA_real_
+    }
     if (!is.null(v) && (!is.numeric(v) || length(v) != 1L || !is.finite(v) ||
                        v < 0 || v != floor(v))) fail(field, "must be a nonnegative integer")
     if (!is.null(v)) x[[field]] <- unname(v)
@@ -106,7 +108,7 @@ resolve_qc_profiles <- function(overrides) {
     cli::cli_abort("outputs$profiles must be a named list", class = "sas2r_output_contract_error")
   }
   for (name in names(profiles)) {
-    p <- profiles[[name]]
+    p <- profiles[[name]] %||% list()
     assert_exact_names(p, names(formals(qc_profile)), paste0("outputs.profiles.", name),
                        class = "sas2r_output_contract_error")
     profiles[[name]] <- validate_qc_assertions(p)
@@ -212,8 +214,8 @@ check_dataset_qc <- function(data, assertions) {
 # Whole fields override global defaults; omitted/NULL fields inherit them.
 effective_dataset_policy <- function(global, assertions) {
   assertions <- assertions[!vapply(assertions, is.null, logical(1))]
-  # The target's numeric_tolerance is a complete policy; legacy global
-  # tol_abs/tol_rel must not silently weaken an explicit target requirement.
+  # An explicit default replaces both legacy default tolerances. Variable
+  # overrides remain a separate inherited field; tolerances=list() clears them.
   if (!is.null(assertions$numeric_tolerance)) {
     global$tol_abs <- NULL
     global$tol_rel <- NULL
@@ -235,11 +237,14 @@ dataset_comparison_profile <- function(policy) {
 
 normalize_comparison_rules <- function(rules, base = NULL) {
   if (is.null(rules)) return(list())
-  # Older configurations can carry a `tolerance` mapping, which is not used by
-  # the migration gate. Retain it without changing its existing meaning.
+  # Retain the historical field for loading old configurations, but never imply
+  # that it controls comparisons.
   allowed <- c(names(formals(qc_profile)), "tol_abs", "tol_rel", "reference_path",
                "references", "required_text", "force_text_extractor_unavailable", "tolerance")
   assert_exact_names(rules, allowed, "comparison_rules", class = "sas2r_output_contract_error")
+  if (!is.null(rules[["tolerance"]])) cli::cli_warn(
+    "comparison_rules$tolerance is ignored; use numeric_tolerance or tolerances.",
+    class = "sas2r_unused_tolerance")
   rules <- rules[!vapply(rules, is.null, logical(1))]
   fields <- intersect(names(rules), names(formals(qc_profile)))
   rules[fields] <- validate_qc_assertions(rules[fields])
@@ -251,6 +256,7 @@ normalize_comparison_rules <- function(rules, base = NULL) {
     if (!is.null(rules$tol_rel)) rules$tol_rel <- profile$numeric$rel
   }
   validate_reference_paths(rules$references, "comparison_rules$references")
+  if (!is.null(rules$references)) rules$references <- normalize_target_mapping(rules$references, "comparison_rules$references")
   if (!is.null(rules$reference_path) && !is_scalar_character(rules$reference_path)) {
     cli::cli_abort("comparison_rules$reference_path must be one nonempty path",
                    class = "sas2r_output_contract_error")
@@ -281,7 +287,21 @@ validate_reference_paths <- function(paths, context) {
     cli::cli_abort("{.field {context}} must contain one nonempty path per named target",
                    class = "sas2r_output_contract_error")
   }
+  normalize_target_mapping(paths, context)
   invisible(NULL)
+}
+
+# SAS dataset targets are case-insensitive; unqualified names mean WORK.
+# Reject aliases of the same target before any merge can silently pick a value.
+normalize_target_mapping <- function(mapping, context) {
+  assert_exact_names(as.list(mapping), names(mapping), context, class = "sas2r_output_contract_error")
+  keys <- tolower(gsub("\\\\", "/", trimws(names(mapping))))
+  dataset <- vapply(keys, classify_target_kind, character(1)) == "dataset"
+  keys[dataset] <- norm_ds(keys[dataset])
+  if (anyDuplicated(keys)) cli::cli_abort(
+    "{.field {context}} names the same target more than once: {.val {keys[duplicated(keys)]}}",
+    class = "sas2r_output_contract_error")
+  stats::setNames(as.list(mapping), keys)
 }
 
 output_checks_reason <- function(checks) {

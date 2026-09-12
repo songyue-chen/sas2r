@@ -89,7 +89,10 @@ migration_hash <- function(x) {
 #' @return Named list of canonical paths.
 #' @noRd
 migration_paths <- function(out_dir, run_id = NULL) {
-  root <- out_dir
+  if (!is_scalar_character(out_dir)) {
+    cli::cli_abort("out_dir must be one nonempty path", class = "sas2r_invalid_argument")
+  }
+  root <- sub("(?<!^)/+$", "", out_dir, perl = TRUE)
   state <- file.path(root, ".sas2r")
   # Scoped, everything a run produces lives inside its own <run_id>/ folder
   # directly under out_dir -- attempt directories, per-component program
@@ -329,4 +332,3 @@ new_behavioral_contract <- function(
   }
   contract
 }
-

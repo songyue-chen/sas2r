@@ -314,3 +314,29 @@ test_that("a script with declared path inputs and a helper can become migration 
   expect_true(component$mechanical_checks$pass)
   expect_length(component$blockers, 0L)
 })
+
+test_that("resume ignores transport changes but invalidates changed QC and clears old diagnostics", {
+  fx <- review_public_fixture()
+  write("options sasautos=('macros');", file = fx$source, append = TRUE)
+  dir.create(file.path(fx$root, "macros"))
+  cfg <- fx$config
+  cfg$llm <- list(provider = "openai", model = "unused", timeout_seconds = 60)
+  adapter <- counted_review_llm(rep(list(good_translation(review_public_code), good_review()), 2))
+  out <- file.path(fx$root, "migration")
+  first <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE)
+  expect_identical(adapter$calls$n, 2L)
+  cfg$llm$timeout_seconds <- 120
+  cfg$budget <- list(max_calls = 10)
+  project <- sas_preflight(fx$source, config = cfg)$project
+  again <- sas_translate(project, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 2L)
+  expect_identical(again$diagnostics$resumed_components, "program")
+  cfg$comparison_rules <- list(min_rows = 1)
+  changed <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 4L)
+  expect_match(changed$diagnostics$resume_invalidated, "configuration")
+  reused <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 4L)
+  expect_identical(reused$diagnostics$resumed_components, "program")
+  expect_null(reused$diagnostics$resume_invalidated)
+})

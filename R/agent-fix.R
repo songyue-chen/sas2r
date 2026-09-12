@@ -286,6 +286,7 @@ fix_program_revision <- function(
     list(
       component_id = component_id,
       revision_id = new_rev_id,
+      staged_file = revision$staged_file,
       prior_revision_id = prior_revision_id,
       mode = mode,
       r_code = fix_data$r_code,

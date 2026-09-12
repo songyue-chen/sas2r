@@ -70,7 +70,7 @@ test_that("direct profiles survive translation contract serialization and scan r
   file <- review_source(root, "data adam.adsl; x=1; run;")
   overrides <- list(assertions = list("adam.adsl" = qc_profile(required_columns = "x")))
   check <- sas_preflight(file, config = list(libraries = list(adam = root)), outputs = overrides)
-  testthat::local_mocked_bindings(sas_project = function(...) stop("must reuse the supplied project"))
+  testthat::local_mocked_bindings(scan_project = function(...) stop("must reuse the supplied project"))
   result <- sas_translate(check$project, out_dir = file.path(root, "out"), outputs = overrides,
     execute = FALSE, usage_limits = list(max_calls = 0))
   expect_true(file.exists(result$output_contracts_path))

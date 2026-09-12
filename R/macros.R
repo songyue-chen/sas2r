@@ -203,8 +203,9 @@ resolve_macro_calls <- function(calls, defs, config, project_dir = ".") {
   macro_idx <- NULL
   get_macro_idx <- function() {
     if (is.null(macro_idx)) {
-      cache_dir <- file.path(project_dir, ".sas2r")
-      macro_idx <<- build_macro_index(resolved_dirs, cache_dir = cache_dir)
+      # Scanning must stay read-only until the effective QC plan is valid.
+      # Agent-time macro tools may persist their index after setup succeeds.
+      macro_idx <<- build_macro_index(resolved_dirs)
     }
     macro_idx
   }

@@ -137,13 +137,11 @@ extract_includes <- function(stmts) {
 # findings. Quoted physical names stay intact; parenthesized dataset options
 # are skipped without interpreting their expressions.
 dataset_candidate_tokens <- function() c("data", "set", "merge", "update", "proc",
-  "output", "table", "tables", "create", "select", "insert", "delete")
+  "output", "table", "tables", "create", "select", "insert", "delete", "append")
 
-dataset_statement_refs <- function(text, token, unit_type) {
-  empty <- list(creates = character(), reads = character(), proc = "")
-  if (!token %in% dataset_candidate_tokens() || unit_type == "macro_def") return(empty)
+dataset_tokens <- function(text) {
   lex <- regmatches(text, gregexpr(
-    "\"(?:[^\"]|\"\")*\"|'(?:[^']|'')*'|[(),=;]|[^[:space:](),=;]+",
+    "\"(?:[^\"]|\"\")*\"[nN]?|'(?:[^']|'')*'[nN]?|[(),=;]|[^[:space:](),=;]+",
     text, perl = TRUE))[[1L]]
   # Strip balanced options, preserving quoted strings (which are single tokens).
   depth <- 0L
@@ -154,11 +152,23 @@ dataset_statement_refs <- function(text, token, unit_type) {
     if (lex[i] == ")") depth <- max(0L, depth - 1L)
   }
   flat <- lex[keep & lex != ";"]
+  list(lex = lex, flat = flat)
+}
+
+dataset_option_values <- function(flat, key) {
   low <- tolower(flat)
-  option <- function(key) {
-    i <- which(low == key & c(utils::tail(low, -1L), "") == "=") + 2L
-    flat[i[i <= length(flat)]]
-  }
+  i <- which(low == key & c(utils::tail(low, -1L), "") == "=") + 2L
+  flat[i[i <= length(flat)]]
+}
+
+dataset_statement_refs <- function(text, token, unit_type) {
+  empty <- list(creates = character(), reads = character(), proc = "")
+  if (!token %in% dataset_candidate_tokens() || unit_type == "macro_def") return(empty)
+  tokens <- dataset_tokens(text)
+  lex <- tokens$lex
+  flat <- tokens$flat
+  low <- tolower(flat)
+  option <- function(key) dataset_option_values(flat, key)
   bare <- function() {
     values <- flat[-1L]
     equals <- match("=", values)
@@ -169,10 +179,13 @@ dataset_statement_refs <- function(text, token, unit_type) {
     if (token == "data") empty$creates <- setdiff(bare(), "_null_")
     if (token %in% c("set", "merge", "update")) empty$reads <- bare()
   } else if (unit_type == "proc_step") {
-    if (token == "proc") {
-      empty$proc <- if (length(low) >= 2L) low[2L] else ""
-      empty$reads <- c(option("data"), option("base"))
-      empty$creates <- option("out")
+    if (token %in% c("proc", "append")) {
+      empty$proc <- if (token == "append") "append" else if (length(low) >= 2L) low[2L] else ""
+      if (empty$proc == "copy") return(empty) # IN/OUT name libraries, not datasets.
+      empty$reads <- option("data")
+      if (empty$proc == "compare") empty$reads <- c(empty$reads, option("base"), option("compare"))
+      if (empty$proc == "append") empty$reads <- c(empty$reads, option("base"))
+      empty$creates <- if (empty$proc == "append") option("base") else option("out")
     } else if (token %in% c("output", "table", "tables")) {
       empty$creates <- option("out")
     } else {
@@ -220,9 +233,7 @@ ds_tokens <- function(rest) {
 }
 
 eq_captures <- function(text, key) {
-  hits <- regmatches(text, gregexpr(paste0("\\b", key, "\\s*=\\s*[^[:space:]();,]+"),
-    text, ignore.case = TRUE, perl = TRUE))[[1L]]
-  static_dataset_names(sub("^.*?=\\s*", "", hits))
+  static_dataset_names(dataset_option_values(dataset_tokens(text)$flat, key))
 }
 
 #' Extract dataset references and lineage
@@ -526,4 +537,33 @@ dynamic_dataset_findings <- function(statements) {
   tibble::tibble(kind = rep("dynamic_dataset_reference", length(selected)),
     detail = paste0(statements$file[selected], ":", statements$line_start[selected],
                     ": ", statements$text[selected]))
+}
+
+# These forms need control-flow or macro expansion, beyond the static dataset
+# grammar. Keep the uncertainty visible instead of inventing an input/target.
+deferred_dataset_findings <- function(statements, defs, resolution) {
+  active <- statements$type == "code" & statements$unit_type != "macro_def"
+  text <- statements$text
+  masked <- text
+  candidates <- which(active & (statements$first_token %in% c("if", "else", "proc") |
+    grepl("^[A-Za-z_]\\w*:", text)))
+  masked[candidates] <- vapply(text[candidates], mask_strings, character(1))
+  conditional <- active & statements$unit_type == "data_step" &
+    grepl("(?:\\bthen\\s+|^else\\s+|^[A-Za-z_]\\w*:\\s*)(set|merge|update)\\b", masked,
+      ignore.case = TRUE, perl = TRUE)
+  copy <- active & grepl("^proc\\s+(copy|datasets)\\b", masked, ignore.case = TRUE)
+  literal <- active & statements$first_token %in% dataset_candidate_tokens() &
+    grepl("['\"][nN]\\b", text, perl = TRUE)
+  rows <- which(conditional | copy | literal)
+  deferred <- tibble::tibble(kind = rep("dataset_statement_deferred", length(rows)),
+    detail = paste0(statements$file[rows], ":", statements$line_start[rows], ": ", text[rows]))
+  top_calls <- extract_macro_calls(statements[active, ])
+  invoked <- defs$unit_id[defs$name %in% top_calls$name]
+  macro_rows <- which(statements$unit_id %in% invoked &
+    (statements$first_token %in% dataset_candidate_tokens() |
+      (grepl("%", text, fixed = TRUE) & !statements$first_token %in% c("%macro", "%mend"))))
+  macro_rows <- macro_rows[!duplicated(statements$unit_id[macro_rows])]
+  rbind(deferred, tibble::tibble(kind = rep("macro_data_flow_deferred", length(macro_rows)),
+    detail = paste0(statements$file[macro_rows], ":", statements$line_start[macro_rows],
+      ": invoked macro data flow requires expansion and review")))
 }

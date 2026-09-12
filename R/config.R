@@ -4,6 +4,9 @@ KNOWN_CONFIG_KEYS <- c("llm", "libraries", "macros", "tolerance",
                        "verification", "outputs", "comparison_rules",
                        "migration")
 
+PROJECT_CONFIG_KEYS <- c(KNOWN_CONFIG_KEYS, "macro_search_path", "include_roots",
+  "autoexec", "output_review", "raw", "source")
+
 is_abs_path <- function(p) {
   grepl("^([A-Za-z]:)?[/\\\\]", p)
 }
@@ -323,6 +326,7 @@ normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
 }
 
 normalize_project_config <- function(config, root) {
+  assert_exact_names(config, PROJECT_CONFIG_KEYS)
   root <- include_normalize_path(root)
   config$libraries <- normalize_library_entries(config$libraries, root)
   for (field in c("macro_search_path", "include_roots", "autoexec")) {
@@ -334,6 +338,7 @@ normalize_project_config <- function(config, root) {
   }
   config$comparison_rules <- normalize_comparison_rules(config$comparison_rules, base = root)
   if (!is.null(config$llm)) config$llm <- normalize_llm_config(config$llm)
+  if (is.null(config$source)) config$source <- NA_character_
   structure(config, class = "sas2r_config")
 }
 
@@ -400,7 +405,14 @@ sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)
   raw <- list()
   if (!is.na(src)) {
-    raw <- yaml::read_yaml(src, handlers = list(
+    lines <- readLines(src, warn = FALSE)
+    content <- lines[!grepl("^\\s*(#.*)?$|^%", lines)]
+    starts <- which(grepl("^---($|[[:space:]])", content))
+    if (length(starts) > 1L || (length(starts) && starts[1L] != 1L)) {
+      cli::cli_abort("Configuration must contain one YAML document: {.file {src}}",
+        class = "sas2r_config_error")
+    }
+    raw <- yaml::yaml.load(paste(lines, collapse = "\n"), handlers = list(
       "bool#yes" = function(value) if (tolower(value) == "true") TRUE else value,
       "bool#no" = function(value) if (tolower(value) == "false") FALSE else value
     ))
@@ -409,6 +421,7 @@ sas_config <- function(path = NULL, start = ".") {
     if (length(unknown)) {
       msg <- paste0("Unknown config key", if (length(unknown) > 1) "s" else "", " in {.file {src}}: {.val {unknown}}")
       cli::cli_warn(msg)
+      raw <- raw[intersect(names(raw), KNOWN_CONFIG_KEYS)]
     }
   }
   llm <- if (is.null(raw$llm)) NULL else normalize_llm_config(raw$llm)
@@ -441,7 +454,7 @@ sas_config <- function(path = NULL, start = ".") {
 #' @export
 print.sas2r_config <- function(x, ...) {
   cli::cli_h1("sas2r configuration")
-  if (is.na(x$source)) cli::cli_text("source: {.emph built-in defaults (no _sas2r.yml found)}")
+  if (is.null(x$source) || is.na(x$source)) cli::cli_text("source: {.emph defaults or R-list configuration}")
   else cli::cli_text("source: {.file {x$source}}")
   cli::cli_text("libraries: {length(x$libraries)}")
   cli::cli_text("macro search path: {length(x$macro_search_path)} location{?s}")

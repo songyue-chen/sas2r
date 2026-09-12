@@ -139,8 +139,10 @@ check$budget       # effective limits; no model calls are made
 Preflight reports setup findings before translation. It does not read dataset
 contents or test model credentials. `check$project` preserves its configuration
 and output requirements for translation. A plain `config` list supplied with
-`check$project` updates only the named top-level settings. Rescan the source path
-when sources or library settings change. [The preflight and QC guide](docs/clinical-qc-preflight.md)
+`check$project` updates only the named top-level settings; explicit `NULL` clears
+a setting. The saved project uses absolute source paths and can be reused from
+another working directory. Rescan the source path when sources or library
+bindings change. [The preflight and QC guide](docs/clinical-qc-preflight.md)
 has a self-contained example and reusable profiles for labels, formats, types,
 column order, keys, uniqueness, row counts, and per-variable tolerances.
 
@@ -231,8 +233,9 @@ checks and ambiguous alignment.
 ### Resume and limit provider calls
 
 Repeat the same `sas_translate()` call with `resume = TRUE` to reuse saved
-translation revisions and completed reviews when source, inputs, configuration,
-runtime, and worker prompts still match. Changed or missing artifacts regenerate;
+translation revisions and completed reviews when sources, inputs, QC requirements,
+model settings, runtime, and worker prompts still match. Transport timeouts, retry
+limits, and run budget changes alone do not invalidate completed revisions. Changed or missing artifacts regenerate;
 smoke execution and full output checks rerun in fresh attempts. An unavailable
 review is retried.
 

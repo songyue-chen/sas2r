@@ -10,7 +10,8 @@
 #' @param out_dir Planned migration output root. `NULL` reports a temporary
 #'   output root, as used by `sas_translate()`, without creating it.
 #' @return A `sas2r_preflight` list with `sources`, point-of-use `libraries`,
-#'   `inputs` (available, missing, unresolved, no_producer, backward_dependency, or generated), `references`, `unsupported`,
+#'   `inputs` (available, missing, unresolved, no_producer, backward_dependency,
+#'   created_if_missing, or generated), `references`, `unsupported`,
 #'   scanner `findings`, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
 #'   Also includes `status`, `configured_libraries`, `schedule`, explanatory `notes`,
 #'   and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
@@ -28,6 +29,8 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                           budget_usd = Inf, budget_mode = "stop",
                           pricing_source = "catalog", pricing_rates = NULL,
                           usage_limits = NULL, recursive = FALSE) {
+  root <- if (is.null(out_dir)) "<temporary output root>" else migration_paths(out_dir)$root
+  if (!is.null(out_dir)) root <- config_anchor_paths(root, getwd())
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits)
   setup <- translation_setup(path, config, outputs, recursive)
@@ -44,15 +47,13 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   keep_refs <- which(!is.na(reference_paths) & nzchar(reference_paths))
   references <- tibble::tibble(
     target_key = contracts$target_key[keep_refs],
-    path = config_resolve_paths(reference_paths[keep_refs], getwd()),
+    path = reference_paths[keep_refs],
     status = c("missing", "available")[1L + as.integer(
       file.exists(reference_paths[keep_refs]) & !dir.exists(reference_paths[keep_refs]))]
   )
   findings <- project$flags
   unresolved <- findings$kind %in% preflight_blocking_findings()
   needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing")
-  root <- if (is.null(out_dir)) "<temporary output root>" else
-    config_anchor_paths(out_dir, getwd())
   paths <- migration_paths(root, "<run_id>")
   destinations <- list(root = root, run = paths$attempts, state = paths$state,
                        generated_outputs = paths$generated_outputs,
@@ -60,7 +61,6 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                        report_json = paths$report_json,
                        report_md = paths$report_md)
   sources <- project$files
-  sources$file <- config_resolve_paths(sources$file, getwd())
   structure(list(
     status = if (needs_attention) "needs_attention" else "ready_for_translation",
     sources = sources, libraries = effective$bindings,
@@ -92,18 +92,24 @@ preflight_inputs <- function(project, effective) {
   status <- rep("unresolved", n)
   found_path <- rep(NA_character_, n)
   searched <- rep(list(character()), n)
+  append_targets <- lineage$role == "creates" & lineage$proc == "append"
+  keys <- paste(lineage$unit_id, lineage$dataset)
+  create_if_missing <- keys %in% keys[append_targets]
   for (i in seq_along(reads)) {
     row <- reads[i]
     path <- paths[row]
     if (is.na(path) || !nzchar(path)) next
     if (producers$backward[row]) { status[i] <- "backward_dependency"; next }
     if (!is.na(producers$writer[row])) { status[i] <- "generated"; next }
-    if (path == "<session work>") { status[i] <- "no_producer"; next }
+    if (path == "<session work>") {
+      status[i] <- if (create_if_missing[row]) "created_if_missing" else "no_producer"
+      next
+    }
     member <- sub("^[^.]+\\.", "", lineage$dataset[row])
     candidates <- file.path(path, paste0(member, c(".rds", ".sas7bdat", ".xpt")))
     searched[[i]] <- candidates
     found <- candidates[file.exists(candidates) & !dir.exists(candidates)]
-    status[i] <- if (length(found)) "available" else "missing"
+    status[i] <- if (length(found)) "available" else if (create_if_missing[row]) "created_if_missing" else "missing"
     if (length(found)) found_path[i] <- found[1L]
   }
   tibble::tibble(dataset = lineage$dataset[reads], file = lineage$file[reads],
@@ -147,4 +153,8 @@ preflight_blocking_findings <- function() c(
     "autoexec_missing", "unresolved_include", "dynamic_include", "include_cycle",
     "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
     "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
-    "dynamic_dataset_reference", "backward_dependency")
+    "dynamic_dataset_reference", "backward_dependency", "macro_data_flow_deferred",
+    "dataset_statement_deferred")
+
+preflight_advisory_findings <- function() c("autoexec_autodiscovered", "macro_shadowing",
+  "sasautos_from_environment", "sasautos_from_program")

@@ -14,7 +14,7 @@
 #'     `type`, `resolution`, `source_file`, `line`, `detail`.}
 #' }
 #' @noRd
-build_dependency_graph <- function(project, output_contracts = NULL) {
+build_dependency_graph <- function(project, output_contracts = NULL, producers = dataset_producers(project)) {
   if (!inherits(project, "sas2r_project")) {
     cli::cli_abort("{.arg project} must be a sas2r_project object.",
                    class = "sas2r_invalid_argument")
@@ -48,7 +48,7 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
     migration_hash(paste(u_stmts$text, collapse = ";"))
   }
 
-  component_ids <- project_component_ids(units$file, units$origin)
+  component_ids <- project_component_ids(units$file, units$origin, project$project_dir)
 
   # 1. Setup and Source Unit nodes
   unit_node_map <- list() # maps unit_id -> node_id
@@ -314,16 +314,16 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
 
   # 5. Each read depends on its selected producer, using the same bound
   # dataset identity as preflight. Superseded writers are not dependencies.
-  producers <- dataset_producers(project)
+  node_ids <- unlist(unit_node_map, use.names = FALSE)[match(lineage$unit_id, units$unit_id)]
   used_writers <- integer()
   for (row in which(lineage$role == "reads")) {
-    consumer_id <- unit_node_map[[as.character(lineage$unit_id[row])]]
-    if (is.null(consumer_id)) next
+    consumer_id <- node_ids[row]
+    if (is.na(consumer_id)) next
     writer <- producers$writer[row]
     ds <- lineage$dataset[row]
     if (!is.na(writer)) {
-      provider_id <- unit_node_map[[as.character(lineage$unit_id[writer])]]
-      if (is.null(provider_id)) next
+      provider_id <- node_ids[writer]
+      if (is.na(provider_id)) next
       used_writers <- c(used_writers, writer)
       edge_list[[length(edge_list) + 1L]] <- list(
         from = provider_id, to = consumer_id, type = "writes_dataset",
@@ -338,8 +338,8 @@ build_dependency_graph <- function(project, output_contracts = NULL) {
       source_file = lineage$file[row], line = lineage$line[row], detail = ds)
   }
   for (row in setdiff(which(lineage$role == "creates"), used_writers)) {
-    provider_id <- unit_node_map[[as.character(lineage$unit_id[row])]]
-    if (is.null(provider_id)) next
+    provider_id <- node_ids[row]
+    if (is.na(provider_id)) next
     ds <- lineage$dataset[row]
     edge_list[[length(edge_list) + 1L]] <- list(
       from = provider_id, to = get_output_node(ds, lineage$file[row], lineage$line[row]),
@@ -939,13 +939,14 @@ requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred =
 
 
 # Basenames remain readable IDs unless two physical files would collide.
-project_component_ids <- function(files, origins) {
+project_component_ids <- function(files, origins, root = ".") {
   ids <- tools::file_path_sans_ext(basename(files))
   unique_files <- unique(files)
   basenames <- tools::file_path_sans_ext(basename(unique_files))
   collision_files <- unique_files[duplicated(basenames) | duplicated(basenames, fromLast = TRUE)]
   for (file in collision_files) ids[files == file] <- paste0(
-    tools::file_path_sans_ext(basename(file)), "__", substr(cli::hash_sha256(file), 1L, 8L))
+    tools::file_path_sans_ext(basename(file)), "__", substr(cli::hash_sha256(
+      canonical_include_staged_path(file, root)), 1L, 8L))
   ids[origins == "environment" | tolower(basename(files)) == "autoexec.sas"] <- "setup"
   ids
 }
@@ -962,19 +963,25 @@ dataset_producers <- function(project, effective = effective_librefs(project)) {
   }
   paths[startsWith(lineage$dataset, "work.")] <- "<session work>"
   identity <- paste(lineage$dataset, paths, sep = "\r")
-  candidates <- which(lineage$role == "creates" & !is.na(paths))
+  # Unknown bindings retain name-based ordering, but no usable path. Preflight
+  # still reports them as unresolved; a guessed dependency is not availability.
+  candidates <- which(lineage$role == "creates")
   index <- split(candidates, identity[candidates])
   writer <- rep(NA_integer_, n)
   backward <- rep(FALSE, n)
-  for (row in which(lineage$role == "reads" & !is.na(paths))) {
-    matches <- index[[identity[row]]]
-    matches <- matches[lineage$unit_id[matches] != lineage$unit_id[row]]
-    same_file <- lineage$file[matches] == lineage$file[row]
-    prior <- matches[same_file & lineage$unit_id[matches] < lineage$unit_id[row]]
+  groups <- match(identity, names(index))
+  unit_ids <- lineage$unit_id
+  files <- lineage$file
+  for (row in which(lineage$role == "reads")) {
+    if (is.na(groups[row])) next
+    matches <- index[[groups[row]]]
+    matches <- matches[unit_ids[matches] != unit_ids[row]]
+    same_file <- files[matches] == files[row]
+    prior <- matches[same_file & unit_ids[matches] < unit_ids[row]]
     other <- matches[!same_file]
     if (length(prior)) writer[row] <- utils::tail(prior, 1L)
     else if (length(other)) {
-      before <- other[lineage$unit_id[other] < lineage$unit_id[row]]
+      before <- other[unit_ids[other] < unit_ids[row]]
       writer[row] <- if (length(before)) utils::tail(before, 1L) else other[1L]
     } else if (length(matches)) {
       writer[row] <- matches[1L]

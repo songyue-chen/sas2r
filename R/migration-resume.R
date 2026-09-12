@@ -1,5 +1,7 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
+RESUME_CHECKPOINT_VERSION <- 3L
+
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
   nodes <- graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE]
@@ -15,13 +17,14 @@ migration_resume_fingerprint <- function(state) {
   skills <- agent_skill_catalog()
   llm <- state$translator_llm
   migration_hash(list(
-    version = 2L,
+    version = RESUME_CHECKPOINT_VERSION,
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),
     graph = state$graph,
     inputs = input_hash_manifest(state$project),
-    config = state$config[setdiff(names(state$config), c("raw", "source"))],
+    config = c(scan_config_fields(state$config),
+      state$config[c("comparison_rules", "dialect", "allowlist", "search_docs")]),
     outputs = state$output_contracts,
     helper = paste(readLines(state$runtime$helpers, warn = FALSE), collapse = "\n"),
     workers = lapply(roles, worker_binding_hash, skills = skills,
@@ -43,7 +46,7 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   }
   checkpoint <- tryCatch(readRDS(path), error = function(e) NULL)
   if (is.null(checkpoint)) return(invalidate("checkpoint is unreadable"))
-  if (!identical(checkpoint$version, 2L)) return(invalidate("checkpoint uses an older planning policy"))
+  if (!identical(checkpoint$version, RESUME_CHECKPOINT_VERSION)) return(invalidate("checkpoint uses an older planning policy"))
   if (!identical(checkpoint$fingerprint, fingerprint)) return(invalidate("sources, inputs, configuration, or worker settings changed"))
   revisions <- checkpoint$selected_revisions
   # Missing or locally edited artifacts are cheap to regenerate. Do not rebuild
@@ -59,13 +62,14 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   writeLines(checkpoint$helper_code, state$runtime$helpers)
   state$resumed_components <- names(revisions)
   state$diagnostics <- checkpoint$diagnostics
+  state$diagnostics$resume_invalidated <- NULL
   state$diagnostics$resumed_components <- names(revisions)
   state
 }
 
 write_migration_checkpoint <- function(state, fingerprint) {
   checkpoint <- list(
-    version = 2L,
+    version = RESUME_CHECKPOINT_VERSION,
     fingerprint = fingerprint,
     selected_revisions = state$selected_revisions,
     histories = state$histories,

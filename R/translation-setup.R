@@ -9,7 +9,9 @@ project_input_root <- function(path) {
 
 # Config provenance is kept for reports; scan decisions use normalized values.
 scan_config_fields <- function(config) {
-  config[c("libraries", "macro_search_path", "include_roots", "autoexec")]
+  fields <- config[c("libraries", "macro_search_path", "include_roots", "autoexec")]
+  fields$libraries <- fields$libraries[sort(names(fields$libraries))]
+  fields
 }
 
 translation_config <- function(path, config) {
@@ -22,10 +24,14 @@ translation_config <- function(path, config) {
   } else if (is.list(config)) {
     # Plain lists update a reused project's whole top-level fields. Omission
     # inherits; an explicit NULL or empty value remains an intentional override.
-    assert_exact_names(config, names(config))
+    assert_exact_names(config, PROJECT_CONFIG_KEYS)
     if (inherits(path, "sas2r_project")) {
       updated <- path$config
       updated[names(config)] <- config
+      if (length(config)) {
+        updated$raw <- NULL
+        updated$source <- NA_character_
+      }
       updated
     } else config
   } else if (is.null(config)) {
@@ -33,7 +39,7 @@ translation_config <- function(path, config) {
   } else cli::cli_abort("config must be a mapping or configuration file", class = "sas2r_config_error")
   cfg <- normalize_project_config(cfg, root)
   if (inherits(path, "sas2r_project") && !is.null(config) &&
-      !identical(scan_config_fields(cfg), scan_config_fields(path$config))) {
+      !identical(scan_config_fields(cfg), scan_config_fields(normalize_project_config(path$config, root)))) {
     cli::cli_abort(c("Configuration changes the supplied project's source or library bindings.",
       "i" = "Run sas_preflight() or sas_translate() on the source path with the new config to rescan."),
       class = "sas2r_config_error")
@@ -48,12 +54,11 @@ translation_setup <- function(path, config, outputs, recursive, cache = FALSE) {
     overrides$references <- lapply(overrides$references, config_anchor_paths, base = getwd())
   }
   cfg$outputs <- overrides
-  validate_effective_qc(overrides, cfg$comparison_rules)
   project <- if (inherits(path, "sas2r_project")) path else
     scan_project(path, config = cfg, recursive = recursive, cache = cache)
   if (!inherits(path, "sas2r_project")) cfg <- project$config
-  plan <- translation_plan(project, overrides)
-  validate_effective_qc(overrides, cfg$comparison_rules, plan$contracts)
+  plan <- translation_plan(project, overrides, cfg$comparison_rules)
+  if (inherits(path, "sas2r_project")) validate_effective_qc(overrides, cfg$comparison_rules, plan$contracts)
   # The returned project represents this complete plan, including explicit
   # output overrides, so reusing it does not silently lose preflight settings.
   cfg$outputs <- overrides
@@ -117,9 +122,14 @@ translation_budget <- function(budget_usd, budget_mode, pricing_source,
 
 }
 
-translation_plan <- function(project, overrides) {
-  contracts <- if (identical(overrides, project$config$outputs)) project$output_contracts else
-    infer_output_contracts(project, overrides)
+translation_plan <- function(project, overrides, rules = project$config$comparison_rules) {
+  same_references <- identical(rules[c("references", "reference_path")],
+    project$config$comparison_rules[c("references", "reference_path")])
+  contracts <- if (identical(overrides, project$config$outputs) && same_references) project$output_contracts else {
+    updated <- project
+    updated$config$comparison_rules <- rules
+    infer_output_contracts(updated, overrides)
+  }
   if (!is.null(project$graph) && identical(contracts, project$output_contracts)) {
     return(list(contracts = contracts, graph = project$graph, schedule = project$schedule))
   }

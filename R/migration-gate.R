@@ -239,19 +239,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
   ref_passed <- FALSE
 
   if (has_ref) {
-    if (!file.exists(ref_path)) {
-      checks$reference_exists <- list(
-        name = "reference_exists",
-        passed = FALSE,
-        details = paste0("Reference file not found at ", ref_path)
-      )
-    } else {
-      checks$reference_exists <- list(
-        name = "reference_exists",
-        passed = TRUE,
-        details = "Reference file exists",
-        path = ref_path
-      )
+    checks$reference_exists <- reference_file_check(ref_path)
+    if (isTRUE(checks$reference_exists$passed)) {
 
       ref_ext <- tolower(tools::file_ext(ref_path))
       ref_data <- tryCatch(
@@ -629,11 +618,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   has_ref <- !is.na(ref_path) && nzchar(ref_path)
   ref_passed <- FALSE
   if (has_ref) {
-    checks$reference_exists <- list(
-      name = "reference_exists",
-      passed = file.exists(ref_path) && !dir.exists(ref_path),
-      details = paste("Reference file:", ref_path)
-    )
+    checks$reference_exists <- reference_file_check(ref_path)
   }
   if (has_ref && isTRUE(checks$reference_exists$passed)) {
     # No TLF content comparator exists yet, so a reference that merely exists
@@ -996,8 +981,16 @@ derive_bundle_status <- function(assessment) {
 }
 
 # All assessment exits serialize the same explanation used by Markdown.
-output_assessment <- function(...) {
-  result <- list(...)
+output_assessment <- function(target_id, target_key, kind, required, passed, status,
+                              has_reference, reference_passed, has_assertions,
+                              checks, differences, candidate_path, reference_path,
+                              dimensions = NULL) {
+  result <- list(target_id = target_id, target_key = target_key, kind = kind,
+    required = required, passed = passed, status = status, has_reference = has_reference,
+    reference_passed = reference_passed, has_assertions = has_assertions,
+    checks = checks, differences = differences, candidate_path = candidate_path,
+    reference_path = reference_path)
+  if (!is.null(dimensions)) result$dimensions <- dimensions
   result$reason <- output_checks_reason(result$checks)
   result
 }
@@ -1005,5 +998,13 @@ output_assessment <- function(...) {
 output_reference_path <- function(contract, rules = list()) {
   path <- contract$reference_path
   if (is_scalar_character(path)) return(path)
-  rules$reference_path %||% rules$references[[contract$target_key]] %||% NA_character_
+  rules$references[[contract$target_key]] %||% rules$reference_path %||% NA_character_
+}
+
+reference_file_check <- function(path) {
+  directory <- dir.exists(path)
+  exists <- file.exists(path) && !directory
+  list(name = "reference_exists", passed = exists, path = path,
+    details = paste(if (directory) "Reference path is a directory:" else if (exists)
+      "Reference file exists:" else "Reference file not found at", path))
 }

@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "3.0"
+SCAN_CACHE_SCHEMA_VERSION <- "4.0"
 
 # Attach retained source comments to the translation units that own their
 # private character spans. Comments between units belong to the next unit;
@@ -165,7 +165,6 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
         kind = "autoexec_autodiscovered", detail = cand)
     }
   } else {
-    autoexec <- config_resolve_paths(autoexec, root)
     missing_auto <- autoexec[!file.exists(autoexec)]
     for (m_path in missing_auto) {
       flags_env[[length(flags_env) + 1L]] <- tibble::tibble(
@@ -195,10 +194,10 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   }
 
   program_files <- if (is_dir) {
-    all <- list.files(path, pattern = "\\.sas$", full.names = TRUE,
+    all <- list.files(root, pattern = "\\.sas$", full.names = TRUE,
                       recursive = recursive, ignore.case = TRUE)
     sort(all, method = "radix")
-  } else path
+  } else include_normalize_path(path)
 
   if (length(norm_env) > 0L) {
     program_files <- program_files[!include_scan_key(program_files) %in% norm_env]
@@ -217,15 +216,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     })
   )
   seen <- c(norm_env, include_scan_key(program_files))
-  # Resolved once, here, and used for both resolution and identity below. A
-  # relative root reaching normalizePath() unresolved would be resolved against
-  # getwd(), which is neither project content nor configuration: the same bytes
-  # would then mint different occurrence ids from a developer's checkout root
-  # and from CI's working directory. sas_config() has already applied the
-  # config-file base to anything read from `_sas2r.yml`, so what is still
-  # relative here came from a caller-supplied config and is anchored on the
-  # project root instead -- the same rule autoexec follows above.
-  include_roots <- config_resolve_paths(config$include_roots %||% character(), root)
+  # Configuration paths are anchored before scanning.
+  include_roots <- config$include_roots
   # The coordinate frame every scanned file is named in, built once and from
   # configuration only -- never from the scan. See include_identity_anchors().
   identity_anchors <- include_identity_anchors(root, include_roots, autoexec)
@@ -254,6 +246,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   filerefs <- list()
 
   cache_dirty <- FALSE
+  used_cache_keys <- character()
   queue_idx <- 1L
   while (queue_idx <= length(queue)) {
     item <- queue[[queue_idx]]
@@ -279,6 +272,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     hit <- NULL
     if (cache) {
       h <- paste0("v", SCAN_CACHE_SCHEMA_VERSION, "_", cli::hash_md5(raw_text))
+      used_cache_keys <- c(used_cache_keys, h)
       hit <- scan_cache[[h]]
     }
 
@@ -602,12 +596,12 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     st <- stmt_list[[f]]
     if (!is.null(st) && nrow(st) > 0L) {
       is_env <- f %in% env_files
-      kind_name <- if (is_env) "sasautos_from_environment" else "sasautos_from_program"
       paths <- extract_sasautos_options(st)
       if (length(paths) > 0L) {
-        config$macro_search_path <- unique(c(config$macro_search_path, paths))
+        config$macro_search_path <- unique(c(config$macro_search_path, config_anchor_paths(paths, root)))
         flags_env[[length(flags_env) + 1L]] <- tibble::tibble(
-          kind = kind_name, detail = paste(paths, collapse = ","))
+          kind = if (is_env) "sasautos_from_environment" else "sasautos_from_program",
+          detail = paste(paths, collapse = ","))
       }
     }
   }
@@ -700,7 +694,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   ))
 
   if (nrow(calls)) {
-    component_ids <- project_component_ids(units$file, units$origin)
+    component_ids <- project_component_ids(units$file, units$origin, root)
     calls$component_id <- component_ids[match(calls$source_file, units$file)]
   }
 
@@ -761,7 +755,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
   validate_effective_qc(config$outputs, config$comparison_rules, output_contracts)
 
-  if (cache && cache_dirty) {
+  if (cache && (cache_dirty || !setequal(names(scan_cache), used_cache_keys))) {
+    scan_cache <- scan_cache[unique(used_cache_keys)]
     tryCatch({
       atomic_write_file(function(tf) saveRDS(scan_cache, tf), cache_file, pattern = "scan_cache_")
     }, error = function(e) {
@@ -771,8 +766,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   }
 
 
-  proj_graph <- build_dependency_graph(draft_proj, output_contracts = output_contracts)
   producer_plan <- dataset_producers(draft_proj)
+  proj_graph <- build_dependency_graph(draft_proj, output_contracts = output_contracts, producers = producer_plan)
   for (row in which(producer_plan$backward)) {
     flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
       kind = "backward_dependency", detail = paste0(lineage$file[row], ":", lineage$line[row],
@@ -829,6 +824,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
 
   dynamic <- dynamic_dataset_findings(statements)
   if (nrow(dynamic)) flags_list[[length(flags_list) + 1L]] <- dynamic
+  deferred <- deferred_dataset_findings(statements, defs, resolution)
+  if (nrow(deferred)) flags_list[[length(flags_list) + 1L]] <- deferred
   flags <- if (length(flags_list) > 0L) {
     do.call(rbind, flags_list)
   } else {

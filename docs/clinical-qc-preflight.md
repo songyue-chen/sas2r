@@ -63,12 +63,18 @@ when translation starts.
 a library that could not be resolved (`unresolved`), a WORK member with no known
 earlier producer (`no_producer`), a read whose only producer occurs later in
 the same file (`backward_dependency`), and data with a known in-project producer
-(`generated`). WORK members need an earlier creation step, not a disk file. Generated inputs still depend on that
+(`generated`). An APPEND base with no existing input is `created_if_missing`: SAS
+creates that base on its first append. Other WORK members need an earlier
+creation step, not a disk file. Generated inputs still depend on that
 producer running successfully. `unsupported` lists constructs the deterministic
 emitter defers; the AI workflow may translate them. Runtime-only restrictions,
 data values, reference comparability, and model credentials remain unchecked.
 Macro variables in dataset names produce a `dynamic_dataset_reference` finding;
-preflight does not expand them or certify those inputs as available. Unresolved
+preflight does not expand them or certify those inputs as available. Invoked
+project macros whose data flow needs expansion raise `macro_data_flow_deferred`.
+Conditional or labelled dataset statements, name literals, and library-level
+COPY/DATASETS operations raise `dataset_statement_deferred`; preflight does not
+invent dataset names for these unsupported forms. Unresolved
 includes and library bindings also require attention. Within-file step handoffs
 are ordered normally; a later write cannot supply an earlier read, even if an
 old output file exists. Files with identical basenames retain separate identities.
@@ -121,7 +127,7 @@ fields override `comparison_rules` defaults. R and YAML profiles contain only
 supplied fields: omitted/NULL fields inherit, while explicit `FALSE` or empty
 mappings override. `unique_keys` is checked against inherited keys after these
 fields are combined. Unknown fields and non-mapping assertion sequences fail
-before translation; a NULL target entry is an empty mapping. Empty
+before translation; a NULL target or profile entry is an empty mapping. Empty
 metadata mappings impose no requirement. Column names are case-insensitive.
 The config loader preserves YAML keys such as `N`, `Y`, `yes`, and `no` as
 strings. Use `true` and `false` for boolean settings; `yes`/`no`/`on`/`off` are
@@ -173,13 +179,33 @@ paths in R configuration lists resolve against the project directory. Direct
 `outputs` argument paths are anchored to the calling working directory. Stored
 paths are absolute so project reuse does not prefix them again. Preflight and
 output gates both honor target references and the `comparison_rules$reference_path`
-or `comparison_rules$references` fallback. A configured reference must be a file;
+or `comparison_rules$references` fallback. The precedence is an explicit
+`outputs$references` entry, then a per-target `comparison_rules$references` entry,
+then the global `comparison_rules$reference_path`. The global fallback applies
+to all targets, including TLFs; prefer per-target references for mixed bundles.
+The resolved path is stored in each output contract. Dataset keys are
+case-insensitive and unqualified names mean WORK, never an inferred library.
+Duplicate target spellings are rejected, and a comparison reference naming an
+unknown target must be corrected or declared in `outputs`. A configured reference must be a file;
 a missing path or directory fails the output gate, including for tables,
 listings, and figures (TLFs). TLF reference content comparison remains unavailable:
 an existing reference is recorded as not compared and supplies no equivalence
 evidence.
 
 All output assessment records carry a `reason` in JSON and Markdown. Unavailable
-checks are labeled as not evaluated, separately from failures. Checkpoints from
+checks are labeled as not evaluated, separately from failures. `output-contracts.json`
+is always an array of target records, including for zero or one target, and
+preserves the configured numeric precision. Checkpoints from
 older planning versions are regenerated; resume reports the reason before new
 provider calls. Matching current checkpoints reuse completed revisions.
+
+Default numeric tolerances use `tol_abs` before `numeric_tolerance` when both
+appear in global rules, with `tol_rel` as the relative default. An explicit
+profile or target `numeric_tolerance` replaces those default aliases and sets
+the relative default to zero. Per-variable `tolerances` is a separate inherited
+field and overrides the defaults; set `tolerances = list()` to clear it. The
+historical `comparison_rules$tolerance` field is ignored with a warning.
+
+Use a single YAML document and `true`/`false` booleans. Some YAML writers emit
+`yes`/`no` by default; convert those boolean values to `true`/`false` before
+loading the configuration. Metadata keys such as `N` and `Y` remain strings.

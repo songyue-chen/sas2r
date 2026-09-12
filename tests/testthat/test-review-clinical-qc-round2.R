@@ -16,7 +16,7 @@ test_that("relative list references survive preflight reuse and translation", {
   result <- sas_translate(again$project, out_dir = file.path(root, "out"), execute = FALSE,
     usage_limits = list(max_calls = 0))
   contracts <- jsonlite::read_json(result$output_contracts_path)
-  expect_identical(contracts$reference_path, include_normalize_path(ref))
+  expect_identical(contracts[[1L]]$reference_path, include_normalize_path(ref))
 })
 
 test_that("explicit config replaces discovery and stale scan settings require a rescan", {
@@ -211,13 +211,23 @@ test_that("fence lengths agree between prose and executable documentation checks
 })
 
 test_that("each emitted scanner finding has an explicit readiness policy", {
-  path <- test_path("..", "..", "R", "project.R")
-  skip_if_not(file.exists(path), "source scanner roster contract")
-  text <- paste(readLines(path), collapse = "\n")
-  kinds <- unique(sub('kind = "([^\"]+)"', '\\1',
-    regmatches(text, gregexpr('kind = "[^\"]+"', text))[[1L]]))
-  expect_setequal(c(kinds, "dynamic_dataset_reference"),
-    c(preflight_blocking_findings(), "autoexec_autodiscovered", "macro_shadowing"))
+  # Inspect installed function bodies too, including conditional and rep()
+  # expressions in the kind argument, not only literal source assignments.
+  strings <- function(expr) {
+    if (is.character(expr)) return(expr)
+    if (is.call(expr) || is.expression(expr) || is.pairlist(expr))
+      return(unlist(lapply(as.list(expr), strings), use.names = FALSE))
+    character()
+  }
+  kinds <- function(expr) {
+    if (!is.call(expr) && !is.expression(expr) && !is.pairlist(expr)) return(character())
+    args <- as.list(expr)
+    c(if ("kind" %in% names(args)) strings(args[["kind"]]),
+      unlist(lapply(args, kinds), use.names = FALSE))
+  }
+  raised <- unique(unlist(lapply(list(scan_project, dynamic_dataset_findings,
+    deferred_dataset_findings), function(fn) kinds(body(fn)))))
+  expect_setequal(raised, c(preflight_blocking_findings(), preflight_advisory_findings()))
   root <- withr::local_tempdir()
   check <- sas_preflight(review_source(root, "libname remote xml 'remote'; data remote.out; x=1; run;"))
   expect_true("libref_engine_unsupported" %in% check$findings$kind)
