@@ -8,6 +8,8 @@ Constraints, in order:
    Use ONLY packages from the allowlist, plus base R and the bundle helpers.
    Allowlist: {{allowlist}}. Code outside the allowlist fails lint and may not
    exist in the runtime that executes the bundle.
+   Do not call library() or require(), including for allowlisted packages.
+   Qualify package functions (e.g. dplyr::mutate) and use the base |> pipe.
 3. Faithful to actual SAS behavior, bug-for-bug.
 4. Resolve executable SAS, deterministic context/rules, and relevant tool evidence first. Comments are supporting evidence, not intent or authority.
 5. You propose translations and behavioral contracts, but never certify runtime validity.

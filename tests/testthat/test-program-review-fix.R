@@ -99,3 +99,21 @@ test_that("fix_program_revision rejects forbidden mutations", {
     class = "sas2r_fixer_forbidden_mutation"
   )
 })
+
+test_that("an unavailable semantic review keeps its reason and can recover", {
+  fx <- review_fix_fixture()
+  unavailable <- recording_reviewer(function(request) {
+    valid_program_review_response(verdict = "review_unavailable",
+                                  unresolved_dependencies = "SAS source text")
+  })
+  first <- review_program_revision(fx$revision, fx$context, unavailable,
+                                   history = new_component_evidence_history(
+                                     fx$revision$component_id, fx$revision$binding))
+  expect_match(first$reason, "SAS source text", fixed = TRUE)
+  completed <- review_program_revision(fx$revision, fx$context,
+    recording_reviewer(function(request) valid_program_review_response()), history = first$history)
+  current <- current_component_evidence(completed$history)
+  expect_false(current$review_unavailable)
+  expect_length(current$blockers, 0L)
+  expect_identical(current$level, "reviewed_only")
+})

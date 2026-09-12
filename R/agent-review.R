@@ -316,6 +316,12 @@ review_program_revision <- function(
     sas_source <- format_sas_statements(sas_source$text)
   }
   sas_text <- as.character(sas_source)[1L] %||% ""
+  if (is.na(sas_text) || !nzchar(trimws(sas_text))) {
+    source_stmts <- component_statements(context$project, component_id)
+    sas_text <- if (!is.null(source_stmts) && nrow(source_stmts)) {
+      format_sas_statements(source_stmts$text)
+    } else ""
+  }
 
   # Ensure NO translator reasoning or self-score reaches the reviewer
   comments_text <- context$comments %||% context$comments_text %||% "(none attached)"
@@ -426,6 +432,13 @@ review_program_revision <- function(
     static_runnability <- data$static_runnability %||% "looks_runnable"
     unresolved_deps <- unique(as.character(unlist(data$unresolved_dependencies %||% character())))
     findings <- data$findings %||% list()
+    if (identical(verdict, "review_unavailable")) {
+      reason <- if (length(unresolved_deps)) {
+        paste("Unresolved review dependencies:", paste(unresolved_deps, collapse = ", "))
+      } else if (length(findings)) {
+        paste(vapply(findings, function(f) f$sas_evidence %||% "", character(1)), collapse = "; ")
+      } else "Reviewer could not complete the semantic review."
+    }
   } else {
     # Convert exhausted failure into coordinator-authored review_unavailable
     verdict <- "review_unavailable"
@@ -478,4 +491,3 @@ review_program_revision <- function(
 
   review_record
 }
-

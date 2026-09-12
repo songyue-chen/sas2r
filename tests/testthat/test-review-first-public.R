@@ -4,9 +4,11 @@ counted_review_llm <- function(responses) {
   adapter <- mock_llm(responses)
   calls <- new.env(parent = emptyenv())
   calls$n <- 0L
+  calls$requests <- list()
   request <- adapter$request
   adapter$request <- function(payload) {
     calls$n <- calls$n + 1L
+    calls$requests[[calls$n]] <- payload
     request(payload)
   }
   list(llm = adapter, calls = calls)
@@ -170,6 +172,11 @@ test_that("public resume preserves a fixer revision's actual path and its review
   ))
   first <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm)
   expect_equal(adapter$calls$n, 4L)
+  for (i in c(2L, 4L)) {
+    review_prompt <- paste(vapply(adapter$calls$requests[[i]]$messages,
+                                  function(m) m$content %||% "", character(1)), collapse = "\n")
+    expect_match(review_prompt, readLines(fx$source), fixed = TRUE)
+  }
   expect_equal(readRDS(file.path(first$outputs_dir, "work/out.rds"))$x, 11)
   checkpoint <- readRDS(file.path(out, ".sas2r/resume.rds"))
   selected <- checkpoint$selected_revisions[[1L]]
@@ -234,4 +241,55 @@ test_that("export entry point cannot overwrite a source program named run", {
   unlink(file.path(dest, "work"), recursive = TRUE)
   callr::r(function(entry) source(entry, chdir = TRUE), args = list(entrypoint), wd = dest)
   expect_equal(readRDS(file.path(dest, "work/out.rds"))$x, 11)
+})
+
+test_that("public mechanical retry receives failed code and package-loading guidance", {
+  fx <- review_public_fixture()
+  bad_code <- paste("library(dplyr)", review_public_code, sep = "\n")
+  adapter <- counted_review_llm(list(good_translation(bad_code),
+                                    good_translation(review_public_code), good_review()))
+  result <- sas_translate(fx$source, config = fx$config, llm = adapter$llm)
+  expect_identical(adapter$calls$n, 3L)
+  request_text <- function(i) paste(vapply(adapter$calls$requests[[i]]$messages,
+                                          function(m) m$content %||% "", character(1)), collapse = "\n")
+  expect_match(request_text(1L), "Do not call library() or require()", fixed = TRUE)
+  expect_match(request_text(2L), "banned_function: library", fixed = TRUE)
+  expect_match(request_text(2L), bad_code, fixed = TRUE)
+  expect_match(request_text(2L), "dplyr::mutate", fixed = TRUE)
+  expect_match(request_text(3L), readLines(fx$source), fixed = TRUE)
+  expect_identical(result$status, "migration_ready")
+  expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+  report <- jsonlite::read_json(result$report_json_path)
+  expect_true(report$component_evidence[[1L]]$mechanical_checks$pass)
+  expect_identical(report$component_evidence[[1L]]$smoke_status, "passed")
+})
+
+test_that("failed mechanical checks remain visible even when smoke and review pass", {
+  fx <- review_public_fixture()
+  bad_code <- paste("library(dplyr)", review_public_code, sep = "\n")
+  unavailable <- valid_program_review_response(verdict = "review_unavailable",
+                                               unresolved_dependencies = "sas_source")
+  for (response in list(unavailable, good_review())) {
+    adapter <- counted_review_llm(list(good_translation(bad_code), good_translation(bad_code), response))
+    events <- list()
+    result <- withCallingHandlers(
+      sas_translate(fx$source, config = fx$config, llm = adapter$llm,
+                    outputs = list(datasets = "work.out")),
+      sas2r_progress = function(e) events[[length(events) + 1L]] <<- e
+    )
+    expect_identical(adapter$calls$n, 3L)
+    expect_identical(result$status, "needs_review")
+    expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+    text <- unlist(lapply(events, format_sas2r_progress))
+    expect_true(any(grepl("mechanical checks failed.*banned_function.*library", text)))
+    report <- jsonlite::read_json(result$report_json_path)
+    component <- report$component_evidence[[1L]]
+    expect_identical(component$smoke_status, "passed")
+    expect_false(component$mechanical_checks$pass)
+    expect_true("mechanical_checks_failed" %in% unlist(component$blockers))
+    if (identical(component$review_status, "review_unavailable")) {
+      expect_true(any(grepl("review unavailable.*sas_source", text)))
+      expect_equal(report$coverage$components_independently_reviewed, 0)
+    }
+  }
 })

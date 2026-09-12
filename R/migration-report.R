@@ -124,8 +124,11 @@ write_migration_report <- function(state) {
     curr <- tryCatch(current_component_evidence(h), error = function(e) NULL)
     level <- curr$level %||% "pending"
     rev_status <- component_review_verdict(h)
+    smoke_events <- Filter(function(ev) identical(ev$type, "program_smoke"), curr$events %||% list())
     smoke_status <- if (!is.null(curr$runtime_deferred)) {
       paste0("deferred (", curr$runtime_deferred, ")")
+    } else if (length(smoke_events)) {
+      smoke_events[[length(smoke_events)]]$status
     } else if ("smoke_failed" %in% curr$blockers) {
       "failed"
     } else if (level %in% c("runtime_verified", "output_verified", "reference_validated")) {
@@ -141,6 +144,7 @@ write_migration_report <- function(state) {
       evidence_level = level,
       review_status = rev_status,
       smoke_status = smoke_status,
+      mechanical_checks = state$selected_revisions[[cid]]$checks,
       blockers = curr$blockers %||% character(),
       revisions = h$revisions %||% list()
     )

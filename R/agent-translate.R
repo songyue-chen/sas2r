@@ -824,12 +824,18 @@ generate_program_revision <- function(
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
 
       if (inherits(parsed_chk, "error") || has_lint_err) {
-        err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(lint_chk$detail[lint_chk$level == "error"], collapse = "; ")
+        err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(
+          sprintf("%s: %s", lint_chk$kind[lint_chk$level == "error"],
+                  lint_chk$detail[lint_chk$level == "error"]), collapse = "; ")
         retry_res <- run_agent(
           spec = spec,
           llm = llm,
           tools = build_tools(spec, tool_ctx),
-          user_content = paste("Previous code failed mechanical checks:", err_msg, "- produce corrected JSON."),
+          user_content = paste(
+            "Previous code failed mechanical checks:", err_msg,
+            "Correct the code below and return the complete translation JSON.",
+            "Do not call library() or require(); qualify package functions (for example dplyr::mutate) and use the base |> pipe.",
+            "Previous R code:", tr_data$r_code, sep = "\n"),
           log_dir = paths$state %||% file.path(paths$root, ".sas2r"),
           prompt_vars = prompt_vars,
           audit_context = utils::modifyList(audit_context, list(purpose = "mechanical_retry")),
@@ -998,4 +1004,3 @@ generate_program_revisions <- function(
     agent_status = vapply(rows, function(r) r$agent_status %||% NA_character_, character(1))
   )
 }
-

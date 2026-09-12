@@ -1,5 +1,11 @@
 # sas2r (development)
 
+* Program reviews receive the component's actual SAS source on initial and repair
+  passes. Translator prompts prohibit package attachment and mechanical retries
+  include the failed code and named lint findings. Persistent mechanical failures
+  remain blockers, with their details visible in progress and reports. Smoke
+  results are recorded independently of unavailable reviews.
+
 * Deterministic translation preserves quoted values, applies WHERE to input rows,
   and uses SAS missing-value comparisons in predicates and numeric derived flags.
   SQL identifiers follow the same case folding as input frames.
