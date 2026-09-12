@@ -1,9 +1,46 @@
-# sas2r (development)
+# sas2r 0.3.0
+
+### Preflight and QC
+
+* Add `sas_preflight()` to inspect source/library resolution, input availability,
+  deterministic limitations, outputs, and effective budgets with zero model
+  calls and no migration artifacts.
+* Add reusable `qc_profile()` output requirements for labels, formats, types,
+  column order, keys, uniqueness, row counts, and variable-specific tolerances.
+
+* Partial configuration lists on reused projects update supplied top-level fields
+  without discarding library, output, or provider settings. Explicitly changing
+  or clearing scan settings still requires rescanning the source path.
+* Configured TLF references that are missing or directories now fail the output
+  gate with their paths retained in diagnostics. Existing TLF references remain
+  uncompared and do not count as reference-validation evidence.
+
+* Preflight and translation now share normalized configuration and a reusable
+  output/dependency plan. Relative references remain stable across project reuse,
+  global reference fallbacks are inspected, and invalid configuration fails
+  before migration/cache writes. Changed scan settings require a source rescan.
+* QC profiles inherit omitted fields from global rules; explicit false/empty
+  fields override them. Keys guide alignment unless uniqueness is requested.
+  Validate inherited uniqueness requirements, accept factor types and scientific
+  row counts, preserve YAML metadata keys, and require `true`/`false` booleans.
+* Dataset detection distinguishes names from expressions and uncalled macro
+  bodies. Preflight reports unknown WORK producers and backward dependencies;
+  duplicate filenames retain separate components. Graph and preflight share
+  library-aware producer selection without redundant historical write edges.
+* JSON and Markdown output assessments share reasons and distinguish unavailable
+  checks from failures. Resume explains incompatible checkpoints before new
+  provider calls; checkpoints from the previous planning policy are regenerated.
+
+* Execute documented offline R and YAML examples against the installed package
+  in CI. Add a complete SAS fixture collection verifier; actual SAS execution
+  remains pending because no SAS runtime is available.
 
 * README and evidence guides now distinguish agent completion, semantic review,
   execution, and reference coverage. Examples use library-qualified output paths
   and the correct comparison APIs; export, resume, and reference-provenance
   guidance reflects the current migration workflow.
+
+### Migration and runtime
 
 * Mechanical interface checks compare declared parameters with the component's
   named function, never an unrelated helper. Scripts with external path inputs
@@ -38,6 +75,31 @@
   reference-generation script, plus public regressions for budgets, resume,
   repaired revisions, changed inputs, moved exports, and seeded output defects.
   The saved expectations have not yet been executed in SAS.
+
+* Project reuse anchors source files and harvested SASAUTOS paths. Equivalent
+  library ordering and directories created after scanning do not require a
+  rescan; explicit NULL clears output requirements. Unknown R configuration
+  keys and invalid output paths fail before writes with classed errors.
+* Reference maps use case-insensitive dataset keys, reject duplicates and unknown
+  comparison targets, and prefer per-target references over the global fallback.
+  Contracts persist resolved references as an array of records with full numeric
+  precision. Directory references fail with an actionable explanation.
+* Called macro data flow and unsupported dataset statements remain visible as
+  deferred findings. APPEND bases may be created if absent; unbound libraries
+  retain producer ordering while their inputs remain unresolved.
+* Scan-cache schema 4.0 replaces older entries; successful scans prune obsolete
+  content entries. Preflight never writes macro indexes. Configuration accepts
+  one YAML document, validates named mappings, and warns about the unused
+  legacy tolerance field.
+* Bundle snapshots retain staged include paths and execute included files at
+  their call sites. Resume ignores transport-only changes and removes stale
+  invalidation messages after successful reuse. Older checkpoints regenerate
+  under the updated planning policy.
+
+### Provider documentation
+
+* DeepSeek examples use the current `deepseek-flash` API name, with links to
+  the provider's model list and guidance on legacy aliases.
 
 # sas2r 0.2.0
 

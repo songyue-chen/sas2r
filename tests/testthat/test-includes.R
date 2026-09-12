@@ -225,7 +225,7 @@ test_that("resolution origins cover absolute, project root, and configured fallb
   # scanned as a project so that the project root is above the including file
   p <- sas_project(root, config = cfg, recursive = TRUE)
   occ <- p$include_graph$occurrences
-  expect_identical(occ$parent_file, rep(file.path(sub, "driver.sas"), 3L))
+  expect_identical(occ$parent_file, rep(include_normalize_path(file.path(sub, "driver.sas")), 3L))
   expect_identical(occ$resolution_origin,
                    c("absolute", "project_root", "configured_fallback"))
   expect_true(all(occ$status == "resolved"))

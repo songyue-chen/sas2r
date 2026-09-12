@@ -441,7 +441,7 @@ test_that("the shipped demo project configures a write format the runtime honour
   expect_true(cfg$libraries$adam$write %in% c("rds", "xpt"))
 })
 
-test_that("sas_config parses comparison_rules and does not warn on migration key", {
+test_that("sas_config warns about the unused tolerance but accepts the migration key", {
   dir <- withr::local_tempdir()
   writeLines(c(
     "comparison_rules:",
@@ -451,7 +451,7 @@ test_that("sas_config parses comparison_rules and does not warn on migration key
     "  execute: true"
   ), file.path(dir, "_sas2r.yml"))
 
-  expect_no_warning(cfg <- sas_config(start = dir))
+  expect_warning(cfg <- sas_config(start = dir), "tolerance is ignored", class = "sas2r_unused_tolerance")
   expect_identical(cfg$comparison_rules$tolerance$numeric, 1e-4)
 })
 

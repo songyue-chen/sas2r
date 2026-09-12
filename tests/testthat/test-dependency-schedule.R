@@ -27,8 +27,19 @@ schedule_fixture_graph <- function() {
   )
 }
 
-test_that("scheduler is stable and groups cycles without dropping them", {
+test_that("scheduler preserves components with self-dependencies without labelling them cycles", {
   graph <- schedule_fixture_graph()
+  schedule <- stable_dependency_schedule(graph)
+  expect_identical(schedule$component_id, c("setup", "a", "b", "c", "d"))
+  expect_identical(schedule$group_kind[schedule$component_id %in% c("b", "c")],
+                   c("singleton", "singleton"))
+  expect_true(schedule$sequence[schedule$component_id == "d"] >
+              schedule$sequence[schedule$component_id == "c"])
+})
+
+test_that("scheduler still groups a cycle between file components", {
+  graph <- schedule_fixture_graph()
+  graph$edges$to[3:4] <- c("node_c", "node_b")
   schedule <- stable_dependency_schedule(graph)
   expect_identical(schedule$component_id, c("setup", "a", "b", "c", "d"))
   expect_identical(schedule$group_kind[schedule$component_id %in% c("b", "c")],

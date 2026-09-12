@@ -369,7 +369,7 @@ test_that("effective_librefs projects statement and reference points of use", {
   expect_identical(st$action, c("assign", "clear"))
   expect_identical(st$use_line, c(1L, 3L))
   # Execution-context provenance travels with every row.
-  expect_true(all(st$root_program == file.path(root, "p.sas")))
+  expect_true(all(st$root_program == include_normalize_path(file.path(root, "p.sas"))))
   # `work` is the session library and is never resolved.
   expect_false("work" %in% eff$bindings$libref)
   # The reference row and the project's own lineage are the same answer.

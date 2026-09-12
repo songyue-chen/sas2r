@@ -160,7 +160,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         passed = FALSE,
         details = "Candidate dataset file not found"
       )
-      return(list(
+      return(output_assessment(
         target_id = t_id,
         target_key = t_key,
         kind = "dataset",
@@ -203,7 +203,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         passed = FALSE,
         details = "Failed to read candidate dataset file"
       )
-      return(list(
+      return(output_assessment(
         target_id = t_id,
         target_key = t_key,
         kind = "dataset",
@@ -227,70 +227,20 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     )
   }
 
-  # 1. Assertions: Required columns check
-  req_cols <- assertions$required_columns %||% comparison_rules$required_columns %||% character()
-  if (length(req_cols) > 0L) {
-    req_cols_folded <- tolower(as.character(req_cols))
-    cand_cols_folded <- tolower(names(cand_data))
-    missing_cols <- setdiff(req_cols_folded, cand_cols_folded)
-
-    if (length(missing_cols) > 0L) {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = FALSE,
-        missing_columns = missing_cols,
-        details = paste0("Missing required column(s): ", paste(missing_cols, collapse = ", "))
-      )
-    } else {
-      checks$required_columns <- list(
-        name = "required_columns",
-        passed = TRUE,
-        details = "All required columns present"
-      )
-    }
-  }
-
-  # 2. Assertions: Row count / min_rows check
-  if (!is.null(assertions$min_rows)) {
-    min_r <- as.integer(assertions$min_rows)
-    if (nrow(cand_data) < min_r) {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = FALSE,
-        details = sprintf("Expected at least %d rows, got %d", min_r, nrow(cand_data))
-      )
-    } else {
-      checks$min_rows <- list(
-        name = "min_rows",
-        passed = TRUE,
-        details = "Row count requirement met"
-      )
-    }
-  }
+  # Target requirements override global defaults; all dataset quality checks
+  # use the same evaluator, including expanded named profiles.
+  policy <- effective_dataset_policy(comparison_rules, assertions)
+  checks <- c(checks, check_dataset_qc(cand_data, policy))
 
   # 3. Reference dataset comparison
-  ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
-  if (is.null(ref_path) || is.na(ref_path) || !nzchar(ref_path)) {
-    ref_path <- comparison_rules$reference_path %||% comparison_rules$references[[t_key]] %||% NA_character_
-  }
+  ref_path <- output_reference_path(contract, comparison_rules)
 
   has_ref <- !is.na(ref_path) && nzchar(ref_path)
   ref_passed <- FALSE
 
   if (has_ref) {
-    if (!file.exists(ref_path)) {
-      checks$reference_exists <- list(
-        name = "reference_exists",
-        passed = FALSE,
-        details = paste0("Reference file not found at ", ref_path)
-      )
-    } else {
-      checks$reference_exists <- list(
-        name = "reference_exists",
-        passed = TRUE,
-        details = "Reference file exists",
-        path = ref_path
-      )
+    checks$reference_exists <- reference_file_check(ref_path)
+    if (isTRUE(checks$reference_exists$passed)) {
 
       ref_ext <- tolower(tools::file_ext(ref_path))
       ref_data <- tryCatch(
@@ -321,27 +271,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         # policy (its unspecified half stays 0); with nothing configured the
         # defaults come from compare_profile(), defined once, so the gate and
         # direct compare_datasets() calls judge by the same rules.
-        num_tol <- assertions$numeric_tolerance %||% comparison_rules$numeric_tolerance
-        abs_tol <- comparison_rules$tol_abs %||% num_tol
-        rel_tol <- comparison_rules$tol_rel
-        if (!is.null(abs_tol)) abs_tol <- suppressWarnings(as.numeric(abs_tol))
-        if (!is.null(rel_tol)) rel_tol <- suppressWarnings(as.numeric(rel_tol))
-        if (is.null(abs_tol) && is.null(rel_tol)) {
-          prof_defaults <- compare_profile()
-          abs_tol <- prof_defaults$numeric$abs
-          rel_tol <- prof_defaults$numeric$rel
-        } else {
-          abs_tol <- abs_tol %||% 0.0
-          rel_tol <- rel_tol %||% 0.0
-        }
-        keys <- assertions$keys %||% comparison_rules$keys %||% NULL
-
-        prof <- compare_profile(
-          abs = abs_tol,
-          rel = rel_tol,
-          padding = "cosmetic",
-          sas_null_equals_na = TRUE
-        )
+        keys <- policy$keys
+        prof <- dataset_comparison_profile(policy)
 
         # Engine alignment: configured keys steer row identity, and with none
         # configured the keys are inferred and validated -- a content-equal
@@ -397,7 +328,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
     "failed"
   }
 
-  list(
+  output_assessment(
     target_id = t_id,
     target_key = t_key,
     kind = "dataset",
@@ -448,7 +379,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       passed = FALSE,
       details = "Candidate TLF file not found"
     )
-    return(list(
+    return(output_assessment(
       target_id = t_id,
       target_key = t_key,
       kind = "tlf",
@@ -480,7 +411,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       passed = FALSE,
       details = "Candidate TLF file is empty (0 bytes)"
     )
-    return(list(
+    return(output_assessment(
       target_id = t_id,
       target_key = t_key,
       kind = "tlf",
@@ -682,14 +613,14 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   }
 
   # Reference comparison
-  ref_path <- if (is.data.frame(contract)) contract$reference_path[1L] else contract$reference_path
-  if (is.null(ref_path) || is.na(ref_path) || !nzchar(ref_path)) {
-    ref_path <- comparison_rules$reference_path %||% comparison_rules$references[[t_key]] %||% NA_character_
-  }
+  ref_path <- output_reference_path(contract, comparison_rules)
 
-  has_ref <- !is.na(ref_path) && nzchar(ref_path) && file.exists(ref_path)
+  has_ref <- !is.na(ref_path) && nzchar(ref_path)
   ref_passed <- FALSE
   if (has_ref) {
+    checks$reference_exists <- reference_file_check(ref_path)
+  }
+  if (has_ref && isTRUE(checks$reference_exists$passed)) {
     # No TLF content comparator exists yet, so a reference that merely exists
     # is recorded honestly as not compared; it must never count as validation
     # evidence. passed = NA keeps the target flowing without claiming a pass.
@@ -715,14 +646,14 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
     "failed"
   }
 
-  list(
+  output_assessment(
     target_id = t_id,
     target_key = t_key,
     kind = "tlf",
     required = required,
     passed = all_checks_passed && !has_unavail,
     status = status,
-    has_reference = has_ref,
+    has_reference = has_ref && isTRUE(checks$reference_exists$passed),
     reference_passed = ref_passed,
     has_assertions = length(assertions) > 0L,
     dimensions = dimensions,
@@ -1047,4 +978,33 @@ derive_bundle_status <- function(assessment) {
   }
 
   "migration_ready"
+}
+
+# All assessment exits serialize the same explanation used by Markdown.
+output_assessment <- function(target_id, target_key, kind, required, passed, status,
+                              has_reference, reference_passed, has_assertions,
+                              checks, differences, candidate_path, reference_path,
+                              dimensions = NULL) {
+  result <- list(target_id = target_id, target_key = target_key, kind = kind,
+    required = required, passed = passed, status = status, has_reference = has_reference,
+    reference_passed = reference_passed, has_assertions = has_assertions,
+    checks = checks, differences = differences, candidate_path = candidate_path,
+    reference_path = reference_path)
+  if (!is.null(dimensions)) result$dimensions <- dimensions
+  result$reason <- output_checks_reason(result$checks)
+  result
+}
+
+output_reference_path <- function(contract, rules = list()) {
+  path <- contract$reference_path
+  if (is_scalar_character(path)) return(path)
+  rules$references[[contract$target_key]] %||% rules$reference_path %||% NA_character_
+}
+
+reference_file_check <- function(path) {
+  directory <- dir.exists(path)
+  exists <- file.exists(path) && !directory
+  list(name = "reference_exists", passed = exists, path = path,
+    details = paste(if (directory) "Reference path is a directory:" else if (exists)
+      "Reference file exists:" else "Reference file not found at", path))
 }

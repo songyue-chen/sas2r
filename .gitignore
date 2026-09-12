@@ -14,12 +14,16 @@ scratch/
 phuse-validation/
 AGENTS.md
 
-# docs/: publish only the three user-facing guides; everything else is
-# internal working material (plans, specs, review rounds, decision notes).
+# docs/: publish user guides and the established runtime decision records.
+# Other plans, specs, reviews, and decision notes stay local.
 docs/*
 !docs/llm-providers.md
 !docs/migration-evidence.md
 !docs/output-evidence.md
+!docs/clinical-qc-preflight.md
 !docs/decisions/
+docs/decisions/*
+!docs/decisions/0003-runtime-helpers-distribution.md
+!docs/decisions/0004-autoexec.md
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds

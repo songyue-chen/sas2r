@@ -62,7 +62,7 @@ validate_output_overrides <- function(overrides) {
   }
 
   if (is.list(overrides)) {
-    allowed <- c("datasets", "tlfs", "references", "assertions")
+    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles")
     unknown <- setdiff(names(overrides), allowed)
     if (length(unknown) > 0L) {
       cli::cli_abort(
@@ -90,15 +90,8 @@ validate_output_overrides <- function(overrides) {
       }
     }
 
-    if (!is.null(overrides$references)) {
-      if ((!is.character(overrides$references) && !is.list(overrides$references)) ||
-          is.null(names(overrides$references))) {
-        cli::cli_abort(
-          "outputs$references must be a named vector or list",
-          class = "sas2r_output_contract_error"
-        )
-      }
-    }
+    validate_reference_paths(overrides$references, "outputs$references")
+    if (!is.null(overrides$references)) overrides$references <- normalize_target_mapping(overrides$references, "outputs$references")
 
     if (!is.null(overrides$assertions)) {
       if (!is.list(overrides$assertions) || is.null(names(overrides$assertions))) {
@@ -107,9 +100,10 @@ validate_output_overrides <- function(overrides) {
           class = "sas2r_output_contract_error"
         )
       }
+      overrides$assertions <- normalize_target_mapping(overrides$assertions, "outputs$assertions")
     }
 
-    return(overrides)
+    return(resolve_qc_profiles(overrides))
   }
 
   cli::cli_abort(
@@ -282,7 +276,7 @@ infer_output_contracts <- function(project, overrides = NULL) {
     return(merge_output_overrides(empty_output_contracts(), validated_overrides))
   }
 
-  if (is.null(overrides) && !is.null(project$config$outputs)) {
+  if (missing(overrides) && !is.null(project$config$outputs)) {
     overrides <- project$config$outputs
   }
   validated_overrides <- validate_output_overrides(overrides)
@@ -627,7 +621,16 @@ infer_output_contracts <- function(project, overrides = NULL) {
     empty_output_contracts()
   }
 
-  merge_output_overrides(inferred_tbl, validated_overrides)
+  contracts <- merge_output_overrides(inferred_tbl, validated_overrides)
+  rules <- project$config$comparison_rules %||% list()
+  unmatched <- setdiff(names(rules$references), contracts$target_key)
+  if (length(unmatched)) cli::cli_abort(
+    c("comparison_rules$references names unknown output targets: {.val {unmatched}}",
+      "i" = "Use library-qualified dataset names (an unqualified name means WORK) and declare missing targets in outputs."),
+    class = "sas2r_output_contract_error")
+  contracts$reference_path <- vapply(seq_len(nrow(contracts)), function(i)
+    output_reference_path(contracts[i, ], rules), character(1))
+  contracts
 }
 
 #' Write output contracts to JSON file
@@ -639,11 +642,12 @@ infer_output_contracts <- function(project, overrides = NULL) {
 write_output_contracts <- function(contracts, path) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   json <- jsonlite::toJSON(
-    unclass(contracts),
+    as.data.frame(contracts),
     auto_unbox = TRUE,
     pretty = TRUE,
     dataframe = "rows",
-    null = "null"
+    null = "null",
+    digits = NA
   )
   writeLines(as.character(json), path)
   invisible(path)

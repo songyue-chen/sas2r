@@ -48,27 +48,6 @@ forbidden_parity_claims <- function(text) {
   spans[hit]
 }
 
-doc_r_chunks <- function(lines) {
-  fence <- grepl("^\\s*```", lines)
-  opens_r <- grepl("^\\s*```+\\s*(\\{\\s*[rR][ ,}]|[rR]\\s*$)", lines)
-  chunks <- character()
-  i <- 1L
-  n <- length(lines)
-  while (i <= n) {
-    if (!fence[i]) {
-      i <- i + 1L
-      next
-    }
-    j <- i + 1L
-    while (j <= n && !fence[j]) j <- j + 1L
-    if (opens_r[i] && j > i + 1L) {
-      chunks <- c(chunks, paste(lines[seq(i + 1L, j - 1L)], collapse = "\n"))
-    }
-    i <- j + 1L
-  }
-  chunks
-}
-
 doc_chunk_calls <- function(chunk) {
   parsed <- tryCatch(parse(text = chunk, keep.source = TRUE),
                      error = function(e) NULL)
@@ -81,14 +60,6 @@ doc_chunk_calls <- function(chunk) {
   qualified <- calls[calls > 1L & pd$token[pmax(calls - 1L, 1L)] %in%
                        c("NS_GET", "NS_GET_INT", "'$'", "'@'")]
   unique(pd$text[setdiff(calls, qualified)])
-}
-
-doc_prose_calls <- function(lines) {
-  fence <- grepl("^\\s*```", lines)
-  prose <- paste(lines[cumsum(fence) %% 2L == 0L & !fence], collapse = "\n")
-  hits <- unlist(regmatches(
-    prose, gregexpr("`[A-Za-z._][A-Za-z0-9._]*\\(\\)`", prose)))
-  unique(gsub("[`()]", "", hits))
 }
 
 unexported_api_references <- function(lines) {

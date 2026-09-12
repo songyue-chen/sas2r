@@ -114,7 +114,7 @@ export DEEPSEEK_API_KEY="sk-..."
 llm:
   provider: deepseek
   auth_mode: api_key
-  model: deepseek-chat
+  model: deepseek-flash
   capabilities:
     tool_calling: native      # see section 5; without it the agent layer is skipped
   timeout_seconds: 900
@@ -122,6 +122,16 @@ llm:
 
 DeepSeek ships `structured_output: fallback` deliberately. Do not override it
 to `native` -- the provider answers HTTP 400.
+
+Model names checked September 12, 2026: `deepseek-flash` serves
+DeepSeek-V4.1-Flash. `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are
+temporary aliases for it; `deepseek-v4-pro` remains available. The older
+`deepseek-chat` and `deepseek-reasoner` names were scheduled for discontinuation
+on July 24, 2026 and should not be used in new configurations. Use the current
+[model list](https://api-docs.deepseek.com/quick_start/pricing/) and
+[developer changelog](https://api-docs.deepseek.com/updates/) when updating a study.
+The provider registry passes the configured model name to ellmer, so a new model
+name does not require a sas2r code change.
 
 ### GitHub Models
 > **Retired upstream.** GitHub Models was retired on 2026-07-30, and `ellmer`
@@ -265,6 +275,14 @@ budget:
 ### Cost Provenance
 `sas2r` records cost under five provenance states: `billed_amount`, `contract_estimate`, `catalog_estimate`, `incomplete_estimate`, or `unknown`. `sas2r` owns no built-in fallback price table; unknown pricing remains `unknown` and is never estimated from arbitrary hard-coded rates.
 
+Per-agent tool limits are separate from run-level `usage_limits`. The shipped
+translator, reviewer, and fixer each allow 15 tool calls per request, with smaller
+per-tool limits (`search_skills`: 2; `lookup_rulebook`: 6 for translation/review,
+4 for fixing). A run reporting `max_tool_calls=unlimited` still has these agent
+limits. A tool warning saying “exceeded its budget after refusal” means the model
+requested a tool again after its local allowance was exhausted; it is not a
+provider billing-quota error.
+
 ---
 
 ## 5. Model Capabilities & Fallbacks
@@ -281,7 +299,7 @@ successfully:
 ```yaml
 llm:
   provider: deepseek
-  model: deepseek-v4-flash
+  model: deepseek-flash
   capabilities:
     tool_calling: native        # required to run the agent layer at all
 ```

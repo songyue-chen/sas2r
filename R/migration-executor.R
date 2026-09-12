@@ -615,19 +615,11 @@ build_bundle_execution_plan <- function(graph) {
   program_nodes <- nodes[nodes$type == "source_unit", ]
   candidate_roots <- unique(program_nodes$component_id)
 
-  inc_edges <- if (nrow(edges) > 0L) edges[edges$type == "includes_file", ] else tibble::tibble()
+  inc_edges <- if (nrow(edges) > 0L) edges[edges$type == "includes" & edges$resolution == "resolved", ] else tibble::tibble()
   if (nrow(inc_edges) > 0L) {
-    inc_nodes <- nodes$component_id[nodes$node_id %in% inc_edges$to]
-    # If all nodes of a component are targets of includes_file and not from top-level origin,
-    # it is strictly an included module
-    purely_included <- character()
-    for (cid in unique(inc_nodes)) {
-      cid_nodes <- nodes[nodes$component_id == cid, ]
-      if (all(cid_nodes$node_id %in% inc_edges$to)) {
-        purely_included <- c(purely_included, cid)
-      }
-    }
-    candidate_roots <- setdiff(candidate_roots, purely_included)
+    # Includes point from the included file's first unit to the call site.
+    included <- nodes$component_id[nodes$node_id %in% inc_edges$from]
+    candidate_roots <- setdiff(candidate_roots, included)
   }
 
   ordered_roots <- character()
@@ -681,12 +673,16 @@ run_bundle_attempt <- function(
   bundle_dir <- snapshot_selected_bundle(state, attempt)
   plan <- build_bundle_execution_plan(state$graph)
   exec_order <- plan$execution_order
+  program_files <- vapply(exec_order, function(cid) {
+    rev <- state$selected_revisions[[cid]]
+    rev$staged_file %||% rev$contract$staged_file %||% paste0(cid, ".R")
+  }, character(1))
 
   logs_dir <- attempt$logs_dir
   stdout_path <- normalizePath(file.path(logs_dir, "bundle_stdout.log"), winslash = "/", mustWork = FALSE)
   stderr_path <- normalizePath(file.path(logs_dir, "bundle_stderr.log"), winslash = "/", mustWork = FALSE)
 
-  bundle_runner_fn <- function(bundle_dir, execution_order) {
+  bundle_runner_fn <- function(bundle_dir, execution_order, program_files) {
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
     # The bundle's own autoexec.R loads the runtime, exactly as a program
@@ -709,6 +705,7 @@ run_bundle_attempt <- function(
     for (item in execution_order) {
       writeLines(jsonlite::toJSON(list(current = item, executed = executed), auto_unbox = TRUE), status_file)
       candidates <- c(
+        file.path(bundle_dir, program_files[[item]]),
         file.path(bundle_dir, item),
         file.path(bundle_dir, paste0(item, ".R")),
         file.path(bundle_dir, paste0(item, ".r"))
@@ -737,7 +734,8 @@ run_bundle_attempt <- function(
       bundle_runner_fn,
       args = list(
         bundle_dir = bundle_dir,
-        execution_order = exec_order
+        execution_order = exec_order,
+        program_files = program_files
       ),
       wd = attempt$attempt_dir,
       stdout = stdout_path,
@@ -817,4 +815,3 @@ run_bundle_attempt <- function(
 
   completed_rec
 }
-

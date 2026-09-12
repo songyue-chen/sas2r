@@ -1,49 +1,48 @@
-/* Run SAS from the repository root. This exports independent SAS references. */
-/* Create tests/testthat/fixtures/semantic-reference/sas-generated first. */
+/* Run in a fresh SAS batch session from the repository root.
+   tools/run-semantic-references.R sets SAS2R_REFERENCE_OUT and saves sas.log.
+   For a manual SAS session, create the output directory first and preserve
+   the complete SAS log there as sas.log. No expected CSV is read by SAS. */
 %let corpus=tests/testthat/fixtures/semantic-reference;
-%include "&corpus/missing_assignment/setup.sas";
-%include "&corpus/missing_assignment/source.sas";
-proc export data=out outfile="&corpus/sas-generated/missing_assignment.csv" dbms=csv replace; run;
-%include "&corpus/computed_missing/setup.sas";
-%include "&corpus/computed_missing/source.sas";
-proc export data=out outfile="&corpus/sas-generated/computed_missing.csv" dbms=csv replace; run;
-%include "&corpus/where_timing/setup.sas";
-%include "&corpus/where_timing/source.sas";
-proc export data=out outfile="&corpus/sas-generated/where_timing.csv" dbms=csv replace; run;
-%include "&corpus/literal_text/setup.sas";
-%include "&corpus/literal_text/source.sas";
-proc export data=out outfile="&corpus/sas-generated/literal_text.csv" dbms=csv replace; run;
-%include "&corpus/sql_case/setup.sas";
-%include "&corpus/sql_case/source.sas";
-proc export data=out outfile="&corpus/sas-generated/sql_case.csv" dbms=csv replace; run;
-%include "&corpus/sql_group_case/setup.sas";
-%include "&corpus/sql_group_case/source.sas";
-proc export data=out outfile="&corpus/sas-generated/sql_group_case.csv" dbms=csv replace; run;
-%include "&corpus/sql_literal/setup.sas";
-%include "&corpus/sql_literal/source.sas";
-proc export data=out outfile="&corpus/sas-generated/sql_literal.csv" dbms=csv replace; run;
-%include "&corpus/merge_disjoint/setup.sas";
-%include "&corpus/merge_disjoint/source.sas";
-proc export data=out outfile="&corpus/sas-generated/merge_disjoint.csv" dbms=csv replace; run;
-%include "&corpus/merge_shared/setup.sas";
-%include "&corpus/merge_shared/source.sas";
-proc export data=out outfile="&corpus/sas-generated/merge_shared.csv" dbms=csv replace; run;
-%include "&corpus/merge_body/setup.sas";
-%include "&corpus/merge_body/source.sas";
-proc export data=out outfile="&corpus/sas-generated/merge_body.csv" dbms=csv replace; run;
-%include "&corpus/sql_delete/setup.sas";
-%include "&corpus/sql_delete/source.sas";
-proc export data=out outfile="&corpus/sas-generated/sql_delete.csv" dbms=csv replace; run;
-%include "&corpus/sql_update/setup.sas";
-%include "&corpus/sql_update/source.sas";
-proc export data=out outfile="&corpus/sas-generated/sql_update.csv" dbms=csv replace; run;
-%include "&corpus/multiple_where/setup.sas";
-%include "&corpus/multiple_where/source.sas";
-proc export data=out outfile="&corpus/sas-generated/multiple_where.csv" dbms=csv replace; run;
-%include "&corpus/comparison_values/setup.sas";
-%include "&corpus/comparison_values/source.sas";
-proc export data=out outfile="&corpus/sas-generated/comparison_values.csv" dbms=csv replace; run;
+%let reference_out=%sysget(SAS2R_REFERENCE_OUT);
+%macro default_reference_out;
+  %if %length(%superq(reference_out))=0 %then
+    %let reference_out=&corpus/sas-generated;
+%mend;
+%default_reference_out;
+
+%macro semantic_case(id);
+  /* A failed case must never export an earlier case's WORK.OUT. */
+  %if %sysfunc(exist(work.out)) %then %do;
+    proc datasets library=work nolist; delete out; quit;
+  %end;
+  %include "&corpus/&id/setup.sas";
+  %include "&corpus/&id/source.sas";
+  %if &syscc > 4 or not %sysfunc(exist(work.out)) %then %do;
+    %put ERROR: semantic fixture &id failed before export.;
+    %abort abend;
+  %end;
+  proc export data=work.out outfile="&reference_out/&id..csv"
+    dbms=csv replace;
+  run;
+  %if &syscc > 4 %then %abort abend;
+%mend;
+
+%semantic_case(missing_assignment);
+%semantic_case(computed_missing);
+%semantic_case(where_timing);
+%semantic_case(literal_text);
+%semantic_case(sql_case);
+%semantic_case(sql_group_case);
+%semantic_case(sql_literal);
+%semantic_case(merge_disjoint);
+%semantic_case(merge_shared);
+%semantic_case(merge_body);
+%semantic_case(sql_delete);
+%semantic_case(sql_update);
+%semantic_case(multiple_where);
+%semantic_case(comparison_values);
+
 data _null_;
-file "&corpus/sas-generated/provenance.txt";
-put "SAS &sysvlong on &sysscp; &sysdate9 &systime";
+  file "&reference_out/provenance.txt";
+  put "SAS &sysvlong on &sysscp; &sysdate9 &systime";
 run;

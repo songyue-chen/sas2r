@@ -55,7 +55,7 @@ test_that("public resume uses actual saved revisions and makes no repeated provi
   first <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm)
   expect_identical(adapter$calls$n, 2L)
   expect_equal(readRDS(file.path(first$outputs_dir, "work", "out.rds"))$x, 11)
-  again <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm, resume = TRUE)
+  again <- sas_translate(sas_preflight(fx$source, config = fx$config)$project, out_dir = out, llm = adapter$llm, resume = TRUE)
   expect_identical(adapter$calls$n, 2L)
   expect_identical(sas_code(first), sas_code(again))
   expect_identical(again$status, first$status)
@@ -183,7 +183,7 @@ test_that("public resume preserves a fixer revision's actual path and its review
   expect_match(selected$r_path, "/revisions/rev_")
   expect_true(file.exists(selected$r_path))
   expect_identical(selected$revision_id, "r2")
-  again <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm, resume = TRUE)
+  again <- sas_translate(sas_preflight(fx$source, config = fx$config)$project, out_dir = out, llm = adapter$llm, resume = TRUE)
   expect_equal(adapter$calls$n, 4L)
   expect_identical(sas_code(again), sas_code(first))
   expect_equal(readRDS(file.path(again$outputs_dir, "work/out.rds"))$x, 11)
@@ -313,4 +313,30 @@ test_that("a script with declared path inputs and a helper can become migration 
   component <- jsonlite::read_json(result$report_json_path)$component_evidence[[1L]]
   expect_true(component$mechanical_checks$pass)
   expect_length(component$blockers, 0L)
+})
+
+test_that("resume ignores transport changes but invalidates changed QC and clears old diagnostics", {
+  fx <- review_public_fixture()
+  write("options sasautos=('macros');", file = fx$source, append = TRUE)
+  dir.create(file.path(fx$root, "macros"))
+  cfg <- fx$config
+  cfg$llm <- list(provider = "openai", model = "unused", timeout_seconds = 60)
+  adapter <- counted_review_llm(rep(list(good_translation(review_public_code), good_review()), 2))
+  out <- file.path(fx$root, "migration")
+  first <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE)
+  expect_identical(adapter$calls$n, 2L)
+  cfg$llm$timeout_seconds <- 120
+  cfg$budget <- list(max_calls = 10)
+  project <- sas_preflight(fx$source, config = cfg)$project
+  again <- sas_translate(project, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 2L)
+  expect_identical(again$diagnostics$resumed_components, "program")
+  cfg$comparison_rules <- list(min_rows = 1)
+  changed <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 4L)
+  expect_match(changed$diagnostics$resume_invalidated, "configuration")
+  reused <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 4L)
+  expect_identical(reused$diagnostics$resumed_components, "program")
+  expect_null(reused$diagnostics$resume_invalidated)
 })

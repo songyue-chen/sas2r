@@ -46,6 +46,8 @@ jobs:
             any::dplyr
       - name: Install sas2r
         run: R CMD INSTALL .
+      - name: Execute offline documentation examples
+        run: Rscript tools/run-doc-examples.R --installed
       - name: Test installed sas2r
         run: testthat::test_check("sas2r", stop_on_failure = TRUE)
         shell: Rscript {0}

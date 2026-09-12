@@ -4,6 +4,9 @@ KNOWN_CONFIG_KEYS <- c("llm", "libraries", "macros", "tolerance",
                        "verification", "outputs", "comparison_rules",
                        "migration")
 
+PROJECT_CONFIG_KEYS <- c(KNOWN_CONFIG_KEYS, "macro_search_path", "include_roots",
+  "autoexec", "output_review", "raw", "source")
+
 is_abs_path <- function(p) {
   grepl("^([A-Za-z]:)?[/\\\\]", p)
 }
@@ -218,12 +221,7 @@ normalize_budget_config <- function(config) {
     cli::cli_abort("budget configuration must be a mapping",
                    class = "sas2r_budget_config_error")
   }
-  allowed <- c(
-    "mode", "max_usd", "pricing_source", "rates", "max_calls",
-    "max_retries", "max_tool_calls", "max_wall_time",
-    "max_request_bytes", "max_request_chars", "max_input_tokens",
-    "max_output_tokens"
-  )
+  allowed <- c("mode", "pricing_source", "rates", usage_limit_names())
   unknown <- setdiff(names(config), allowed)
   if (length(unknown)) {
     cli::cli_abort(
@@ -240,17 +238,18 @@ normalize_budget_config <- function(config) {
   out
 }
 
-assert_exact_names <- function(x, allowed, context = "config") {
-  if (!is.list(x)) {
-    cli::cli_abort("{.field {context}} must be a mapping",
-                   class = "sas2r_config_error")
+assert_exact_names <- function(x, allowed, context = "config", class = "sas2r_config_error") {
+  if (!is.list(x) || (length(x) && (is.null(names(x)) || anyNA(names(x)) ||
+      any(!nzchar(names(x))) || anyDuplicated(names(x))))) {
+    cli::cli_abort("{.field {context}} must be a named mapping with distinct fields",
+                   class = class)
   }
   unknown <- setdiff(names(x), allowed)
   if (length(unknown)) {
     cli::cli_abort(
       c("Unknown or unsupported field in {.field {context}}: {.val {unknown}}",
         "i" = "Allowed: {.val {allowed}}."),
-      class = "sas2r_config_error"
+      class = class
     )
   }
 }
@@ -318,7 +317,36 @@ normalize_output_review_config <- function(raw, config_file) {
 
 normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
   if (is.null(raw_outputs)) return(NULL)
-  validate_output_overrides(raw_outputs)
+  outputs <- validate_output_overrides(raw_outputs)
+  if (is.list(outputs) && length(outputs$references) && !is.na(config_file)) {
+    outputs$references <- lapply(outputs$references,
+      config_anchor_paths, base = dirname(config_file))
+  }
+  outputs
+}
+
+normalize_project_config <- function(config, root) {
+  assert_exact_names(config, PROJECT_CONFIG_KEYS)
+  root <- include_normalize_path(root)
+  config$libraries <- normalize_library_entries(config$libraries, root)
+  for (field in c("macro_search_path", "include_roots", "autoexec")) {
+    config[[field]] <- config_anchor_paths(config[[field]], root)
+  }
+  config$outputs <- normalize_outputs_config(config$outputs)
+  if (is.list(config$outputs) && length(config$outputs$references)) {
+    config$outputs$references <- lapply(config$outputs$references, config_anchor_paths, base = root)
+  }
+  config$comparison_rules <- normalize_comparison_rules(config$comparison_rules, base = root)
+  if (!is.null(config$llm)) config$llm <- normalize_llm_config(config$llm)
+  if (is.null(config$source)) config$source <- NA_character_
+  structure(config, class = "sas2r_config")
+}
+
+# Absolute bases make repeated normalization idempotent, including nonexistent
+# reference files and R-list configurations passed with a relative study path.
+config_anchor_paths <- function(paths, base) {
+  paths <- config_resolve_paths(paths %||% character(), include_normalize_path(base))
+  if (length(paths)) vapply(paths, include_normalize_path, character(1), USE.NAMES = FALSE) else character()
 }
 
 find_config <- function(start = ".") {
@@ -341,10 +369,11 @@ find_config <- function(start = ".") {
 #' primary supported case: built-in defaults let a bare SAS script be
 #' scanned, assessed, and translated with no setup at all.
 #' Every relative configured path -- `libraries`, `macros.search_path`,
-#' `includes.roots`, and `environment.autoexec` -- is resolved against the
+#' `includes.roots`, `environment.autoexec`, and output/comparison reference
+#' paths -- is resolved against the
 #' configuration file's own directory, never against the working directory:
 #' those roots reach `%include` occurrence identity, which must not depend on
-#' where the scan was launched from. One anchoring rule governs all four, so a
+#' where the scan was launched from. One anchoring rule governs these paths, so a
 #' `~`-prefixed entry is treated as already carrying its own base everywhere
 #' rather than in some keys only, because R expands `~` against the user's home
 #' directory and prefixing a base onto it would corrupt the path.
@@ -353,6 +382,9 @@ find_config <- function(start = ".") {
 #' `sas_project()` resolves whatever is still relative against the project
 #' root. Both bases are facts about the project's layout, and both travel with
 #' the checkout.
+#' @details YAML boolean settings use `true` and `false`. Tokens such as `N`,
+#'   `Y`, `yes`, and `no` remain strings, preserving clinical metadata keys.
+#'   Quote string metadata values that look numeric, such as SAS format `"8."`.
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
@@ -373,12 +405,23 @@ sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)
   raw <- list()
   if (!is.na(src)) {
-    raw <- yaml::read_yaml(src)
+    lines <- readLines(src, warn = FALSE)
+    content <- lines[!grepl("^\\s*(#.*)?$|^%", lines)]
+    starts <- which(grepl("^---($|[[:space:]])", content))
+    if (length(starts) > 1L || (length(starts) && starts[1L] != 1L)) {
+      cli::cli_abort("Configuration must contain one YAML document: {.file {src}}",
+        class = "sas2r_config_error")
+    }
+    raw <- yaml::yaml.load(paste(lines, collapse = "\n"), handlers = list(
+      "bool#yes" = function(value) if (tolower(value) == "true") TRUE else value,
+      "bool#no" = function(value) if (tolower(value) == "false") FALSE else value
+    ))
     if (is.null(raw)) raw <- list()
     unknown <- setdiff(names(raw), KNOWN_CONFIG_KEYS)
     if (length(unknown)) {
       msg <- paste0("Unknown config key", if (length(unknown) > 1) "s" else "", " in {.file {src}}: {.val {unknown}}")
       cli::cli_warn(msg)
+      raw <- raw[intersect(names(raw), KNOWN_CONFIG_KEYS)]
     }
   }
   llm <- if (is.null(raw$llm)) NULL else normalize_llm_config(raw$llm)
@@ -399,7 +442,8 @@ sas_config <- function(path = NULL, start = ".") {
     autoexec = config_rebase_paths(autoexec, src),
     outputs = outputs,
     output_review = output_review,
-    comparison_rules = raw$comparison_rules %||% list(),
+    comparison_rules = normalize_comparison_rules(raw$comparison_rules,
+      base = if (is.na(src)) NULL else dirname(normalizePath(src, mustWork = FALSE))),
     llm = llm,
     budget = budget,
     source = src,
@@ -410,7 +454,7 @@ sas_config <- function(path = NULL, start = ".") {
 #' @export
 print.sas2r_config <- function(x, ...) {
   cli::cli_h1("sas2r configuration")
-  if (is.na(x$source)) cli::cli_text("source: {.emph built-in defaults (no _sas2r.yml found)}")
+  if (is.null(x$source) || is.na(x$source)) cli::cli_text("source: {.emph defaults or R-list configuration}")
   else cli::cli_text("source: {.file {x$source}}")
   cli::cli_text("libraries: {length(x$libraries)}")
   cli::cli_text("macro search path: {length(x$macro_search_path)} location{?s}")

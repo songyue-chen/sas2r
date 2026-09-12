@@ -36,12 +36,15 @@ test_that("single .sas file with no config works (zero-config path)", {
     unit_type = character(), file = character()))
 })
 
-test_that("cycle falls back to file order with a flag", {
+test_that("an in-file future producer preserves order and needs an input remedy", {
   dir <- withr::local_tempdir()
   writeLines("data a; set b; run;\ndata b; set a; run;", file.path(dir, "x.sas"))
   p <- sas_project(dir)
-  expect_true("dependency_cycle" %in% p$flags$kind)
+  expect_false("dependency_cycle" %in% p$flags$kind)
   expect_identical(p$order, p$units$unit_id)
+  check <- sas_preflight(p)
+  expect_identical(check$status, "needs_attention")
+  expect_true("backward_dependency" %in% check$inputs$status)
 })
 
 test_that("empty directory returns valid 0-row project tibbles", {
@@ -90,7 +93,7 @@ test_that("project comments attach to the next or containing translation unit", 
   expect_identical(p$comments$placement, c(
     "leading", "leading", "internal", "internal", "unattached"
   ))
-  expect_identical(p$comments$file, rep(path, 5L))
+  expect_identical(p$comments$file, rep(include_normalize_path(path), 5L))
   expect_identical(p$comments$origin, rep("program", 5L))
   expect_false(any(c("char_start", "char_end") %in% names(p$statements)))
 })
@@ -111,7 +114,7 @@ test_that("comment-only files retain all comment forms without a unit", {
   expect_identical(p$comments$kind, c("block", "statement", "macro"))
   expect_identical(p$comments$unit_id, rep(NA_integer_, 3L))
   expect_identical(p$comments$placement, rep("unattached", 3L))
-  expect_identical(p$comments$file, rep(path, 3L))
+  expect_identical(p$comments$file, rep(include_normalize_path(path), 3L))
   expect_identical(p$comments$origin, rep("program", 3L))
 })
 
@@ -125,7 +128,7 @@ test_that("cached project scans preserve globally offset comment attachments", {
   p2 <- sas_project(dir, cache = TRUE)
 
   expect_identical(p1$comments$unit_id, 2L)
-  expect_identical(p1$comments$file, path)
+  expect_identical(p1$comments$file, include_normalize_path(path))
   expect_identical(p1$comments, p2$comments)
 })
 
@@ -170,13 +173,16 @@ test_that("quoted include matching top-level file is not duplicated or cycled", 
   expect_false("unresolved_include" %in% p$flags$kind)
 })
 
-test_that("config list overlays over discovered _sas2r.yml", {
+test_that("explicit config replaces discovery and loaded configs can be edited", {
   dir <- withr::local_tempdir()
   writeLines("data a; run;", file.path(dir, "a.sas"))
   writeLines("includes:\n  roots:\n    - /path/from/yaml", file.path(dir, "_sas2r.yml"))
-  p <- sas_project(dir, config = list(provider = "custom_provider"))
-  expect_identical(p$config$include_roots, "/path/from/yaml")
-  expect_identical(p$config$provider, "custom_provider")
+  p <- sas_project(dir, config = list(dialect = "custom_dialect"))
+  expect_identical(p$config$include_roots, character())
+  loaded <- sas_config(file.path(dir, "_sas2r.yml"))
+  loaded$dialect <- "custom_dialect"
+  expect_identical(sas_project(dir, config = loaded)$config$include_roots, "/path/from/yaml")
+  expect_identical(p$config$dialect, "custom_dialect")
 })
 
 test_that("missing autoexec path generates autoexec_missing flag", {
@@ -191,7 +197,7 @@ test_that("sasautos in program files is harvested with sasautos_from_program fla
   writeLines("options sasautos=('macros');\ndata a; run;", file.path(dir, "prog.sas"))
   p <- sas_project(dir)
   expect_true("sasautos_from_program" %in% p$flags$kind)
-  expect_true("macros" %in% p$config$macro_search_path)
+  expect_identical(p$config$macro_search_path, file.path(include_normalize_path(dir), "macros"))
 })
 
 test_that("sas_project attaches dependency_facts and source_hashes", {
