@@ -66,3 +66,28 @@ test_that("check_program_revision validates parameter contracts and helper names
   expect_match(res_bad_h$errors[1], "unknown_helper")
 })
 
+test_that("script inputs are not compared with unrelated helper formals", {
+  r_file <- file.path(withr::local_tempdir(), "derive_adae.R")
+  helper <- "is_not_missing <- function(x) !is.na(x)"
+  writeLines(c(helper, "ae <- data.frame(x = 1)", "ae <- ae[is_not_missing(ae$x), , drop = FALSE]"), r_file)
+  contract <- new_behavioral_contract(
+    component_id = "derive_adae",
+    parameters = list(list(name = "SDTM_PATH"), list(name = "ADAM_PATH"))
+  )
+  expect_true(check_program_revision(r_file, contract)$pass)
+
+  # A declared function interface is still checked, even after a helper.
+  writeLines(c(helper, "derive_adae <- function(x) x"), r_file)
+  mismatch <- check_program_revision(r_file, contract)
+  expect_false(mismatch$pass)
+  expect_match(mismatch$errors, "parameter_mismatch", fixed = TRUE)
+  writeLines(c(helper, "derive_adae <- function(SDTM_PATH, ADAM_PATH) NULL"), r_file)
+  expect_true(check_program_revision(r_file, contract)$pass)
+
+  # A SAS macro's explicit interface cannot be replaced by a helper function.
+  contract$macro_contract <- parse_macro_contract("derive_adae", "SDTM_PATH, ADAM_PATH")
+  writeLines(helper, r_file)
+  missing_macro <- check_program_revision(r_file, contract)
+  expect_false(missing_macro$pass)
+  expect_true(any(grepl("interface_error", missing_macro$errors)))
+})

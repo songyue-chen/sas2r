@@ -11,7 +11,7 @@
 emit_sql_create <- function(stmt_text, stmt_id) {
   reject <- list(code = NA_character_, stmt_map = stmt_id, flags = "sql_not_t1")
   stmt_text <- trimws(sub(";\\s*$", "", stmt_text))
-  stmt_text <- gsub("\\s+", " ", stmt_text)   # SQL statements span lines
+  stmt_text <- rewrite_outside_strings(stmt_text, function(x) gsub("\\s+", " ", x))   # SQL statements span lines
   low <- tolower(mask_strings(stmt_text, keep_double = FALSE))
   if (grepl("\\bjoin\\b|\\bcalculated\\b|\\binto\\s*:|from\\s*\\(|\\bhaving\\b|\\bdistinct\\b|\\bdesc\\b|\\basc\\b", low))
     return(reject)
@@ -20,11 +20,11 @@ emit_sql_create <- function(stmt_text, stmt_id) {
     stmt_text, ignore.case = TRUE, perl = TRUE))[[1]]
   if (length(m) < 4L || m[1] == "") return(reject)
   target <- split_ds(norm_ds(m[2]))
-  sel <- trimws(m[3])
+  sel <- tolower(trimws(m[3]))
   src <- split_ds(norm_ds(m[4]))
   where <- trimws(m[5])
-  grp <- trimws(m[6])
-  ord <- trimws(m[7])
+  grp <- tolower(trimws(m[6]))
+  ord <- tolower(trimws(m[7]))
 
   agg_pat <- "(count\\(\\s*\\*\\s*\\)|sum\\(\\s*\\w+\\s*\\)|avg\\(\\s*\\w+\\s*\\)|min\\(\\s*\\w+\\s*\\)|max\\(\\s*\\w+\\s*\\))\\s+as\\s+(\\w+)"
   has_agg <- grepl(agg_pat, sel, ignore.case = TRUE)
@@ -92,7 +92,11 @@ emit_sql_create <- function(stmt_text, stmt_id) {
 #' @return A list with elements `code` (character), `stmt_map` (integer), and `flags` (character).
 #' @noRd
 emit_proc_sql <- function(us) {
-  cr <- us[us$first_token == "create", ]
+  code <- us[us$type == "code", ]
+  if (!all(code$first_token %in% c("proc", "create", "run", "quit"))) {
+    return(list(code = NA_character_, stmt_map = us$stmt_id, flags = "sql_not_t1"))
+  }
+  cr <- code[code$first_token == "create", ]
   if (nrow(cr) != 1L)
     return(list(code = NA_character_, stmt_map = us$stmt_id, flags = "sql_not_t1"))
   emit_sql_create(cr$text[1], cr$stmt_id[1])

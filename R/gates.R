@@ -91,7 +91,9 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
         errors <- c(errors, paste0("interface_error: ", m_chk$errors))
       }
     } else {
-      # Check parameters against any matching function definition
+      # Script parameters can describe external inputs such as LIBNAME paths.
+      # Compare formals only when this component defines its own named function;
+      # an unrelated helper does not establish a callable program interface.
       param_names <- if (is.data.frame(contract$parameters)) {
         contract$parameters$name
       } else if (is.list(contract$parameters)) {
@@ -116,10 +118,6 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
             matching_fn <- named_matches[[1L]]
           }
         }
-        if (is.null(matching_fn) && length(all_fns) > 0L) {
-          matching_fn <- all_fns[[1L]]
-        }
-
         if (!is.null(matching_fn)) {
           formals_names <- names(as.list(matching_fn[[3L]][[2L]])) %||% character()
           if (!identical(formals_names, param_names)) {
@@ -150,5 +148,4 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
     lint = lint_res
   )
 }
-
 

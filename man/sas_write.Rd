@@ -15,8 +15,12 @@ sas_write(x, dir)
 The target directory path, invisibly.
 }
 \description{
-Copies the selected generated bundle, outputs (if any), and migration reports
-to the destination directory. Warns if status is \code{blocked} or \code{needs_review}.
+Copies the selected programs, runtime, all generated files, and migration
+reports. Rebuilds \code{autoexec.R} with destination-relative output paths and
+includes a dependency-ordered \code{run.R}, an output manifest, and a README.
+Input libraries remain external dependencies documented in the README.
+Run \verb{Rscript run.R} from the exported folder, or \code{source("run.R", chdir = TRUE)}.
+Warns if status is \code{blocked} or \code{needs_review}.
 }
 \examples{
 sas_dir <- file.path(tempdir(), "sas2r-write-example")

@@ -3,7 +3,7 @@
 # Acceptance Runner for sas2r Migration Pipeline
 # Supports --fixture (deterministic offline CI acceptance) and --phuse (PHUSE corpus acceptance)
 
-if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DESCRIPTION", warn = FALSE)))) {
+if (!"--installed" %in% commandArgs(trailingOnly = TRUE) && file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DESCRIPTION", warn = FALSE)))) {
   if (requireNamespace("pkgload", quietly = TRUE)) {
     pkgload::load_all(quiet = TRUE)
   } else {
@@ -14,6 +14,16 @@ if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DES
 } else {
   library(sas2r)
 }
+
+# Fixture response builders are test assets, not installed package exports.
+# Resolve them from this script's repository without relying on pkgload helpers.
+script_file <- if (sys.nframe() > 0L) sys.frame(1L)$ofile else NULL
+if (is.null(script_file)) {
+  script_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1L])
+}
+repo_root <- dirname(dirname(normalizePath(script_file, winslash = "/", mustWork = TRUE)))
+source(file.path(repo_root, "tests", "testthat", "helper-agents.R"), local = TRUE)
+`%||%` <- get("%||%", envir = asNamespace("sas2r"), inherits = TRUE)
 
 # --- CLI Argument Parsing ---
 args <- commandArgs(trailingOnly = TRUE)
@@ -204,11 +214,11 @@ run_fixture_acceptance <- function(artifacts_dir) {
       good_review()
     }
   }
-  mock <- new_llm(function(request) {
-    normalize_provider_response(
+  mock <- sas2r:::new_llm(function(request) {
+    sas2r:::normalize_provider_response(
       route_fixture_response(request), request = request, provider = "mock"
     )
-  }, provider = "mock", capabilities = llm_capabilities(
+  }, provider = "mock", capabilities = sas2r:::llm_capabilities(
     structured_output = "native",
     tool_calling = "native",
     tools_with_structured_output = "supported"
@@ -247,54 +257,27 @@ run_fixture_acceptance <- function(artifacts_dir) {
   dir.create(fresh2, recursive = TRUE)
   on.exit({ unlink(fresh1, recursive = TRUE); unlink(fresh2, recursive = TRUE) }, add = TRUE)
 
-  file.copy(list.files(res$bundle_dir, full.names = TRUE), fresh1, recursive = TRUE)
-  file.copy(list.files(res$bundle_dir, full.names = TRUE), fresh2, recursive = TRUE)
-
-  for (fdir in list(fresh1, fresh2)) {
-    reg_p <- file.path(fdir, "autoexec.R")
-    if (file.exists(reg_p)) {
-      reg_lines <- readLines(reg_p)
-      reg_lines <- gsub("write_path = \"[^\"]*\"", paste0("write_path = \"", file.path(fdir, "out_libs"), "\""), reg_lines)
-      writeLines(reg_lines, reg_p)
-    }
+  sas_write(res, fresh1)
+  sas_write(res, fresh2)
+  # Remove copied outputs so a stale file cannot make the execution gate pass.
+  for (fdir in c(fresh1, fresh2)) {
+    unlink(file.path(fdir, c("adam/adsl_out.rds", "outputs/vs_summary_plot.pdf")))
   }
-
-  # Execute in fresh root 1
-  res1 <- tryCatch(
-    callr::r(function(bdir) {
-      if (file.exists(file.path(bdir, "autoexec.R"))) {
-        sys.source(file.path(bdir, "autoexec.R"), envir = globalenv(), chdir = TRUE)
-      } else {
-        if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
-        if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
-        if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
-      }
-      r_files <- sort(list.files(bdir, pattern = "^0.*[.]R$", full.names = TRUE))
-      for (f in r_files) sys.source(f, envir = globalenv())
+  run_export <- function(root) {
+    tryCatch(callr::r(function(bdir) {
+      entry <- jsonlite::read_json(file.path(bdir, "run-order.json"))$entrypoint
+      sys.source(file.path(bdir, entry), envir = globalenv(), chdir = TRUE)
       TRUE
-    }, args = list(bdir = fresh1), wd = fresh1),
-    error = function(e) FALSE
-  )
+    }, args = list(bdir = root), wd = root), error = function(e) {
+      message("Export execution failed: ", conditionMessage(e))
+      FALSE
+    })
+  }
+  res1 <- run_export(fresh1)
+  res2 <- run_export(fresh2)
 
-  # Execute in fresh root 2
-  res2 <- tryCatch(
-    callr::r(function(bdir) {
-      if (file.exists(file.path(bdir, "autoexec.R"))) {
-        sys.source(file.path(bdir, "autoexec.R"), envir = globalenv(), chdir = TRUE)
-      } else {
-        if (file.exists(file.path(bdir, "_sas2r_registry.R"))) sys.source(file.path(bdir, "_sas2r_registry.R"), envir = globalenv())
-        if (file.exists(file.path(bdir, "sas2r-helpers.R"))) sys.source(file.path(bdir, "sas2r-helpers.R"), envir = globalenv())
-        if (file.exists(file.path(bdir, "_sas2r_formats.R"))) sys.source(file.path(bdir, "_sas2r_formats.R"), envir = globalenv())
-      }
-      r_files <- sort(list.files(bdir, pattern = "^0.*[.]R$", full.names = TRUE))
-      for (f in r_files) sys.source(f, envir = globalenv())
-      TRUE
-    }, args = list(bdir = fresh2), wd = fresh2),
-    error = function(e) FALSE
-  )
-
-  ds1_path <- file.path(fresh1, "out_libs", "adsl_out.rds")
-  ds2_path <- file.path(fresh2, "out_libs", "adsl_out.rds")
+  ds1_path <- file.path(fresh1, "adam", "adsl_out.rds")
+  ds2_path <- file.path(fresh2, "adam", "adsl_out.rds")
   tlf1_path <- file.path(fresh1, "outputs", "vs_summary_plot.pdf")
   tlf2_path <- file.path(fresh2, "outputs", "vs_summary_plot.pdf")
 
@@ -307,7 +290,7 @@ run_fixture_acceptance <- function(artifacts_dir) {
 
   # Gate 6: Seeded material defect rejection
   # Verify broken R code stops and gets blocked
-  broken_mock <- mock_llm(list(
+  broken_mock <- sas2r:::mock_llm(list(
     good_translation("stop('seeded failure')"),
     good_review()
   ))
@@ -316,7 +299,9 @@ run_fixture_acceptance <- function(artifacts_dir) {
   g6_passed <- !identical(res_broken$status, "migration_ready") && !identical(res_broken$status, "validated")
 
   # Gate 7: Usage records
-  g7_passed <- !is.null(res$usage) && (res$usage$total_calls %||% 0L) >= 0L
+  reported_usage <- jsonlite::read_json(res$report_json_path)$usage
+  g7_passed <- !is.null(res$usage) && res$usage$request_count > 0L &&
+    identical(as.numeric(reported_usage$calls), as.numeric(res$usage$request_count))
 
   all_passed <- g1_passed && g2_passed && g3_passed && g4_passed && g5_passed && g6_passed && g7_passed
 

@@ -25,7 +25,7 @@ test_that("missing-value truth table wraps complex and repeated shapes", {
   # F5: Arithmetic RHS not mangled
   expect_identical(
     wrap_missing("age < b + 1", c("age", "b")),
-    "(is.na(age) | age < b + 1)")
+    'chr_cmp(age, b + 1, "<")')
 
   # F5: Repeated comparison both wrapped
   expect_identical(

@@ -260,9 +260,15 @@ process_program_component <- function(
       rev$status <- "ok"
     } else {
       state$events <- c(state$events, paste0("mechanical_fail:", rev_id))
-      signal_immediate_coordinator_event("mechanical_fail", component_id, rev_id)
+      signal_immediate_coordinator_event("mechanical_fail", component_id, rev_id,
+                                         reason = paste(checks$errors, collapse = "; "))
       rev$status <- "check_failed"
     }
+    rev$checks <- checks
+    state$selected_revisions[[component_id]] <- rev
+    state$histories[[component_id]] <- record_program_checks(
+      state$histories[[component_id]], checks
+    )
 
     # Step B: Independent review
     ctx <- list(
@@ -273,12 +279,15 @@ process_program_component <- function(
       contract = rev$contract,
       binding = rev$binding %||% rev$contract$binding,
       history = state$histories[[component_id]],
-      sas_source = rev$contract$sas_text %||% "",
+      sas_source = component_source_text(state$graph, component_id),
       project = state$project,
       config = state$config %||% list()
     )
 
-    review <- review_program_revision(
+    cached_verdict <- component_review_verdict(state$histories[[component_id]])
+    reuse_review <- round == 0L && component_id %in% state$resumed_components &&
+      cached_verdict %in% c("reviewed_no_material_finding", "repair_required")
+    review <- if (reuse_review) list(verdict = cached_verdict) else review_program_revision(
       revision = rev,
       context = ctx,
       llm = state$reviewer_llm,
@@ -297,7 +306,11 @@ process_program_component <- function(
     } else {
       state$events <- c(state$events, paste0("reviewed:", rev_id))
     }
-    signal_immediate_coordinator_event("program_reviewed", component_id, rev_id)
+    signal_immediate_coordinator_event(
+      if (identical(review$verdict, "review_unavailable")) "review_unavailable"
+      else if (reuse_review) "review_reused" else "program_reviewed",
+      component_id, rev_id, reason = review$reason
+    )
 
     # Step C: Meaningful smoke / defer
     smoke_res <- NULL
@@ -333,6 +346,9 @@ process_program_component <- function(
         }
 
         smoke_res <- run_program_smoke(plan, state$runtime, attempt_dir)
+        state$histories[[component_id]] <- record_program_smoke(
+          state$histories[[component_id]], smoke_res
+        )
 
         if (isTRUE(smoke_res$passed)) {
           state$events <- c(state$events, paste0("smoke_passed:", rev_id))
@@ -686,6 +702,8 @@ run_bundle_pipeline <- function(
   repairs <- list()
   selected_attempt <- NULL
   selected_assessment <- NULL
+  selected_revisions <- NULL
+  selected_histories <- NULL
   latest_assessment <- NULL
   latest_attempt <- NULL
   latest_diagnosis <- NULL
@@ -735,7 +753,9 @@ run_bundle_pipeline <- function(
       "bundle_attempt_completed",
       attempt_id = attempt_rec$attempt_id,
       round = round,
-      passed = isTRUE(attempt_rec$passed)
+      passed = isTRUE(attempt_rec$passed),
+      deferred = isTRUE(attempt_rec$deferred),
+      reason = attempt_rec$reason
     )
 
     # 2. Assess all outputs
@@ -775,6 +795,8 @@ run_bundle_pipeline <- function(
     if (inherits(cand_selection, "sas2r_selected_attempt")) {
       selected_attempt <- cand_selection
       selected_assessment <- assessment
+      selected_revisions <- state$selected_revisions
+      selected_histories <- state$histories
       signal_bundle_event(
         "bundle_attempt_selected",
         attempt_id = attempt_rec$attempt_id,
@@ -978,7 +1000,10 @@ run_bundle_pipeline <- function(
         state$selected_revisions[[cid]] <- c_rev
         state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], new_b)
 
-        check_program_revision(c_rev$r_path, contract = c_rev$contract)
+        c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract)
+        c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
+        state$selected_revisions[[cid]] <- c_rev
+        state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)
         if (!is.null(state$reviewer_llm)) {
           ctx <- list(
             component_id = cid,
@@ -988,7 +1013,7 @@ run_bundle_pipeline <- function(
             contract = c_rev$contract,
             binding = new_b,
             history = state$histories[[cid]],
-            sas_source = c_rev$contract$sas_text %||% "",
+            sas_source = component_source_text(state$graph, cid),
             project = state$project,
             config = state$config %||% list()
           )
@@ -1012,7 +1037,9 @@ run_bundle_pipeline <- function(
       state$histories[[primary_cid]] <- activate_component_binding(state$histories[[primary_cid]], new_b)
 
       checks <- check_program_revision(fixed_rev$r_path, contract = fixed_rev$contract)
-      if (!isTRUE(checks$pass)) fixed_rev$status <- "check_failed"
+      fixed_rev$checks <- checks
+      fixed_rev$status <- if (isTRUE(checks$pass)) "ok" else "check_failed"
+      state$histories[[primary_cid]] <- record_program_checks(state$histories[[primary_cid]], checks)
 
       if (!is.null(state$reviewer_llm)) {
         ctx <- list(
@@ -1023,7 +1050,7 @@ run_bundle_pipeline <- function(
           contract = fixed_rev$contract,
           binding = new_b,
           history = state$histories[[primary_cid]],
-          sas_source = fixed_rev$contract$sas_text %||% "",
+          sas_source = component_source_text(state$graph, primary_cid),
           project = state$project,
           config = state$config %||% list()
         )
@@ -1109,8 +1136,8 @@ run_bundle_pipeline <- function(
     schedule = state$schedule,
     paths = state$paths,
     output_contracts = state$output_contracts,
-    selected_revisions = state$selected_revisions,
-    histories = state$histories,
+    selected_revisions = selected_revisions %||% state$selected_revisions,
+    histories = selected_histories %||% state$histories,
     runtime = state$runtime,
     usage_budget = state$usage_budget,
     config = state$config,

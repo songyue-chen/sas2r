@@ -310,8 +310,10 @@ format_sas2r_progress <- function(progress) {
         program_generated = "program generated",
         agent_degraded = paste0("agent degraded", progress_reason(progress$reason)),
         mechanical_pass = "mechanical checks passed",
-        mechanical_fail = "mechanical checks failed",
+        mechanical_fail = paste0("mechanical checks failed", progress_reason(progress$reason)),
         program_reviewed = "reviewed",
+        review_unavailable = paste0("review unavailable", progress_reason(progress$reason)),
+        review_reused = "saved review reused",
         program_fixed = "repaired",
         component_revisited = "revisited",
         gsub("_", " ", event, fixed = TRUE)
@@ -331,10 +333,12 @@ format_sas2r_progress <- function(progress) {
       component <- progress$component_id %||% "?"
       what <- switch(
         event,
+        migration_summary = progress$summary,
         bundle_round_started = sprintf("%s started", round),
         bundle_attempt_started = sprintf("%s: running %s", round, attempt),
         bundle_attempt_completed = sprintf("%s: %s %s", round, attempt,
-                                           if (isTRUE(progress$passed)) "ran to completion" else "failed"),
+                                           if (isTRUE(progress$deferred)) paste0("deferred", progress_reason(progress$reason))
+                                           else if (isTRUE(progress$passed)) "ran to completion" else "failed"),
         bundle_gate_evaluated = sprintf("%s: %s assessed -- %s", round, attempt,
                                         progress$status %||% "unknown"),
         bundle_attempt_selected = sprintf("%s: %s selected", round, attempt),

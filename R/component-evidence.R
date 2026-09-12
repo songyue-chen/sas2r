@@ -303,7 +303,9 @@ record_completed_review <- function(
     rev$review_unavailable <- FALSE
     # Clear review-unavailable and repair-required blockers
     review_blockers <- c("provider_timeout", "llm_rate_limit", "provider_crash",
-                         "review_unavailable", "repair_required")
+                         "review_unavailable", "repair_required",
+                         unlist(lapply(Filter(function(ev) identical(ev$type, "review_unavailable"),
+                                              rev$events), `[[`, "reason")))
     rev$blockers <- setdiff(rev$blockers, review_blockers)
     if (!is.null(runtime_deferred) && nzchar(runtime_deferred)) {
       rev$runtime_deferred <- as.character(runtime_deferred)
@@ -737,4 +739,42 @@ evidence_for_output_lineage <- function(graph, histories, target_id) {
     is_ready = is_ready,
     component_evidence = comp_ev_map
   )
+}
+
+# Keep the mechanical gate attached to the revision that was checked.
+record_program_checks <- function(history, checks) {
+  idx <- match(history$active_revision_id,
+               vapply(history$revisions, `[[`, character(1), "revision_id"))
+  history$revisions[[idx]]$blockers <- unique(c(
+    setdiff(history$revisions[[idx]]$blockers, "mechanical_checks_failed"),
+    if (!isTRUE(checks$pass)) "mechanical_checks_failed"
+  ))
+  history
+}
+
+# Record execution independently of review completion. A passed smoke run is
+# still observable when an unavailable review prevents evidence promotion.
+record_program_smoke <- function(history, result) {
+  idx <- match(history$active_revision_id,
+               vapply(history$revisions, `[[`, character(1), "revision_id"))
+  rev <- history$revisions[[idx]]
+  rev$runtime_deferred <- NULL
+  rev$events <- c(rev$events, list(list(
+    type = "program_smoke",
+    status = if (isTRUE(result$passed)) "passed" else "failed",
+    execution_id = result$execution_id,
+    created_at = strftime(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  )))
+  if (isTRUE(result$passed)) rev$blockers <- setdiff(rev$blockers, "smoke_failed")
+  history$revisions[[idx]] <- rev
+  history
+}
+
+# Derive review status from the active revision's authoritative event history.
+component_review_verdict <- function(history) {
+  events <- current_component_evidence(history)$events %||% list()
+  reviews <- Filter(function(ev) ev$type %in% c("review_completed", "review_unavailable"), events)
+  if (!length(reviews)) return("review_unavailable")
+  last <- reviews[[length(reviews)]]
+  last$verdict %||% "review_unavailable"
 }

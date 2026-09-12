@@ -489,6 +489,13 @@ sas_merge <- function(a, b, by,
     stop("sas_merge: many-to-many merge on keys (", paste(by, collapse = ", "),
          ") -- SAS row-walking semantics cannot be reproduced by a join. ",
          "This unit requires the PDV-faithful path.", call. = FALSE)
+  overlap <- setdiff(intersect(names(a), names(b)), by)
+  if ((dup_a || dup_b) && length(overlap)) {
+    stop("sas_merge: duplicate keys with shared non-key columns (",
+         paste(overlap, collapse = ", "),
+         ") require SAS observation-by-observation MERGE semantics; defer this unit",
+         call. = FALSE)
+  }
   a_cols <- names(a); b_cols <- names(b)
   a$.in_a <- TRUE; b$.in_b <- TRUE
   m <- merge(a, b, by = by, all = TRUE, suffixes = c(".sas2r_a", ""))

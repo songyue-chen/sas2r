@@ -5,6 +5,8 @@ Constraints, in order:
    (lib_read, lib_write, sas_sort, sas_merge, chr_cmp, ...). Allowlist:
    {{allowlist}}. Code outside the allowlist fails lint and may not exist in
    the runtime that executes the bundle. Style: {{dialect}}.
+   Do not call library() or require(), including for allowlisted packages.
+   Qualify package functions (e.g. dplyr::mutate) and use the base |> pipe.
 3. Missing-value semantics are SAS's: missing sorts low; comparisons on
    possibly-missing values must use is.na() guards or the chr_cmp()/%notin%
    helpers. In SAS DATA steps, referenced or kept variables not present in input

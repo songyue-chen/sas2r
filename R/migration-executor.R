@@ -797,18 +797,7 @@ run_bundle_attempt <- function(
     )
   }
 
-  # Hash outputs in attempt directories
-  output_hashes <- list()
-  cand_dirs <- list.dirs(attempt$attempt_dir, recursive = FALSE, full.names = TRUE)
-  cand_dirs <- cand_dirs[!basename(cand_dirs) %in% c("bundle", "logs")]
-  for (cd in cand_dirs) {
-    c_files <- list.files(cd, recursive = TRUE, full.names = TRUE)
-    for (cf in c_files) {
-      if (file.info(cf)$isdir) next
-      rel_k <- substring(cf, nchar(attempt$attempt_dir) + 2L)
-      output_hashes[[rel_k]] <- tryCatch(as.character(cli::hash_file_sha256(cf)), error = function(e) "")
-    }
-  }
+  output_hashes <- attempt_output_hashes(attempt$attempt_dir)
 
   completed_rec <- complete_attempt(
     attempt,

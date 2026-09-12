@@ -157,6 +157,8 @@ test_that("regressive patch preserves prior selected attempt and stops", {
   expect_identical(result$attempts$sequence, 1:2)
   # Attempt 1 should remain selected
   expect_identical(result$selected_attempt$attempt_id, "bundle_attempt_001")
+  expect_identical(result$selected_revisions$prog_a$r_code, fx$fixed_r_code_a)
+  expect_identical(result$selected_revisions$prog_b$r_code, fx$fixed_r_code_b)
 })
 
 test_that("no-op identical patch stops bundle repair early", {

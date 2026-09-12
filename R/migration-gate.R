@@ -860,6 +860,7 @@ assess_final_outputs <- function(
           if (!is.null(h)) {
             ev <- current_component_evidence(h)
             curr_lvl <- ev$level
+            if (isTRUE(ev$review_unavailable) || length(ev$blockers)) next
 
             if (isTRUE(tgt_res$has_reference) && isTRUE(tgt_res$reference_passed)) {
               # Promote to reference_validated
@@ -892,6 +893,7 @@ assess_final_outputs <- function(
   # Re-evaluate overall lineage status based on updated histories
   has_lineage_review_unavail <- FALSE
   has_lineage_review_only <- FALSE
+  lineage_blockers <- character()
   for (t_key in names(assessed_targets)) {
     tgt_res <- assessed_targets[[t_key]]
     if (isTRUE(tgt_res$required)) {
@@ -900,6 +902,7 @@ assess_final_outputs <- function(
         h <- updated_histories[[cid]]
         if (!is.null(h)) {
           ev <- current_component_evidence(h)
+          lineage_blockers <- unique(c(lineage_blockers, ev$blockers))
           if (isTRUE(ev$review_unavailable)) {
             has_lineage_review_unavail <- TRUE
           }
@@ -915,7 +918,8 @@ assess_final_outputs <- function(
     upstream_components = all_lineage_cids,
     review_unavailable = has_lineage_review_unavail,
     has_review_only = has_lineage_review_only,
-    is_blocked = has_lineage_review_unavail,
+    is_blocked = has_lineage_review_unavail || length(lineage_blockers) > 0L,
+    blockers = lineage_blockers,
     has_reference_evaluated = has_reference_evaluated,
     has_assertions_evaluated = has_assertions_evaluated
   )
@@ -1016,7 +1020,7 @@ derive_bundle_status <- function(assessment) {
   if (exec_deferred) {
     return("needs_review")
   }
-  if (isTRUE(lineage$review_unavailable)) {
+  if (isTRUE(lineage$review_unavailable) || isTRUE(lineage$is_blocked)) {
     return("needs_review")
   }
   if (isTRUE(lineage$has_review_only) || identical(lineage$min_level, "reviewed_only")) {
