@@ -618,14 +618,7 @@ build_behavioral_contract <- function(
 
   uncertainty <- tr_data$uncertainty %||% list()
 
-  sas_text <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
-    src_f <- comp_nodes$source_file[!is.na(comp_nodes$source_file)][1L]
-    if (!is.na(src_f) && nzchar(src_f) && file.exists(src_f)) {
-      paste(readLines(src_f, warn = FALSE), collapse = "\n")
-    } else {
-      ""
-    }
-  } else ""
+  sas_text <- component_source_text(graph, component_id)
 
   source_h <- migration_hash(sas_text)
   r_h <- migration_hash(r_code_text)

@@ -1,3 +1,28 @@
+# sas2r (development)
+
+* Deterministic translation preserves quoted values, applies WHERE to input rows,
+  and uses SAS missing-value comparisons in predicates and numeric derived flags.
+  SQL identifiers follow the same case folding as input frames.
+* MERGE bodies and PROC SQL units with unsupported extra statements defer as a
+  whole. Runtime MERGE refuses duplicate keys with shared non-key columns.
+* `sas_translate(usage_limits = ...)` enforces the canonical request limits and
+  reports invalid configured LLM providers instead of silently disabling them.
+* Resume saves the actual selected revision records and their independent reviews.
+  Unchanged resume avoids repeated provider calls but reruns execution and output
+  checks. Input hashes now include the actual configured library data.
+* `outputs_dir` contains all selected outputs under their library/relative paths.
+  `sas_write()` rebuilds the destination registry and includes all generated files,
+  a dependency-ordered `run.R`, output manifest, and dependency/input guide.
+* Reports and printed summaries separate produced, reference-compared, passing,
+  and reference-passing targets from independently reviewed components. They list
+  contributing validation targets, elapsed time, effective limits, and known,
+  estimated, billed, and unknown-cost usage. Deliberately skipped execution is
+  reported as deferred; unavailable review is not reported as completed.
+* Added 14 semantic fixtures with independent documented expectations and a SAS
+  reference-generation script, plus public regressions for budgets, resume,
+  repaired revisions, changed inputs, moved exports, and seeded output defects.
+  The saved expectations have not yet been executed in SAS.
+
 # sas2r 0.2.0
 
 ### Runtime

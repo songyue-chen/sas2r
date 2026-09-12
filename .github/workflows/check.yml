@@ -51,7 +51,7 @@ jobs:
         shell: Rscript {0}
         working-directory: tests
       - name: Run migration acceptance fixture gate
-        run: Rscript tools/run-migration-acceptance.R --fixture --artifacts=$RUNNER_TEMP/acceptance-fixture
+        run: Rscript tools/run-migration-acceptance.R --installed --fixture --artifacts=$RUNNER_TEMP/acceptance-fixture
   no-sas-tarball:
     # Definition of Done: the package must build to a tarball, install into a
     # clean library, and pass acceptance with no SAS executable present.
@@ -105,7 +105,7 @@ jobs:
       # library: R_LIBS_USER *replaces* the default user library, and with
       # cleanlib alone every dependency disappeared from .libPaths.
       - name: Run migration acceptance fixture gate against installed tarball
-        run: Rscript tools/run-migration-acceptance.R --fixture --artifacts="$RUNNER_TEMP/acceptance-fixture"
+        run: Rscript tools/run-migration-acceptance.R --installed --fixture --artifacts="$RUNNER_TEMP/acceptance-fixture"
         env:
           R_LIBS_USER: ${{ runner.temp }}/cleanlib:${{ runner.temp }}/Library
 

@@ -20,14 +20,25 @@
 #' @param budget_mode Dollar enforcement mode: "stop", "observe", "soft", or "strict". Defaults to "stop".
 #' @param pricing_source Cost provenance source ("catalog", "adapter", "organization", "external"). Defaults to "catalog".
 #' @param pricing_rates Optional organization pricing table.
-#' @param usage_limits Optional named list of non-dollar request limits.
+#' @param usage_limits Optional named list of non-dollar request limits:
+#'   `max_calls`, `max_retries`, `max_tool_calls`, `max_wall_time` (seconds),
+#'   `max_request_bytes`, `max_request_chars`, `max_input_tokens`, and
+#'   `max_output_tokens`. Each defaults to Inf. Zero prevents the corresponding
+#'   request activity; unknown names and invalid values raise a configuration error.
 #' @param recursive Logical; whether to scan subdirectories recursively. Defaults to FALSE.
-#' @param resume Logical; whether to resume from existing completed run artifacts without re-executing unchanged work. Defaults to FALSE.
+#' @param resume Logical; reuse saved translation revisions and completed reviews
+#'   when source, input data, configuration, helpers, and worker prompts still
+#'   match. Execution and output checks always run again in a fresh attempt.
+#'   Missing or edited revision files trigger regeneration. Defaults to FALSE.
 #' @param keep_raw_attempts Logical; whether to retain raw outputs from unselected attempts. Defaults to FALSE.
 #' @return An object of S3 class `"sas2r_translation"` containing `$run_id`, `$out_dir`,
 #'   `$bundle_dir`, `$outputs_dir`, `$status`, `$status_reason`, `$graph_path`,
 #'   `$output_contracts_path`, `$report_path`, `$report_json_path`, `$component_evidence`,
 #'   `$output_assessments`, `$diagnostics`, `$repair_history`, `$usage`, and `$project`.
+#'   `$outputs_dir` contains all selected generated files with their library and
+#'   relative-path layout (for example `work/out.rds`, `adam/adsl.rds`,
+#'   `outputs/table.html`); it is NULL when execution is disabled. The JSON
+#'   report includes separate target/reference/review coverage and effective limits.
 #' @examples
 #' # Translate a small SAS program with the deterministic rule-based engine.
 #' # Neither an LLM nor a SAS installation is required.
@@ -157,20 +168,28 @@ sas_translate <- function(
   pricing_source_norm <- if (identical(pricing_source, "catalog")) "adapter" else pricing_source
 
   usage_limits_map <- usage_limits %||% list()
-  budget <- new_usage_budget(
+  limit_names <- setdiff(names(formals(new_usage_budget)),
+                         c("mode", "max_usd", "rates", "pricing_source", "ledger_path", "run_id", "resume"))
+  if (!is.list(usage_limits_map) ||
+      (length(usage_limits_map) && (is.null(names(usage_limits_map)) ||
+       any(!names(usage_limits_map) %in% limit_names) || anyDuplicated(names(usage_limits_map))))) {
+    cli::cli_abort("usage_limits must be a named list of request limits: {.val {limit_names}}",
+                   class = "sas2r_budget_config_error")
+  }
+  budget <- do.call(new_usage_budget, c(list(
     mode = budget_mode_norm,
     max_usd = budget_usd,
     pricing_source = pricing_source_norm,
     rates = pricing_rates,
     ledger_path = file.path(paths$state, "usage.jsonl"),
     resume = isTRUE(resume)
-  )
+  ), usage_limits_map))
 
   # 7. Resolve LLM adapter from argument or config
   resolved_llm <- if (!is.null(llm)) {
     llm
   } else if (!is.null(cfg$llm)) {
-    tryCatch(sas_llm(cfg$llm), error = function(e) NULL)
+    sas_llm(cfg$llm)
   } else {
     NULL
   }
@@ -195,70 +214,9 @@ sas_translate <- function(
   state$agent_evidence <- agent_evidence
   state$keep_raw_attempts <- isTRUE(keep_raw_attempts)
 
-  # 8. Reconcile completed work on resume = TRUE
-  if (isTRUE(resume) && file.exists(paths$report_json)) {
-    prior_report <- tryCatch(read_json_record(paths$report_json), error = function(e) NULL)
-    if (!is.null(prior_report) && !is.null(prior_report$component_evidence)) {
-      # Program evidence is scoped per run; the prior run's report names its
-      # run id, which locates that run's programs/ directory. The unscoped
-      # root programs/ fallback keeps outputs from older layouts readable.
-      prior_rid <- prior_report$run_id
-      prior_candidates <- c(
-        if (is.character(prior_rid) && length(prior_rid) == 1L && nzchar(prior_rid)) {
-          c(
-            file.path(paths$root, prior_rid, "programs"),
-            # earlier layouts kept runs under a runs/ grouping folder
-            file.path(paths$root, "runs", prior_rid, "programs")
-          )
-        },
-        file.path(paths$root, "programs")
-      )
-      existing <- prior_candidates[dir.exists(prior_candidates)]
-      prior_programs <- if (length(existing)) existing[[1L]] else prior_candidates[[length(prior_candidates)]]
-      sched_cids <- schedule$component_id
-      for (cid in sched_cids) {
-        prior_comp <- prior_report$component_evidence[[cid]]
-        if (!is.null(prior_comp) && !is.null(prior_comp$revisions) && length(prior_comp$revisions) > 0L) {
-          latest_r <- prior_comp$revisions[[length(prior_comp$revisions)]]
-          # Check if source and binding are unchanged
-          c_nodes <- graph$nodes[graph$nodes$component_id == cid, , drop = FALSE]
-          uids <- c_nodes$original_index[!is.na(c_nodes$original_index)]
-          stmts <- project$statements[project$statements$unit_id %in% uids, ]
-          curr_src_hash <- migration_hash(paste(stmts$text, collapse = ";"))
-
-          if (identical(latest_r$binding$source_hash %||% "", curr_src_hash)) {
-            # Restore history and selected revision
-            b <- latest_r$binding
-            hist <- new_component_evidence_history(cid, binding = b)
-            if (!is.null(latest_r$review_status) && latest_r$review_status %in% c("reviewed_no_material_finding", "repair_required")) {
-              hist <- record_completed_review(
-                hist,
-                verdict = latest_r$review_status,
-                basis_id = latest_r$basis_id %||% paste0("revw_", substr(b$binding_hash %||% "", 1L, 16L)),
-                findings = latest_r$findings %||% list()
-              )
-            }
-            state$histories[[cid]] <- hist
-
-            # Restore selected revision
-            staged_file <- paste0(cid, ".R")
-            r_path <- file.path(prior_programs, cid, "r1", staged_file)
-            r_code <- if (file.exists(r_path)) paste(readLines(r_path, warn = FALSE), collapse = "\n") else ""
-            state$selected_revisions[[cid]] <- list(
-              component_id = cid,
-              revision_id = latest_r$revision_id %||% "r1",
-              r_path = r_path,
-              r_code = r_code,
-              staged_file = staged_file,
-              binding = b,
-              status = "ok",
-              contract = list(component_id = cid, staged_file = staged_file, binding = b, sas_text = format_sas_statements(stmts$text))
-            )
-          }
-        }
-      }
-    }
-  }
+  # Resume exact revision records only when all relevant inputs still match.
+  resume_fingerprint <- migration_resume_fingerprint(state)
+  if (isTRUE(resume)) state <- restore_migration_checkpoint(state, resume_fingerprint)
 
   # 9./10. Program pipeline (baseline translation, mechanical checks, review,
   # immediate repair) then bundle pipeline (full execution attempt, output
@@ -295,9 +253,9 @@ sas_translate <- function(
   }
 
   outputs_dir <- if (isTRUE(execute) && !is.null(selected_att) && !is.null(selected_att$attempt_dir)) {
-    cand_work <- file.path(selected_att$attempt_dir, "work")
-    cand_out <- file.path(selected_att$attempt_dir, "outputs")
-    if (dir.exists(cand_work)) cand_work else if (dir.exists(cand_out)) cand_out else NULL
+    destination <- file.path(paths$attempts, "generated-outputs")
+    copy_output_inventory(selected_att$attempt_dir, destination, selected_att$output_hashes)
+    destination
   } else {
     NULL
   }
@@ -352,7 +310,12 @@ sas_translate <- function(
   }
 
   # 13. Write authoritative machine and markdown reports
+  budget$end_time <- Sys.time()
   write_migration_report(state)
+  write_migration_checkpoint(state, resume_fingerprint)
+  with_sas2r_progress(signal_bundle_event(
+    "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
+  ))
 
   # 14. Return canonical sas2r_translation object
   structure(
@@ -411,16 +374,19 @@ print.sas2r_translation <- function(x, ...) {
     }
   }
 
-  if (!is.null(x$usage) && is.numeric(x$usage$known_amount) && x$usage$known_amount > 0) {
-    cli::cat_line(sprintf("spend: $%.4f", x$usage$known_amount))
-  }
+  cli::cat_line(migration_coverage_lines(migration_coverage(x$output_assessments, x$component_evidence)))
+  cli::cat_line(migration_usage_lines(migration_usage_summary(x$usage)))
   invisible(x)
 }
 
 #' Write translated code artifacts and outputs to a destination directory
 #'
-#' Copies the selected generated bundle, outputs (if any), and migration reports
-#' to the destination directory. Warns if status is `blocked` or `needs_review`.
+#' Copies the selected programs, runtime, all generated files, and migration
+#' reports. Rebuilds `autoexec.R` with destination-relative output paths and
+#' includes a dependency-ordered `run.R`, an output manifest, and a README.
+#' Input libraries remain external dependencies documented in the README.
+#' Run `Rscript run.R` from the exported folder, or `source("run.R", chdir = TRUE)`.
+#' Warns if status is `blocked` or `needs_review`.
 #'
 #' @param x A `sas2r_translation` object.
 #' @param dir Target directory path to write translated files.
@@ -448,21 +414,10 @@ sas_write <- function(x, dir) {
   }
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
 
-  if (!is.null(x$bundle_dir) && dir.exists(x$bundle_dir)) {
-    bundle_files <- list.files(x$bundle_dir, full.names = TRUE, recursive = TRUE)
-    for (bf in bundle_files) {
-      rel <- substring(bf, nchar(x$bundle_dir) + 2L)
-      dest <- file.path(dir, rel)
-      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-      file.copy(bf, dest, overwrite = TRUE)
-    }
-  }
-
-  if (!is.null(x$outputs_dir) && dir.exists(x$outputs_dir)) {
-    dest_outputs <- file.path(dir, "outputs")
-    dir.create(dest_outputs, recursive = TRUE, showWarnings = FALSE)
-    file.copy(list.files(x$outputs_dir, full.names = TRUE), dest_outputs, recursive = TRUE, overwrite = TRUE)
-  }
+  materialize_run_translation(x$bundle_dir, dir, project = x$project)
+  inventory <- if (!is.null(x$outputs_dir)) attempt_output_hashes(x$outputs_dir) else list()
+  if (length(inventory)) copy_output_inventory(x$outputs_dir, dir, inventory)
+  write_bundle_guide(x$project, dir, inventory)
 
   if (!is.null(x$report_path) && file.exists(x$report_path)) {
     file.copy(x$report_path, file.path(dir, basename(x$report_path)), overwrite = TRUE)
@@ -504,7 +459,10 @@ sas_code <- function(x, file = 1L) {
   }
 
   all_files <- list.files(b_dir, pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
-  prog_files <- all_files[!basename(all_files) %in% SAS2R_BUNDLE_FILES]
+  run_order_path <- file.path(b_dir, "run-order.json")
+  entrypoint <- if (file.exists(run_order_path)) read_json_record(run_order_path)$entrypoint else NULL
+  prog_files <- all_files[!basename(all_files) %in% SAS2R_BUNDLE_FILES &
+                           !all_files %in% file.path(b_dir, entrypoint)]
   if (length(prog_files) == 0L) {
     prog_files <- all_files
   }

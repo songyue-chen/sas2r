@@ -1,0 +1,117 @@
+[
+  {
+    "id": "missing_assignment",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "computed_missing",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "where_timing",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "literal_text",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "sql_case",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "sql_group_case",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "sql_literal",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "merge_disjoint",
+    "status": "supported",
+    "inputs": [
+      "a",
+      "b"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "merge_shared",
+    "status": "runtime_deferred",
+    "inputs": [
+      "a",
+      "b"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "merge_body",
+    "status": "deferred",
+    "inputs": [
+      "a",
+      "b"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "sql_delete",
+    "status": "deferred",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "sql_update",
+    "status": "deferred",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "multiple_where",
+    "status": "deferred",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  },
+  {
+    "id": "comparison_values",
+    "status": "supported",
+    "inputs": [
+      "src"
+    ],
+    "expected_provenance": "documentation-derived; not SAS-executed"
+  }
+]

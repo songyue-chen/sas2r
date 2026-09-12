@@ -738,3 +738,12 @@ evidence_for_output_lineage <- function(graph, histories, target_id) {
     component_evidence = comp_ev_map
   )
 }
+
+# Derive review status from the active revision's authoritative event history.
+component_review_verdict <- function(history) {
+  events <- current_component_evidence(history)$events %||% list()
+  reviews <- Filter(function(ev) ev$type %in% c("review_completed", "review_unavailable"), events)
+  if (!length(reviews)) return("review_unavailable")
+  last <- reviews[[length(reviews)]]
+  last$verdict %||% "review_unavailable"
+}

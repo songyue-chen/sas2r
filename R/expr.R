@@ -125,13 +125,34 @@ fix_in_lists <- function(x) {
   x
 }
 
+# Rewrite syntax without modifying quoted values. The temporary names cannot
+# collide with names in the expression and survive membership-list formatting.
+rewrite_outside_strings <- function(text, rewrite) {
+  pattern <- "'([^'\\\\]|\\\\.)*'|\"([^\"\\\\]|\\\\.)*\""
+  matches <- gregexpr(pattern, text, perl = TRUE)
+  literals <- regmatches(text, matches)[[1L]]
+  if (!length(literals)) return(rewrite(text))
+  prefix <- ".sas2r_literal_"
+  while (grepl(prefix, text, fixed = TRUE)) prefix <- paste0(prefix, "_")
+  tokens <- paste0(prefix, seq_along(literals), "__")
+  regmatches(text, matches) <- list(tokens)
+  out <- rewrite(text)
+  for (i in seq_along(tokens)) {
+    regmatches(out, regexpr(tokens[i], out, fixed = TRUE)) <- literals[i]
+  }
+  out
+}
+
 tidy_expr <- function(r_expr) {
-  x <- fix_in_lists(r_expr)
-  x <- gsub("\\(\\s+", "(", x); x <- gsub("\\s+\\)", ")", x)
-  x <- gsub("([A-Za-z_0-9.])\\s+\\(", "\\1(", x)   # fn ( -> fn(
-  x <- gsub("\\s+,", ",", x); x <- gsub(",\\s*", ", ", x)
-  x <- gsub("!\\s+", "!", x)
-  x <- trimws(gsub("\\s+", " ", x))
+  x <- rewrite_outside_strings(r_expr, function(x) {
+    x <- fix_in_lists(x)
+    x <- gsub("\\(\\s+", "(", x); x <- gsub("\\s+\\)", ")", x)
+    x <- gsub("([A-Za-z_0-9.])\\s+\\(", "\\1(", x)   # fn ( -> fn(
+    x <- gsub("\\s+,", ",", x); x <- gsub(",\\s*", ", ", x)
+    x <- gsub("!\\s+", "!", x)
+    x <- trimws(gsub("\\s+", " ", x))
+    x
+  })
   ok <- tryCatch({ parse(text = x); TRUE }, error = function(e) FALSE)
   if (!ok) cli::cli_abort("translated expression does not parse: {.code {x}}",
                           class = "sas2r_expr_parse_error")
@@ -139,7 +160,6 @@ tidy_expr <- function(r_expr) {
 }
 
 wrap_missing <- function(r_expr, vars) {
-  if (!length(vars)) return(r_expr)
   e <- tryCatch(parse(text = r_expr)[[1]], error = function(err) {
     cli::cli_abort("expression does not parse in wrap_missing: {.code {r_expr}}",
                    class = "sas2r_expr_parse_error")
@@ -182,19 +202,15 @@ wrap_missing <- function(r_expr, vars) {
         return(substitute(chr_cmp(LHS, RHS, OP), list(LHS = lhs, RHS = rhs, OP = fn)))
       }
 
-      is_arithmetic <- function(x) {
-        # An NA literal is the translated SAS missing (.), not arithmetic: it
-        # must fall through to chr_cmp, where missing sorts lowest, because the
-        # is.na()-wrap around x == NA would evaluate to NA on every row.
-        (is.numeric(x) && length(x) == 1L && !is.na(x)) ||
-          (is.call(x) && as.character(x[[1]])[1] %in% c("+", "-", "*", "/", "^", "%%", "%/%", "sas_sum", "sas_mean", "sas_min", "sas_max", "sas_round"))
+      is_nonmissing_number <- function(x) {
+        is.numeric(x) && length(x) == 1L && !is.na(x)
       }
 
       if (!is.null(lhs_var) && !is.null(rhs_var)) {
         return(substitute(chr_cmp(LHS, RHS, OP), list(LHS = lhs, RHS = rhs, OP = fn)))
       } else if (!is.null(lhs_var)) {
         v <- lhs_var
-        if (!is_arithmetic(rhs)) {
+        if (!is_nonmissing_number(rhs)) {
           return(substitute(chr_cmp(LHS, RHS, OP), list(LHS = lhs, RHS = rhs, OP = fn)))
         }
         cmp_clause <- switch(fn,
@@ -216,7 +232,7 @@ wrap_missing <- function(r_expr, vars) {
         return(new_call)
       } else if (!is.null(rhs_var)) {
         v <- rhs_var
-        if (!is_arithmetic(lhs)) {
+        if (!is_nonmissing_number(lhs)) {
           return(substitute(chr_cmp(LHS, RHS, OP), list(LHS = lhs, RHS = rhs, OP = fn)))
         }
         cmp_clause <- switch(fn,
@@ -237,9 +253,7 @@ wrap_missing <- function(r_expr, vars) {
         )
         return(new_call)
       } else {
-        node[[2]] <- lhs
-        node[[3]] <- rhs
-        return(node)
+        return(substitute(chr_cmp(LHS, RHS, OP), list(LHS = lhs, RHS = rhs, OP = fn)))
       }
     }
     for (i in seq_along(node)[-1]) {
@@ -274,3 +288,19 @@ expr_vars <- function(txt, r_expr = NULL) {
   unique(tolower(vars))
 }
 
+
+# A SAS comparison used as a value is numeric, not a logical R column.
+sas_value_to_r <- function(text) {
+  tx <- tidy_expr(translate_expr(text))
+  e <- parse(text = tx)[[1L]]
+  predicates <- c("<", "<=", ">", ">=", "==", "!=", "&", "|", "!", "%in%", "%notin%", "is.na")
+  is_predicate <- function(node) {
+    if (!is.call(node)) return(FALSE)
+    fn <- as.character(node[[1L]])[1L]
+    if (fn == "(") return(is_predicate(node[[2L]]))
+    fn %in% predicates
+  }
+  if (!is.call(e) || !any(all.names(e) %in% predicates)) return(tx)
+  value <- tidy_expr(wrap_missing(tx, expr_vars(text, tx)))
+  if (is_predicate(e)) sprintf("as.numeric(%s)", value) else value
+}

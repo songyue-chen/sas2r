@@ -122,8 +122,8 @@ write_migration_report <- function(state) {
   for (cid in names(histories)) {
     h <- histories[[cid]]
     curr <- tryCatch(current_component_evidence(h), error = function(e) NULL)
-    level <- curr$level %||% "reviewed_only"
-    rev_status <- curr$review_status %||% "review_unavailable"
+    level <- curr$level %||% "pending"
+    rev_status <- component_review_verdict(h)
     smoke_status <- if (!is.null(curr$runtime_deferred)) {
       paste0("deferred (", curr$runtime_deferred, ")")
     } else if ("smoke_failed" %in% curr$blockers) {
@@ -184,23 +184,8 @@ write_migration_report <- function(state) {
 
   # Usage and cost
   usage_obj <- state$usage_budget %||% state$usage
-  usage_summary <- if (!is.null(usage_obj) && is.list(usage_obj)) {
-    list(
-      known_amount = usage_obj$known_amount %||% 0,
-      calls = usage_obj$calls %||% 0L,
-      input_tokens = usage_obj$input_tokens %||% 0L,
-      output_tokens = usage_obj$output_tokens %||% 0L,
-      pricing_source = usage_obj$pricing_source %||% "catalog"
-    )
-  } else {
-    list(
-      known_amount = 0,
-      calls = 0L,
-      input_tokens = 0L,
-      output_tokens = 0L,
-      pricing_source = "catalog"
-    )
-  }
+  usage_summary <- migration_usage_summary(usage_obj)
+  coverage <- migration_coverage(output_assessments, histories)
 
   # Diagnostics
   diagnostics <- redact_secrets(state$diagnostics %||% list(
@@ -229,8 +214,10 @@ write_migration_report <- function(state) {
       execution_order = execution_order
     ),
     output_inventory = list(
-      contracts = output_contracts
+      contracts = output_contracts,
+      generated_files = state$selected_attempt$output_hashes %||% list()
     ),
+    coverage = coverage,
     output_assessments = output_assessments,
     component_evidence = component_evidence_list,
     attempts = attempts_data,
@@ -269,6 +256,10 @@ write_migration_report <- function(state) {
     paste0("- **Dependency Graph:** `", paths$graph, "`"),
     paste0("- **Output Contracts:** `", output_contracts_path, "`"),
     paste0("- **Machine Report:** `", paths$report_json, "`"),
+    "",
+    "## Coverage",
+    "",
+    migration_coverage_lines(coverage),
     "",
     "## Component Evidence & Verification",
     "",
@@ -375,6 +366,7 @@ write_migration_report <- function(state) {
     md_lines,
     "## Resource Usage & Spend",
     "",
+    migration_usage_lines(usage_summary),
     paste0("- **Total LLM Calls:** ", usage_summary$calls),
     paste0("- **Total Input Tokens:** ", usage_summary$input_tokens),
     paste0("- **Total Output Tokens:** ", usage_summary$output_tokens),

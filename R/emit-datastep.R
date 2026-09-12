@@ -33,16 +33,23 @@ emit_data_step <- function(ir, src_file = "") {
     pieces <<- c(pieces, paste0("  ", piece))
     cmts <<- c(cmts, sprintf("  # sas L%d", line))
   }
-  for (s in ir$steps) {
+  # WHERE selects input observations before any executable DATA-step logic.
+  # Multiple WHERE statements have replacement/augmentation rules not modeled.
+  where_steps <- Filter(function(s) s$kind == "where", ir$steps)
+  if (length(where_steps) > 1L) {
+    return(list(code = NA_character_, stmt_map = integer(), flags = "multiple_where_deferred"))
+  }
+  steps <- c(where_steps, Filter(function(s) s$kind != "where", ir$steps))
+  for (s in steps) {
     stmt_map <- c(stmt_map, s$stmt_id)
     piece <- switch(s$kind,
       where = sprintf("dplyr::filter(%s)", sas_cond_to_r(s$cond)),
       if_delete = sprintf("dplyr::filter(!(%s))", sas_cond_to_r(s$cond)),
       assign = sprintf("dplyr::mutate(%s = %s)", s$var,
-                       tidy_expr(translate_expr(s$expr))),
+                       sas_value_to_r(s$expr)),
       if_assign = {
         cond_r <- sas_cond_to_r(s$cond)
-        expr_r <- tidy_expr(translate_expr(s$expr))
+        expr_r <- sas_value_to_r(s$expr)
         prior_assigned <- any(vapply(ir$steps, function(x)
           x$kind %in% c("assign", "if_assign") && identical(x$var, s$var) &&
           x$stmt_id < s$stmt_id, logical(1)))

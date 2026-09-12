@@ -5,6 +5,12 @@
 #' @noRd
 emit_merge_step <- function(ir) {
   flags <- "merge_cardinality_unproven"
+  # Account for every parsed executable step; never silently drop a body.
+  if (length(ir$steps) > 1L ||
+      any(vapply(ir$steps, function(s) s$kind != "merge_filter", logical(1)))) {
+    return(list(code = NA_character_, stmt_map = integer(),
+                flags = "merge_body_deferred"))
+  }
   if (length(ir$inputs) != 2L || !length(ir$by) || !length(ir$outputs)) {
     return(list(code = NA_character_, stmt_map = integer(),
                 flags = "merge_unsupported_shape"))

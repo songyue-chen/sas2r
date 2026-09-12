@@ -29,8 +29,9 @@ The merged data frame.
 (\verb{in_a and in_b}), \code{"left"} (\code{in_a}), \code{"right"} (\code{in_b}), \code{"left_only"},
 \code{"right_only"}, \code{"full"}. Where both datasets carry a non-key column the
 later dataset's value wins, columns follow statement order, and rows follow
-SAS BY ordering. A many-to-many key is refused: no join reproduces SAS's
-row walking there, and such units take the PDV-faithful path instead.
+SAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key
+columns, are refused: those cases require SAS observation-by-observation
+semantics that this join-based helper does not implement.
 }
 \examples{
 a <- data.frame(id = c(1, 2), x = c("a", "b"))

@@ -201,7 +201,7 @@ input_hash_manifest <- function(project) {
   if (is.null(project)) return(list())
 
   # Extract project if state was passed
-  p <- if (is.list(project) && !is.null(project$project)) project$project else project
+  p <- if (is.list(project) && !is.null(project[["project", exact = TRUE]])) project[["project", exact = TRUE]] else project
 
   # Extract library roots
   lib_roots <- list()
@@ -383,6 +383,7 @@ snapshot_selected_bundle <- function(state, attempt) {
     }
   }
 
+  write_bundle_entrypoint(state, bundle_dir)
   normalizePath(bundle_dir, winslash = "/", mustWork = FALSE)
 }
 
@@ -538,6 +539,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     assessment = assessment,
     attempt_dir = candidate$attempt_dir,
     outputs_dir = candidate$outputs_dir,
+    output_hashes = candidate$output_hashes %||% list(),
     execution_order = candidate$execution_order
   )
 

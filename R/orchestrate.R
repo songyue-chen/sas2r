@@ -278,7 +278,10 @@ process_program_component <- function(
       config = state$config %||% list()
     )
 
-    review <- review_program_revision(
+    cached_verdict <- component_review_verdict(state$histories[[component_id]])
+    reuse_review <- round == 0L && component_id %in% state$resumed_components &&
+      cached_verdict %in% c("reviewed_no_material_finding", "repair_required")
+    review <- if (reuse_review) list(verdict = cached_verdict) else review_program_revision(
       revision = rev,
       context = ctx,
       llm = state$reviewer_llm,
@@ -297,7 +300,11 @@ process_program_component <- function(
     } else {
       state$events <- c(state$events, paste0("reviewed:", rev_id))
     }
-    signal_immediate_coordinator_event("program_reviewed", component_id, rev_id)
+    signal_immediate_coordinator_event(
+      if (identical(review$verdict, "review_unavailable")) "review_unavailable"
+      else if (reuse_review) "review_reused" else "program_reviewed",
+      component_id, rev_id
+    )
 
     # Step C: Meaningful smoke / defer
     smoke_res <- NULL
@@ -686,6 +693,8 @@ run_bundle_pipeline <- function(
   repairs <- list()
   selected_attempt <- NULL
   selected_assessment <- NULL
+  selected_revisions <- NULL
+  selected_histories <- NULL
   latest_assessment <- NULL
   latest_attempt <- NULL
   latest_diagnosis <- NULL
@@ -735,7 +744,9 @@ run_bundle_pipeline <- function(
       "bundle_attempt_completed",
       attempt_id = attempt_rec$attempt_id,
       round = round,
-      passed = isTRUE(attempt_rec$passed)
+      passed = isTRUE(attempt_rec$passed),
+      deferred = isTRUE(attempt_rec$deferred),
+      reason = attempt_rec$reason
     )
 
     # 2. Assess all outputs
@@ -775,6 +786,8 @@ run_bundle_pipeline <- function(
     if (inherits(cand_selection, "sas2r_selected_attempt")) {
       selected_attempt <- cand_selection
       selected_assessment <- assessment
+      selected_revisions <- state$selected_revisions
+      selected_histories <- state$histories
       signal_bundle_event(
         "bundle_attempt_selected",
         attempt_id = attempt_rec$attempt_id,
@@ -1109,8 +1122,8 @@ run_bundle_pipeline <- function(
     schedule = state$schedule,
     paths = state$paths,
     output_contracts = state$output_contracts,
-    selected_revisions = state$selected_revisions,
-    histories = state$histories,
+    selected_revisions = selected_revisions %||% state$selected_revisions,
+    histories = selected_histories %||% state$histories,
     runtime = state$runtime,
     usage_budget = state$usage_budget,
     config = state$config,

@@ -51,11 +51,18 @@ sas_translate(
 
 \item{pricing_rates}{Optional organization pricing table.}
 
-\item{usage_limits}{Optional named list of non-dollar request limits.}
+\item{usage_limits}{Optional named list of non-dollar request limits:
+\code{max_calls}, \code{max_retries}, \code{max_tool_calls}, \code{max_wall_time} (seconds),
+\code{max_request_bytes}, \code{max_request_chars}, \code{max_input_tokens}, and
+\code{max_output_tokens}. Each defaults to Inf. Zero prevents the corresponding
+request activity; unknown names and invalid values raise a configuration error.}
 
 \item{recursive}{Logical; whether to scan subdirectories recursively. Defaults to FALSE.}
 
-\item{resume}{Logical; whether to resume from existing completed run artifacts without re-executing unchanged work. Defaults to FALSE.}
+\item{resume}{Logical; reuse saved translation revisions and completed reviews
+when source, input data, configuration, helpers, and worker prompts still
+match. Execution and output checks always run again in a fresh attempt.
+Missing or edited revision files trigger regeneration. Defaults to FALSE.}
 
 \item{keep_raw_attempts}{Logical; whether to retain raw outputs from unselected attempts. Defaults to FALSE.}
 }
@@ -64,6 +71,10 @@ An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \ver
 \verb{$bundle_dir}, \verb{$outputs_dir}, \verb{$status}, \verb{$status_reason}, \verb{$graph_path},
 \verb{$output_contracts_path}, \verb{$report_path}, \verb{$report_json_path}, \verb{$component_evidence},
 \verb{$output_assessments}, \verb{$diagnostics}, \verb{$repair_history}, \verb{$usage}, and \verb{$project}.
+\verb{$outputs_dir} contains all selected generated files with their library and
+relative-path layout (for example \code{work/out.rds}, \code{adam/adsl.rds},
+\code{outputs/table.html}); it is NULL when execution is disabled. The JSON
+report includes separate target/reference/review coverage and effective limits.
 }
 \description{
 Exposes the single authoritative SAS-to-R migration pipeline. SAS source is

@@ -43,8 +43,9 @@ sas_sort <- function(df, by, descending = character(), ...) {
 #' (`in_a and in_b`), `"left"` (`in_a`), `"right"` (`in_b`), `"left_only"`,
 #' `"right_only"`, `"full"`. Where both datasets carry a non-key column the
 #' later dataset's value wins, columns follow statement order, and rows follow
-#' SAS BY ordering. A many-to-many key is refused: no join reproduces SAS's
-#' row walking there, and such units take the PDV-faithful path instead.
+#' SAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key
+#' columns, are refused: those cases require SAS observation-by-observation
+#' semantics that this join-based helper does not implement.
 #'
 #' @param a,b Data frames, in statement order.
 #' @param by Character vector of BY variables.
@@ -68,6 +69,13 @@ sas_merge <- function(a, b, by,
     stop("sas_merge: many-to-many merge on keys (", paste(by, collapse = ", "),
          ") -- SAS row-walking semantics cannot be reproduced by a join. ",
          "This unit requires the PDV-faithful path.", call. = FALSE)
+  overlap <- setdiff(intersect(names(a), names(b)), by)
+  if ((dup_a || dup_b) && length(overlap)) {
+    stop("sas_merge: duplicate keys with shared non-key columns (",
+         paste(overlap, collapse = ", "),
+         ") require SAS observation-by-observation MERGE semantics; defer this unit",
+         call. = FALSE)
+  }
   a_cols <- names(a); b_cols <- names(b)
   a$.in_a <- TRUE; b$.in_b <- TRUE
   m <- merge(a, b, by = by, all = TRUE, suffixes = c(".sas2r_a", ""))

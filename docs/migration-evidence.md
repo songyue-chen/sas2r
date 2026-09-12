@@ -4,10 +4,10 @@
 
 ## Component Evidence Ladder
 
-Every component in a SAS project traverses a four-tier evidence hierarchy based on accumulated static, mechanical, and execution evidence:
+Every component in a SAS project traverses an evidence hierarchy based on accumulated static, mechanical, and execution evidence:
 
 1. **`transpiled_only`**: The component has been mechanically parsed or translated into R code and behavioral contracts, but has not yet undergone independent static review or isolated smoke testing.
-2. **`reviewed_only`**: An independent reviewer agent (or local rule checker) has evaluated the candidate R code and contract against the source SAS, with no blocking semantic or runnability defects identified.
+2. **`reviewed_only`**: An independent reviewer agent has evaluated the candidate R code and contract against the source SAS, with no blocking semantic or runnability defects identified.
 3. **`runtime_verified`**: The component executed as part of an isolated subprocess run or smoke verification step with its upstream dependency chain.
 4. **`output_verified`**: The component and its generated candidate outputs were evaluated and satisfied at the migration gate.
 5. **`reference_validated`**: The component outputs have been compared against authentic SAS reference datasets within specified numerical and structural tolerances.
@@ -21,7 +21,7 @@ When `sas_translate()` processes a project or SAS file, the final bundle is assi
 - **`blocked`**: Hard syntax/lint errors remain, unresolvable circular dependencies exist, or execution failed without a working candidate bundle.
 - **`needs_review`**: The bundle is statically valid and ready for inspectability, but execution was disabled (`execute = FALSE`), reviewer findings require human sign-off, or non-blocking warnings remain.
 - **`migration_ready`**: All required candidate datasets and TLF outputs were successfully produced and structurally validated across copy-on-write attempt directories.
-- **`validated`**: All required candidate outputs have been evaluated against authoritative reference datasets or SAS execution logs with complete numerical and structural equivalence.
+- **`validated`**: Required output checks and lineage requirements pass, and at least one required target has a passing reference comparison. Other targets can remain unreferenced. This status does not mean every output was compared.
 
 ## Reviewer Outcomes & Authority
 
@@ -59,3 +59,57 @@ Each attempt runs in an isolated directory, grouped per run (`<run_id>/bundle_at
 
 > [!WARNING]
 > **THIS IS NOT PARITY**: Automated translation and reviewer checks do not replace regulated validation. Review and independent output verification are required before production use.
+
+## Coverage, limits, and reuse
+
+The JSON report's `coverage` separates `outputs_total`, `outputs_produced`,
+`outputs_reference_compared`, `outputs_passed`, and `outputs_reference_passed`.
+It also reports `components_independently_reviewed` out of `components_total`.
+`validated_targets` names the required targets that supplied passing reference
+evidence; `unreferenced_targets` lists targets without a completed comparison.
+A completed review with a material finding counts as reviewed, not as passing.
+The Markdown report and printed result expose these same counts.
+
+`usage` includes elapsed seconds, provider calls, known/billed/estimated spend,
+unknown-cost calls, and the effective limits. Unknown cost is not zero spend.
+Configure non-dollar ceilings using, for example,
+`usage_limits = list(max_calls = 10, max_request_bytes = 100000)`.
+`usage_limits = list(max_calls = 0)` prevents all provider requests.
+The accepted names are documented in `?sas_translate`; misspellings fail.
+
+`resume = TRUE` uses `.sas2r/resume.rds` to reuse exact selected revision records
+and completed reviews when source, input data, configuration, runtime, and worker
+prompts still match. It does not reconstruct program paths from report labels.
+Missing or edited code files, or changed input bytes, cause regeneration.
+Older runs without a checkpoint regenerate. Smoke and full output checks always
+rerun in fresh attempts. The usage ledger remains cumulative across resumed runs;
+elapsed time describes this invocation. A previously unavailable review is retried.
+
+## Moving a deliverable
+
+`result$outputs_dir` contains all generated files from the selected execution,
+including WORK, named libraries, and TLFs, under their relative paths:
+`work/out.rds`, `adam/adsl.rds`, and `outputs/table.html`, for example.
+The selected attempt's file inventory also drives reports and export.
+
+`sas_write(result, "delivery")` writes the selected code and runtime, all generated
+files, reports, `outputs-manifest.json`, a dependency/input guide, and `run.R` (renamed if a source program already uses that name; see `run-order.json`).
+It rebuilds `autoexec.R` so generated library outputs belong to the destination.
+After moving the folder, run `Rscript run.R` from it, or in R use
+`source("run.R", chdir = TRUE)`. Programs run in dependency order; included modules
+are invoked by their parents. The original attempt is preserved.
+
+Input libraries are external dependencies, not copied study data. Update paths
+in `autoexec.R` and any explicit source LIBNAME assignments when inputs move.
+The exported report describes the selected execution, not any later manual rerun.
+
+## Semantic regression corpus
+
+The 14 cases in `tests/testthat/fixtures/semantic-reference` cover missing
+operands, stored flags, computed predicates, WHERE timing, string literals, SQL
+case folding, shared MERGE variables, and unsupported multi-statement bodies.
+Expected CSVs are independently written from documented SAS behavior; they have
+not been SAS-executed. `tools/generate-semantic-references.sas` exports the same
+cases and SAS provenance for independent verification in a SAS environment.
+Offline tests check actual R data values and explicit deferral without claiming
+a project-wide accuracy rate or SAS parity.
