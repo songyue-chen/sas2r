@@ -293,3 +293,24 @@ test_that("failed mechanical checks remain visible even when smoke and review pa
     }
   }
 })
+
+test_that("a script with declared path inputs and a helper can become migration ready", {
+  fx <- review_public_fixture()
+  code <- paste("is_not_missing <- function(x) !is.na(x)",
+                sub("out$x < 5", "is_not_missing(out$x) & out$x < 5", review_public_code, fixed = TRUE),
+                sep = "\n")
+  adapter <- counted_review_llm(list(
+    valid_program_translation_response(code = code, parameters = list(
+      list(name = "SDTM_PATH", type = "character", required = FALSE, default = NULL),
+      list(name = "ADAM_PATH", type = "character", required = FALSE, default = NULL)
+    )), good_review()
+  ))
+  result <- sas_translate(fx$source, config = fx$config, llm = adapter$llm,
+                          outputs = list(datasets = "work.out"))
+  expect_identical(adapter$calls$n, 2L)
+  expect_identical(result$status, "migration_ready")
+  expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+  component <- jsonlite::read_json(result$report_json_path)$component_evidence[[1L]]
+  expect_true(component$mechanical_checks$pass)
+  expect_length(component$blockers, 0L)
+})

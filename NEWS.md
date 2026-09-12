@@ -1,5 +1,10 @@
 # sas2r (development)
 
+* Mechanical interface checks compare declared parameters with the component's
+  named function, never an unrelated helper. Scripts with external path inputs
+  no longer fail because they define a helper such as `is_not_missing(x)`;
+  explicit SAS macro interfaces remain enforced.
+
 * Program reviews receive the component's actual SAS source on initial and repair
   passes. Translator prompts prohibit package attachment and mechanical retries
   include the failed code and named lint findings. Persistent mechanical failures
