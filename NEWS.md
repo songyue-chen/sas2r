@@ -1,4 +1,4 @@
-# sas2r (development)
+# sas2r 0.3.0
 
 * Partial configuration lists on reused projects update supplied top-level fields
   without discarding library, output, or provider settings. Explicitly changing
