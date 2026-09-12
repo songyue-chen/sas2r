@@ -1,5 +1,8 @@
 # sas2r 0.3.0
 
+* DeepSeek examples use the current `deepseek-flash` API name, with links to
+  the provider's model list and guidance on legacy aliases.
+
 * Partial configuration lists on reused projects update supplied top-level fields
   without discarding library, output, or provider settings. Explicitly changing
   or clearing scan settings still requires rescanning the source path.

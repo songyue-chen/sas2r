@@ -259,6 +259,11 @@ Full live migrations have been run end to end with these models:
 
 Model names change often. `sas_llm_models()` lists what your account can actually use, and `sas_llm_probe()` confirms your sign-in works before you start a long run.
 
+For new DeepSeek Flash configurations, use `deepseek-flash`. As of September 12,
+2026, it serves DeepSeek-V4.1-Flash; `deepseek-v4-flash` remains a temporary alias.
+`deepseek-v4-pro` is still available and is the model recorded in the earlier
+live runs above. See [DeepSeek's current model documentation](https://api-docs.deepseek.com/quick_start/pricing/).
+
 ### Every available setting, in one example
 
 Only `provider` and `model` are required. Everything else below is optional, shown with example values:
@@ -322,7 +327,7 @@ model: gemini-3.7-flash
 
 # deepseek — sign-in: api_key. Key from DEEPSEEK_API_KEY.
 provider: deepseek
-model: deepseek-v4-pro
+model: deepseek-flash
 
 # azure — sign-in: ambient (default) or api_key (AZURE_OPENAI_API_KEY).
 provider: azure
