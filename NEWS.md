@@ -1,5 +1,8 @@
 # sas2r 0.3.2
 
+* Deliver validated comparison reports as JSON-compatible tool results, fixing
+  failed `read_comparison_report` calls during agent repair.
+
 * Reconcile runtime helper use against resolved macro interfaces and refresh
   metadata after repairs. Unknown declared helpers still fail mechanical checks.
 * Retry deferred components only after relevant changes, share the immediate

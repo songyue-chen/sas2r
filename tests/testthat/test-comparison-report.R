@@ -198,7 +198,7 @@ test_that("read_comparison_report tool works inside build_tools context", {
 
   expect_true("read_comparison_report" %in% names(tools))
   tool_res <- tools$read_comparison_report$call(list(report_id = "report-1"))
-  expect_s3_class(tool_res, "sas2r_comparison_report")
+  expect_identical(tool_res, unclass(registry[["report-1"]]))
   expect_identical(tool_res$report_id, "report-1")
 
   expect_error(tools$read_comparison_report$call(list(report_id = "report-1", extra = 123)),
@@ -451,10 +451,36 @@ test_that("a malformed registered report is refused when the model tool resolves
     list(tools = list(read_comparison_report = list(max_calls = 8L))),
     list(report_registry = registry)
   )
-  expect_s3_class(tools$read_comparison_report$call(list(report_id = "report-1")),
-                  "sas2r_comparison_report")
+  expect_identical(tools$read_comparison_report$call(list(report_id = "report-1")),
+                   unclass(good))
   expect_error(tools$read_comparison_report$call(list(report_id = "report-malformed")),
                class = "sas2r_invalid_report_error")
   expect_error(tools$read_comparison_report$call(list(report_id = "report-oversize")),
                class = "sas2r_invalid_report_error")
+})
+
+
+test_that("comparison evidence reaches the model through the native tool adapter", {
+  report <- compare_aligned_outputs(
+    data.frame(id = 1:3, value = c(10, 20, 30)),
+    data.frame(id = 1:3, value = c(10, 21, 30)),
+    target = output_target_fixture(), context = alignment_context("id")
+  )
+  registry <- stats::setNames(list(report), report$report_id)
+  tools <- sas2r:::build_tools(
+    list(tools = list(read_comparison_report = list(max_calls = 3L))),
+    list(report_registry = registry)
+  )
+  # Exercise the actual callback handed to ellmer, including JSON encoding.
+  callback <- sas2r:::ellmer_tool_function(tools$read_comparison_report)
+  payload <- callback(report_id = report$report_id)
+  expected <- jsonlite::toJSON(unclass(report), auto_unbox = TRUE)
+  expect_identical(as.character(payload), as.character(expected))
+  decoded <- jsonlite::fromJSON(payload, simplifyVector = FALSE)
+  expect_identical(decoded$report_id, report$report_id)
+  expect_identical(names(decoded), names(report))
+  expect_lte(nchar(payload, type = "bytes"),
+             sas2r:::output_report_limits()$max_serialized_bytes)
+  expect_s3_class(read_comparison_report(report$report_id, registry),
+                  "sas2r_comparison_report")
 })

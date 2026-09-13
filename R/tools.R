@@ -250,7 +250,9 @@ TOOL_IMPLS <- list(
     # comparison report already computed -- because a model named a stale or
     # invented report_id. read_skill does the same.
     tryCatch(
-      read_comparison_report(report_id, registry),
+      # Keep the public R object typed; tool results carry its validated fields
+      # as a plain list so every transport can encode the same report as JSON.
+      unclass(read_comparison_report(report_id, registry)),
       # Most specific first: report_path_rejected inherits from
       # report_not_registered, so the parent handler would otherwise shadow it.
       sas2r_report_path_rejected = function(e) {
