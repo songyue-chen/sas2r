@@ -224,6 +224,20 @@ Errors include the underlying R condition and saved execution logs. If a current
 run is blocked while an older selected bundle remains on disk, the progress log
 identifies that older selection explicitly.
 
+`max_program_repair_rounds` is the total immediate-repair allowance per
+component for the run, including revisits. A deferred component is retried when
+its relevant dependencies change or a specifically awaited caller becomes
+available. Completed reviews are reused within a run when the code, dependency
+code, helper runtime and review configuration are unchanged.
+
+For debugging a failed bundle, use `sas_translate(..., keep_raw_attempts = TRUE)`
+to retain each component smoke execution's separate library folders and `run.R`
+replay script. The component's `smoke_execution` in `report.json` lists the
+output paths, hashes, configured-input hashes from run startup and replay path. These are partial
+execution artifacts, not reference-validated final datasets. By default, raw
+unselected outputs are pruned; smoke records and logs remain available under
+`smoke_attempt_001/logs/` in the run folder.
+
 Translator, reviewer, and fixer receive runtime signatures, argument rules,
 return values, limitations, and examples directly from the package's helper
 reference. Mechanical checks reject invented helper arguments before execution.
@@ -278,6 +292,97 @@ See `?sas_translate` and the [migration evidence guide](docs/migration-evidence.
 for the complete limits and reuse contract.
 
 ---
+
+## Called macros in separate folders
+
+Configure macro directories in `_sas2r.yml`; relative paths are resolved from
+that configuration file:
+
+```yaml
+macros:
+  search_path:
+    - macros
+    - shared/macros
+```
+
+When a program calls `%my_macro(...)`, sas2r finds its definition in those
+folders and translates it into `R/macros/my_macro.R`. It also follows calls
+from that macro to other macros. Each called definition has one reusable R
+function, even when several programs use it or several definitions share a SAS
+file. Uncalled library macros are not sent for translation.
+
+Macros are translated before their callers. Agents receive upstream function
+contracts, and the bundle's `autoexec.R` loads the standalone functions before
+programs run. `sas_write()` exports the macro scripts and generated
+`tests_macros/test-<name>.R` interface tests. Those tests check the function name,
+parameters and known defaults; execution and SAS-reference comparison provide
+separate evidence about behavior.
+
+Resolved project macro calls are tracked separately from runtime helpers.
+Repairs refresh helper-use metadata without treating project functions as
+unknown runtime helpers. Standalone smoke tests use an available caller's first
+top-level call with literal arguments, preserving multiline calls. A caller
+that has not been generated reports `caller_not_generated`; calls requiring
+prior setup, variables, loops or other enclosing context report
+`caller_context_required` and run as part of their containing program. A smoke
+pass for that program does not establish that every conditional macro ran.
+
+For explicit dataset cleanup, generated functions can use
+`lib_delete("work", c("scratch_a", "scratch_b"))`. This removes stored datasets;
+garbage collection is not a substitute. Dataset-name ranges, prefix lists and
+`_ALL_` need expansion into explicit names. Deleting a member backed by a
+separate input directory remains unsupported, with input files preserved.
+Unresolved dynamic expressions remain explicit limitations; agents must not
+bypass them with `eval()`/`parse()` or silently drop meaningful operations.
+
+Inspect `sas_preflight(...)$called_macros` for the discovered definitions and
+planned file paths. Macro translation requires an AI provider. Dynamic macro
+names, nested macro definitions, `%INCLUDE` inside an autocall macro, and library
+files with executable initialization outside their macro definitions remain
+unresolved. Translation
+stops before model calls and reports the macro name, source file and line. If a
+definition is missing, configure `macros.search_path` or supply the definition
+in the scanned sources, then run preflight again. Preflight returns dependency
+findings for inspection; malformed source such as an unterminated macro comment
+raises a parse error with its location. sas2r does not expand arbitrary SAS macro
+code. Top-level `%LET`, `OPTIONS`, and other initialization in an autocall file
+are not silently discarded: they can change macro values, execution, or output.
+
+Dependency detection classifies percent-prefixed syntax before looking up user
+macros. Definitions, control statements, built-in functions (including documented
+NLS macro functions and SAS-supplied NLS autocall macros), `%INCLUDE`, `%LIST`,
+`%RUN`, and `%label:` declarations are not user calls. Macro/block comments and
+single-quoted literals do not introduce calls; double-quoted text can. Simple
+`%NRSTR(...)` text is treated as literal. Computed names and quoting that requires
+expansion (such as `%UNQUOTE(%NRSTR(%generated_call()))`) stop with an explicit analysis
+finding, rather than a missing-macro-file diagnosis. Macro text inside ordinary
+SAS `* comment;` statements also requires expansion and is reported separately.
+Unquoting a variable alone, such as `%UNQUOTE(&condition)` in a WHERE expression,
+is advisory: it does not prove that a user macro is called. Such generated text
+remains unverified; offline mapping does not fully execute the macro language.
+
+For literal SQL patterns, use single quotes, for example `like '%Total%'`.
+In `like "%Total%"`, SAS attempts to invoke `%Total`, even without parentheses.
+sas2r stops if it cannot resolve that name: assuming literal text would also hide
+a genuine call whose macro folder was not configured. Use SAS macro quoting
+when literal percent text must coexist with macro expansion.
+
+SAS requires matching quotation marks within `%* ...;` comments; a semicolon
+inside matched quotes does not end the comment. Use `/* Don't run this step */`
+for prose with an unmatched apostrophe. `%STR` and `%NRSTR` require a preceding
+percent sign for unmatched quotes or parentheses, for example
+`%nrstr(Don%'t modify this table)`. Ordinary `* ...;` comments can still execute
+macro statements; use block comments for inactive macro text.
+See SAS's [macro comment rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a000543665.htm)
+and [macro quoting rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a001061290.htm).
+
+Statement splitting does not fully support macro-quoted semicolons, such as
+`%exec_sql(query=%str(select a; select b;))`. Simplify these forms or supply
+expanded source before translation; a discovered macro name does not prove
+that its argument or statement boundaries were parsed correctly. Similarly,
+`call execute('%my_macro(' || id || ')')` constructs code at runtime, so its
+single-quoted text is not mapped as a static call. Provide expanded source and
+the required macro definitions for such programs.
 
 ## Connecting an AI Model
 

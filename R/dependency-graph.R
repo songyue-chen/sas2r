@@ -50,6 +50,17 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
 
   component_ids <- project_component_ids(units$file, units$origin, project$project_dir)
 
+  macro_units <- called_macro_units(project)
+  collisions <- intersect(macro_units$component_id,
+                          component_ids[units$origin != "macro_search_path"])
+  if (length(collisions)) {
+    cli::cli_abort("Source program names collide with called macro component IDs: {.val {collisions}}. Rename the source programs.",
+                   class = "sas2r_component_id_collision")
+  }
+  for (i in seq_len(nrow(macro_units))) {
+    component_ids[units$unit_id == macro_units$unit_id[i]] <- macro_units$component_id[i]
+  }
+
   # 1. Setup and Source Unit nodes
   unit_node_map <- list() # maps unit_id -> node_id
   file_first_unit_map <- list() # maps file -> node_id
@@ -61,7 +72,7 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
       orig <- as.character(units$origin[i])
       l_start <- as.integer(units$line_start[i])
       is_env <- identical(orig, "environment") || tolower(basename(f)) == "autoexec.sas"
-      n_type <- if (is_env) "setup" else "source_unit"
+      n_type <- if (is_env) "setup" else if (orig == "macro_search_path") "macro" else "source_unit"
       c_id <- component_ids[i]
 
       n_id <- paste0("node_", if (is_env) "setup_" else "unit_",
@@ -272,7 +283,8 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
           }
         }
       } else if (identical(m_st, "resolved_path") || identical(m_st, "resolved_content")) {
-        provider_id <- file_first_unit_map[[def_src]] %||% find_unit_node_at(def_src, 1L)
+        definition <- defs[include_scan_key(defs$file) == include_scan_key(def_src) & defs$name == m_name, , drop = FALSE]
+        provider_id <- if (nrow(definition)) unit_node_map[[as.character(definition$unit_id[1L])]] else NULL
         if (is.null(provider_id)) {
           # External macro definition file
           provider_id <- get_external_node(paste0("macro:", m_name))
@@ -898,7 +910,7 @@ dependency_closure_hashes <- function(graph, selected_revision_hashes, helper_ha
 #' @param runtime_deferred Optional character vector of component IDs that were deferred.
 #' @return Character vector of component IDs to requeue, in schedule order.
 #' @noRd
-requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred = character()) {
+requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred = character(), waiting_on = list()) {
   sched <- stable_dependency_schedule(graph)
   if (nrow(sched) == 0L) return(character())
 
@@ -927,7 +939,14 @@ requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred =
       }
     }
 
-    deferred_ready <- cid %in% runtime_deferred && (length(deps) == 0L || all(deps %in% names(new_hashes)))
+    # Presence alone does not resolve a failure. In addition to normal upstream
+    # changes, only a changed, available prerequisite explicitly awaited by the
+    # smoke planner (such as a not-yet-generated caller) justifies a revisit.
+    awaited <- waiting_on[[cid]] %||% character()
+    deferred_ready <- cid %in% runtime_deferred && any(vapply(awaited, function(d) {
+      value <- if (d %in% names(new_hashes)) new_hashes[[d]] else ""
+      nzchar(value) && !identical(if (d %in% names(old_hashes)) old_hashes[[d]] else "", value)
+    }, logical(1)))
 
     if (self_changed || deps_changed || deferred_ready) {
       requeue <- c(requeue, cid)

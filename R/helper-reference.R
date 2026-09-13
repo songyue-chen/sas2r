@@ -80,3 +80,37 @@ helper_call_misuse <- function(call, name, docs) {
     NULL
   }, error = function(e) paste0(name, "(): ", conditionMessage(e)))
 }
+
+# Contract metadata is derived from code and resolved project interfaces. A
+# model's helper_use must never turn a project macro into a runtime helper.
+r_call_names <- function(code) {
+  exprs <- tryCatch(parse(text = code), error = function(e) NULL)
+  calls <- character()
+  walk <- function(e) {
+    if (is.call(e)) {
+      head <- e[[1L]]
+      if (is.name(head)) calls <<- c(calls, as.character(head))
+      else if (is.call(head) && identical(head[[1L]], as.name("::")) &&
+               identical(head[[2L]], as.name("sas2r"))) {
+        calls <<- c(calls, as.character(head[[3L]]))
+      }
+    }
+    if (is.call(e) || is.expression(e) || is.pairlist(e)) {
+      for (i in seq_along(e)) {
+        if (!identical(e[[i]], quote(expr = ))) walk(e[[i]])
+      }
+    }
+  }
+  walk(exprs)
+  unique(calls)
+}
+
+reconcile_helper_use <- function(code, declared = character(),
+                                 dependency_functions = character(), refresh = FALSE) {
+  calls <- r_call_names(code)
+  unknown <- setdiff(unlist(declared), c(SAS2R_HELPER_NAMES, dependency_functions))
+  # Repairs cannot retain claims about helpers no longer called by their code.
+  # Still-used unknown helpers remain errors, rather than being authorized.
+  if (isTRUE(refresh)) unknown <- intersect(unknown, calls)
+  unique(c(intersect(calls, SAS2R_HELPER_NAMES), unknown))
+}

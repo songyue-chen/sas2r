@@ -43,6 +43,7 @@ sas_merge(a, b, by = "id", keep = "both")
 Other runtime helpers: 
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
+\code{\link{lib_delete}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},

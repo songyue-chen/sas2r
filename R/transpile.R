@@ -93,7 +93,6 @@ transpile_staged_modules <- function(project) {
   files <- project$files
   if (is.null(files) || !nrow(files)) return(empty)
   files <- files[files$origin %in% c("program", "included"), , drop = FALSE]
-  if (!nrow(files)) return(empty)
 
   staged <- vapply(seq_len(nrow(files)), function(k) {
     if (identical(files$origin[k], "program")) {
@@ -108,6 +107,10 @@ transpile_staged_modules <- function(project) {
   ok <- !is.na(staged) & nzchar(staged)
   out <- tibble::tibble(file = files$file[ok], staged_file = staged[ok],
                         origin = files$origin[ok])
+  macros <- called_macro_units(project)
+  out <- fast_bind(list(out, tibble::tibble(
+    file = macros$file, staged_file = macros$staged_file,
+    origin = rep("macro_search_path", nrow(macros)))), empty)
   # Two source files sharing one module path would silently overwrite each
   # other's translation, so the collision is refused rather than resolved.
   dup <- unique(out$staged_file[duplicated(out$staged_file)])
@@ -517,7 +520,7 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
                                   include_plan = list(), bootstrap = TRUE,
                                   emit_units = integer(), orphan = FALSE,
                                   unstaged_parent = FALSE,
-                                  effective = effective_librefs(project)) {
+                                  effective = effective_librefs(project), unit_ids = NULL) {
   f <- file
   rel_r <- staged_file
   rows <- list()
@@ -525,6 +528,7 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
   dir.create(dirname(out_file), showWarnings = FALSE, recursive = TRUE)
 
   st_f <- project$statements[project$statements$file == f, ]
+  if (!is.null(unit_ids)) st_f <- st_f[st_f$unit_id %in% unit_ids, , drop = FALSE]
   out_chunks <- if (orphan) {
     list(BANNER,
          "# UNREACHABLE MODULE -- no emitted call reaches this file. Every %INCLUDE",
@@ -759,12 +763,14 @@ sas_transpile <- function(project, out_dir) {
   # when it is. Being a resolved include target no longer strips the header,
   # because the header itself is idempotent and anchored on the module's own
   # directory -- see module_bootstrap() -- and so is safe to reach twice.
+  macros <- called_macro_units(project)
   for (k in seq_len(nrow(modules))) {
     rows <- c(rows, transpile_source_file(
       project = project, file = modules$file[k],
       staged_file = modules$staged_file[k], out_dir = out_dir, rulebook = rb,
       include_plan = plan,
       bootstrap = identical(modules$origin[k], "program"),
+      unit_ids = if (modules$origin[k] == "macro_search_path") macros$unit_id[macros$staged_file == modules$staged_file[k]] else NULL,
       emit_units = emit_units,
       orphan = modules$staged_file[k] %in% reachability$orphan,
       unstaged_parent = modules$staged_file[k] %in% reachability$unstaged_parent,

@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 3L
+RESUME_CHECKPOINT_VERSION <- 4L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -8,7 +8,16 @@ component_source_text <- function(graph, component_id) {
   sources <- unique(nodes$source_file[!is.na(nodes$source_file)])
   sources <- sources[nzchar(sources)]
   paste(vapply(sources, function(f) {
-    if (file.exists(f)) paste(readLines(f, warn = FALSE), collapse = "\n") else ""
+    if (!file.exists(f)) return("")
+    text <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    if (any(nodes$type == "macro")) {
+      units <- sas_units(sas_statements(text))
+      defs <- extract_macro_defs(units)
+      name <- sub("^macro__", "", component_id)
+      ids <- defs$unit_id[defs$name == name]
+      return(format_sas_statements(units$text[units$unit_id %in% ids]))
+    }
+    text
   }, character(1)), collapse = "\n")
 }
 
@@ -22,7 +31,7 @@ migration_resume_fingerprint <- function(state) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),
     graph = state$graph,
-    inputs = input_hash_manifest(state$project),
+    inputs = state$input_manifest %||% input_hash_manifest(state$project),
     config = c(scan_config_fields(state$config),
       state$config[c("comparison_rules", "dialect", "allowlist", "search_docs")]),
     outputs = state$output_contracts,

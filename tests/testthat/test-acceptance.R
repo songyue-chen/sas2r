@@ -23,12 +23,13 @@ test_that("ACCEPTANCE: bare SAS file, zero config, no data, no model", {
   expect_true(length(code) > 0L)
 })
 
-test_that("ACCEPTANCE: full dependency-aware pipeline with mock LLM", {
+test_that("ACCEPTANCE: dependency-aware pipeline produces reports and an export", {
   skip_if_not_installed("dplyr")
-  demo <- system.file("examples", "demo_project", package = "sas2r")
-  skip_if(!dir.exists(demo))
+  project <- withr::local_tempdir()
+  writeLines("data work.stage; x=1; run;", file.path(project, "first.sas"))
+  writeLines("data work.result; set work.stage; y=x*2; run;", file.path(project, "second.sas"))
   out <- withr::local_tempdir()
-  x <- sas_translate(demo, out_dir = out, execute = FALSE)
+  x <- sas_translate(project, out_dir = out, execute = FALSE)
   expect_s3_class(x, "sas2r_translation")
   expect_true(file.exists(x$report_path))
   expect_true(file.exists(x$report_json_path))

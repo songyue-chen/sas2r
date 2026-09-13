@@ -13,6 +13,8 @@
 #'   `inputs` (available, missing, unresolved, no_producer, backward_dependency,
 #'   created_if_missing, or generated), `references`, `unsupported`,
 #'   scanner `findings`, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
+#'   `called_macros` lists reachable search-path macro definitions and their
+#'   standalone R and interface-test paths.
 #'   Also includes `status`, `configured_libraries`, `schedule`, explanatory `notes`,
 #'   and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
 #'   `ready_for_translation` means no known missing inputs or unresolved scan
@@ -63,7 +65,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   sources <- project$files
   structure(list(
     status = if (needs_attention) "needs_attention" else "ready_for_translation",
-    sources = sources, libraries = effective$bindings,
+    sources = sources, called_macros = called_macro_units(project), libraries = effective$bindings,
     configured_libraries = effective$seed, inputs = inputs, references = references,
     unsupported = unsupported, findings = findings, outputs = contracts,
     schedule = plan$schedule, project = project, destinations = destinations,
@@ -138,6 +140,10 @@ preflight_unsupported <- function(project) {
 print.sas2r_preflight <- function(x, ...) {
   cli::cli_h1("sas2r offline preflight: {x$status}")
   cli::cli_text("{nrow(x$sources)} source files; {nrow(x$outputs)} output targets; 0 model calls")
+  if (nrow(x$called_macros)) {
+    cli::cli_text("{nrow(x$called_macros)} called macro dependencies:")
+    print(x$called_macros[c("name", "file", "staged_file")])
+  }
   if (nrow(x$inputs)) print(x$inputs)
   if (nrow(x$references)) print(x$references)
   if (nrow(x$unsupported)) print(x$unsupported)
@@ -154,7 +160,9 @@ preflight_blocking_findings <- function() c(
     "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
     "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
     "dynamic_dataset_reference", "backward_dependency", "macro_data_flow_deferred",
-    "dataset_statement_deferred")
+    "dataset_statement_deferred", "macro_definition_missing",
+    "macro_library_initialization_unsupported", "macro_include_requires_expansion",
+    "macro_nested_definition_unsupported", "macro_dependency_analysis_deferred")
 
 preflight_advisory_findings <- function() c("autoexec_autodiscovered", "macro_shadowing",
-  "sasautos_from_environment", "sasautos_from_program")
+  "sasautos_from_environment", "sasautos_from_program", "macro_expansion_unverified")

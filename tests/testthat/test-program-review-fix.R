@@ -151,3 +151,19 @@ test_that("an invalid equality operator reaches the fixer with its documented re
   prompt <- paste(vapply(request$messages, `[[`, character(1), "content"), collapse = "\n")
   expect_match(prompt, "chr_cmp: op must be NULL", fixed = TRUE)
 })
+
+
+test_that("repair refreshes helper metadata without authorizing unknown calls", {
+  fx <- review_fix_fixture()
+  fx$revision$contract$dependency_functions <- "upstream"
+  fx$revision$contract$helper_use <- c("upstream", "lib_read", "invented")
+  fixed <- fix_program_revision(fx$revision, smoke = fx$failed_smoke,
+    llm = recording_fixer(function(request) valid_program_fix_response(
+      code = "out <- sas_sum(upstream(1), 2)")), paths = fx$paths)
+  expect_setequal(fixed$contract$helper_use, "sas_sum")
+  fixed <- fix_program_revision(fx$revision, smoke = fx$failed_smoke,
+    llm = recording_fixer(function(request) valid_program_fix_response(
+      code = "out <- invented(1)")), paths = fx$paths)
+  expect_identical(fixed$contract$helper_use, "invented")
+  expect_false(check_program_revision(fixed$r_path, fixed$contract)$pass)
+})

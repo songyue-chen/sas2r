@@ -83,3 +83,63 @@ test_that("process_program_component generates, checks, reviews, and smokes prog
   expect_identical(ev$level, "runtime_verified")
 })
 
+
+
+test_that("repair allowances persist across visits and unchanged reviews are reused", {
+  dir <- withr::local_tempdir()
+  writeLines("data work.out; x=1; run;", file.path(dir, "calc.sas"))
+  state <- new_migration_state(sas_project(dir), withr::local_tempdir())
+  reviews <- 0L
+  repairs <- 0L
+  state$reviewer_llm <- recording_reviewer(function(request) {
+    reviews <<- reviews + 1L
+    material_review_response("Unresolved semantic difference")
+  })
+  state$fixer_llm <- recording_fixer(function(request) {
+    repairs <<- repairs + 1L
+    valid_program_fix_response(code = "lib_write(data.frame(x = 2), 'work', 'out')")
+  })
+  state <- process_program_component(state, "calc", execute = FALSE, max_program_repair_rounds = 1L)
+  expect_equal(repairs, 1L)
+  expect_equal(state$repair_counts$calc, 1L)
+  after_first <- reviews
+  state <- process_program_component(state, "calc", execute = FALSE, max_program_repair_rounds = 1L)
+  expect_equal(repairs, 1L)
+  expect_equal(reviews, after_first)
+  expect_identical(component_review_verdict(state$histories$calc), "repair_required")
+  # Ordinary settings changes require a fresh review, but do not reset repairs.
+  state$config$allowlist <- c("base", "dplyr", "stats")
+  state <- process_program_component(state, "calc", execute = FALSE, max_program_repair_rounds = 1L)
+  expect_equal(reviews, after_first + 1L)
+  expect_equal(repairs, 1L)
+})
+
+test_that("smoke attempts retain separate outputs and a reproducible partial record", {
+  dir <- withr::local_tempdir()
+  writeLines("data work.out; x=1; run;", file.path(dir, "calc.sas"))
+  state <- new_migration_state(sas_project(dir), withr::local_tempdir())
+  state$keep_raw_attempts <- TRUE
+  run_value <- function(value) {
+    plan <- build_program_smoke_plan(state$graph, "calc", list(calc = list(
+      r_code = sprintf("lib_write(data.frame(x = %s), 'work', 'out')", value))))
+    prep <- prepare_program_smoke(state, plan, state$attempt$attempt_dir)
+    run_program_smoke(prep$plan, prep$runtime, prep$attempt_dir)
+  }
+  first <- run_value(1)
+  second <- run_value(2)
+  expect_true(first$passed)
+  expect_true(second$passed)
+  expect_false(identical(first$attempt_dir, second$attempt_dir))
+  expect_equal(readRDS(first$output_files[["out.rds"]])$x, 1)
+  expect_equal(readRDS(second$output_files[["out.rds"]])$x, 2)
+  record <- jsonlite::read_json(first$record_path)
+  expect_identical(record$scope, "program_smoke")
+  expect_false(record$reference_compared)
+  expect_identical(record$raw_output_retention, "keep_raw_attempts")
+  expect_true(file.exists(record$replay_script))
+  expect_identical(record$code_hashes$calc, unname(cli::hash_sha256(
+    file.path(first$attempt_dir, "programs", "calc.R"))))
+  callr::r(function(path) source(path), args = list(path = first$replay_script))
+  expect_equal(readRDS(first$output_files[["out.rds"]])$x, 1)
+  expect_identical(first$output_hashes[["out.rds"]], unname(cli::hash_sha256(first$output_files[["out.rds"]])))
+})

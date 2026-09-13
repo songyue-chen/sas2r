@@ -18,7 +18,8 @@ DL_TOKENS <- c("datalines", "cards", "datalines4", "cards4", "parmcards", "parmc
 #'   \item `datalines4` and `cards4` accept a lone `;` terminator instead of requiring `;;;;`.
 #'   \item Macro-quoted semicolons (e.g. `%str(;)`) are treated as code semicolons.
 #' }
-#' Both limitations are tracked as flags in downstream risk analysis.
+#' Macro-quoted semicolons can leave statement boundaries incomplete; dependency
+#' lookup masks simple NRSTR literals but does not expand the source program.
 #'
 #' @noRd
 sas_scan <- function(text) {
@@ -27,15 +28,19 @@ sas_scan <- function(text) {
   n <- length(chars)
   mask <- character(n)
   state <- "code"
+  macro_comment <- FALSE
+  comment_quote <- ""
   at_stmt_start <- TRUE
   last_split <- 0L
   line_start_pos <- 1L
   first_token_of <- function(from, to) {
     if (from > to) return("")
     idx <- from:to
-    keep <- idx[mask[idx] %in% c("c", "s", "q")]
+    keep <- idx[mask[idx] %in% c("c", "s", "q", "k")]
     if (!length(keep)) return("")
-    stmt <- paste(chars[keep], collapse = "")
+    token_chars <- chars[keep]
+    token_chars[mask[keep] == "k"] <- " "
+    stmt <- paste(token_chars, collapse = "")
     stmt <- sub("^[[:space:]]+", "", stmt)
     m <- regmatches(stmt, regexpr("^%?[A-Za-z_][A-Za-z0-9_]*", stmt))
     if (length(m)) tolower(m) else ""
@@ -48,8 +53,8 @@ sas_scan <- function(text) {
       if (ch == "'") { state <- "sq"; mask[i] <- "s" }
       else if (ch == '"') { state <- "dq"; mask[i] <- "q" }
       else if (ch == "/" && nxt == "*") { state <- "blockc"; mask[i] <- "k"; mask[i + 1L] <- "k"; i <- i + 1L }
-      else if (at_stmt_start && ch == "*") { state <- "starc"; mask[i] <- "k" }
-      else if (at_stmt_start && ch == "%" && nxt == "*") { state <- "starc"; mask[i] <- "k"; mask[i + 1L] <- "k"; i <- i + 1L }
+      else if (at_stmt_start && ch == "*") { state <- "starc"; macro_comment <- FALSE; mask[i] <- "k" }
+      else if (ch == "%" && nxt == "*") { state <- "starc"; macro_comment <- TRUE; comment_quote <- ""; mask[i] <- "k"; mask[i + 1L] <- "k"; i <- i + 1L }
       else {
         mask[i] <- "c"
         if (ch == ";") {
@@ -69,7 +74,11 @@ sas_scan <- function(text) {
       mask[i] <- "k"
       if (ch == "*" && nxt == "/") { mask[i + 1L] <- "k"; i <- i + 1L; state <- "code" }
     } else if (state == "starc") {
-      if (ch == ";") {
+      if (macro_comment && ch %in% c("'", '"')) {
+        if (comment_quote == "") comment_quote <- ch
+        else if (comment_quote == ch) comment_quote <- ""
+      }
+      if (ch == ";" && (!macro_comment || comment_quote == "")) {
         mask[i] <- "c"
         state <- "code"
         at_stmt_start <- TRUE
@@ -111,15 +120,22 @@ mask_strings <- function(text, keep_double = FALSE) {
   paste(chars, collapse = "")
 }
 
-NON_CALL_MACRO_KEYWORDS <- c(
-  "let", "if", "then", "else", "do", "end", "macro", "mend",
-  "global", "local", "goto", "return", "abort",
-  "include", "put", "input", "display", "window", "sysexec",
-  "symdel", "sysrput", "syslput", "sysmacdelete", "copy", "syscall"
-)
-
 # Helper to split a code statement that contains an unsemicoloned macro call
 split_macro_statement <- function(txt, l_start, l_end, positions) {
+  label <- regexpr("^%[A-Za-z_][A-Za-z0-9_]*\\s*:", txt, perl = TRUE)
+  if (label[1L] == 1L) {
+    len <- attr(label, "match.length")
+    rest <- substring(txt, len + 1L)
+    if (nzchar(trimws(rest))) {
+      lead <- nchar(rest) - nchar(sub("^\\s*", "", rest))
+      consumed <- len + lead
+      return(rbind(
+        split_macro_statement(substr(txt, 1L, len), l_start, l_start, positions[seq_len(len)]),
+        split_macro_statement(substring(txt, consumed + 1L),
+          l_start + sum(strsplit(substr(txt, 1L, consumed), "", fixed = TRUE)[[1L]] == "\n"),
+          l_end, positions[seq.int(consumed + 1L, length(positions))])))
+    }
+  }
   # Match a leading %macro_call(...) or %macro_call followed by newline/whitespace and any remainder
   m_tok <- regexec("^%([A-Za-z_][A-Za-z0-9_]*)", txt)
   m_match <- regmatches(txt, m_tok)[[1]]
@@ -324,18 +340,30 @@ trim_statement_positions <- function(chars, positions, is_data) {
 #' Splits on semicolons that are real code (never inside strings, comments,
 #' or datalines blocks). Comment text is stripped from statement text.
 #' @param text Length-1 character: full SAS source.
+#' @param source_file Optional source path for parse diagnostics.
 #' @return A tibble with columns stmt_id, text, first_token, type,
 #'   line_start, line_end.
 #' @noRd
-sas_source_records <- function(text) {
+sas_source_records <- function(text, source_file = NULL) {
   sc <- sas_scan(text)
   chars <- sc$chars; mask <- sc$mask
   n <- length(chars)
   comments <- comment_records_from_scan(chars, mask, cumsum(chars == "\n") + 1L)
+  if (nrow(comments) && n > 0L && mask[n] == "k" &&
+      utils::tail(comments$kind, 1L) == "macro") {
+    line <- utils::tail(comments$line_start, 1L)
+    location <- if (is.null(source_file)) paste0("line ", line) else paste0(source_file, ":", line)
+    cli::cli_abort(c(
+      "Unterminated macro comment at {.val {location}}.",
+      "i" = "SAS macro comments require matching quotation marks and an unquoted terminating semicolon. Use a block comment for prose containing unmatched quotation marks."
+    ), class = "sas2r_sas_parse_error", source_file = source_file, line = line)
+  }
   if (n == 0L) {
     return(list(statements = empty_sas_statements(), comments = comments))
   }
   line_no <- cumsum(chars == "\n") + 1L
+  # Comments separate tokens as whitespace; deleting them would join names.
+  chars[mask == "k" & chars != "\n"] <- " "
   splits <- which(chars == ";" & mask == "c")
   bounds_start <- c(1L, utils::head(splits, -1L) + 1L)
   bounds_end <- splits
@@ -347,7 +375,7 @@ sas_source_records <- function(text) {
   out <- lapply(seq_along(bounds_start), function(k) {
     idx <- bounds_start[k]:bounds_end[k]
     is_data <- any(mask[idx] == "d")
-    keep <- if (is_data) idx[mask[idx] == "d"] else idx[mask[idx] %in% c("c", "s", "q")]
+    keep <- if (is_data) idx[mask[idx] == "d"] else idx[mask[idx] %in% c("c", "s", "q", "k")]
     if (!is_data && length(keep) && chars[keep[length(keep)]] == ";" && mask[keep[length(keep)]] == "c")
       keep <- keep[-length(keep)]
 
@@ -403,11 +431,12 @@ sas_source_records <- function(text) {
 #' Splits on semicolons that are real code (never inside strings, comments,
 #' or datalines blocks). Comment text is stripped from statement text.
 #' @param text Length-1 character: full SAS source.
+#' @param source_file Optional source path for parse diagnostics.
 #' @return A tibble with columns stmt_id, text, first_token, type,
 #'   line_start, line_end.
 #' @noRd
-sas_statements <- function(text) {
-  statements <- sas_source_records(text)$statements
+sas_statements <- function(text, source_file = NULL) {
+  statements <- sas_source_records(text, source_file = source_file)$statements
   tibble::as_tibble(statements[, c(
     "stmt_id", "text", "first_token", "type", "line_start", "line_end"
   ), drop = FALSE])
@@ -426,4 +455,3 @@ format_sas_statements <- function(text) {
   text[needs_semi] <- paste0(text[needs_semi], ";")
   paste(text, collapse = "\n")
 }
-

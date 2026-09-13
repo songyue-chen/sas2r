@@ -77,18 +77,21 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
   # 3. Helper name check
   if (!is.null(contract) && !is.null(contract$helper_use) && length(contract$helper_use) > 0L) {
     helpers_used <- unlist(contract$helper_use)
-    invalid_helpers <- setdiff(helpers_used, SAS2R_HELPER_NAMES)
+    invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions))
     if (length(invalid_helpers) > 0L) {
       errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", ")))
     }
   }
 
   # 4. Declared interface check
-  if (!is.null(contract) && !is.null(contract$parameters) && length(contract$parameters) > 0L && !inherits(parsed, "error")) {
+  if (!is.null(contract) && (!is.null(contract$macro_contract) || length(contract$parameters) > 0L) && !inherits(parsed, "error")) {
     if (!is.null(contract$macro_contract)) {
       m_chk <- validate_macro_contract(code_text, contract$macro_contract)
       if (!isTRUE(m_chk$pass)) {
         errors <- c(errors, paste0("interface_error: ", m_chk$errors))
+      }
+      if (isTRUE(contract$macro_contract$standalone) && length(parsed) != 1L) {
+        errors <- c(errors, "interface_error: a standalone macro file must contain only its function assignment; put executable behavior inside the function")
       }
     } else {
       # Script parameters can describe external inputs such as LIBNAME paths.
@@ -148,4 +151,3 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
     lint = lint_res
   )
 }
-

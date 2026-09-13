@@ -268,7 +268,8 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
   }
   fn_dir <- file.path(out_dir, "R", "macros")
   dir.create(fn_dir, showWarnings = FALSE, recursive = TRUE)
-  writeLines(c(sprintf("# sas2r:llm_authored macro=%s -- REVIEW REQUIRED", safe_name),
+  origin <- if (isFALSE(result$llm_authored)) "macro_deferred" else "llm_authored"
+  writeLines(c(sprintf("# sas2r:%s macro=%s -- REVIEW REQUIRED", origin, safe_name),
                "# semantics unverified in v1 (no macro expander); see manifest flags",
                result$code),
              file.path(fn_dir, paste0(safe_name, ".R")))
@@ -340,13 +341,8 @@ build_translator_context <- function(
     character()
   }
 
-  comp_stmts <- if (length(src_files) > 0L) {
-    project$statements[project$statements$file %in% src_files, , drop = FALSE]
-  } else if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
-    project$statements[project$statements$unit_id %in% comp_nodes$original_index, , drop = FALSE]
-  } else {
-    project$statements[0L, , drop = FALSE]
-  }
+  uids <- comp_nodes$original_index[!is.na(comp_nodes$original_index)]
+  comp_stmts <- project$statements[project$statements$unit_id %in% uids, , drop = FALSE]
 
   sas_text <- if (nrow(comp_stmts) > 0L) {
     format_sas_statements(comp_stmts$text)
@@ -377,7 +373,7 @@ build_translator_context <- function(
       uc <- upstream_contracts[[cid]]
       sprintf(
         "Component %s: parameters=(%s), reads=(%s), writes=(%s)",
-        cid,
+        if (!is.null(uc$macro_contract)) paste0(cid, " (call ", uc$macro_contract$name, "; loaded by autoexec.R)") else cid,
         paste(vapply(uc$parameters %||% list(), function(p) p$name %||% "", character(1)), collapse = ", "),
         paste(uc$reads %||% character(), collapse = ", "),
         paste(uc$writes %||% character(), collapse = ", ")
@@ -437,6 +433,7 @@ build_translator_context <- function(
       paste("librefs:", paste(lib_names, collapse = ", ")),
       line_txt,
       "resolved upstream contracts:", upstream_txt,
+      "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
       "known call sites:", call_txt
     ),
     collapse = "\n"
@@ -555,15 +552,9 @@ build_behavioral_contract <- function(
     params <- as.list(tr_data$parameters)
     if (!is.null(tr_data$defaults)) defaults <- tr_data$defaults
   }
-
-  helpers_in_code <- character()
-  for (hn in SAS2R_HELPER_NAMES) {
-    if (grepl(hn, r_code_text, fixed = TRUE)) {
-      helpers_in_code <- c(helpers_in_code, hn)
-    }
+  if (!is.null(macro_contract_obj) && any(comp_nodes$type == "macro")) {
+    macro_contract_obj$standalone <- TRUE
   }
-  helper_use <- unique(c(helpers_in_code, unlist(tr_data$helper_use %||% character())))
-  helper_use <- helper_use[!is.na(helper_use) & nzchar(helper_use)]
 
   known_call_sites <- list()
   if (!is.null(graph$edges) && nrow(graph$edges) > 0L && !is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
@@ -587,6 +578,16 @@ build_behavioral_contract <- function(
       }
     }
   }
+
+  dependency_functions <- character()
+  if (length(known_call_sites)) {
+    incoming <- Filter(function(site) site$type %in% c("calls_macro", "uses_function") &&
+      identical(site$resolution, "resolved") && site$to %in% comp_nodes$node_id,
+      known_call_sites)
+    dependency_functions <- unique(vapply(incoming, function(site) site$detail, character(1)))
+  }
+  helper_use <- reconcile_helper_use(r_code_text, tr_data$helper_use,
+                                    dependency_functions)
 
   resolved_deps <- if (!is.null(graph)) dependency_closure(graph, component_id) else character()
   suspected_deps <- unique(unlist(tr_data$suspected_dependencies %||% character()))
@@ -660,13 +661,17 @@ build_behavioral_contract <- function(
     writes = writes,
     side_effects = side_effects,
     helper_use = helper_use,
+    dependency_functions = dependency_functions,
     known_call_sites = known_call_sites,
     resolved_dependencies = resolved_deps,
     suspected_dependencies = suspected_deps,
     affected_outputs = affected_outputs,
     uncertainty = uncertainty,
     binding = binding,
-    macro_contract = macro_contract_obj
+    macro_contract = macro_contract_obj,
+    flags = if (any(comp_nodes$type == "macro")) {
+      if (is.null(tr_data)) "macro_deferred" else c("llm_authored", "macro_semantics_unverified")
+    } else character()
   )
 }
 
@@ -709,12 +714,12 @@ generate_program_revision <- function(
     character()
   }
 
+  uids <- comp_nodes$original_index[!is.na(comp_nodes$original_index)]
   staged_rel <- NULL
   if (!is.null(baseline$manifest) && nrow(baseline$manifest) > 0L) {
     m_rows <- baseline$manifest[
-      baseline$manifest$file %in% src_files |
-      tools::file_path_sans_ext(basename(baseline$manifest$staged_file)) == component_id |
-      tools::file_path_sans_ext(basename(baseline$manifest$file)) == component_id, ,
+      if (length(uids)) baseline$manifest$unit_id %in% uids else
+        baseline$manifest$file %in% src_files, ,
       drop = FALSE
     ]
     if (nrow(m_rows) > 0L) {
@@ -729,7 +734,7 @@ generate_program_revision <- function(
   staged_lines <- if (file.exists(staged_path)) readLines(staged_path, warn = FALSE) else character()
 
   comp_units <- if (!is.null(baseline$manifest) && nrow(baseline$manifest) > 0L) {
-    baseline$manifest[baseline$manifest$file %in% src_files | baseline$manifest$staged_file == staged_rel, , drop = FALSE]
+    baseline$manifest[baseline$manifest$staged_file == staged_rel, , drop = FALSE]
   } else NULL
 
   stubs <- if (!is.null(comp_units) && nrow(comp_units) > 0L) {

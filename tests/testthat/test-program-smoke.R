@@ -321,3 +321,53 @@ test_that("execution call locations are formatted once and absent calls remain a
   expect_null(result$condition$call)
   expect_identical(bounded_agent_diagnostics(result)$source_location, NA_character_)
 })
+
+
+test_that("macro smoke accepts real revision fields and preserves whole multiline calls", {
+  fx <- callable_macro_fixture()
+  fx$selected$macro_def <- list(r_code = "calc_total <- function(a, b) stopifnot(a + b == 3)")
+  fx$selected$caller_prog <- list(r_code = paste(c(BANNER, module_bootstrap(),
+    "result <- calc_total(\n  a = 1,\n  b = 2\n)"), collapse = "\n"))
+  plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
+  expect_identical(plan$status, "runnable")
+  expect_true(run_program_smoke(plan, fx$runtime, fx$attempt_dir)$passed)
+})
+
+test_that("macro smoke never extracts calls from scopes or unexecuted branches", {
+  fx <- callable_macro_fixture()
+  for (code in c("wrapper <- function(x) { calc_total(x, 2) }",
+                 "if (FALSE) calc_total(1, 2)",
+                 "x <- 1; calc_total(x, 2)",
+                 "lib_write(data.frame(x=1), 'work', 'input'); calc_total(1, 2)",
+                 "# calc_total(1, 2)\nx <- 'calc_total(1, 2)'")) {
+    fx$selected$caller_prog <- list(r_code = code)
+    plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
+    expect_identical(plan$status, "deferred", info = code)
+    expect_identical(plan$reason, "caller_context_required", info = code)
+  }
+  fx$selected$caller_prog <- NULL
+  plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
+  expect_identical(plan$reason, "caller_not_generated")
+  expect_identical(plan$waiting_on, "caller_prog")
+})
+
+test_that("a program containing a local macro and executable body is runnable", {
+  fx <- callable_macro_fixture()
+  fx$selected$macro_def <- list(r_code = paste(
+    "calc_total <- function(a, b) a + b",
+    "stopifnot(calc_total(1, 2) == 3)", sep = "\n"))
+  fx$graph$nodes$type[1L] <- "macro"
+  plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
+  expect_identical(plan$status, "runnable")
+  expect_null(plan$call_site)
+  expect_true(run_program_smoke(plan, fx$runtime, fx$attempt_dir)$passed)
+})
+
+
+test_that("emitted bootstrap does not count as execution of a function-only program", {
+  code <- paste(c(BANNER, module_bootstrap(), "unused_macro <- function() stop('not called')"), collapse = "\n")
+  plan <- build_program_smoke_plan(no_call_site_graph(), "unused_macro",
+    list(unused_macro = list(r_code = code)))
+  expect_identical(plan$status, "deferred")
+  expect_identical(plan$reason, "no_callable_path")
+})

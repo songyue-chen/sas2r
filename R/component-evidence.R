@@ -761,6 +761,8 @@ record_program_smoke <- function(history, result) {
   rev$runtime_deferred <- NULL
   rev$events <- c(rev$events, list(list(
     type = "program_smoke",
+    record_path = result$record_path,
+    raw_output_retention = result$raw_output_retention,
     status = if (!is.null(result$blocked_by)) "blocked" else if (isTRUE(result$passed)) "passed" else "failed",
     blocked_by = result$blocked_by,
     condition = result$condition,

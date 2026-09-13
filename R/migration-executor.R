@@ -3,6 +3,52 @@
 #' Implements dependency-aware program smoke planning, isolated callr subprocess
 #' execution, log/hash capture, and bounded agent diagnostics.
 
+#' @noRd
+# The revision record, rather than the caller's choice of field, owns code.
+revision_code <- function(entry) {
+  if (is.character(entry)) return(paste(entry, collapse = "\n"))
+  if (!is.list(entry)) return("")
+  code <- entry$assembled_r %||% entry$r_code %||% entry$code
+  if (is.null(code) && !is.null(entry$r_path) && file.exists(entry$r_path)) {
+    code <- readLines(entry$r_path, warn = FALSE)
+  }
+  paste(code %||% "", collapse = "\n")
+}
+
+# Use the same executable body for target classification and caller lookup.
+smoke_program_expressions <- function(code) {
+  exprs <- tryCatch(parse(text = code, keep.source = FALSE), error = function(e) expression())
+  # The emitted startup block is already performed by the smoke runtime.
+  # Skip only that exact block; arbitrary caller setup still needs its context.
+  boot <- parse(text = module_bootstrap(), keep.source = FALSE)
+  if (length(exprs) && identical(exprs[[1L]], boot[[1L]])) exprs <- exprs[-1L]
+  exprs
+}
+
+# Only a direct, top-level call with literal arguments is independent of its
+# caller's scope and control flow. Everything else runs with the real caller;
+# do not pull a line out of a function/loop or invent argument values.
+standalone_smoke_call <- function(code, name) {
+  exprs <- smoke_program_expressions(code)
+  literal <- function(e) {
+    is.atomic(e) || is.null(e) ||
+      (is.call(e) && as.character(e[[1L]])[1L] %in% c("+", "-") &&
+         length(e) == 2L && is.numeric(e[[2L]]))
+  }
+  # Earlier caller statements may create datasets, set options, or bind names
+  # used indirectly by the macro, even when its explicit arguments are literal.
+  for (e in utils::head(exprs, 1L)) {
+    if (is.call(e) && as.character(e[[1L]])[1L] %in% c("<-", "=")) e <- e[[3L]]
+    if (!is.call(e) || !identical(e[[1L]], as.name(name))) next
+    args <- as.list(e)[-1L]
+    safe <- vapply(seq_along(args), function(i) {
+      !identical(args[[i]], quote(expr = )) && literal(args[[i]])
+    }, logical(1))
+    if (all(safe)) return(paste(deparse(e, width.cutoff = 500L), collapse = "\n"))
+  }
+  NULL
+}
+
 #' Build a program smoke execution plan
 #'
 #' Resolves upstream dependency prefix and identifies real call sites to smoke-test
@@ -56,25 +102,6 @@ build_program_smoke_plan <- function(
     }
   }
 
-  # Check if component is a macro/function without any callable path in graph
-  is_macro_name <- grepl("(?i)macro", component_id)
-  is_macro_node <- nrow(nodes) > 0L && any(nodes$component_id == component_id & nodes$type %in% c("macro", "function"))
-  if (is_macro_name || is_macro_node) {
-    comp_node_ids <- if (nrow(nodes) > 0L) nodes$node_id[nodes$component_id == component_id] else character()
-    call_edges <- if (nrow(edges) > 0L) {
-      edges[edges$type == "calls_macro" & (edges$from %in% comp_node_ids | edges$detail == component_id), ]
-    } else {
-      tibble::tibble()
-    }
-    if (nrow(call_edges) == 0L) {
-      return(list(
-        status = "deferred",
-        reason = "no_callable_path",
-        component_id = component_id
-      ))
-    }
-  }
-
   # Check if target component exists in selected revisions
   if (!component_id %in% names(selected_revisions)) {
     return(list(
@@ -98,28 +125,11 @@ build_program_smoke_plan <- function(
     }
   }
 
-  # Extract target code
-  target_entry <- selected_revisions[[component_id]]
-  target_code <- if (is.character(target_entry)) {
-    target_entry
-  } else if (is.list(target_entry)) {
-    target_entry$assembled_r %||% target_entry$code %||% target_entry$r_code %||% ""
-  } else {
-    as.character(target_entry)
-  }
-
-  # Determine if component is a macro/function definition requiring a call site
+  target_code <- revision_code(selected_revisions[[component_id]])
   is_callable_def <- FALSE
-  if (nrow(edges) > 0L && nrow(nodes) > 0L) {
-    comp_node_ids <- nodes$node_id[nodes$component_id == component_id]
-    macro_provider_edges <- edges[edges$from %in% comp_node_ids & edges$type == "calls_macro", ]
-    if (nrow(macro_provider_edges) > 0L) {
-      is_callable_def <- TRUE
-    }
-  }
 
   # Also inspect parsed code: if it only defines functions and has no top-level execution
-  parsed_exprs <- tryCatch(parse(text = target_code), error = function(e) NULL)
+  parsed_exprs <- smoke_program_expressions(target_code)
   if (!is.null(parsed_exprs) && length(parsed_exprs) > 0L) {
     all_fn_assigns <- TRUE
     for (i in seq_along(parsed_exprs)) {
@@ -136,48 +146,32 @@ build_program_smoke_plan <- function(
     if (all_fn_assigns) {
       is_callable_def <- TRUE
     }
-  } else if (grepl("function\\s*\\(", target_code) && !grepl("([a-zA-Z0-9_]+)\\s*\\(", sub(".*function\\s*\\([^)]*\\)\\s*\\{.*\\}", "", target_code))) {
-    is_callable_def <- TRUE
   }
 
   call_site <- NULL
+  waiting_on <- character()
   if (is_callable_def) {
-    # Search for real call site in graph edges
-    found_call <- FALSE
-    if (nrow(edges) > 0L && nrow(nodes) > 0L) {
-      comp_node_ids <- nodes$node_id[nodes$component_id == component_id]
-      macro_calls <- edges[edges$from %in% comp_node_ids & edges$type == "calls_macro", ]
-      if (nrow(macro_calls) > 0L) {
-        for (j in seq_len(nrow(macro_calls))) {
-          to_node <- macro_calls$to[j]
-          caller_cid <- nodes$component_id[nodes$node_id == to_node]
-          if (length(caller_cid) > 0L && caller_cid[1L] %in% names(selected_revisions)) {
-            caller_entry <- selected_revisions[[caller_cid[1L]]]
-            caller_code <- if (is.character(caller_entry)) caller_entry else caller_entry$code %||% ""
-            m_name <- macro_calls$detail[j]
-            # Look for call expression in caller code
-            call_pattern <- paste0("(?m)^\\s*(", m_name, "\\s*\\([^)]*\\))")
-            if (grepl(m_name, caller_code)) {
-              lines <- strsplit(caller_code, "\n", fixed = TRUE)[[1L]]
-              matching_lines <- grep(paste0("\\b", m_name, "\\s*\\("), lines, value = TRUE)
-              if (length(matching_lines) > 0L) {
-                call_site <- trimws(matching_lines[1L])
-                found_call <- TRUE
-                break
-              }
-            }
-          }
+    comp_node_ids <- nodes$node_id[nodes$component_id == component_id]
+    macro_calls <- if (nrow(edges)) edges[edges$from %in% comp_node_ids &
+      edges$type == "calls_macro" & edges$resolution == "resolved", , drop = FALSE] else edges
+    reason <- "no_callable_path"
+    if (nrow(macro_calls)) {
+      reason <- "caller_context_required"
+      for (j in seq_len(nrow(macro_calls))) {
+        caller <- nodes$component_id[match(macro_calls$to[j], nodes$node_id)]
+        if (is.na(caller) || identical(caller, component_id)) next
+        if (!caller %in% names(selected_revisions)) {
+          waiting_on <- c(waiting_on, caller)
+          next
         }
+        call_site <- standalone_smoke_call(revision_code(selected_revisions[[caller]]),
+                                           macro_calls$detail[j])
+        if (!is.null(call_site)) break
       }
     }
-
-    if (!found_call) {
-      return(list(
-        status = "deferred",
-        reason = "no_callable_path",
-        component_id = component_id
-      ))
-    }
+    if (is.null(call_site)) return(list(
+      status = "deferred", reason = if (length(waiting_on)) "caller_not_generated" else reason,
+      component_id = component_id, waiting_on = unique(waiting_on)))
   }
 
   list(
@@ -187,6 +181,42 @@ build_program_smoke_plan <- function(
     call_site = call_site,
     selected_revisions = selected_revisions
   )
+}
+
+# Every smoke execution gets fresh writable libraries. Optional raw retention
+# uses the existing keep_raw_attempts policy, rather than copying all datasets.
+prepare_program_smoke <- function(state, plan, attempt_dir) {
+  executions <- file.path(attempt_dir, "executions")
+  dir.create(executions, recursive = TRUE, showWarnings = FALSE)
+  dir <- tempfile(paste0(plan$component_id, "_"), tmpdir = executions)
+  dir.create(dir)
+  helpers <- file.path(dir, "sas2r-helpers.R")
+  file.copy(state$runtime$helpers, helpers)
+  formats <- state$runtime$formats %||% file.path(dirname(state$runtime$helpers), "_sas2r_formats.R")
+  if (file.exists(formats)) file.copy(formats, file.path(dir, "_sas2r_formats.R"))
+  libraries <- build_attempt_library_map(state$project, dir)
+  write_autoexec(state$project, dir, library_map = libraries)
+  ids <- c(plan$dependency_prefix, plan$component_id)
+  programs <- file.path(dir, "programs")
+  dir.create(programs)
+  files <- file.path(programs, paste0(ids, ".R"))
+  for (i in seq_along(ids)) writeLines(revision_code(plan$selected_revisions[[ids[i]]]), files[i])
+  replay <- file.path(dir, "run.R")
+  writeLines(c(
+    "# Partial component smoke replay; not a validated final bundle.",
+    sprintf("setwd(%s)", encodeString(normalizePath(dir, winslash = "/"), quote = '\"')),
+    'source("autoexec.R", chdir = TRUE)',
+    vapply(files, function(f) sprintf("source(%s)", encodeString(f, quote = '\"')), character(1)),
+    plan$call_site %||% character()
+  ), replay)
+  plan$input_hashes <- state$input_manifest %||% input_hash_manifest(state$project)
+  plan$code_hashes <- stats::setNames(lapply(files, function(f) unname(cli::hash_sha256(f))), ids)
+  plan$replay_script <- replay
+  plan$raw_output_retention <- if (isTRUE(state$keep_raw_attempts)) "keep_raw_attempts" else "prune_unselected"
+  plan$record_dir <- file.path(attempt_dir, "logs")
+  list(plan = plan, attempt_dir = dir, runtime = list(
+    autoexec = file.path(dir, "autoexec.R"), helpers = helpers,
+    output_dirs = vapply(libraries, function(entry) entry$write_path, character(1))))
 }
 
 #' Run a program smoke test in a fresh callr subprocess
@@ -292,25 +322,12 @@ run_program_smoke <- function(
   if (length(plan$dependency_prefix) > 0L) {
     for (d in plan$dependency_prefix) {
       entry <- plan$selected_revisions[[d]]
-      code_str <- if (is.character(entry)) {
-        entry
-      } else if (is.list(entry)) {
-        entry$assembled_r %||% entry$r_code %||% entry$code %||% (if (!is.null(entry$r_path) && file.exists(entry$r_path)) paste(readLines(entry$r_path, warn = FALSE), collapse = "\n") else "")
-      } else {
-        as.character(entry %||% "")
-      }
+      code_str <- revision_code(entry)
       dep_codes[[d]] <- code_str
     }
   }
 
-  target_entry <- plan$selected_revisions[[component_id]]
-  target_code <- if (is.character(target_entry)) {
-    target_entry
-  } else if (is.list(target_entry)) {
-    target_entry$assembled_r %||% target_entry$r_code %||% target_entry$code %||% (if (!is.null(target_entry$r_path) && file.exists(target_entry$r_path)) paste(readLines(target_entry$r_path, warn = FALSE), collapse = "\n") else "")
-  } else {
-    as.character(target_entry %||% "")
-  }
+  target_code <- revision_code(plan$selected_revisions[[component_id]])
 
   call_site_str <- if (is.character(plan$call_site)) {
     plan$call_site
@@ -440,19 +457,23 @@ run_program_smoke <- function(
     )
   }
 
-  # Hash outputs in attempt_dir/work
+  # Include all writable libraries, not just WORK. Hashes and paths remain in
+  # the permanent record even when the default retention policy prunes data.
   output_hashes <- list()
-  work_dir <- file.path(attempt_dir, "work")
-  if (dir.exists(work_dir)) {
-    out_files <- list.files(work_dir, full.names = TRUE)
-    if (length(out_files) > 0L) {
-      for (f in out_files) {
-        output_hashes[[basename(f)]] <- unname(cli::hash_sha256(f))
-      }
+  output_files <- list()
+  output_dirs <- if (is.list(runtime)) runtime$output_dirs else NULL
+  output_dirs <- output_dirs %||% c(work = file.path(attempt_dir, "work"))
+  for (libref in names(output_dirs)) {
+    files <- list.files(output_dirs[[libref]], full.names = TRUE, recursive = TRUE)
+    for (f in files[!dir.exists(files)]) {
+      relative <- substring(f, nchar(output_dirs[[libref]]) + 2L)
+      key <- if (identical(libref, "work")) relative else paste(libref, relative, sep = "/")
+      output_hashes[[key]] <- unname(cli::hash_sha256(f))
+      output_files[[key]] <- normalizePath(f, winslash = "/", mustWork = TRUE)
     }
   }
 
-  list(
+  result <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     execution_id = execution_id,
     component_id = component_id,
@@ -468,10 +489,27 @@ run_program_smoke <- function(
     executed_call_ids = if (passed && nzchar(call_site_str)) "call_site_1" else character(),
     stdout_path = stdout_path,
     stderr_path = stderr_path,
-    input_hashes = list(),
+    scope = "program_smoke",
+    reference_compared = FALSE,
+    raw_output_retention = plan$raw_output_retention %||% "caller_managed",
+    replay_script = plan$replay_script,
+    input_hashes = plan$input_hashes %||% list(),
+    code_hashes = plan$code_hashes %||% list(),
+    output_files = output_files,
     output_hashes = output_hashes,
     created_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
+  record_dir <- plan$record_dir %||% logs_dir
+  dir.create(record_dir, recursive = TRUE, showWarnings = FALSE)
+  # Logs must survive pruning of the execution's writable directories too.
+  if (!identical(record_dir, logs_dir)) {
+    file.copy(c(stdout_path, stderr_path), record_dir, overwrite = TRUE)
+    result$stdout_path <- file.path(record_dir, basename(stdout_path))
+    result$stderr_path <- file.path(record_dir, basename(stderr_path))
+  }
+  result$record_path <- file.path(record_dir, paste0(execution_id, "_record.json"))
+  atomic_write_json(result, result$record_path)
+  result
 }
 
 #' Produce bounded diagnostics for an agent worker
@@ -703,7 +741,8 @@ run_bundle_attempt <- function(
   bundle_dir <- snapshot_selected_bundle(state, attempt)
   plan <- build_bundle_execution_plan(state$graph)
   exec_order <- plan$execution_order
-  failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE), exec_order)
+  failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE),
+    unique(c(exec_order, unlist(lapply(exec_order, function(id) dependency_closure(state$graph, id))))))
   if (length(failed_checks)) {
     id <- failed_checks[[1L]]
     return(complete_attempt(attempt, passed = FALSE, deferred = TRUE,

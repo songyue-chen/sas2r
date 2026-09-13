@@ -31,6 +31,7 @@ sas_sort(data.frame(id = c(2, NA, 1)), by = "id", descending = "id")
 Other runtime helpers: 
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
+\code{\link{lib_delete}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},

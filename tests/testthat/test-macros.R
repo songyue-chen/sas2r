@@ -126,4 +126,83 @@ test_that("q-family and autocall macro functions are excluded from user calls", 
   expect_identical(nrow(calls), 0L)
 })
 
+test_that("percent syntax categories are distinguished from user calls", {
+  code <- paste(c(
+    "%macro entry(value=1);", "%local x; %global y; %let x=%eval(1+2);",
+    "%if &x %then %do; %put %scan(a b,1) %sysfunc(today()); %end;",
+    "%goto finish;", "%finish: %mend entry;", "%entry(value=2);",
+    "%list 1-10; %run; %copy entry / source; %syscall sleep(1);",
+    "%sysmstoreclear; %go to finish;"), collapse = "\n")
+  units <- sas_units(sas_statements(code))
+  expect_identical(extract_macro_calls(units)$name, "entry")
+  expect_equal(extract_macro_defs(units)$line_end, 5L)
+  expect_false(tail(units$unit_type, 1L) == "macro_def")
+})
 
+test_that("comments, literal strings, labels and double-quoted calls stay distinct", {
+  code <- paste(c(
+    "%* %not_a_call;", "/* %also_not_a_call; */",
+    "title '%literal';", 'title "Report %actual: %outer(%inner())";',
+    "%finish: %put done;", "%actual;",
+    "data x; input text $; datalines;", "%not_data_call", ";", "run;"), collapse = "\n")
+  calls <- extract_macro_calls(sas_units(sas_statements(code)))
+  expect_identical(calls$name, c("actual", "outer", "inner", "actual"))
+})
+
+test_that("macro comments honor quoted semicolons and comments separate tokens", {
+  code <- "%macro entry(); %finish: %* '%hidden; %also_hidden'; %mend; %entry; %actual/*gap*/suffix;"
+  units <- sas_units(sas_statements(code))
+  expect_identical(extract_macro_calls(units)$name, c("entry", "actual"))
+  expect_false(any(grepl("hidden", units$text)))
+})
+
+test_that("NRSTR literal macro text is not a dependency even across quoted semicolons", {
+  code <- "%let literal=%nrstr(%not_a_call(); %also_literal); %actual(value=%eval(2));"
+  units <- sas_units(sas_statements(code))
+  scan <- macro_call_scan(units)
+  expect_equal(nrow(scan$findings), 0L)
+  expect_identical(extract_macro_calls(units, scan)$name, "actual")
+  # STR does not mask the percent trigger, unlike NRSTR.
+  units <- sas_units(sas_statements("%let text=%str(%actual);"))
+  expect_identical(extract_macro_calls(units)$name, "actual")
+  units <- sas_units(sas_statements("%let a=%str(%'); %let b=%nrstr('%not_a_call()'); %actual;"))
+  scan <- macro_call_scan(units)
+  expect_equal(nrow(scan$findings), 0L)
+  expect_identical(extract_macro_calls(units, scan)$name, "actual")
+})
+
+test_that("macro defaults retain real calls without treating MACRO as an invocation", {
+  units <- sas_units(sas_statements("%macro entry(value=%default_value()); %mend; %entry();"))
+  expect_identical(extract_macro_calls(units)$name, c("default_value", "entry"))
+})
+
+test_that("computed macro names are never resolved as their literal prefix", {
+  file <- withr::local_tempfile(fileext = ".sas")
+  writeLines("%macro prefix(); %mend; %prefix&suffix; %&&name;", file)
+  p <- sas_project(file)
+  expect_identical(p$macros$resolution$name, c("prefix&suffix", "&&name"))
+  expect_true(all(p$macros$resolution$status == "dynamic"))
+})
+
+test_that("expansion-dependent quoting is unknown rather than a missing macro file", {
+  file <- withr::local_tempfile(fileext = ".sas")
+  for (code in c("%unquote(%nrstr(%generated_call()));",
+                 "%let text=%nrstr(%unclosed;", "* %possibly_active;")) {
+    writeLines(code, file)
+    preflight <- sas_preflight(file)
+    expect_true("macro_dependency_analysis_deferred" %in% preflight$findings$kind)
+    expect_false("unresolved_macro" %in% preflight$findings$kind)
+    expect_error(sas_translate(file, out_dir = tempfile()), "requires expansion",
+                 class = "sas2r_macro_dependency_error")
+  }
+})
+
+test_that("unquoting a variable is advisory rather than an invented missing call", {
+  file <- withr::local_tempfile(fileext = ".sas")
+  writeLines("data out; set input(where=(%unquote(&condition))); run;", file)
+  p <- sas_preflight(file)
+  expect_true("macro_expansion_unverified" %in% p$findings$kind)
+  expect_false("unresolved_macro" %in% p$findings$kind)
+  expect_equal(nrow(p$project$macros$calls), 0L)
+  expect_no_error(require_resolved_macros(p$project))
+})

@@ -1,3 +1,45 @@
+# sas2r 0.3.2
+
+* Reconcile runtime helper use against resolved macro interfaces and refresh
+  metadata after repairs. Unknown declared helpers still fail mechanical checks.
+* Retry deferred components only after relevant changes, share the immediate
+  repair allowance across revisits, and reuse unchanged completed reviews.
+* Read revision code consistently during smoke planning. Preserve multiline
+  calls and defer calls that need their enclosing program's execution context.
+* Add `lib_delete()` for explicit dataset names in writable libraries. Deletion
+  that would expose a separate original input remains explicitly unsupported.
+* Isolate smoke executions and retain their output hashes and diagnostics.
+  `keep_raw_attempts = TRUE` also preserves partial datasets and replay scripts.
+
+* Translate statically called macros from configured macro search directories,
+  including their transitive macro dependencies, before their calling programs.
+  Uncalled definitions remain outside the translation plan, including definitions
+  sharing a library file with a called macro.
+* Emit each called macro as `R/macros/<name>.R` with a generated interface test
+  under `tests_macros/`. Bundle startup loads these functions for callers;
+  standalone files contain only their function definition. Export preserves
+  macro files and tests. Interface tests do not establish SAS semantic equivalence.
+* Preflight lists called macro names, source files and planned R paths. Caller
+  agents receive translated upstream contracts. Dynamic calls, missing macro
+  definitions, nested definitions, macro-body includes and library files requiring
+  top-level initialization remain explicit unresolved findings.
+* Translation stops before model calls when a called macro cannot be resolved,
+  reporting names, source locations, searched folders and configuration guidance.
+  Preflight still returns its findings for inspection.
+* Recognize `%QSYSFUNC` and the built-in macro execution/existence functions
+  during dependency mapping instead of reporting them as missing user macros.
+  Include documented NLS macro names, using `%QKLOWCAS` for quoted lowercase.
+* Stop with a source location when an unterminated macro comment would hide
+  subsequent code. Preserve SAS's matched-quote and quoted-semicolon rules.
+* Parse macro parameter lists up to their matching closing parenthesis so
+  description options do not corrupt the interface. Preserve nested defaults
+  and quoted paths. Invalidate older scan caches for the corrected parser.
+* Distinguish macro labels and percent-prefixed SAS statements from user calls.
+  Preserve real calls in double-quoted text and macro defaults; mask simple
+  `%NRSTR` literals. Quoting that needs expansion and active macro text in SAS
+  statement comments produce explicit analysis findings, not missing-file errors.
+  Computed names such as `%prefix&suffix` remain dynamic.
+
 # sas2r 0.3.1
 
 * Fixers receive bounded, structured smoke and bundle diagnostics, including the

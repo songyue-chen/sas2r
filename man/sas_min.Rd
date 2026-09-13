@@ -28,6 +28,7 @@ sas_max(c(1, NA, 3), c(2, NA, 1))
 Other runtime helpers: 
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
+\code{\link{lib_delete}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},
