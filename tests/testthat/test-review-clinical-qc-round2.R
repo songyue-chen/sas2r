@@ -225,7 +225,7 @@ test_that("each emitted scanner finding has an explicit readiness policy", {
     c(if ("kind" %in% names(args)) strings(args[["kind"]]),
       unlist(lapply(args, kinds), use.names = FALSE))
   }
-  raised <- unique(unlist(lapply(list(scan_project, dynamic_dataset_findings,
+  raised <- unique(unlist(lapply(list(scan_project, macro_call_scan, dynamic_dataset_findings,
     deferred_dataset_findings), function(fn) kinds(body(fn)))))
   # Macro discovery returns its selected reason through a variable; its concrete
   # failure inputs are exercised in test-called-macro-translation.R.

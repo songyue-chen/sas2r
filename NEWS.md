@@ -17,6 +17,11 @@
   Preflight still returns its findings for inspection.
 * Recognize `%QSYSFUNC` and the built-in macro execution/existence functions
   during dependency mapping instead of reporting them as missing user macros.
+* Distinguish macro labels and percent-prefixed SAS statements from user calls.
+  Preserve real calls in double-quoted text and macro defaults; mask simple
+  `%NRSTR` literals. Quoting that needs expansion and active macro text in SAS
+  statement comments produce explicit analysis findings, not missing-file errors.
+  Computed names such as `%prefix&suffix` remain dynamic.
 
 # sas2r 0.3.1
 

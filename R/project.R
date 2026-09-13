@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.0"
+SCAN_CACHE_SCHEMA_VERSION <- "4.1"
 
 # Attach retained source comments to the translation units that own their
 # private character spans. Comments between units belong to the next unit;
@@ -718,7 +718,16 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   statements <- statements[statements$unit_id %in% active, , drop = FALSE]
   comments <- comments[is.na(comments$unit_id) | comments$unit_id %in% active, , drop = FALSE]
   defs <- defs[keep_defs, , drop = FALSE]
-  calls <- extract_macro_calls(statements)
+  macro_scan <- macro_call_scan(statements)
+  calls <- extract_macro_calls(statements, scan = macro_scan)
+  if (nrow(macro_scan$findings)) flags_list[[length(flags_list) + 1L]] <- macro_scan$findings
+  # SAS statement comments can still execute macro text. The normal statement
+  # scanner strips them, so do not claim a complete dependency map for this form.
+  active_comments <- comments$kind == "statement" & grepl("%[A-Za-z_&]", comments$text)
+  if (any(active_comments)) flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
+    kind = "macro_dependency_analysis_deferred",
+    detail = paste0(comments$file[active_comments], ":", comments$line_start[active_comments],
+                    ": macro text in a SAS statement comment requires expansion"))
   librefs <- librefs[librefs$unit_id %in% active, , drop = FALSE]
   includes <- includes[includes$unit_id %in% active, , drop = FALSE]
   fmt_defs <- fmt_defs[fmt_defs$unit_id %in% active, , drop = FALSE]

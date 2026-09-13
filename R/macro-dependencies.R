@@ -63,6 +63,12 @@ called_macro_units <- function(project) {
 # Called by translation after the offline plan is built and before any adapter,
 # output directory or model request is created. Preflight remains inspectable.
 require_resolved_macros <- function(project) {
+  deferred <- project$flags$detail[project$flags$kind == "macro_dependency_analysis_deferred"]
+  if (length(deferred)) cli::cli_abort(c(
+    "Cannot translate: macro dependency analysis requires expansion.",
+    stats::setNames(deferred, rep("x", length(deferred))),
+    "i" = "These source forms are not classified as missing macro files. Rewrite or expand them before translation, then inspect sas_preflight()."
+  ), class = "sas2r_macro_dependency_error", findings = deferred)
   calls <- project$macros$resolution
   unresolved <- calls[calls$status %in% c("unresolved", "dynamic"), , drop = FALSE]
   if (!nrow(unresolved)) return(invisible(NULL))

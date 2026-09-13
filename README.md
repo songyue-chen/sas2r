@@ -315,6 +315,18 @@ in the scanned sources, then run preflight again. Preflight reports findings
 without stopping, so they remain available for inspection. sas2r does not expand
 arbitrary SAS macro code.
 
+Dependency detection classifies percent-prefixed syntax before looking up user
+macros. Definitions, control statements, built-in functions, `%INCLUDE`, `%LIST`,
+`%RUN`, and `%label:` declarations are not user calls. Macro/block comments and
+single-quoted literals do not introduce calls; double-quoted text can. Simple
+`%NRSTR(...)` text is treated as literal. Computed names and quoting that requires
+expansion (such as `%UNQUOTE(%NRSTR(%generated_call()))`) stop with an explicit analysis
+finding, rather than a missing-macro-file diagnosis. Macro text inside ordinary
+SAS `* comment;` statements also requires expansion and is reported separately.
+Unquoting a variable alone, such as `%UNQUOTE(&condition)` in a WHERE expression,
+is advisory: it does not prove that a user macro is called. Such generated text
+remains unverified; offline mapping does not fully execute the macro language.
+
 ## Connecting an AI Model
 
 `sas2r`'s AI connection is built on [ellmer](https://ellmer.tidyverse.org), the tidyverse package that speaks to every major AI provider. `sas2r` never talks to a provider directly — every call goes through ellmer's official connectors — so in principle, any provider ellmer supports is within reach of this design. From that family, this release validates and ships **twelve providers**, each checked when your configuration loads: a typo in a provider name or setting stops the run immediately instead of failing halfway through. As ellmer's connector family grows, further providers can join the validated list once they have been exercised with the migration workflow.

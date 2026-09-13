@@ -1,18 +1,119 @@
-#' Built-in SAS macro language keywords
+#' Percent-prefixed statements, distinct from user macro invocations
+#' @noRd
+NON_CALL_MACRO_KEYWORDS <- c(
+  "let", "if", "then", "else", "do", "end", "macro", "mend",
+  "global", "local", "goto", "go", "return", "abort",
+  "put", "input", "display", "window", "sysexec", "cms", "tso",
+  "symdel", "sysrput", "syslput", "sysmacdelete", "sysmstoreclear", "copy", "syscall",
+  # SAS statements outside the macro facility.
+  "include", "list", "run"
+)
+
+#' Built-in macro functions and statement/control keywords
 #'
 #' Names that should never be identified as user macro calls.
 #' @noRd
 MACRO_BUILTINS <- c(
-  "let", "if", "then", "else", "do", "end", "to", "by", "while", "until",
-  "macro", "mend", "put", "include", "global", "local", "eval", "sysevalf",
+  NON_CALL_MACRO_KEYWORDS, "to", "by", "while", "until", "eval", "sysevalf",
   "sysfunc", "qsysfunc", "str", "nrstr", "scan", "substr", "upcase", "lowcase", "index",
   "length", "quote", "nrquote", "bquote", "nrbquote", "superq", "unquote",
-  "sysget", "abort", "goto", "return", "symdel", "sysrput", "syslput", "window",
-  "display", "sysexec", "symexist", "symglobl", "symlocal", "qscan",
+  "sysget", "symexist", "symglobl", "symlocal", "qscan",
   "qsubstr", "qupcase", "qlowcase", "qtrim", "qleft", "qcmpres", "trim",
   "left", "cmpres", "verify", "datatyp", "input", "sysprod", "sysmacdelete",
   "sysmacexec", "sysmacexist", "sysmexecdepth", "sysmexecname"
 )
+
+# Lexical masking only: do not evaluate macro variables or execute a macro
+# processor. Work per file so quoted semicolons split by the statement scanner
+# do not turn subsequent literal text into apparent calls.
+macro_call_scan <- function(units) {
+  visible_text <- function(text) {
+    sc <- sas_scan(text)
+    keep <- sc$mask %in% c("c", "q") | (sc$mask == "s" & sc$chars == "'")
+    sc$chars[!keep] <- " "
+    paste(sc$chars, collapse = "")
+  }
+  text <- units$text
+  findings <- tibble::tibble(kind = character(), detail = character())
+  if (!any(grepl("%", text, fixed = TRUE))) return(list(text = text, findings = findings))
+  files <- if ("file" %in% names(units)) units$file else rep("", nrow(units))
+  for (rows in split(seq_len(nrow(units)), files)) {
+    parts <- paste0(text[rows], ";\n")
+    ends <- cumsum(nchar(parts))
+    if (!any(grepl("%", text[rows], fixed = TRUE))) next
+    starts <- c(1L, utils::head(ends, -1L) + 1L)
+    raw <- paste(parts, collapse = "")
+    chars <- strsplit(raw, "", fixed = TRUE)[[1L]]
+    clean <- chars
+    deferred <- integer()
+    unverified <- integer()
+    # These compilation-time quoting spans are literal for dependency lookup.
+    # Runtime unquoting can reactivate their contents and is deferred below.
+    processed <- integer()
+    repeat {
+      quotes <- gregexpr("%(?:nrstr|str|unquote)\\s*\\(", visible_text(paste(clean, collapse = "")),
+                         ignore.case = TRUE, perl = TRUE)[[1L]]
+      lengths <- attr(quotes, "match.length")
+      remaining <- which(quotes > 0L & !quotes %in% processed)
+      if (!length(remaining)) break
+      k <- remaining[1L]
+      pos <- quotes[k]
+      processed <- c(processed, pos)
+      name <- tolower(sub("^%([a-z]+).*", "\\1", substr(raw, pos, pos + lengths[k] - 1L),
+                          ignore.case = TRUE))
+      open <- pos + lengths[k] - 1L
+      depth <- 1L
+      close <- NA_integer_
+      quote <- ""
+      j <- open + 1L
+      while (j <= length(chars)) {
+        if (chars[j] == "%" && j < length(chars) && chars[j + 1L] %in% c("(", ")", "'", '"', "%")) {
+          if (name == "str") clean[c(j, j + 1L)] <- " "
+          j <- j + 2L
+          next
+        }
+        if (chars[j] %in% c("'", '"')) {
+          if (quote == "") quote <- chars[j]
+          else if (quote == chars[j]) quote <- ""
+        }
+        if (quote == "" && chars[j] == "(") depth <- depth + 1L
+        if (quote == "" && chars[j] == ")") depth <- depth - 1L
+        if (depth == 0L) { close <- j; break }
+        j <- j + 1L
+      }
+      if (is.na(close)) {
+        deferred <- c(deferred, pos)
+        break
+      }
+      body <- substr(raw, open + 1L, close - 1L)
+      if (name == "nrstr") clean[seq.int(pos, close)] <- " "
+      if (name == "unquote" && grepl("&", body) && !grepl("%", body)) unverified <- c(unverified, pos)
+      if (name == "unquote" && grepl("%", body)) deferred <- c(deferred, pos)
+    }
+    clean <- visible_text(paste(clean, collapse = ""))
+    for (pos in unique(deferred)) {
+      owner <- which(ends >= pos)[1L]
+      findings <- rbind(findings, tibble::tibble(
+        kind = "macro_dependency_analysis_deferred",
+        detail = sprintf("%s:%s: macro quoting or unquoting requires expansion before dependencies can be determined",
+                         files[rows[owner]], units$line_start[rows[owner]])))
+    }
+    for (pos in unique(unverified)) {
+      owner <- which(ends >= pos)[1L]
+      findings <- rbind(findings, tibble::tibble(
+        kind = "macro_expansion_unverified",
+        detail = sprintf("%s:%s: runtime unquoting of a macro variable is not statically expanded; review the generated text",
+                         files[rows[owner]], units$line_start[rows[owner]])))
+    }
+    if (length(deferred)) {
+      # Retain known calls before the incomplete portion. Later interpretation
+      # is unknown, not a set of missing files, until that portion is expanded.
+      substr(clean, min(deferred), nchar(clean)) <- paste(rep(" ", nchar(clean) - min(deferred) + 1L), collapse = "")
+    }
+    text[rows] <- substring(clean, starts, starts + nchar(units$text[rows]) - 1L)
+  }
+  list(text = text, findings = findings)
+}
 
 #' Extract macro definitions
 #'
@@ -83,13 +184,14 @@ empty_macro_calls <- function() {
 #' @param units A tibble from [sas_units()].
 #' @return A tibble with columns call_id, component_id, source_file, line, column, name, call_text.
 #' @noRd
-extract_macro_calls <- function(units) {
+extract_macro_calls <- function(units, scan = NULL) {
   empty <- empty_macro_calls()
   if (is.null(units) || nrow(units) == 0L) {
     return(empty)
   }
 
-  idx <- which(units$type == "code" & units$first_token != "%macro" & grepl("%", units$text, fixed = TRUE))
+  if (is.null(scan)) scan <- macro_call_scan(units)
+  idx <- which(units$type == "code" & grepl("%", scan$text, fixed = TRUE))
   if (length(idx) == 0L) {
     return(empty)
   }
@@ -104,8 +206,9 @@ extract_macro_calls <- function(units) {
   rows <- list()
   for (k in seq_along(idx)) {
     raw_txt <- txt_vec[k]
-    clean_txt <- mask_strings(raw_txt, keep_double = TRUE)
-    matches <- gregexpr("%([A-Za-z_&]\\w*)", clean_txt)[[1]]
+    clean_txt <- scan$text[idx[k]]
+    token_pattern <- "%[A-Za-z_&]\\w*(?:&+\\w*\\.?\\w*)*"
+    matches <- gregexpr(token_pattern, clean_txt, perl = TRUE)[[1]]
     if (length(matches) == 1L && matches[1] == -1L) next
 
     match_lengths <- attr(matches, "match.length")
@@ -121,10 +224,14 @@ extract_macro_calls <- function(units) {
       mac_name <- tolower(sub("^%", "", matched_token))
 
       if (mac_name %in% MACRO_BUILTINS) next
+      # A colon introduces a macro label in code. In a double-quoted string,
+      # %name: still invokes the macro and appends a colon to its result.
+      if (grepl("^\\s*:", substring(clean_txt, pos + len)) &&
+          sas_scan(clean_txt)$mask[pos] == "c") next
 
       # Extract raw call text
       sub_txt <- substring(raw_txt, pos)
-      m_call <- regmatches(sub_txt, regexec("^%[A-Za-z_&]\\w*(?:\\s*\\([^;]*\\))?", sub_txt))[[1]]
+      m_call <- regmatches(sub_txt, regexec(paste0("^", token_pattern, "(?:\\s*\\([^;]*\\))?"), sub_txt, perl = TRUE))[[1]]
       raw_call <- if (length(m_call) > 0L && nzchar(m_call[1])) m_call[1] else matched_token
 
       col_val <- as.integer(pos)
