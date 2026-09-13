@@ -82,12 +82,16 @@ test_that("called macros generate reusable files and execute through the public 
   writeLines("data work.first; x=%add(value=3); run;", file.path(root, "programs", "first.sas"))
   writeLines("data work.second; x=%add(value=4); run;", file.path(root, "programs", "second.sas"))
   translated <- character()
+  reviewed <- character()
   llm <- new_llm(function(request, audit_context = list()) {
     id <- audit_context$component_id
     if (id == "macro__scale") {
       expect_false(grepl("never_needed", request$messages[[1L]]$content, fixed = TRUE))
     }
-    response <- if (audit_context$role == "reviewer") valid_program_review_response() else {
+    response <- if (audit_context$role == "reviewer") {
+      reviewed <<- c(reviewed, id)
+      valid_program_review_response()
+    } else {
       translated <<- c(translated, id)
       code <- switch(id,
         macro__scale = "scale <- function(value = 1) value * 2",
@@ -98,7 +102,8 @@ test_that("called macros generate reusable files and execute through the public 
       if (id %in% c("first", "second")) {
         expect_match(request$messages[[1L]]$content, "call add; loaded by autoexec.R", fixed = TRUE)
       }
-      valid_program_translation_response(code = code)
+      valid_program_translation_response(code = code,
+        helper_use = if (id == "macro__add") "scale" else character())
     }
     normalize_provider_response(response, request, provider = "mock")
   }, provider = "mock", capabilities = llm_capabilities(
@@ -109,6 +114,7 @@ test_that("called macros generate reusable files and execute through the public 
   expect_setequal(unique(translated), c("macro__scale", "macro__add", "first", "second"))
   expect_equal(sum(translated == "macro__scale"), 1L)
   expect_equal(sum(translated == "macro__add"), 1L)
+  expect_true(all(table(reviewed) == 1L))
   expect_true(file.exists(file.path(result$bundle_dir, "R/macros/add.R")))
   expect_true(file.exists(file.path(result$bundle_dir, "R/macros/scale.R")))
   expect_true(file.exists(file.path(result$bundle_dir, "tests_macros/test-add.R")))

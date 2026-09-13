@@ -188,7 +188,11 @@ fix_program_revision <- function(
     comments = comments_text,
     staged_r = r_code,
     evidence = evidence_text,
-    skills = rendered_skills,
+    skills = paste(rendered_skills,
+      "Declared component interface (preserve names and defaults):",
+      jsonlite::toJSON(contract$macro_contract %||% list(), auto_unbox = TRUE),
+      "Resolved project functions (call by name; do not redefine):",
+      paste(contract$dependency_functions %||% character(), collapse = ", "), sep = "\n"),
     allowlist = config$allowlist %||% "dplyr, tidyr, haven"
   )
 
@@ -258,6 +262,8 @@ fix_program_revision <- function(
     component_id = component_id,
     binding = new_binding
   )
+  new_contract$helper_use <- reconcile_helper_use(fix_data$r_code,
+    new_contract$helper_use, new_contract$dependency_functions, refresh = TRUE)
   new_contract$binding <- new_binding
   new_contract$diagnosis <- fix_data$diagnosis
   if (isTRUE(new_contract$macro_contract$standalone)) {

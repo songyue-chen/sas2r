@@ -339,3 +339,72 @@ lib_write <- function(df, libref, member, ...) {
   else stop("Unsupported write format: ", fmt, call. = FALSE)
   invisible(df)
 }
+
+#' Delete explicitly named datasets from a writable library
+#'
+#' Removes the stored dataset, rather than just an R object. Missing members
+#' produce a message and do not stop deletion of other members. Names are
+#' matched case-insensitively across rds, xpt and sas7bdat files.
+#'
+#' Only an explicit vector of ordinary SAS member names is supported. Expand
+#' a known list into names before calling; prefix lists, ranges and `_ALL_`
+#' are not interpreted. Dynamic selection that cannot be resolved must remain
+#' an explicit unsupported operation, never a silent no-op.
+#'
+#' This helper deletes from the configured write directory. If a requested
+#' member also exists in a different read directory, deletion is unsupported:
+#' removing the written copy would expose that original again to [lib_read()].
+#' The whole request is checked before any file is removed, and input library
+#' files in a separate read directory are never deleted.
+#'
+#' @param libref A configured library name, such as `"work"`.
+#' @param members Character vector of explicit dataset names, without librefs
+#'   or file extensions. An empty vector does nothing.
+#' @return The names of removed members, invisibly.
+#' @family runtime helpers
+#' @examples
+#' .sas2r_registry <- list(work = list(path = tempfile("work"), write = "rds"))
+#' lib_write(data.frame(x = 1), "work", "scratch")
+#' lib_delete("work", "scratch")
+#' rm(.sas2r_registry)
+#' @export
+lib_delete <- function(libref, members) {
+  if (!is.character(members) || anyNA(members) ||
+      any(!grepl("^[A-Za-z_][A-Za-z0-9_]*$", members)) ||
+      any(toupper(members) == "_ALL_")) {
+    sas2r_libref_stop("sas2r_unsupported_dataset_delete",
+      "lib_delete() supports explicit member names only; expand dataset lists before calling")
+  }
+  reg <- sas2r_lib_entry(libref)
+  write_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
+  read_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
+  if (is.null(write_dir) || !nzchar(write_dir)) {
+    sas2r_libref_stop("sas2r_unsupported_dataset_delete",
+      paste0("No writable path configured for libref: ", libref))
+  }
+  files_in <- function(dir) {
+    if (is.null(dir) || !dir.exists(dir)) return(character())
+    files <- list.files(dir, pattern = "\\.(rds|xpt|sas7bdat)$", full.names = TRUE,
+                        ignore.case = TRUE)
+    files[!dir.exists(files)]
+  }
+  stem <- function(files) tolower(sub("\\.[^.]+$", "", basename(files)))
+  members <- unique(tolower(members))
+  separate_input <- !is.null(read_dir) &&
+    !identical(normalizePath(read_dir, winslash = "/", mustWork = FALSE),
+               normalizePath(write_dir, winslash = "/", mustWork = FALSE))
+  if (separate_input && any(members %in% stem(files_in(read_dir)))) {
+    sas2r_libref_stop("sas2r_unsupported_dataset_delete",
+      paste0("Cannot delete ", libref,
+        " members backed by a separate input directory; input files were preserved"))
+  }
+  files <- files_in(write_dir)
+  targets <- files[stem(files) %in% members]
+  absent <- setdiff(members, stem(targets))
+  for (member in absent) message("Dataset not found: ", libref, ".", member)
+  if (length(targets) && !all(file.remove(targets))) {
+    sas2r_libref_stop("sas2r_dataset_delete_failed",
+      paste0("Could not delete all requested datasets in ", write_dir))
+  }
+  invisible(unique(stem(targets)))
+}

@@ -1,5 +1,16 @@
 # sas2r 0.3.2
 
+* Reconcile runtime helper use against resolved macro interfaces and refresh
+  metadata after repairs. Unknown declared helpers still fail mechanical checks.
+* Retry deferred components only after relevant changes, share the immediate
+  repair allowance across revisits, and reuse unchanged completed reviews.
+* Read revision code consistently during smoke planning. Preserve multiline
+  calls and defer calls that need their enclosing program's execution context.
+* Add `lib_delete()` for explicit dataset names in writable libraries. Deletion
+  that would expose a separate original input remains explicitly unsupported.
+* Isolate smoke executions and retain their output hashes and diagnostics.
+  `keep_raw_attempts = TRUE` also preserves partial datasets and replay scripts.
+
 * Translate statically called macros from configured macro search directories,
   including their transitive macro dependencies, before their calling programs.
   Uncalled definitions remain outside the translation plan, including definitions

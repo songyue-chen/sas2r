@@ -11,7 +11,7 @@ test_that("public API has one translation workflow plus the runtime helpers", {
   # and are callable at the console; the operators and the plumbing stay
   # internal but still ship in every bundle.
   runtime <- c(
-    "lib_read", "lib_write", "sas2r_libname_assign", "sas2r_libname_clear",
+    "lib_read", "lib_write", "lib_delete", "sas2r_libname_assign", "sas2r_libname_clear",
     "sas2r_resolve_registry", "sas2r_fold_names", "chr_cmp", "sas_if_else", "sas_sum", "sas_mean",
     "sas_min", "sas_max", "sas_round", "sas_length", "sas_substr",
     "sas_compress", "sas_display", "sas_sort", "sas_merge", "apply_format",

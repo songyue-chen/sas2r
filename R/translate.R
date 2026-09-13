@@ -46,7 +46,9 @@
 #'   match. Execution and output checks always run again in a fresh attempt.
 #'   Missing or edited revision files trigger regeneration. Older planning versions
 #'   also regenerate; resume explains why before new provider calls. Defaults to FALSE.
-#' @param keep_raw_attempts Logical; whether to retain raw outputs from unselected attempts. Defaults to FALSE.
+#' @param keep_raw_attempts Logical; retain raw outputs from unselected attempts,
+#'   including isolated component smoke outputs and their replay scripts. These
+#'   are partial debugging artifacts, not validated final outputs. Defaults to FALSE.
 #' @return An object of S3 class `"sas2r_translation"` containing `$run_id`, `$out_dir`,
 #'   `$bundle_dir`, `$outputs_dir`, `$status`, `$status_reason`, `$graph_path`,
 #'   `$output_contracts_path`, `$report_path`, `$report_json_path`, `$component_evidence`,

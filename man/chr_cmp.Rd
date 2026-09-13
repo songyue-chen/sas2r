@@ -37,6 +37,7 @@ chr_cmp(c(1, NA, 3), c(1, 2, 2), op = "<")
 \seealso{
 Other runtime helpers: 
 \code{\link{apply_format}()},
+\code{\link{lib_delete}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},

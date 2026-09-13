@@ -73,7 +73,9 @@ match. Execution and output checks always run again in a fresh attempt.
 Missing or edited revision files trigger regeneration. Older planning versions
 also regenerate; resume explains why before new provider calls. Defaults to FALSE.}
 
-\item{keep_raw_attempts}{Logical; whether to retain raw outputs from unselected attempts. Defaults to FALSE.}
+\item{keep_raw_attempts}{Logical; retain raw outputs from unselected attempts,
+including isolated component smoke outputs and their replay scripts. These
+are partial debugging artifacts, not validated final outputs. Defaults to FALSE.}
 }
 \value{
 An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \verb{$out_dir},

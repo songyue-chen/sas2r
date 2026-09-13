@@ -910,7 +910,7 @@ dependency_closure_hashes <- function(graph, selected_revision_hashes, helper_ha
 #' @param runtime_deferred Optional character vector of component IDs that were deferred.
 #' @return Character vector of component IDs to requeue, in schedule order.
 #' @noRd
-requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred = character()) {
+requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred = character(), waiting_on = list()) {
   sched <- stable_dependency_schedule(graph)
   if (nrow(sched) == 0L) return(character())
 
@@ -939,7 +939,14 @@ requeue_components <- function(graph, old_hashes, new_hashes, runtime_deferred =
       }
     }
 
-    deferred_ready <- cid %in% runtime_deferred && (length(deps) == 0L || all(deps %in% names(new_hashes)))
+    # Presence alone does not resolve a failure. In addition to normal upstream
+    # changes, only a changed, available prerequisite explicitly awaited by the
+    # smoke planner (such as a not-yet-generated caller) justifies a revisit.
+    awaited <- waiting_on[[cid]] %||% character()
+    deferred_ready <- cid %in% runtime_deferred && any(vapply(awaited, function(d) {
+      value <- if (d %in% names(new_hashes)) new_hashes[[d]] else ""
+      nzchar(value) && !identical(if (d %in% names(old_hashes)) old_hashes[[d]] else "", value)
+    }, logical(1)))
 
     if (self_changed || deps_changed || deferred_ready) {
       requeue <- c(requeue, cid)

@@ -77,7 +77,7 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
   # 3. Helper name check
   if (!is.null(contract) && !is.null(contract$helper_use) && length(contract$helper_use) > 0L) {
     helpers_used <- unlist(contract$helper_use)
-    invalid_helpers <- setdiff(helpers_used, SAS2R_HELPER_NAMES)
+    invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions))
     if (length(invalid_helpers) > 0L) {
       errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", ")))
     }

@@ -60,6 +60,7 @@ new_migration_state <- function(
 
   state <- list(
     project = p,
+    input_manifest = input_hash_manifest(p),
     baseline = baseline,
     graph = graph,
     schedule = schedule,
@@ -249,7 +250,7 @@ process_program_component <- function(
   }
 
   # 2. Repair loop
-  round <- 0L
+  round <- state$repair_counts[[component_id]] %||% 0L
   prior_candidate <- NULL
   repeat {
     rev <- state$selected_revisions[[component_id]]
@@ -291,10 +292,21 @@ process_program_component <- function(
       config = state$config %||% list()
     )
 
+    review_key <- migration_hash(list(
+      code = rev$r_code, contract = rev$contract, config = state$config,
+      dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
+      helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
+        unname(cli::hash_sha256(state$runtime$helpers)) else NULL,
+      reviewer = state$reviewer_llm[c("provider", "model", "model_parameters")]
+    ))
+    cached <- state$review_cache[[component_id]]
     cached_verdict <- component_review_verdict(state$histories[[component_id]])
-    reuse_review <- round == 0L && component_id %in% state$resumed_components &&
+    reuse_review <- identical(cached$key, review_key) &&
+      cached$review$verdict %in% c("reviewed_no_material_finding", "repair_required")
+    resumed_review <- is.null(cached) && component_id %in% state$resumed_components &&
       cached_verdict %in% c("reviewed_no_material_finding", "repair_required")
-    review <- if (reuse_review) list(verdict = cached_verdict) else review_program_revision(
+    review <- if (reuse_review) cached$review else if (resumed_review)
+      list(verdict = cached_verdict) else review_program_revision(
       revision = rev,
       context = ctx,
       llm = state$reviewer_llm,
@@ -307,6 +319,9 @@ process_program_component <- function(
     if (!is.null(review$history)) {
       state$histories[[component_id]] <- review$history
     }
+    cached_record <- review
+    cached_record$history <- NULL
+    state$review_cache[[component_id]] <- list(key = review_key, review = cached_record)
 
     if (identical(review$verdict, "review_unavailable")) {
       state$events <- c(state$events, paste0("review_unavailable:", rev_id))
@@ -315,7 +330,7 @@ process_program_component <- function(
     }
     signal_immediate_coordinator_event(
       if (identical(review$verdict, "review_unavailable")) "review_unavailable"
-      else if (reuse_review) "review_reused" else "program_reviewed",
+      else if (reuse_review || resumed_review) "review_reused" else "program_reviewed",
       component_id, rev_id, reason = review$reason %||% review$verdict
     )
 
@@ -350,7 +365,7 @@ process_program_component <- function(
           reason = plan$reason
         )
         state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
-        smoke_res <- list(passed = FALSE, deferred = TRUE, reason = plan$reason)
+        smoke_res <- list(passed = FALSE, deferred = TRUE, reason = plan$reason, waiting_on = plan$waiting_on)
       } else if (identical(plan$status, "runnable")) {
         attempt_dir <- if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
           state[["attempt"]]$attempt_dir
@@ -360,7 +375,8 @@ process_program_component <- function(
           tempdir()
         }
 
-        smoke_res <- run_program_smoke(plan, state$runtime, attempt_dir)
+        prepared <- prepare_program_smoke(state, plan, attempt_dir)
+        smoke_res <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)
         state$histories[[component_id]] <- record_program_smoke(
           state$histories[[component_id]], smoke_res
         )
@@ -436,6 +452,7 @@ process_program_component <- function(
 
     # Step E: Invoke Fixer with combined evidence
     next_round <- round + 1L
+    state$repair_counts[[component_id]] <- next_round
     next_rev_id <- paste0("r", next_round + 1L)
 
     fixed_rev <- tryCatch(
@@ -462,7 +479,9 @@ process_program_component <- function(
     if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {
       break
     }
-    if (identical(fixed_rev$r_code, rev$r_code) || identical(fixed_rev$patch_hash, rev$contract$patch_hash)) {
+    if ((identical(fixed_rev$r_code, rev$r_code) &&
+         identical(fixed_rev$contract$helper_use, rev$contract$helper_use)) ||
+        identical(fixed_rev$patch_hash, rev$contract$patch_hash)) {
       break
     }
 
@@ -556,7 +575,9 @@ run_program_pipeline <- function(
         !is.null(ev$runtime_deferred) && nzchar(ev$runtime_deferred)
       }, logical(1))]
 
-      requeue <- requeue_components(state$graph, old_hashes, new_hashes, runtime_deferred = deferred_cids)
+      waiting_on <- lapply(state$selected_revisions, function(rev) rev$smoke$waiting_on)
+      requeue <- requeue_components(state$graph, old_hashes, new_hashes,
+        runtime_deferred = deferred_cids, waiting_on = waiting_on)
       requeue <- setdiff(requeue, cid)
 
       for (rq_cid in requeue) {

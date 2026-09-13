@@ -224,6 +224,20 @@ Errors include the underlying R condition and saved execution logs. If a current
 run is blocked while an older selected bundle remains on disk, the progress log
 identifies that older selection explicitly.
 
+`max_program_repair_rounds` is the total immediate-repair allowance per
+component for the run, including revisits. A deferred component is retried when
+its relevant dependencies change or a specifically awaited caller becomes
+available. Completed reviews are reused within a run when the code, dependency
+code, helper runtime and review configuration are unchanged.
+
+For debugging a failed bundle, use `sas_translate(..., keep_raw_attempts = TRUE)`
+to retain each component smoke execution's separate library folders and `run.R`
+replay script. The component's `smoke_execution` in `report.json` lists the
+output paths, hashes, configured-input hashes from run startup and replay path. These are partial
+execution artifacts, not reference-validated final datasets. By default, raw
+unselected outputs are pruned; smoke records and logs remain available under
+`smoke_attempt_001/logs/` in the run folder.
+
 Translator, reviewer, and fixer receive runtime signatures, argument rules,
 return values, limitations, and examples directly from the package's helper
 reference. Mechanical checks reject invented helper arguments before execution.
@@ -303,6 +317,23 @@ programs run. `sas_write()` exports the macro scripts and generated
 `tests_macros/test-<name>.R` interface tests. Those tests check the function name,
 parameters and known defaults; execution and SAS-reference comparison provide
 separate evidence about behavior.
+
+Resolved project macro calls are tracked separately from runtime helpers.
+Repairs refresh helper-use metadata without treating project functions as
+unknown runtime helpers. Standalone smoke tests use an available caller's first
+top-level call with literal arguments, preserving multiline calls. A caller
+that has not been generated reports `caller_not_generated`; calls requiring
+prior setup, variables, loops or other enclosing context report
+`caller_context_required` and run as part of their containing program. A smoke
+pass for that program does not establish that every conditional macro ran.
+
+For explicit dataset cleanup, generated functions can use
+`lib_delete("work", c("scratch_a", "scratch_b"))`. This removes stored datasets;
+garbage collection is not a substitute. Dataset-name ranges, prefix lists and
+`_ALL_` need expansion into explicit names. Deleting a member backed by a
+separate input directory remains unsupported, with input files preserved.
+Unresolved dynamic expressions remain explicit limitations; agents must not
+bypass them with `eval()`/`parse()` or silently drop meaningful operations.
 
 Inspect `sas_preflight(...)$called_macros` for the discovered definitions and
 planned file paths. Macro translation requires an AI provider. Dynamic macro

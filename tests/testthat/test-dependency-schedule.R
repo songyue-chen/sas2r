@@ -186,7 +186,12 @@ test_that("requeue_components handles runtime_deferred components", {
   # Nothing changed, nothing deferred
   expect_identical(requeue_components(graph, old, now), character())
 
-  # d was runtime_deferred, prerequisite c is present in now
-  expect_identical(requeue_components(graph, old, now, runtime_deferred = "d"), "d")
+  # Presence does not make an unchanged failure ready.
+  expect_identical(requeue_components(graph, old, now, runtime_deferred = "d"), character())
+  # A specific missing caller becoming available does warrant retrying.
+  expect_identical(requeue_components(graph, old, c(now, caller = "R1"),
+    runtime_deferred = "d", waiting_on = list(d = "caller")), "d")
+  expect_identical(requeue_components(graph, c(old, caller = "R1"), c(now, caller = "R1"),
+    runtime_deferred = "d", waiting_on = list(d = "caller")), character())
 })
 

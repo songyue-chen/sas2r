@@ -556,15 +556,6 @@ build_behavioral_contract <- function(
     macro_contract_obj$standalone <- TRUE
   }
 
-  helpers_in_code <- character()
-  for (hn in SAS2R_HELPER_NAMES) {
-    if (grepl(hn, r_code_text, fixed = TRUE)) {
-      helpers_in_code <- c(helpers_in_code, hn)
-    }
-  }
-  helper_use <- unique(c(helpers_in_code, unlist(tr_data$helper_use %||% character())))
-  helper_use <- helper_use[!is.na(helper_use) & nzchar(helper_use)]
-
   known_call_sites <- list()
   if (!is.null(graph$edges) && nrow(graph$edges) > 0L && !is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
     c_edges <- graph$edges[graph$edges$from %in% comp_nodes$node_id | graph$edges$to %in% comp_nodes$node_id, , drop = FALSE]
@@ -587,6 +578,16 @@ build_behavioral_contract <- function(
       }
     }
   }
+
+  dependency_functions <- character()
+  if (length(known_call_sites)) {
+    incoming <- Filter(function(site) site$type %in% c("calls_macro", "uses_function") &&
+      identical(site$resolution, "resolved") && site$to %in% comp_nodes$node_id,
+      known_call_sites)
+    dependency_functions <- unique(vapply(incoming, function(site) site$detail, character(1)))
+  }
+  helper_use <- reconcile_helper_use(r_code_text, tr_data$helper_use,
+                                    dependency_functions)
 
   resolved_deps <- if (!is.null(graph)) dependency_closure(graph, component_id) else character()
   suspected_deps <- unique(unlist(tr_data$suspected_dependencies %||% character()))
@@ -660,6 +661,7 @@ build_behavioral_contract <- function(
     writes = writes,
     side_effects = side_effects,
     helper_use = helper_use,
+    dependency_functions = dependency_functions,
     known_call_sites = known_call_sites,
     resolved_dependencies = resolved_deps,
     suspected_dependencies = suspected_deps,

@@ -148,6 +148,7 @@ write_migration_report <- function(state) {
       evidence_level = level,
       review_status = rev_status,
       smoke_status = smoke_status,
+      smoke_execution = state$selected_revisions[[cid]]$smoke,
       mechanical_checks = state$selected_revisions[[cid]]$checks,
       source_population_checks = state$selected_revisions[[cid]]$smoke$population_checks,
       blockers = curr$blockers %||% character(),
@@ -280,6 +281,21 @@ write_migration_report <- function(state) {
     migration_md_table(comp_df),
     ""
   )
+
+  smoke_records <- Filter(function(x) !is.null(x$record_path),
+    lapply(state$selected_revisions, function(rev) rev$smoke))
+  if (length(smoke_records)) {
+    md_lines <- c(md_lines, "## Partial Component Execution", "",
+      "These records describe component smoke runs, not final-bundle or reference validation.", "",
+      vapply(names(smoke_records), function(cid) {
+        record <- smoke_records[[cid]]
+        replay <- record$replay_script
+        available <- !is.null(replay) && file.exists(replay)
+        paste0("- **", cid, "**: [execution record](<", record$record_path, ">)",
+          if (available) paste0("; [replay script](<", replay, ">)") else
+            "; raw artifacts not retained (use `keep_raw_attempts = TRUE`).")
+      }, character(1)), "")
+  }
 
   # Output target table
   if (nrow(output_contracts) > 0L) {
