@@ -210,6 +210,7 @@ useful rule or macro lookups do not exhaust a separate small quota. A project
 can adjust a role in `.sas2r/agents/translator.yml` (likewise `reviewer.yml` and
 `fixer.yml`):
 
+<!-- sas2r-example: agent translator -->
 ```yaml
 tool_call_limit: 30
 tools:
