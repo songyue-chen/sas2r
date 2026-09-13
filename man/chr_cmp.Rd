@@ -10,7 +10,8 @@ chr_cmp(a, b, op = NULL)
 \item{a, b}{Vectors to compare; recycled to a common length.}
 
 \item{op}{\code{NULL} for a three-way comparison, or one of \code{"=="}, \code{"!="},
-\code{"<"}, \code{"<="}, \code{">"}, \code{">="}.}
+\code{"<"}, \code{"<="}, \code{">"}, \code{">="}. Translate SAS equality (\code{=} or \code{EQ}) as
+\code{op = "=="}; \code{op = "="} is unsupported. Invalid operators raise an error.}
 }
 \value{
 With \code{op} \code{NULL}, an integer vector of \code{-1}, \code{0}, \code{1} (missing
@@ -22,8 +23,15 @@ SAS comparison of possibly-missing values. Character operands ignore
 trailing blanks, and a missing character value (\code{""} or \code{NA}) sorts below
 every non-missing one; numeric missing sorts below every number.
 }
+\details{
+Supply an explicit operator in Boolean conditions. Omitting \code{op} returns
+an ordering result: equality is \code{0}, which R treats as false. To test
+equality, use \code{chr_cmp(a, b, op = "==")}.
+}
 \examples{
 chr_cmp(c("A", NA, "B  "), c("A", NA, "B"))
+chr_cmp(c("A", NA, "B  "), c("A", NA, "B"), op = "==")
+chr_cmp(c(61, 70, NA), c(61, 60, NA), op = "==")
 chr_cmp(c(1, NA, 3), c(1, 2, 2), op = "<")
 }
 \seealso{

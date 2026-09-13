@@ -219,9 +219,12 @@ Errors include the underlying R condition and saved execution logs. If a current
 run is blocked while an older selected bundle remains on disk, the progress log
 identifies that older selection explicitly.
 
-Translator, reviewer, and fixer receive runtime signatures, limitations, and
-examples directly from the package's helper reference. Mechanical checks reject
-invented helper arguments before execution.
+Translator, reviewer, and fixer receive runtime signatures, argument rules,
+return values, limitations, and examples directly from the package's helper
+reference. Mechanical checks reject invented helper arguments before execution.
+For equality, use `chr_cmp(a, b, op = "==")`; `op = "="` raises an error.
+Omitting `op` returns an ordering result (`-1`, `0`, `1`), so an explicit operator
+is required when using the result as a Boolean condition.
 
 Source population checks use parsed SAS and local inputs, independently of the
 agent's declared contract. Supported checks cover row counts for single-input

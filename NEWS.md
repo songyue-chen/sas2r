@@ -10,6 +10,9 @@
   documentation and actual signatures. Mechanical gates reject unsupported
   helper arguments even when the agent omits its helper declaration.
   A missing reference reports an actionable installation error.
+  The shared reference includes argument rules and return values for all
+  documented helpers. `chr_cmp()` documents equality as `op = "=="` and rejects
+  unsupported operators instead of silently producing incorrect flags.
 * Source-derived population checks detect row loss in supported SET and MERGE
   patterns during both smoke and bundle execution. Unsupported source behavior
   and unavailable intermediates remain explicitly unverified.

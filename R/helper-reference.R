@@ -9,14 +9,24 @@ runtime_helper_documentation <- function(man_dir) {
     aliases <- vapply(rd[tags == "\\alias"], flatten, character(1))
     helpers <- intersect(aliases, SAS2R_HELPER_NAMES)
     if (!length(helpers)) next
-    description <- trimws(paste(vapply(rd[tags %in% c("\\description", "\\details", "\\examples")], flatten, character(1)), collapse = "\n"))
+    section_text <- function(tag) trimws(paste(vapply(rd[tags == tag], flatten, character(1)), collapse = "\n"))
+    sections <- c(section_text("\\description"), section_text("\\details"))
     args <- rd[tags == "\\arguments"]
+    argument_text <- character()
     dots <- FALSE
     if (length(args)) for (item in args[[1]]) {
-      if (identical(attr(item, "Rd_tag"), "\\item") && identical(flatten(item[[1]]), "...")) {
-        dots <- !grepl("Ignored|Not used", flatten(item[[2]]))
-      }
+      if (!identical(attr(item, "Rd_tag"), "\\item")) next
+      name <- flatten(item[[1]])
+      text <- trimws(flatten(item[[2]]))
+      argument_text <- c(argument_text, paste0(name, ": ", text))
+      if (identical(name, "...")) dots <- !grepl("Ignored|Not used", text)
     }
+    if (length(argument_text)) sections <- c(sections, paste(c("Arguments:", argument_text), collapse = "\n"))
+    value <- section_text("\\value")
+    if (nzchar(value)) sections <- c(sections, paste("Returns:", value, sep = "\n"))
+    examples <- section_text("\\examples")
+    if (nzchar(examples)) sections <- c(sections, paste("Examples:", examples, sep = "\n"))
+    description <- paste(sections[nzchar(sections)], collapse = "\n\n")
     for (helper in helpers) result[[helper]] <- list(text = description, dots = dots)
   }
   result[sort(names(result), method = "radix")]

@@ -36,3 +36,37 @@ test_that("a missing helper reference gives an actionable error instead of empty
     expect_error(lookup(), "Reinstall sas2r", class = "sas2r_helper_reference_missing")
   }
 })
+
+test_that("the shared helper reference includes argument rules and return values", {
+  docs <- helper_documentation()
+  expect_match(docs$chr_cmp$text, 'op: NULL for a three-way comparison', fixed = TRUE)
+  expect_match(docs$chr_cmp$text, 'integer vector of -1, 0, 1', fixed = TRUE)
+  expect_match(docs$chr_cmp$text, 'op = "=="', fixed = TRUE)
+  expect_match(docs$sas_sort$text, 'descending: Character vector', fixed = TRUE)
+  expect_match(docs$sas_sort$text, 'Returns:\ndf reordered.', fixed = TRUE)
+  expect_match(docs$sas_merge$text, 'a, b: Data frames, in statement order.', fixed = TRUE)
+  expect_match(docs$sas_merge$text, 'Returns:\nThe merged data frame.', fixed = TRUE)
+})
+
+test_that("all three agents receive complete helper contracts without tool calls", {
+  specs <- load_agent_specs()
+  responses <- list(translator = valid_program_translation_response(),
+                    reviewer = valid_program_review_response(),
+                    fixer = valid_program_fix_response())
+  for (agent in names(responses)) {
+    captured <- NULL
+    llm <- new_llm(function(request) {
+      captured <<- request
+      normalize_provider_response(responses[[agent]], request = request, provider = "mock")
+    }, provider = "mock")
+    result <- run_agent(as.list(specs[[agent]]), llm, tools = list(),
+      user_content = "Compare source and translated values.", log_dir = withr::local_tempdir())
+    expect_identical(result$status, "ok", info = agent)
+    expect_equal(result$tool_calls, 0L, info = agent)
+    system <- captured$messages[[1L]]$content
+    expect_match(system, 'op: NULL for a three-way comparison', fixed = TRUE, info = agent)
+    expect_match(system, 'integer vector of -1, 0, 1', fixed = TRUE, info = agent)
+    expect_match(system, 'op = "=="', fixed = TRUE, info = agent)
+    expect_match(system, 'Returns:\nThe merged data frame.', fixed = TRUE, info = agent)
+  }
+})
