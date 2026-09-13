@@ -44,8 +44,8 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 
 Use a reasoning model for translation, review, and repair. The four direct-provider
 examples below match the [recommended README profiles](../README.md#recommended-_sas2ryml-profiles).
-Copy one complete `llm:` block. Explicit effort and token ceilings need their
-`capabilities: ...: supported` flags, or sas2r withholds them. An initial
+Copy one complete `llm:` block. Startup verifies explicit effort and token
+ceilings; manual `supported` flags are no longer required. An initial
 `max_output_tokens: 32768` leaves space for reasoning and the final response;
 increase it for long programs within the chosen model's supported limit.
 Leaving it unset uses connector/provider defaults, not necessarily the model's
@@ -71,8 +71,6 @@ llm:
   capabilities:
     structured_output: native
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -91,8 +89,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   cache: 1h
   timeout_seconds: 900
   max_tries: 1
@@ -115,7 +111,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -136,7 +131,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -156,7 +150,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -177,7 +170,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -234,8 +226,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -254,8 +244,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -289,8 +277,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   cache: 1h
   timeout_seconds: 900
   max_tries: 1
@@ -311,7 +297,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -342,7 +327,7 @@ print(probe)
 
 ### Inventory vs. Probe Semantics
 - **`sas_llm_models()`**: Queries the provider inventory endpoint where supported. An `inventory_unavailable` status indicates the provider does not expose an inventory endpoint (e.g. Azure, Databricks, Snowflake) or uses custom inference profiles; it does **not** indicate an empty model list.
-- **`sas_llm_probe()`**: Tests authentication, endpoint reachability, and structured-output support on the configured model with a minimal 32-token request. The ping carries no tools, so it does **not** exercise tool calling; a model that answers the probe may still lack tool support, which surfaces at the first tool-using phase. The attempt is ledgered only when you pass a `usage_budget` carrying a `ledger_path`, as a translation run does through its shared budget. Probe never launches interactive browser logins in automated CI.
+- **`sas_llm_probe()`**: Tests authentication, endpoint reachability, structured output, and forwarding of explicitly configured parameters. It uses the configured output ceiling, or 2048 tokens when effort is configured, otherwise 32. A standalone ping does not perform the startup negative control or populate its cache. The ping carries no tools, so it does **not** exercise tool calling; a model that answers the probe may still lack tool support, which surfaces at the first tool-using phase. The attempt is ledgered only when you pass a `usage_budget` carrying a `ledger_path`, as a translation run does through its shared budget. Probe never launches interactive browser logins in automated CI.
 
 ---
 
@@ -407,9 +392,9 @@ provider billing-quota error.
 
 ### Declaring what your endpoint supports (`capabilities:`)
 
-`sas2r` never assumes a capability it has not been told about. Each capability
-resolves to `supported`, `unsupported`, or `unknown`, and **the runner fails
-closed on `unknown`**. No provider in the registry ships a `tool_calling`
+Capabilities resolve to `supported`, `unsupported`, or `unknown`. Startup can
+verify explicitly requested model parameters. Structured output and tool calling
+still require declarations; the runner does not assume them on `unknown`. No provider in the registry ships a `tool_calling`
 default other than `unknown`, so unless you declare it, every agent unit is
 skipped with a `tool_calling_unavailable` flag and the run still exits
 successfully:
@@ -446,42 +431,67 @@ Sources for model behavior:
 [Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
-Use reasoning-capable models in every active `tiers` entry: the capability flags
-are shared across tiers. These settings encourage reasoning; they do not prove
+Use reasoning-capable models in every active `tiers` entry: declarations are
+shared across tiers, while startup verification checks each active model separately. These settings encourage reasoning; they do not prove
 SAS-to-R equivalence. Defaults can change, and a withheld effort setting does not mean reasoning is off.
 
-### Optional parameters are withheld unless confirmed
+### Automatic startup settings verification
 
-Optional parameters such as `temperature` and `reasoning_effort` are sent only
-when their capability is exactly `supported`. Requesting `temperature: 0`
-against a provider whose capability is `unknown` does not error -- the request
-is answered at the provider default. Every such omission is named in the
-`withheld_parameters` field of the audit record, so what was actually sent is
-recoverable at the sas2r-to-ellmer handoff from the log. In
-`<out_dir>/.sas2r/llm_log.jsonl`, inspect `requested_parameters`,
-`effective_parameters`, and `withheld_parameters`. Also inspect connector
-warnings: `effective_parameters` does not prove that ellmer or the endpoint
-accepted a setting after that handoff.
-
-An optional parameter can be set per project, and an agent spec overrides it
-where the spec speaks -- the shipped translator sets `temperature: 0` for
-determinism, and a project default does not undo that. No shipped spec sets
-`reasoning_effort`, so in practice it comes entirely from configuration:
+`sas_translate()` checks each active agent's explicitly configured parameters
+before starting agent work. The same check also protects standalone agent calls.
+Set the desired level and output allowance; sas2r applies verified capabilities
+in memory without rewriting `_sas2r.yml`:
 
 ```yaml
 llm:
   reasoning_effort: high
-  capabilities:
-    reasoning_effort: supported     # required; the gate fails closed on unknown
+  max_output_tokens: 32768
 ```
 
-> **Delivery depends on ellmer.** `sas2r` hands optional parameters to ellmer,
-> which maps only those it supports for a given provider and drops the rest
-> with an `Ignoring unsupported parameters` warning. As of ellmer 0.4.2,
-> `reasoning_effort` is not mapped for `chat_deepseek()`, so declaring it has
-> no effect there and ellmer warns. `sas2r` does not work around this: the
-> re-check the mapping after an ellmer upgrade before changing the capability
-> to `supported` and requesting an explicit effort.
+This fragment belongs inside a complete provider profile above. Keep the
+`structured_output` and `tool_calling` declarations: the settings probe is a
+structured ping with no tools, so it does not discover tool support.
+
+- **Unknown reasoning support:** send an invalid effort level, require a provider
+  rejection identifying that setting, then test the exact requested level. An
+  endpoint accepting the invalid level may be ignoring the field; stop with
+  support still unknown. An independently verified `supported` override skips
+  this negative control, but still requires the positive settings ping.
+- **Known unsupported:** stop before transport when the user requests the setting.
+  An ellmer warning that a required parameter is being ignored also stops the run.
+- **Accepted settings:** continue with those values. Required settings are never
+  removed during the optional-parameter retry. Rejection later in translation
+  also stops the run.
+- **Timeout, authentication failure, truncation, or exhausted probe budget:** do
+  not infer unsupported capability or cache a success. Transient failures use
+  the existing bounded probe retry policy; unresolved checks stop the run.
+
+A fresh adapter probes once per distinct active model/settings profile. Successful
+checks are cached only in that adapter session, keyed by endpoint, model, API and
+ellmer versions, capability declarations, and exact parameter values. A new
+`sas_llm()` adapter starts fresh. Startup logs `probing`, `verified`, `cached`, or
+`provider_defaults`; requested/effective values are recorded in
+`<out_dir>/.sas2r/llm_log.jsonl`. Probe attempts use the same usage ledger and
+budget as translation. An already exhausted run budget permits no probe or agent
+calls. `sas_preflight()` and constructing `sas_llm()` remain offline.
+
+Explicit `temperature` and `top_p` settings are also tested and required. An agent
+spec overrides project parameter defaults where it speaks; the shipped
+`temperature: 0` remains optional unless temperature was explicitly configured.
+An unknown capability may therefore still withhold that implicit default, which
+is recorded as `withheld_parameters` in the audit log.
+
+These checks establish connector forwarding and request acceptance, not the
+amount or quality of a model's internal reasoning. The negative control applies
+to reasoning; acceptance of other parameters does not prove their semantics on
+an arbitrary compatible endpoint. DeepSeek on ellmer 0.4.2 must use its server
+reasoning default because that connector cannot forward an explicit effort.
+
+Upgrading to ellmer 0.5.0 does not remove that DeepSeek limitation: its
+[versioned parameter mapping](https://github.com/tidyverse/ellmer/blob/v0.5.0/R/provider-deepseek.R#L69-L83)
+includes `max_tokens` but omits `reasoning_effort`. The startup check therefore
+remains necessary on both versions; upgrading the connector alone does not
+repair sas2r's earlier omission of unconfirmed settings.
 
 > **Reasoning tokens are not counted.** ellmer's public token surface reports
 > `input`, `output`, and `cached_input` only. Where a provider bills reasoning
@@ -490,10 +500,10 @@ llm:
 ### Request timeout and retries (`timeout_seconds`, `max_tries`)
 
 Each HTTP request is bounded by ellmer's `ellmer_timeout_s` option, defaulting
-to 300 seconds, and retried `ellmer_max_tries` times, defaulting to 3. A
+to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults to 1. A
 frontier model answering through a chain of tool calls can exceed the timeout
-and fail mid-stream with `sas2r_llm_timeout` -- three times over, so a single
-doomed unit can consume 15 minutes before reporting failure.
+and fail mid-stream with `sas2r_llm_timeout`. Increasing `max_tries` adds
+transport attempts beneath sas2r retries and can multiply elapsed time and spend.
 
 ```yaml
 llm:

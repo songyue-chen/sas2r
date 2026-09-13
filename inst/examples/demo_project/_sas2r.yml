@@ -21,6 +21,5 @@ macros:
 #     structured_output: fallback
 #     tool_calling: native
 #     reasoning_effort: unsupported
-#     max_output_tokens: supported
 #   # ellmer gathers with tools before structured finalization; no
 #   # tools_with_structured_output override is needed or honored.

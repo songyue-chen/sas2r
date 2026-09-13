@@ -2,7 +2,7 @@
 % Please edit documentation in R/llm.R
 \name{sas_llm_probe}
 \alias{sas_llm_probe}
-\title{Probe LLM connectivity with a tiny structured ping}
+\title{Probe LLM connectivity and configured settings with a structured ping}
 \usage{
 sas_llm_probe(
   llm,
@@ -41,7 +41,11 @@ classed conditions with secrets redacted.
 }
 \description{
 Validates authentication, endpoint reachability, and structured-output
-support on the configured model with one minimal 32-token request. The
+support and forwarding of explicit parameters on the configured model. The
+ping uses the configured output ceiling, or 2048 tokens when reasoning effort
+is configured, otherwise 32. It does not perform the negative control used by
+automatic translation startup to detect ignored reasoning settings, and does
+not populate that startup cache. The
 probe never launches an interactive browser or device login: a missing or
 expired ambient session raises a classed condition naming the command to
 run instead.
@@ -61,7 +65,7 @@ budget with none, so it is audited but not ledgered.
 }
 \examples{
 \dontrun{
-# Sends one minimal ping to validate connectivity and model access.
+# Sends a structured ping to validate connectivity and model access.
 llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 sas_llm_probe(llm)
 }

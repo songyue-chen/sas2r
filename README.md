@@ -299,8 +299,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported  # required to forward the value above
-    max_output_tokens: supported # required to forward the ceiling above
 ```
 
 **Never write an API key into `_sas2r.yml`.** Leave keys out of the file and set the provider's environment variable instead (listed below); `sas2r` finds it there. Files get shared and committed — environment variables don't.
@@ -315,8 +313,20 @@ Keep the rest of your study configuration unchanged. The full template is
 `max_output_tokens: 32768` is an initial allowance, not a quality guarantee or a
 whole-run budget. Reasoning can consume part of it. Increase it for long programs
 within the model's supported output limit. Omitting it uses connector/provider
-defaults, which can be smaller than the model's maximum. Optional parameters are
-withheld unless the corresponding capability is `supported`.
+defaults, which can be smaller than the model's maximum.
+
+At startup, `sas_translate()` probes explicitly configured model settings before
+agent work. Unknown reasoning support is checked with an invalid level followed
+by the requested level. A connector that drops the setting, or an endpoint that
+ignores it, stops the run. You no longer need `reasoning_effort: supported` or
+`max_output_tokens: supported` flags for automatic verification. Explicit
+`unsupported` flags remain authoritative.
+
+Checks share the run's budget and appear as `settings` / `probe` entries in
+`<out_dir>/.sas2r/llm_log.jsonl`. Successful checks are reused within the same
+adapter session for the exact endpoint, model, connector version and settings.
+`sas_preflight()` remains offline. The probe verifies request compatibility;
+it does not establish SAS-to-R correctness or measure the model's reasoning.
 
 **OpenAI — `OPENAI_API_KEY`**
 
@@ -330,8 +340,6 @@ llm:
   capabilities:
     structured_output: native
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -348,8 +356,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   cache: 1h
   timeout_seconds: 900
   max_tries: 1
@@ -367,8 +373,6 @@ llm:
   capabilities:
     structured_output: fallback
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -387,7 +391,6 @@ llm:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 ```
@@ -402,7 +405,7 @@ and [Claude thinking guide](https://platform.claude.com/docs/en/build-with-claud
 
 DeepSeek's current API defaults to thinking enabled at high effort. With ellmer
 0.4.2, sas2r relies on that server default: setting `reasoning_effort: high` and
-marking it supported would still be dropped by the connector. Omitting the field
+marking it supported now stops the run when the connector tries to drop it. Omitting the field
 does **not** mean thinking is off. This default is documented by
 [DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/); it is not evidence
 of the reasoning used in a particular historical response.
@@ -411,7 +414,7 @@ of the reasoning used in a particular historical response.
 
 | Provider | Reasoning configuration with ellmer 0.4.2 |
 |---|---|
-| `vertex` | Gemini thinking models use `high` plus `reasoning_effort: supported`, as above; use ADC and your project/location. |
+| `vertex` | Gemini thinking models use `high` with startup verification, as above; use ADC and your project/location. |
 | `posit` | The Claude route supports the Claude profile's reasoning settings; the OpenAI-compatible route does not forward effort. |
 | `azure`, `bedrock`, `databricks`, `snowflake` | These connectors do not forward `reasoning_effort`; endpoint/model defaults apply. They cannot explicitly enforce high reasoning through this YAML setting. |
 | `ollama` | Reasoning support depends on the served model; the connection example does not establish thinking support. |
@@ -424,8 +427,8 @@ connection; neither certifies translation accuracy.
 
 After a run, inspect `<out_dir>/.sas2r/llm_log.jsonl`: `requested_parameters`,
 `effective_parameters`, and `withheld_parameters` distinguish requested settings
-from what sas2r handed to ellmer. Also inspect ellmer warnings: the connector can
-drop parameters after that handoff. A missing or withheld effort setting does
+from what sas2r handed to ellmer. Connector warnings about dropping an explicitly
+required setting now stop the run. A missing effort setting does
 not establish that the provider disabled reasoning.
 
 ---

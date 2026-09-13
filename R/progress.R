@@ -285,6 +285,11 @@ format_sas2r_progress <- function(progress) {
   target <- progress_target(progress) %||% "?"
   switch(
     progress$phase %||% "",
+    settings = sprintf("settings  %s: %s%s", progress$resolved_model %||% "model",
+      gsub("_", " ", progress$status, fixed = TRUE),
+      if (length(progress$requested_parameters)) paste0(" -- ", paste(
+        names(progress$requested_parameters), unlist(progress$requested_parameters),
+        sep = "=", collapse = ", ")) else ""),
     agent = {
       verb <- switch(
         progress$purpose %||% "",

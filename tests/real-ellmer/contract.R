@@ -699,6 +699,42 @@ for (native in list(
   }
 }
 
+# Exercise startup discovery through the real connector and inspect the HTTP
+# body, rather than trusting the sas2r-to-ellmer parameter metadata.
+settings_adapter <- sas2r::sas_llm(list(
+  provider = "openai", model = "offline-settings-model", base_url = base_url,
+  api_key = api_key, reasoning_effort = "high", max_output_tokens = 32768L,
+  capabilities = list(structured_output = "native", tool_calling = "native")
+))
+settings_budget <- sas2r:::new_usage_budget(max_calls = 3L, max_output_tokens = 32768L)
+settings_dir <- tempfile("settings-audit-")
+sas2r:::ensure_llm_settings(settings_adapter, settings_adapter$model_parameters,
+                           "frontier", settings_dir, settings_budget)
+sas2r:::ensure_llm_settings(settings_adapter, settings_adapter$model_parameters,
+                           "frontier", settings_dir, settings_budget)
+if (settings_budget$request_count != 2L) stop("settings probe was not metered or cached")
+settings_request <- sas2r:::llm_request(
+  messages = list(list(role = "user", content = "Translate x = 1")),
+  reasoning_effort = "high", max_output_tokens = 32768L,
+  output_schema = translation_schema, schema_mode = "native"
+)
+settings_request$required_parameters <- c("reasoning_effort", "max_output_tokens")
+settings_response <- sas2r:::attempt_llm_request(settings_request, settings_adapter,
+                                               usage_budget = settings_budget)
+sas2r:::assert_required_settings(settings_request, settings_response)
+if (!identical(settings_response$status, "completed")) stop("verified settings failed at translation")
+if (installed_version %in% c("0.4.2", "0.5.0")) {
+  dropped_adapter <- sas2r::sas_llm(list(
+    provider = "deepseek", model = "offline-dropped-settings", base_url = base_url,
+    api_key = api_key, reasoning_effort = "high",
+    capabilities = list(structured_output = "fallback", reasoning_effort = "supported")
+  ))
+  dropped <- tryCatch(sas2r::sas_llm_probe(dropped_adapter, log_dir = settings_dir), error = identity)
+  if (!inherits(dropped, "sas2r_llm_settings_error")) {
+    stop("the real connector silently dropped required reasoning")
+  }
+}
+
 deadline <- Sys.time() + 5
 while ((!file.exists(log_file) || !length(readLines(log_file, warn = FALSE))) &&
        Sys.time() < deadline && server$is_alive()) {
@@ -708,6 +744,23 @@ request_lines <- if (file.exists(log_file)) readLines(log_file, warn = FALSE) el
 requests <- lapply(request_lines[nzchar(request_lines)], function(line) {
   jsonlite::fromJSON(line, simplifyVector = FALSE)
 })
+settings_requests <- Filter(function(request) identical(request$body$model,
+                                                       "offline-settings-model"), requests)
+if (length(settings_requests) != 3L) stop("wrong settings HTTP request count")
+for (i in seq_along(settings_requests)) {
+  body <- settings_requests[[i]]$body
+  effort <- body$reasoning$effort %||% body$reasoning_effort
+  expected <- if (i == 1L) "sas2r-invalid-effort" else "high"
+  if (!identical(effort, expected)) stop("reasoning did not reach the wire")
+  ceiling <- body$max_output_tokens %||% body$max_completion_tokens %||% body$max_tokens
+  if (!identical(as.integer(ceiling), 32768L)) stop("output ceiling did not reach the wire")
+}
+requests <- Filter(function(request) !identical(request$body$model,
+                                               "offline-settings-model"), requests)
+if (any(vapply(requests, function(request) identical(request$body$model,
+                                                   "offline-dropped-settings"), logical(1)))) {
+  stop("an ignored required setting reached HTTP transport")
+}
 timeout_requests <- Filter(function(request) {
   identical(request$body$model %||% NULL, "offline-timeout-model")
 }, requests)

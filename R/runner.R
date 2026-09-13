@@ -405,6 +405,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   tool_limit_finalized <- FALSE
   audit_redactor <- llm_audit_redactor(llm)
   tier <- spec$tier %||% "frontier"
+  required_settings <- required_model_settings(spec, llm)
+  ensure_llm_settings(llm, required_settings, tier, log_dir, usage_budget)
   capabilities <- llm_capabilities_for(llm, tier = tier)
   has_tools <- length(tools) > 0L
   tool_state <- new_agent_tool_state(spec$tool_call_limit, usage_budget)
@@ -448,6 +450,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
         AGENT_OUTPUT_SCHEMA_VERSION else NULL,
       schema_mode = if (identical(phase, "finalization")) schema_mode else NULL,
       temperature = resolve_model_parameter(spec, llm, "temperature"),
+      top_p = resolve_model_parameter(spec, llm, "top_p"),
       reasoning_effort = resolve_model_parameter(spec, llm, "reasoning_effort"),
       max_output_tokens = resolve_model_parameter(spec, llm, "max_output_tokens"),
       model = capabilities$model %||% llm$model,
@@ -455,6 +458,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
     )
     request$parent_request_id <- parent_request_id
     request$retry_of <- retry_of
+    request$required_parameters <- names(required_settings)
+    capabilities <- llm_request_capabilities(llm, request)
     request_context <- utils::modifyList(audit_context, list(
       provider = llm$provider,
       requested_model = request$model %||% llm$model,
@@ -538,6 +543,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       )
     }
     llm_log(audit_entry, dir = log_dir, redactor = audit_redactor)
+    assert_required_settings(request, resp)
     # A spent tool allowance only ends the unit when the model still wants
     # tools. The transport resolves tool calls inside one request, so the
     # allowance is spent by the bound tool wrappers rather than by the

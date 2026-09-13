@@ -86,11 +86,13 @@ environment:
 #
 # Recommended translation profiles. Keep exactly one llm block active.
 # High reasoning is explicit where ellmer 0.4.2 maps it. DeepSeek uses its
-# documented server default; its reasoning_effort flag alone has no effect.
+# documented server default; requesting explicit effort stops on this connector.
 # max_output_tokens is a per-response allowance for reasoning plus the answer
 # where the provider counts both. 32768 is a starting point, not a guarantee
 # against truncation; increase within the selected model's supported limit.
-# Both the requested value AND its supported capability are needed.
+# Startup verifies explicit settings and sets their effective capabilities.
+# Unsupported, ignored, or unverified settings stop the run before agent work.
+# Probe calls share the run budget; sas_preflight() stays offline.
 # Do not add temperature/top_p overrides to these reasoning profiles.
 # Cloud/local providers and connector limitations: docs/llm-providers.md.
 # timeout_seconds bounds each HTTP transfer attempt, not inactivity: receiving
@@ -109,8 +111,6 @@ llm:
   capabilities:
     structured_output: native
     tool_calling: native
-    reasoning_effort: supported
-    max_output_tokens: supported
   timeout_seconds: 900
   max_tries: 1
 
@@ -124,8 +124,6 @@ llm:
 #   capabilities:
 #     structured_output: fallback
 #     tool_calling: native
-#     reasoning_effort: supported
-#     max_output_tokens: supported
 #   cache: 1h
 #   timeout_seconds: 900
 #   max_tries: 1
@@ -140,8 +138,6 @@ llm:
 #   capabilities:
 #     structured_output: fallback
 #     tool_calling: native
-#     reasoning_effort: supported
-#     max_output_tokens: supported
 #   timeout_seconds: 900
 #   max_tries: 1
 
@@ -157,7 +153,6 @@ llm:
 #     structured_output: fallback
 #     tool_calling: native
 #     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-#     max_output_tokens: supported
 #   timeout_seconds: 900
 #   max_tries: 1
 

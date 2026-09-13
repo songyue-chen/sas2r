@@ -1,5 +1,17 @@
 # sas2r 0.3.0
 
+### Model settings
+
+* Translation now verifies explicit model settings before agent work, probes
+  unknown reasoning support with an invalid level and the requested level, and
+  caches successful checks per adapter and exact deployment/settings profile.
+  Probe attempts share the translation budget and audit trail; offline preflight
+  stays offline. Required settings cannot be silently dropped by ellmer or
+  removed during a capability retry.
+* The connectivity probe now sends configured reasoning, sampling and output
+  settings. Recommended provider profiles use automatic verification instead of
+  manual reasoning/output capability flags.
+
 ### Preflight and QC
 
 * Add `sas_preflight()` to inspect source/library resolution, input availability,

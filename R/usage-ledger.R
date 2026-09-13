@@ -1193,7 +1193,7 @@ attempt_llm_request <- function(request, llm, usage_budget = NULL,
   if (requires_output_enforcement &&
       is.finite(scalar_number_or_na(request$parameters$max_output_tokens))) {
     capabilities <- tryCatch(
-      llm_capabilities_for(llm, tier = request$tier, model = request$model),
+      llm_request_capabilities(llm, request),
       error = function(error) NULL
     )
     if (is.null(capabilities) ||

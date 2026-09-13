@@ -54,6 +54,8 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
+    if contains_key(body, "ok"):
+        return {"ok": True}
     if contains_key(body, "side_effects"):
         return PROGRAM_TRANSLATION
     return TRANSLATION
@@ -106,6 +108,17 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": body}) + "\n")
+
+        if contains_pair(body, "effort", "sas2r-invalid-effort") or contains_pair(
+            body, "reasoning_effort", "sas2r-invalid-effort"
+        ):
+            payload = json.dumps({"error": {"message": "Invalid value for reasoning_effort"}}).encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
 
         if body.get("model") == "offline-timeout-model":
             time.sleep(0.15)

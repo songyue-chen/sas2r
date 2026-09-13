@@ -157,7 +157,8 @@ sas_translate <- function(
   # assessment, bundle repair, selection). Both signal sas2r_progress
   # conditions, and this is the one place the console renderer is installed --
   # without it a long metered run prints nothing.
-  state <- with_sas2r_progress({
+  state <- tryCatch(with_sas2r_progress({
+    prepare_migration_llm_settings(state)
     prog_state <- run_program_pipeline(
       state = state,
       max_program_repair_rounds = as.integer(max_program_repair_rounds),
@@ -168,6 +169,9 @@ sas_translate <- function(
       max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
       execute = isTRUE(execute)
     )
+  }), error = function(error) {
+    finalize_usage_run(budget, terminal_status = "failed")
+    stop(error)
   })
 
   # 11. Determine selected bundle and outputs directories
