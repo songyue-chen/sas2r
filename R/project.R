@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.1"
+SCAN_CACHE_SCHEMA_VERSION <- "4.2"
 
 # Attach retained source comments to the translation units that own their
 # private character spans. Comments between units belong to the next unit;
@@ -294,7 +294,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     }
 
     if (is.null(hit)) {
-      source_records <- sas_source_records(raw_text)
+      source_records <- sas_source_records(raw_text, source_file = f)
       spanned_units <- sas_units(source_records$statements)
       comments_raw <- attach_comments_to_units(
         source_records$comments, spanned_units
@@ -727,7 +727,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   if (any(active_comments)) flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
     kind = "macro_dependency_analysis_deferred",
     detail = paste0(comments$file[active_comments], ":", comments$line_start[active_comments],
-                    ": macro text in a SAS statement comment requires expansion"))
+                    ": macro text in a SAS statement comment requires expansion; use a block comment if the text is intended to be inactive"))
   librefs <- librefs[librefs$unit_id %in% active, , drop = FALSE]
   includes <- includes[includes$unit_id %in% active, , drop = FALSE]
   fmt_defs <- fmt_defs[fmt_defs$unit_id %in% active, , drop = FALSE]

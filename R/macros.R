@@ -20,7 +20,13 @@ MACRO_BUILTINS <- c(
   "sysget", "symexist", "symglobl", "symlocal", "qscan",
   "qsubstr", "qupcase", "qlowcase", "qtrim", "qleft", "qcmpres", "trim",
   "left", "cmpres", "verify", "datatyp", "input", "sysprod", "sysmacdelete",
-  "sysmacexec", "sysmacexist", "sysmexecdepth", "sysmexecname"
+  "sysmacexec", "sysmacexist", "sysmexecdepth", "sysmexecname",
+  # SAS NLS macro functions and supplied autocall macros. Do not infer Q
+  # variants by prefix: e.g. QKLENGTH is not a documented macro function.
+  "kcmpres", "kindex", "kleft", "klength", "klowcase", "kscan", "ksubstr",
+  "ktrim", "kupcase", "kverify", "qkleft", "qklowcas", "qkscan", "qksubstr",
+  "qktrim", "qkupcase",
+  "qkcmpres" # Reserved by the SAS macro facility, even where not implemented.
 )
 
 # Lexical masking only: do not evaluate macro variables or execute a macro
@@ -134,11 +140,33 @@ extract_macro_defs <- function(units) {
 
   rows <- lapply(seq_along(idx), function(k) {
     m <- regmatches(txt_vec[k], regexec(
-      "^%macro\\s+([A-Za-z_]\\w*)\\s*(?:\\((.*)\\))?", txt_vec[k],
+      "^%macro\\s+([A-Za-z_]\\w*)\\s*", txt_vec[k],
       ignore.case = TRUE))[[1]]
     if (length(m) < 2L || m[1] == "") return(NULL)
     u_idx <- which(units$unit_id == uid_vec[k])
-    param_str <- if (length(m) >= 3L && !is.na(m[3])) trimws(m[3]) else ""
+    tail <- substring(txt_vec[k], nchar(m[1]) + 1L)
+    param_str <- ""
+    if (startsWith(tail, "(")) {
+      # End at the matching parameter-list delimiter, before / options.
+      # Quoted paths/descriptions and nested defaults can themselves contain
+      # slashes and parentheses, so stripping slash suffixes is incorrect.
+      sc <- sas_scan(tail)
+      depth <- 0L
+      close <- NA_integer_
+      for (j in which(sc$mask == "c")) {
+        if (sc$chars[j] == "(") depth <- depth + 1L
+        if (sc$chars[j] == ")") {
+          depth <- depth - 1L
+          if (depth == 0L) { close <- j; break }
+        }
+      }
+      if (is.na(close)) abort_macro_contract(paste0(
+        "Unterminated parameter list for macro ", m[2], " at ",
+        if (has_file) paste0(file_col[idx[k]], ":") else "line ",
+        units$line_start[idx[k]], "; check parentheses and quotation marks."
+      ))
+      param_str <- trimws(substr(tail, 2L, close - 1L))
+    }
     file_val <- if (has_file) file_col[u_idx[1]] else NA_character_
     list(name = tolower(m[2]),
          params = param_str,

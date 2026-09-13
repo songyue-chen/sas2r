@@ -64,12 +64,20 @@ test_that("missing definitions and executable library initializers remain unreso
   p <- sas_project(file.path(root, "programs"))
   expect_true("macro_library_initialization_unsupported" %in% p$flags$kind)
   expect_equal(nrow(called_macro_units(p)), 0L)
+  for (setup in c("%let scale_factor=2;", "options obs=1;")) {
+    writeLines(c(setup, "%macro add(value=1); %mend;"),
+               file.path(root, "macros", "add.sas"))
+    p <- sas_project(file.path(root, "programs"))
+    expect_true("macro_library_initialization_unsupported" %in% p$flags$kind)
+    expect_error(require_resolved_macros(p), "macro_library_initialization_unsupported",
+                 class = "sas2r_macro_dependency_error")
+  }
 })
 
 test_that("called macros generate reusable files and execute through the public bundle workflow", {
   root <- called_macro_fixture()
   writeLines(c("%macro unused(); %never_needed; %mend;",
-               "%macro scale(value=1); %eval(&value*2); %mend;"),
+               '%macro scale(value=1) / des="Scale (shared)"; %eval(&value*2); %mend;'),
              file.path(root, "macros", "utilities.sas"))
   writeLines("data work.first; x=%add(value=3); run;", file.path(root, "programs", "first.sas"))
   writeLines("data work.second; x=%add(value=4); run;", file.path(root, "programs", "second.sas"))

@@ -17,6 +17,12 @@
   Preflight still returns its findings for inspection.
 * Recognize `%QSYSFUNC` and the built-in macro execution/existence functions
   during dependency mapping instead of reporting them as missing user macros.
+  Include documented NLS macro names, using `%QKLOWCAS` for quoted lowercase.
+* Stop with a source location when an unterminated macro comment would hide
+  subsequent code. Preserve SAS's matched-quote and quoted-semicolon rules.
+* Parse macro parameter lists up to their matching closing parenthesis so
+  description options do not corrupt the interface. Preserve nested defaults
+  and quoted paths. Invalidate older scan caches for the corrected parser.
 * Distinguish macro labels and percent-prefixed SAS statements from user calls.
   Preserve real calls in double-quoted text and macro defaults; mask simple
   `%NRSTR` literals. Quoting that needs expansion and active macro text in SAS

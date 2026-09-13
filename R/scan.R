@@ -18,7 +18,8 @@ DL_TOKENS <- c("datalines", "cards", "datalines4", "cards4", "parmcards", "parmc
 #'   \item `datalines4` and `cards4` accept a lone `;` terminator instead of requiring `;;;;`.
 #'   \item Macro-quoted semicolons (e.g. `%str(;)`) are treated as code semicolons.
 #' }
-#' Both limitations are tracked as flags in downstream risk analysis.
+#' Macro-quoted semicolons can leave statement boundaries incomplete; dependency
+#' lookup masks simple NRSTR literals but does not expand the source program.
 #'
 #' @noRd
 sas_scan <- function(text) {
@@ -339,14 +340,24 @@ trim_statement_positions <- function(chars, positions, is_data) {
 #' Splits on semicolons that are real code (never inside strings, comments,
 #' or datalines blocks). Comment text is stripped from statement text.
 #' @param text Length-1 character: full SAS source.
+#' @param source_file Optional source path for parse diagnostics.
 #' @return A tibble with columns stmt_id, text, first_token, type,
 #'   line_start, line_end.
 #' @noRd
-sas_source_records <- function(text) {
+sas_source_records <- function(text, source_file = NULL) {
   sc <- sas_scan(text)
   chars <- sc$chars; mask <- sc$mask
   n <- length(chars)
   comments <- comment_records_from_scan(chars, mask, cumsum(chars == "\n") + 1L)
+  if (nrow(comments) && n > 0L && mask[n] == "k" &&
+      utils::tail(comments$kind, 1L) == "macro") {
+    line <- utils::tail(comments$line_start, 1L)
+    location <- if (is.null(source_file)) paste0("line ", line) else paste0(source_file, ":", line)
+    cli::cli_abort(c(
+      "Unterminated macro comment at {.val {location}}.",
+      "i" = "SAS macro comments require matching quotation marks and an unquoted terminating semicolon. Use a block comment for prose containing unmatched quotation marks."
+    ), class = "sas2r_sas_parse_error", source_file = source_file, line = line)
+  }
   if (n == 0L) {
     return(list(statements = empty_sas_statements(), comments = comments))
   }
@@ -420,11 +431,12 @@ sas_source_records <- function(text) {
 #' Splits on semicolons that are real code (never inside strings, comments,
 #' or datalines blocks). Comment text is stripped from statement text.
 #' @param text Length-1 character: full SAS source.
+#' @param source_file Optional source path for parse diagnostics.
 #' @return A tibble with columns stmt_id, text, first_token, type,
 #'   line_start, line_end.
 #' @noRd
-sas_statements <- function(text) {
-  statements <- sas_source_records(text)$statements
+sas_statements <- function(text, source_file = NULL) {
+  statements <- sas_source_records(text, source_file = source_file)$statements
   tibble::as_tibble(statements[, c(
     "stmt_id", "text", "first_token", "type", "line_start", "line_end"
   ), drop = FALSE])

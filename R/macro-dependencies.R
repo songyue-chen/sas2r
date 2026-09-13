@@ -18,7 +18,8 @@ discover_called_macros <- function(statements, defs, config, root) {
       file <- include_normalize_path(resolved$source[i])
       name <- resolved$name[i]
       if (is.null(parsed[[file]])) {
-        units <- sas_units(sas_statements(paste(readLines(file, warn = FALSE), collapse = "\n")))
+        units <- sas_units(sas_statements(paste(readLines(file, warn = FALSE), collapse = "\n"),
+                                         source_file = file))
         units$file <- rep(file, nrow(units))
         parsed[[file]] <- list(units = units, defs = extract_macro_defs(units))
       }
@@ -88,6 +89,7 @@ require_resolved_macros <- function(project) {
           else "No macro search directories are configured.",
     if (any(unresolved$status == "dynamic"))
       c("i" = "Resolve dynamic macro names before translation; sas2r cannot guess which definition will run."),
+    "i" = "Percent-prefixed names also trigger macro processing inside double quotes. If the text is intended to be literal, use single quotes or SAS macro quoting; missing definitions are not assumed to be literals.",
     if (nrow(findings)) stats::setNames(paste(findings$kind, findings$detail, sep = ": "), rep("i", nrow(findings))),
     "i" = "Use sas_preflight() to inspect the dependency findings without making model calls."
   ), class = "sas2r_macro_dependency_error", macro_calls = unresolved)

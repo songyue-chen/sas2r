@@ -311,12 +311,15 @@ files with executable initialization outside their macro definitions remain
 unresolved. Translation
 stops before model calls and reports the macro name, source file and line. If a
 definition is missing, configure `macros.search_path` or supply the definition
-in the scanned sources, then run preflight again. Preflight reports findings
-without stopping, so they remain available for inspection. sas2r does not expand
-arbitrary SAS macro code.
+in the scanned sources, then run preflight again. Preflight returns dependency
+findings for inspection; malformed source such as an unterminated macro comment
+raises a parse error with its location. sas2r does not expand arbitrary SAS macro
+code. Top-level `%LET`, `OPTIONS`, and other initialization in an autocall file
+are not silently discarded: they can change macro values, execution, or output.
 
 Dependency detection classifies percent-prefixed syntax before looking up user
-macros. Definitions, control statements, built-in functions, `%INCLUDE`, `%LIST`,
+macros. Definitions, control statements, built-in functions (including documented
+NLS macro functions and SAS-supplied NLS autocall macros), `%INCLUDE`, `%LIST`,
 `%RUN`, and `%label:` declarations are not user calls. Macro/block comments and
 single-quoted literals do not introduce calls; double-quoted text can. Simple
 `%NRSTR(...)` text is treated as literal. Computed names and quoting that requires
@@ -326,6 +329,29 @@ SAS `* comment;` statements also requires expansion and is reported separately.
 Unquoting a variable alone, such as `%UNQUOTE(&condition)` in a WHERE expression,
 is advisory: it does not prove that a user macro is called. Such generated text
 remains unverified; offline mapping does not fully execute the macro language.
+
+For literal SQL patterns, use single quotes, for example `like '%Total%'`.
+In `like "%Total%"`, SAS attempts to invoke `%Total`, even without parentheses.
+sas2r stops if it cannot resolve that name: assuming literal text would also hide
+a genuine call whose macro folder was not configured. Use SAS macro quoting
+when literal percent text must coexist with macro expansion.
+
+SAS requires matching quotation marks within `%* ...;` comments; a semicolon
+inside matched quotes does not end the comment. Use `/* Don't run this step */`
+for prose with an unmatched apostrophe. `%STR` and `%NRSTR` require a preceding
+percent sign for unmatched quotes or parentheses, for example
+`%nrstr(Don%'t modify this table)`. Ordinary `* ...;` comments can still execute
+macro statements; use block comments for inactive macro text.
+See SAS's [macro comment rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a000543665.htm)
+and [macro quoting rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a001061290.htm).
+
+Statement splitting does not fully support macro-quoted semicolons, such as
+`%exec_sql(query=%str(select a; select b;))`. Simplify these forms or supply
+expanded source before translation; a discovered macro name does not prove
+that its argument or statement boundaries were parsed correctly. Similarly,
+`call execute('%my_macro(' || id || ')')` constructs code at runtime, so its
+single-quoted text is not mapped as a static call. Provide expanded source and
+the required macro definitions for such programs.
 
 ## Connecting an AI Model
 
