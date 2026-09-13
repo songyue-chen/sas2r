@@ -87,9 +87,14 @@ A repaired run only replaces a previous one if it is genuinely better — a patc
 
 ### 1. Install
 
+AI translation requires **ellmer 0.4.2 or newer**. We recommend **ellmer 0.5.0**
+for new installations; both versions pass our offline compatibility tests.
+Deterministic workflows can run without ellmer.
+
 <!-- sas2r-example: network install -->
 ```r
 # install.packages("remotes")
+install.packages("ellmer")
 remotes::install_github("songyue-chen/sas2r")
 ```
 
@@ -333,7 +338,11 @@ llm:
 ### Recommended `_sas2r.yml` profiles
 
 Choose **one complete `llm:` block** below; replace the previous block when
-switching providers. These examples target ellmer 0.4.2's parameter mappings.
+switching providers. Version-specific notes below describe ellmer 0.4.2's
+parameter mappings as the minimum supported baseline, not a requirement to
+install that exact version. Ellmer 0.5.0 is also supported and recommended for
+new installations. Startup verification checks the settings against your
+installed connector and selected model.
 Keep the rest of your study configuration unchanged. The full template is
 [inst/examples/_sas2r.example.yml](inst/examples/_sas2r.example.yml).
 

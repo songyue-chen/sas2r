@@ -2,6 +2,13 @@
 
 `sas2r` provides a closed registry of twelve native LLM providers powered by the `ellmer` package. All LLM calls route through named public `ellmer` constructor functions. `sas2r` does not implement direct provider HTTP APIs and does not support a generic `openai_compatible` provider route in this release.
 
+AI translation requires **ellmer 0.4.2 or newer**; **ellmer 0.5.0 is recommended
+for new installations**. Both versions pass the offline compatibility tests.
+Install or update it with `install.packages("ellmer")`, then restart R.
+References to 0.4.2 below describe the minimum supported connector baseline,
+not a requirement to install that exact version. Startup verification checks
+explicit settings against your installed connector and selected model.
+
 ---
 
 ## 1. Closed Provider Registry
