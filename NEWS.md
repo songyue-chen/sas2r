@@ -54,6 +54,22 @@
 
 ### Migration and runtime
 
+* Fixers receive bounded, structured smoke and bundle diagnostics, including the
+  underlying R condition, exit status and log paths. Dependency failures name
+  the failing upstream program and block consumer repair for that crash.
+* All three agents receive a shared runtime reference generated from helper
+  documentation and actual signatures. Mechanical gates reject unsupported
+  helper arguments even when the agent omits its helper declaration.
+* Source-derived population checks detect row loss in supported SET and MERGE
+  patterns during both smoke and bundle execution. Unsupported source behavior
+  and unavailable intermediates remain explicitly unverified.
+* Repaired candidates cannot replace revisions with better mechanical, runtime,
+  review or source population evidence. Rejected candidates retain their history
+  and the selected revision retains unresolved review findings.
+* Progress names review verdicts, underlying execution errors and a retained
+  older bundle after a blocked run. Exact attempt lookup avoids the spurious
+  missing `attempt_dir` warning caused by partial matching against `attempts`.
+
 * Mechanical interface checks compare declared parameters with the component's
   named function, never an unrelated helper. Scripts with external path inputs
   no longer fail because they define a helper such as `is_not_missing(x)`;

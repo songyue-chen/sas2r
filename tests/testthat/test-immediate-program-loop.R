@@ -249,3 +249,52 @@ test_that("execute = FALSE performs review, skips runtime smoke and defers with 
   expect_identical(ev$level, "reviewed_only")
   expect_identical(ev$runtime_deferred, "execute_disabled")
 })
+
+test_that("a crashing repair cannot replace executable code or erase its finding", {
+  fx <- immediate_loop_fixture(review_issue = TRUE, smoke_failure = FALSE)
+  fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(
+    code = "stop('new defect introduced by repair')", evidence_ids = req$evidence_ids))
+  result <- run_program_pipeline(fx$state, max_program_repair_rounds = 1L, execute = TRUE)
+  expect_identical(result$active_revision, "r1")
+  expect_true("repair_rejected:r2" %in% result$events)
+  expect_identical(component_review_verdict(result$histories$prog), "repair_required")
+  expect_true("repair_required" %in% current_component_evidence(result$histories$prog)$blockers)
+  expect_length(result$histories$prog$revisions, 2L)
+  candidate <- result$histories$prog$revisions[[2L]]
+  smoke_events <- Filter(function(ev) identical(ev$type, "program_smoke"), candidate$events)
+  expect_identical(smoke_events[[1]]$status, "failed")
+  expect_match(smoke_events[[1]]$condition$message, "new defect introduced by repair")
+  expect_true(file.exists(result$selected_revisions$prog$smoke$stderr_path))
+})
+
+test_that("upstream execution failure blocks the consumer without invoking its fixer", {
+  fx <- immediate_loop_fixture(review_issue = FALSE, smoke_failure = FALSE)
+  plan <- list(status = "runnable", component_id = "prog", dependency_prefix = "upstream",
+    selected_revisions = list(upstream = "stop('upstream calculation failed')", prog = "out <- 1"))
+  testthat::local_mocked_bindings(build_program_smoke_plan = function(...) plan)
+  called <- FALSE
+  fx$state$fixer_llm <- recording_fixer(function(req) { called <<- TRUE; valid_program_fix_response() })
+  result <- process_program_component(fx$state, "prog")
+  expect_false(called)
+  expect_identical(result$selected_revisions$prog$smoke$blocked_by, "upstream")
+  expect_identical(result$selected_revisions$prog$smoke$failed_component_id, "upstream")
+  expect_identical(result$selected_revisions$prog$smoke$executed_component_ids, character())
+  events <- current_component_evidence(result$histories$prog)$events
+  smoke <- Filter(function(e) identical(e$type, "program_smoke"), events)[[1]]
+  expect_identical(smoke$status, "blocked")
+})
+
+test_that("mechanical helper failures reach the fixer before smoke execution", {
+  fx <- immediate_loop_fixture(review_issue = FALSE, smoke_failure = FALSE)
+  code <- 'stop("must not execute"); x <- sas_merge(a, b, by = "id", all.x = TRUE)'
+  fx$state$selected_revisions$prog$r_code <- code
+  writeLines(code, fx$state$selected_revisions$prog$r_path)
+  result <- process_program_component(fx$state, "prog", max_program_repair_rounds = 1L)
+  expect_true("smoke_deferred:r1" %in% result$events)
+  expect_false("smoke_failed:r1" %in% result$events)
+  expect_identical(result$active_revision, "r2")
+  request <- fx$state$fixer_llm$requests()[[1]]
+  prompt <- paste(vapply(request$messages, `[[`, character(1), "content"), collapse = "\n")
+  expect_match(prompt, "Mechanical Check Failure", fixed = TRUE)
+  expect_match(prompt, "unused argument (all.x = TRUE)", fixed = TRUE)
+})

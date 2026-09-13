@@ -221,7 +221,7 @@ test_that("coordinator events say what happened instead of counting to 1/1", {
   expect_identical(lines, c(
     "  coordinator  demo (r1): program generated",
     "  coordinator  demo (r1): mechanical checks passed",
-    "  coordinator  demo (r1): reviewed",
+    "  coordinator  demo (r1): review completed",
     "  coordinator  demo (r1): agent degraded -- tool_calling_unavailable",
     "  coordinator  demo (r2): repaired",
     "  coordinator  demo: revisited"
@@ -281,4 +281,17 @@ test_that("a very long reason is folded to its first line and cut", {
   expect_match(folded, "\\.\\.\\.$")
   expect_identical(progress_reason(NULL), "")
   expect_identical(progress_reason("  first line  \nsecond"), " -- first line")
+})
+
+test_that("review completion displays its verdict independently of request success", {
+  event <- list(phase = "agent", event = "agent_finished", agent = "reviewer",
+                status = "ok", verdict = "repair_required", component_id = "any_program", tool_calls = 2L)
+  expect_match(format_sas2r_progress(event), "review completed: repair_required, 2 tool calls", fixed = TRUE)
+  event$verdict <- NULL
+  expect_match(format_sas2r_progress(event), ": ok, 2 tool calls", fixed = TRUE)
+  bundle <- list(phase = "bundle", event = "bundle_attempt_completed", round = 0L,
+                 passed = FALSE, reason = "missing required column")
+  expect_match(format_sas2r_progress(bundle), "failed -- missing required column", fixed = TRUE)
+  retained <- list(phase = "bundle", event = "bundle_previous_selection_retained", reason = "/previous/run/bundle")
+  expect_match(format_sas2r_progress(retained), "current run blocked; previous selected bundle retained", fixed = TRUE)
 })

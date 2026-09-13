@@ -1,0 +1,110 @@
+{
+  "apply_format": {
+    "text": "apply_format() applies a compiled format catalog entry (as written to a\nbundle's _sas2r_formats.R): exact values first, then ranges (each a\nlist with lo, hi, label), then other for anything unmatched.\nMissing input stays missing unless the format defines other. sas_put()\nis PUT(x, fmt.) and does the same.\n\n\nsex <- list(values = c(M = \"Male\", F = \"Female\"), other = \"Unknown\")\napply_format(c(\"M\", \"F\", \"X\", NA), sex)\nage <- list(ranges = list(list(lo = 0, hi = 17, label = \"<18\"),\n                          list(lo = 18, hi = 200, label = \"18+\")))\nsas_put(c(5, 40, NA), age)",
+    "dots": false
+  },
+  "chr_cmp": {
+    "text": "SAS comparison of possibly-missing values. Character operands ignore\ntrailing blanks, and a missing character value (\"\" or NA) sorts below\nevery non-missing one; numeric missing sorts below every number.\n\n\nchr_cmp(c(\"A\", NA, \"B  \"), c(\"A\", NA, \"B\"))\nchr_cmp(c(1, NA, 3), c(1, 2, 2), op = \"<\")",
+    "dots": false
+  },
+  "lib_read": {
+    "text": "lib_read(\"lib\", \"member\") reads a dataset from a libref as the registry\nconfigures it: the libref's write path is tried first (so a dataset the\nbundle produced earlier wins), then its read path, for .rds,\n.sas7bdat, and .xpt in that order. The result carries class\nsas2r_dataset, whose $ and [[ methods resolve column names\ncase-insensitively, as SAS variable names do. lib_write(df, \"lib\", \"member\") writes to the libref's write path in its configured format\n(rds or xpt), creating the directory on demand.\n\n\nExactly one call form is accepted for each. Combined \"lib.member\"\nstrings, single-argument calls, and dataset=/table= aliases fail with\nthe canonical form in the message, so a wrong call in an agent translation\nbecomes repair feedback instead of being silently reinterpreted.\n\nThe registry is the .sas2r_registry list a bundle's autoexec.R\ndefines; in a translated program it is loaded by the bootstrap header. To\nuse these helpers interactively, source that file first, with\nchdir = TRUE.\n\n\nlib <- tempfile(\"lib\"); dir.create(lib)\n.sas2r_registry <- list(\n  raw = list(read_path = lib, write_path = lib, engine = \"rds\", write = \"rds\")\n)\nlib_write(data.frame(USUBJID = c(\"01\", \"02\"), AVAL = c(1, 2)), \"raw\", \"dm\")\ndm <- lib_read(\"raw\", \"dm\")\ndm$usubjid          # case-insensitive column access\nrm(.sas2r_registry)",
+    "dots": false
+  },
+  "lib_write": {
+    "text": "lib_read(\"lib\", \"member\") reads a dataset from a libref as the registry\nconfigures it: the libref's write path is tried first (so a dataset the\nbundle produced earlier wins), then its read path, for .rds,\n.sas7bdat, and .xpt in that order. The result carries class\nsas2r_dataset, whose $ and [[ methods resolve column names\ncase-insensitively, as SAS variable names do. lib_write(df, \"lib\", \"member\") writes to the libref's write path in its configured format\n(rds or xpt), creating the directory on demand.\n\n\nExactly one call form is accepted for each. Combined \"lib.member\"\nstrings, single-argument calls, and dataset=/table= aliases fail with\nthe canonical form in the message, so a wrong call in an agent translation\nbecomes repair feedback instead of being silently reinterpreted.\n\nThe registry is the .sas2r_registry list a bundle's autoexec.R\ndefines; in a translated program it is loaded by the bootstrap header. To\nuse these helpers interactively, source that file first, with\nchdir = TRUE.\n\n\nlib <- tempfile(\"lib\"); dir.create(lib)\n.sas2r_registry <- list(\n  raw = list(read_path = lib, write_path = lib, engine = \"rds\", write = \"rds\")\n)\nlib_write(data.frame(USUBJID = c(\"01\", \"02\"), AVAL = c(1, 2)), \"raw\", \"dm\")\ndm <- lib_read(\"raw\", \"dm\")\ndm$usubjid          # case-insensitive column access\nrm(.sas2r_registry)",
+    "dots": false
+  },
+  "sas2r_fold_names": {
+    "text": "SAS resolves variable names case-insensitively; R does not. Deterministic\ntranslations fold every frame to lower-case names at entry so lower-case\nsource references (aval) find upper-case data columns (AVAL) the way\nSAS would.\n\n\nnames(sas2r_fold_names(data.frame(USUBJID = 1, AVAL = 2)))",
+    "dots": false
+  },
+  "sas2r_lib_entry": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
+  "sas2r_lib_member_path": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
+  "sas2r_libname_assign": {
+    "text": "The registry a bundle starts with is only a seed -- the libraries the\nconfiguration declares, plus work. Every LIBNAME the SAS program\nexecutes changes the registry where that statement stood, so a libref that\nis rebound or cleared part-way through behaves at run time the way it does\nin SAS. sas2r_libname_assign() is LIBNAME libref '<path>';\nsas2r_libname_clear() is LIBNAME libref CLEAR.\n\n\n.sas2r_registry <- list()\nsas2r_libname_assign(\"raw\", tempdir(), engine = \"rds\")\nnames(.sas2r_registry)\nsas2r_libname_clear(\"raw\")\nnames(.sas2r_registry)\nrm(.sas2r_registry)",
+    "dots": false
+  },
+  "sas2r_libname_clear": {
+    "text": "The registry a bundle starts with is only a seed -- the libraries the\nconfiguration declares, plus work. Every LIBNAME the SAS program\nexecutes changes the registry where that statement stood, so a libref that\nis rebound or cleared part-way through behaves at run time the way it does\nin SAS. sas2r_libname_assign() is LIBNAME libref '<path>';\nsas2r_libname_clear() is LIBNAME libref CLEAR.\n\n\n.sas2r_registry <- list()\nsas2r_libname_assign(\"raw\", tempdir(), engine = \"rds\")\nnames(.sas2r_registry)\nsas2r_libname_clear(\"raw\")\nnames(.sas2r_registry)\nrm(.sas2r_registry)",
+    "dots": false
+  },
+  "sas2r_libref_stop": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
+  "sas2r_registry_env": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
+  "sas2r_resolve_registry": {
+    "text": "autoexec.R lists each libref's directories the way a person writes them:\nan absolute path is used as is, and a relative path means inside the bundle\nfolder. This turns the relative ones into absolute paths against root,\ncreates every write directory, and returns the registry ready for\nlib_read() and lib_write(). autoexec.R calls it once, after the\nhelpers are loaded; call it yourself only when building a registry by hand.\n\n\nA <FILL> placeholder left in a path -- the commented entries autoexec.R\ncarries for a library nothing binds -- is refused with the libref named,\nrather than becoming a directory called <FILL...>.\n\n\nroot <- tempfile(\"bundle\"); dir.create(root)\nreg <- sas2r_resolve_registry(\n  list(work = list(read_path = \"work\", write_path = \"work\",\n                   engine = \"rds\", write = \"rds\")),\n  root)\nreg$work$write_path      # <root>/work, and the directory now exists",
+    "dots": false
+  },
+  "sas2r_source_include": {
+    "text": "Each included SAS file is translated once into its own staged module; this\nexecutes that module at one include site, into the calling program's own\nenvironment, exactly where the %INCLUDE stood.\n\n\nThe path is always relative to the staged bundle root -- the nearest\nancestor of the running script holding autoexec.R -- and never to\nthe working directory, so the bundle can be run from anywhere. Absolute\npaths and . or .. components are rejected, and the file the joined path\nactually resolves to is then required to lie under the root: rejecting the\ncomponents alone would still let a symlinked directory inside the bundle\nread outside it, so the confinement is checked on the resolved path, where\na hand-edited bundle cannot talk its way out.\n\n\n\n# inside a translated program, where the SAS source had %include 'inc/prep.sas';\nsas2r_source_include(\"inc/prep.R\")",
+    "dots": false
+  },
+  "sas_compress": {
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\n\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "dots": false
+  },
+  "sas_display": {
+    "text": "Numeric missing is \".\", character missing is blank, and numbers are never\nin scientific notation.\n\n\nsas_display(c(1, NA, 1e6))\nsas_display(c(\"a\", NA))",
+    "dots": false
+  },
+  "sas_if_else": {
+    "text": "A missing condition is false in SAS. The result keeps the class (Date,\nlabelled) of the branch that carries it, which ifelse() would strip.\n\n\nsas_if_else(c(TRUE, NA, FALSE), \"yes\", \"no\")\nsas_if_else(c(TRUE, FALSE), as.Date(\"2026-01-01\"), NA)",
+    "dots": false
+  },
+  "sas_length": {
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\n\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "dots": false
+  },
+  "sas_max": {
+    "text": "Row-wise across the arguments, ignoring missing values; an observation\nwhose arguments are all missing yields missing, and a single argument\npasses through elementwise -- SAS MIN(x) is never a column aggregate.\n\n\nsas_min(c(1, NA, 3), c(2, NA, 1))\nsas_max(c(1, NA, 3), c(2, NA, 1))",
+    "dots": true
+  },
+  "sas_mean": {
+    "text": "SAS SUM() and MEAN() are row-wise across their arguments: each\nobservation gets the sum or mean of its non-missing arguments, and only an\nobservation whose arguments are all missing yields missing. Column\naggregation (PROC MEANS, PROC SQL) is emitted inline by those emitters\nand never routed through these.\n\n\nsas_sum(c(1, NA, 2), c(1, NA, NA))\nsas_mean(c(1, NA, 3), c(3, NA, NA))",
+    "dots": true
+  },
+  "sas_merge": {
+    "text": "MERGE a b; BY by; with IN= semantics selected by keep: \"both\"\n(in_a and in_b), \"left\" (in_a), \"right\" (in_b), \"left_only\",\n\"right_only\", \"full\". Where both datasets carry a non-key column the\nlater dataset's value wins, columns follow statement order, and rows follow\nSAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key\ncolumns, are refused: those cases require SAS observation-by-observation\nsemantics that this join-based helper does not implement.\n\n\na <- data.frame(id = c(1, 2), x = c(\"a\", \"b\"))\nb <- data.frame(id = c(2, 3), y = c(\"B\", \"C\"))\nsas_merge(a, b, by = \"id\", keep = \"full\")\nsas_merge(a, b, by = \"id\", keep = \"both\")",
+    "dots": false
+  },
+  "sas_min": {
+    "text": "Row-wise across the arguments, ignoring missing values; an observation\nwhose arguments are all missing yields missing, and a single argument\npasses through elementwise -- SAS MIN(x) is never a column aggregate.\n\n\nsas_min(c(1, NA, 3), c(2, NA, 1))\nsas_max(c(1, NA, 3), c(2, NA, 1))",
+    "dots": true
+  },
+  "sas_put": {
+    "text": "apply_format() applies a compiled format catalog entry (as written to a\nbundle's _sas2r_formats.R): exact values first, then ranges (each a\nlist with lo, hi, label), then other for anything unmatched.\nMissing input stays missing unless the format defines other. sas_put()\nis PUT(x, fmt.) and does the same.\n\n\nsex <- list(values = c(M = \"Male\", F = \"Female\"), other = \"Unknown\")\napply_format(c(\"M\", \"F\", \"X\", NA), sex)\nage <- list(ranges = list(list(lo = 0, hi = 17, label = \"<18\"),\n                          list(lo = 18, hi = 200, label = \"18+\")))\nsas_put(c(5, 40, NA), age)",
+    "dots": false
+  },
+  "sas_round": {
+    "text": "SAS ROUND rounds half away from zero, to a rounding unit; R's round()\nis banker's rounding.\n\n\nsas_round(c(0.5, 1.5, -0.5))\nsas_round(12.345, 0.01)",
+    "dots": false
+  },
+  "sas_sort": {
+    "text": "Stable, with missing values lowest under SAS collation; by is matched to\ncolumn names case-insensitively, and variables named in descending are\nsorted in reverse.\n\n\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\")\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\", descending = \"id\")",
+    "dots": false
+  },
+  "sas_substr": {
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\n\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "dots": false
+  },
+  "sas_sum": {
+    "text": "SAS SUM() and MEAN() are row-wise across their arguments: each\nobservation gets the sum or mean of its non-missing arguments, and only an\nobservation whose arguments are all missing yields missing. Column\naggregation (PROC MEANS, PROC SQL) is emitted inline by those emitters\nand never routed through these.\n\n\nsas_sum(c(1, NA, 2), c(1, NA, NA))\nsas_mean(c(1, NA, 3), c(3, NA, NA))",
+    "dots": true
+  },
+  "split_ds": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  }
+}

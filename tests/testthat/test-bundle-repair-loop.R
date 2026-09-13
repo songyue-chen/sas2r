@@ -330,3 +330,30 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   expect_no_match(all_text, "736\\.2519")
   expect_no_match(all_text, "999\\.777")
 })
+
+test_that("bundle execution diagnostics reach each causal fixer request", {
+  fx <- sequential_bundle_defects_fixture()
+  run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L, execute = TRUE)
+  requests <- fx$state$fixer_llm$requests()
+  expect_length(requests, 2L)
+  prompts <- vapply(requests, function(req) paste(vapply(req$messages, `[[`, character(1), "content"), collapse = "\n"), character(1))
+  expect_match(prompts[1], "Bug A in prog_a: unhandled syntax", fixed = TRUE)
+  expect_match(prompts[2], "Bug B in prog_b: variable missing", fixed = TRUE)
+  expect_true(all(grepl("bundle_stderr.log", prompts, fixed = TRUE)))
+})
+
+test_that("a blocked current run identifies the older bundle it leaves selected", {
+  fx <- sequential_bundle_defects_fixture()
+  previous <- complete_attempt(init_attempt(fx$state$paths, kind = "bundle", sequence = 99L), passed = TRUE)
+  select_attempt(fx$state$paths, previous, list(status = "migration_ready"))
+  lines <- character()
+  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
+  expect_no_warning(result <- withCallingHandlers(
+    run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 0L), sas2r_progress = handler))
+  expect_identical(result$current_run_status, "blocked")
+  expect_null(result$selected_attempt)
+  expect_identical(result[["attempt"]]$attempt_id, "bundle_attempt_001")
+  expect_true(any(grepl("previous selected bundle retained", lines, fixed = TRUE)))
+  expect_true(any(grepl("bundle_attempt_099", lines, fixed = TRUE)))
+  expect_identical(jsonlite::read_json(fx$state$paths$selected)$attempt_id, "bundle_attempt_099")
+})

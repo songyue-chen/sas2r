@@ -35,12 +35,13 @@ fix_program_revision <- function(
   round = 1L,
   attempt_id = NULL,
   report_registry = NULL,
+  checks = NULL,
   ...
 ) {
   mode <- match.arg(mode)
 
   # 1. Collect evidence IDs
-  evidence_ids <- character()
+  evidence_ids <- checks$check_id %||% character()
   if (!is.null(review)) {
     rev_id <- review$review_id %||% review$id %||% review$basis_id
     if (!is.null(rev_id)) evidence_ids <- c(evidence_ids, as.character(rev_id))
@@ -117,22 +118,24 @@ fix_program_revision <- function(
       f_text
     ))
   }
+  if (!is.null(checks)) {
+    evidence_sections <- c(evidence_sections, sprintf(
+      "Mechanical Check Failure (ID: %s):\n%s", checks$check_id,
+      paste(checks$errors, collapse = "\n")))
+  }
   if (!is.null(smoke)) {
     evidence_sections <- c(evidence_sections, sprintf(
-      "Smoke Execution Failure (ID: %s, exit: %s):\nError: %s\nLog:\n%s",
+      "Smoke Execution Failure (ID: %s):\n%s",
       smoke$execution_id %||% smoke$id %||% "unknown",
-      smoke$exit_code %||% 1,
-      smoke$error %||% smoke$message %||% "(none)",
-      smoke$log %||% "(none)"
+      jsonlite::toJSON(bounded_agent_diagnostics(smoke), auto_unbox = TRUE, pretty = TRUE)
     ))
   }
   if (!is.null(bundle)) {
     evidence_sections <- c(evidence_sections, sprintf(
-      "Bundle Execution Failure (ID: %s):\nFailing outputs: %s\nError: %s\nLog:\n%s",
+      "Bundle Execution Failure (ID: %s):\nFailing outputs: %s\n%s",
       bundle$bundle_id %||% bundle$execution_id %||% "unknown",
       paste(bundle$failing_outputs %||% character(), collapse = ", "),
-      bundle$error %||% bundle$message %||% "(none)",
-      bundle$log %||% "(none)"
+      jsonlite::toJSON(bounded_agent_diagnostics(bundle), auto_unbox = TRUE, pretty = TRUE)
     ))
   }
   if (!is.null(outputs)) {
@@ -308,4 +311,3 @@ fix_program_revision <- function(
     class = c("sas2r_program_revision", "list")
   )
 }
-

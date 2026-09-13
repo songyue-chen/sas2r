@@ -761,7 +761,10 @@ record_program_smoke <- function(history, result) {
   rev$runtime_deferred <- NULL
   rev$events <- c(rev$events, list(list(
     type = "program_smoke",
-    status = if (isTRUE(result$passed)) "passed" else "failed",
+    status = if (!is.null(result$blocked_by)) "blocked" else if (isTRUE(result$passed)) "passed" else "failed",
+    blocked_by = result$blocked_by,
+    condition = result$condition,
+    population_checks = result$population_checks,
     execution_id = result$execution_id,
     created_at = strftime(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )))
