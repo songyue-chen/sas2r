@@ -248,7 +248,24 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   cache_dirty <- FALSE
   used_cache_keys <- character()
   queue_idx <- 1L
-  while (queue_idx <= length(queue)) {
+  called <- NULL
+  repeat {
+    if (queue_idx > length(queue)) {
+      scanned <- fast_bind(stmt_list, tibble::tibble(
+        origin = character(), file = character(), type = character(), first_token = character(),
+        text = character(), line_start = integer(), line_end = integer(), unit_id = integer(), unit_type = character()))
+      scanned_defs <- fast_bind(defs_list, extract_macro_defs(scanned[0L, ]))
+      called <- discover_called_macros(scanned, scanned_defs, config, root)
+      new_files <- unique(called$defs$file)
+      new_files <- new_files[!include_scan_key(new_files) %in% seen]
+      if (!length(new_files)) break
+      for (macro_file in new_files) {
+        seen <- c(seen, include_scan_key(macro_file))
+        queue[[length(queue) + 1L]] <- list(
+          file = macro_file, origin = "macro_search_path", depth = 0L,
+          chain = include_scan_key(macro_file), parent_occurrence_id = NA_character_)
+      }
+    }
     item <- queue[[queue_idx]]
     queue_idx <- queue_idx + 1L
 
@@ -351,6 +368,14 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
       u_rows$file <- character()
       u_rows$origin <- character()
     }
+    paths <- extract_sasautos_options(u)
+    if (length(paths) && origin != "macro_search_path") {
+      config$macro_search_path <- unique(c(config$macro_search_path, config_anchor_paths(paths, root)))
+      is_env <- origin == "environment"
+      flags_env[[length(flags_env) + 1L]] <- tibble::tibble(
+        kind = if (is_env) "sasautos_from_environment" else "sasautos_from_program",
+        detail = paste(paths, collapse = ","))
+    }
     stmt_list[[f]] <- u
     unit_rows[[f]] <- u_rows
 
@@ -402,6 +427,9 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     # Includes are pushed onto includes_list only after resolution below, so the
     # compatibility table can carry each occurrence's identity and outcome.
     inc <- hit$includes
+    # Called definitions containing %INCLUDE are deferred by discovery. Includes
+    # in other definitions in the same library file are not active dependencies.
+    if (origin == "macro_search_path") inc <- inc[0L, , drop = FALSE]
     inc_file_unit_id <- integer()
     if (nrow(inc) > 0L) {
       inc$file <- f
@@ -590,20 +618,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     includes_list[[length(includes_list) + 1L]] <- inc
   }
 
-  # Harvest sasautos from environment and program files
-  all_scanned_files <- unlist(scanned_files, use.names = FALSE) %||% character()
-  for (f in all_scanned_files) {
-    st <- stmt_list[[f]]
-    if (!is.null(st) && nrow(st) > 0L) {
-      is_env <- f %in% env_files
-      paths <- extract_sasautos_options(st)
-      if (length(paths) > 0L) {
-        config$macro_search_path <- unique(c(config$macro_search_path, config_anchor_paths(paths, root)))
-        flags_env[[length(flags_env) + 1L]] <- tibble::tibble(
-          kind = if (is_env) "sasautos_from_environment" else "sasautos_from_program",
-          detail = paste(paths, collapse = ","))
-      }
-    }
+  if (nrow(called$findings)) {
+    flags_list[[length(flags_list) + 1L]] <- called$findings[c("kind", "detail")]
   }
 
   if (length(flags_env) > 0L) {
@@ -693,12 +709,35 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     name = character(), line = integer(), unit_id = integer(), file = character()
   ))
 
-  if (nrow(calls)) {
-    component_ids <- project_component_ids(units$file, units$origin, root)
-    calls$component_id <- component_ids[match(calls$source_file, units$file)]
-  }
+  # Autocall files are read once, but only reachable definitions are active.
+  library_units <- units$unit_id[units$origin == "macro_search_path"]
+  wanted <- paste(called$defs$file, called$defs$name)
+  keep_defs <- !defs$unit_id %in% library_units | paste(defs$file, defs$name) %in% wanted
+  active <- c(setdiff(units$unit_id, library_units), defs$unit_id[keep_defs])
+  units <- units[units$unit_id %in% active, , drop = FALSE]
+  statements <- statements[statements$unit_id %in% active, , drop = FALSE]
+  comments <- comments[is.na(comments$unit_id) | comments$unit_id %in% active, , drop = FALSE]
+  defs <- defs[keep_defs, , drop = FALSE]
+  calls <- extract_macro_calls(statements)
+  librefs <- librefs[librefs$unit_id %in% active, , drop = FALSE]
+  includes <- includes[includes$unit_id %in% active, , drop = FALSE]
+  fmt_defs <- fmt_defs[fmt_defs$unit_id %in% active, , drop = FALSE]
+  fmt_uses <- fmt_uses[fmt_uses$unit_id %in% active, , drop = FALSE]
+  fn_defs <- fn_defs[fn_defs$unit_id %in% active, , drop = FALSE]
+  fn_uses <- fn_uses[fn_uses$unit_id %in% active, , drop = FALSE]
 
-  resolution <- resolve_macro_calls(calls, defs, config, project_dir = root)
+  local_defs <- defs[!defs$unit_id %in% library_units, , drop = FALSE]
+  resolution <- resolve_macro_calls(calls, local_defs, config, project_dir = root)
+  resolution$status[resolution$name %in% called$findings$name] <- "unresolved"
+  component_ids <- project_component_ids(units$file, units$origin, root)
+  promoted <- called_macro_units(list(units = units, macros = list(defs = defs)))
+  component_ids[match(promoted$unit_id, units$unit_id)] <- promoted$component_id
+  for (i in seq_len(nrow(calls))) {
+    owner <- which(units$file == calls$source_file[i] &
+                     units$line_start <= calls$line[i] & units$line_end >= calls$line[i])
+    if (length(owner)) calls$component_id[i] <- component_ids[owner[1L]]
+  }
+  resolution$component_id <- calls$component_id
 
   # One execution context per root program, with the configured autoexec files
   # as its prologue -- never one global last-writer map across unrelated
@@ -783,7 +822,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     }
     sched_unit_ids <- integer()
     for (cid in proj_sched$component_id) {
-      c_nodes <- proj_graph$nodes[proj_graph$nodes$component_id == cid & proj_graph$nodes$type %in% c("setup", "source_unit"), ]
+      c_nodes <- proj_graph$nodes[proj_graph$nodes$component_id == cid & proj_graph$nodes$type %in% c("setup", "source_unit", "macro"), ]
       if (nrow(c_nodes) > 0L) {
         c_uids <- c_nodes$original_index[!is.na(c_nodes$original_index)]
         sched_unit_ids <- c(sched_unit_ids, c_uids)
@@ -863,7 +902,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     files = tibble::tibble(
       file = files,
       origin = scanned_origins_vec,
-      n_statements = vapply(files, function(f) nrow(stmt_list[[f]]), integer(1))
+      n_statements = vapply(files, function(f) as.integer(sum(statements$file == f)), integer(1))
     ),
     units = units, statements = statements, comments = comments, librefs = librefs,
     libref_registry = libref_registry,

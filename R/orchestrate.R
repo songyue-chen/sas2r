@@ -189,6 +189,7 @@ process_program_component <- function(
       outputs = state$output_contracts,
       llm = state$translator_llm,
       paths = state$paths,
+      resolved_contracts = lapply(state$selected_revisions, function(revision) revision$contract),
       revision_id = "r1",
       config = state$config,
       usage_budget = state$usage_budget

@@ -56,6 +56,8 @@ A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries}
 \code{inputs} (available, missing, unresolved, no_producer, backward_dependency,
 created_if_missing, or generated), \code{references}, \code{unsupported},
 scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
+\code{called_macros} lists reachable search-path macro definitions and their
+standalone R and interface-test paths.
 Also includes \code{status}, \code{configured_libraries}, \code{schedule}, explanatory \code{notes},
 and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.
 \code{ready_for_translation} means no known missing inputs or unresolved scan

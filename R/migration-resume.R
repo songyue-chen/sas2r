@@ -8,7 +8,16 @@ component_source_text <- function(graph, component_id) {
   sources <- unique(nodes$source_file[!is.na(nodes$source_file)])
   sources <- sources[nzchar(sources)]
   paste(vapply(sources, function(f) {
-    if (file.exists(f)) paste(readLines(f, warn = FALSE), collapse = "\n") else ""
+    if (!file.exists(f)) return("")
+    text <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    if (any(nodes$type == "macro")) {
+      units <- sas_units(sas_statements(text))
+      defs <- extract_macro_defs(units)
+      name <- sub("^macro__", "", component_id)
+      ids <- defs$unit_id[defs$name == name]
+      return(format_sas_statements(units$text[units$unit_id %in% ids]))
+    }
+    text
   }, character(1)), collapse = "\n")
 }
 

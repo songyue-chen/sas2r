@@ -3,7 +3,8 @@ demo <- function() system.file("examples", "demo_project", package = "sas2r")
 test_that("project scans all files and renumbers units globally", {
   p <- sas_project(demo())
   expect_s3_class(p, "sas2r_project")
-  expect_identical(nrow(p$files), 3L)  # macros/ dir is search path, not program dir
+  expect_identical(nrow(p$files), 4L)  # three programs plus their called library macro
+  expect_identical(called_macro_units(p)$name, "derive_flag")
   expect_identical(anyDuplicated(p$units$unit_id), 0L)
 })
 

@@ -1,3 +1,19 @@
+# sas2r 0.3.2
+
+* Translate statically called macros from configured macro search directories,
+  including their transitive macro dependencies, before their calling programs.
+  Uncalled definitions remain outside the translation plan, including definitions
+  sharing a library file with a called macro.
+* Emit each called macro as `R/macros/<name>.R` with a generated interface test
+  under `tests_macros/`. Bundle startup loads these functions for callers;
+  standalone files contain only their function definition. Export preserves
+  macro files and tests. Interface tests do not establish SAS semantic equivalence.
+* Preflight lists called macro names, source files and planned R paths. Caller
+  agents receive translated upstream contracts. Dynamic calls, missing macro
+  definitions, nested definitions, macro-body includes and library files requiring
+  top-level initialization remain explicit
+  unresolved findings.
+
 # sas2r 0.3.1
 
 * Fixers receive bounded, structured smoke and bundle diagnostics, including the

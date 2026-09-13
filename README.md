@@ -279,6 +279,38 @@ for the complete limits and reuse contract.
 
 ---
 
+## Called macros in separate folders
+
+Configure macro directories in `_sas2r.yml`; relative paths are resolved from
+that configuration file:
+
+```yaml
+macros:
+  search_path:
+    - macros
+    - shared/macros
+```
+
+When a program calls `%my_macro(...)`, sas2r finds its definition in those
+folders and translates it into `R/macros/my_macro.R`. It also follows calls
+from that macro to other macros. Each called definition has one reusable R
+function, even when several programs use it or several definitions share a SAS
+file. Uncalled library macros are not sent for translation.
+
+Macros are translated before their callers. Agents receive upstream function
+contracts, and the bundle's `autoexec.R` loads the standalone functions before
+programs run. `sas_write()` exports the macro scripts and generated
+`tests_macros/test-<name>.R` interface tests. Those tests check the function name,
+parameters and known defaults; execution and SAS-reference comparison provide
+separate evidence about behavior.
+
+Inspect `sas_preflight(...)$called_macros` for the discovered definitions and
+planned file paths. Macro translation requires an AI provider. Dynamic macro
+names, nested macro definitions, `%INCLUDE` inside an autocall macro, and library files with executable
+initialization outside their macro definitions remain unresolved and need review;
+sas2r does not expand arbitrary
+SAS macro code.
+
 ## Connecting an AI Model
 
 `sas2r`'s AI connection is built on [ellmer](https://ellmer.tidyverse.org), the tidyverse package that speaks to every major AI provider. `sas2r` never talks to a provider directly — every call goes through ellmer's official connectors — so in principle, any provider ellmer supports is within reach of this design. From that family, this release validates and ships **twelve providers**, each checked when your configuration loads: a typo in a provider name or setting stops the run immediately instead of failing halfway through. As ellmer's connector family grows, further providers can join the validated list once they have been exercised with the migration workflow.

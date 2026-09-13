@@ -260,6 +260,10 @@ fix_program_revision <- function(
   )
   new_contract$binding <- new_binding
   new_contract$diagnosis <- fix_data$diagnosis
+  if (isTRUE(new_contract$macro_contract$standalone)) {
+    new_contract$flags <- unique(c(setdiff(new_contract$flags, "macro_deferred"),
+                                   "llm_authored", "macro_semantics_unverified"))
+  }
   new_contract$patch_hash <- patch_h
   new_contract$evidence_ids <- unique(c(evidence_ids, unlist(fix_data$evidence_ids %||% character())))
 

@@ -141,7 +141,7 @@ low and compare the SAS way, trailing blanks are cosmetic, rounding is half away
 The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
 
 ```
-# sas2r runtime helpers -- vendored by sas2r 0.3.1. Do not edit by hand.
+# sas2r runtime helpers -- vendored by sas2r 0.3.2. Do not edit by hand.
 ```
 
 A bundle is frozen on purpose. It always loads its own copy of the runtime, so what a

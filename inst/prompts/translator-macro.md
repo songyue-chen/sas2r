@@ -1,6 +1,9 @@
 You translate a SAS %macro definition into a clean, reusable R function and its behavioral contract.
 Constraints, in order:
 1. Emit a single function assigned to the macro's name, with parameters matching macro parameters and default values preserved.
+   For a standalone macro component, put all executable behavior inside that
+   function. The bundle loads this file before callers run. Call upstream macro
+   functions by their declared names; do not copy or redefine their bodies.
 2. Data reading and writing inside the function must use lib_read("lib", "member")
    and lib_write(df, "lib", "member") -- the data frame first, then the libref and
    the member as two separate strings; combined "lib.member" strings and

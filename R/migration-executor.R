@@ -703,7 +703,8 @@ run_bundle_attempt <- function(
   bundle_dir <- snapshot_selected_bundle(state, attempt)
   plan <- build_bundle_execution_plan(state$graph)
   exec_order <- plan$execution_order
-  failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE), exec_order)
+  failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE),
+    unique(c(exec_order, unlist(lapply(exec_order, function(id) dependency_closure(state$graph, id))))))
   if (length(failed_checks)) {
     id <- failed_checks[[1L]]
     return(complete_attempt(attempt, passed = FALSE, deferred = TRUE,

@@ -371,7 +371,12 @@ autoexec_lines <- function(entries, undeclared, work_entry) {
     '.sas2r_bundle_root <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)',
     'source("sas2r-helpers.R", local = environment())',
     ".sas2r_registry <- sas2r_resolve_registry(.sas2r_registry, .sas2r_bundle_root)",
-    'if (file.exists("_sas2r_formats.R")) source("_sas2r_formats.R", local = environment())'
+    'if (file.exists("_sas2r_formats.R")) source("_sas2r_formats.R", local = environment())',
+    '# Called SAS macros are reusable functions, loaded before any program runs.',
+    'local({',
+    '  for (file in list.files("R/macros", pattern = "\\\\.R$", full.names = TRUE))',
+    '    sys.source(file, envir = parent.env(environment()))',
+    '})'
   )
 }
 

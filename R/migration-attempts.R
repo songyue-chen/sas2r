@@ -368,6 +368,11 @@ snapshot_selected_bundle <- function(state, attempt) {
         writeLines(code_str, dest_path)
       }
 
+      if (!is.null(rev$contract$macro_contract) && startsWith(rel_name, "R/macros/")) {
+        emit_macro_artifacts(list(code = code_str, macro_contract = rev$contract$macro_contract,
+                                  llm_authored = "llm_authored" %in% rev$contract$flags),
+                             rev$contract$macro_contract$name, bundle_dir)
+      }
       if (!is.null(rev$contract)) {
         contract_dest <- file.path(bundle_dir, paste0(cid, ".contract.json"))
         atomic_write_json(rev$contract, contract_dest)
@@ -626,4 +631,3 @@ prune_rejected_attempt_outputs <- function(paths, keep_raw = FALSE) {
     removed_paths = removed_paths
   )
 }
-
