@@ -1,3 +1,18 @@
+doc_validate_config <- function(file) {
+  llm <- yaml::read_yaml(file)$llm
+  credential_envs <- if (!is.null(llm$provider)) {
+    sas2r:::llm_provider_spec(llm$provider)$credential_envs
+  } else character()
+  if (!length(credential_envs)) return(sas2r::sas_config(file))
+  # These are configuration checks, not authentication or provider calls. Supply
+  # fixture credentials from the registry so developer keys cannot mask a missing
+  # test prerequisite. Keep the published YAML unchanged and restore the caller's
+  # environment after the check, including when configuration validation fails.
+  withr::with_envvar(stats::setNames(
+    rep("sas2r-offline-docs-placeholder", length(credential_envs)), credential_envs
+  ), sas2r::sas_config(file))
+}
+
 # One fence grammar for the documentation contract tests and executable runner.
 doc_code_blocks <- function(lines, file = "<text>", all_languages = FALSE) {
   lines <- strsplit(paste(lines, collapse = "\n"), "\n", fixed = TRUE)[[1L]]

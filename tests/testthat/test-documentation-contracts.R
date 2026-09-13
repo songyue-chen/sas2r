@@ -265,6 +265,29 @@ test_that("README documents dependency-aware migration workflow and contracts", 
   expect_false(grepl("synth_agree", text, fixed = TRUE))
 })
 
+test_that("offline provider examples validate without developer credentials", {
+  withr::local_envvar(c(GOOGLE_API_KEY = NA_character_, GEMINI_API_KEY = NA_character_))
+  file <- withr::local_tempfile(fileext = ".yml")
+  example <- c("llm:", "  provider: gemini", "  auth_mode: api_key",
+               "  model: gemini-3.8-flash", "  reasoning_effort: high")
+  writeLines(example, file)
+
+  expect_error(sas_config(file), "requires an explicit api_key")
+  config <- doc_validate_config(file)
+  expect_identical(config$llm$auth_mode, "api_key")
+  expect_identical(config$llm$reasoning_effort, "high")
+  expect_identical(readLines(file), example)
+  expect_true(all(is.na(Sys.getenv(c("GOOGLE_API_KEY", "GEMINI_API_KEY"), unset = NA_character_))))
+
+  # Credential fixtures must not bypass real configuration errors or leak after
+  # an error. An existing caller credential is restored as well as an absent one.
+  withr::local_envvar(c(GEMINI_API_KEY = "caller-test-placeholder"))
+  writeLines(sub("auth_mode: api_key", "auth_mode: invalid", example, fixed = TRUE), file)
+  expect_error(doc_validate_config(file), class = "sas2r_llm_config_error")
+  expect_identical(Sys.getenv("GEMINI_API_KEY"), "caller-test-placeholder")
+  expect_true(is.na(Sys.getenv("GOOGLE_API_KEY", unset = NA_character_)))
+})
+
 test_that("provider guide covers the closed registry and how to test it", {
   path <- test_path("..", "..", "docs", "llm-providers.md")
   skip_if_not(file.exists(path), "source-tree documentation contract")

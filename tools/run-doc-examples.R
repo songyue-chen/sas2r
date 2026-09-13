@@ -76,7 +76,7 @@ for (block in blocks) {
       }
       file <- tempfile(fileext = ".yml")
       writeLines(part, file)
-      sas_config(file)
+      doc_validate_config(file)
       counts["configurations"] <- counts["configurations"] + 1L
     }
   }
