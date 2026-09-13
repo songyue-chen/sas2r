@@ -1,13 +1,5 @@
 # sas2r 0.3.2
 
-* Share each agent's tool allowance across lookups by default, while preserving
-  explicit per-tool and run-wide limits.
-* Give each component two bundle repair calls by default. The optional overall
-  cap remains a hard limit. Diagnose independent branches in isolation, queue
-  known failures by cause, and retain full fresh bundle execution for acceptance.
-* Preserve completed execution when selecting repaired bundles and report repair
-  counts, deferrals and isolated diagnostic evidence.
-
 * Reconcile runtime helper use against resolved macro interfaces and refresh
   metadata after repairs. Unknown declared helpers still fail mechanical checks.
 * Retry deferred components only after relevant changes, share the immediate
@@ -18,6 +10,14 @@
   that would expose a separate original input remains explicitly unsupported.
 * Isolate smoke executions and retain their output hashes and diagnostics.
   `keep_raw_attempts = TRUE` also preserves partial datasets and replay scripts.
+
+* Share each agent's tool allowance across lookups by default, while preserving
+  explicit per-tool and run-wide limits.
+* Give each component two bundle repair calls by default. The optional overall
+  cap remains a hard limit. Diagnose independent branches in isolation, queue
+  known failures by cause, and retain full fresh bundle execution for acceptance.
+* Preserve completed execution when selecting repaired bundles and report repair
+  counts, deferrals and isolated diagnostic evidence.
 
 * Translate statically called macros from configured macro search directories,
   including their transitive macro dependencies, before their calling programs.
