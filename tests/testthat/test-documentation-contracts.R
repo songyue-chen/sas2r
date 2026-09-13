@@ -236,7 +236,8 @@ test_that("README documents dependency-aware migration workflow and contracts", 
   # Single primary quick-start call and inspection
   expect_match(text, "sas_translate(", fixed = TRUE)
   expect_match(text, "max_program_repair_rounds = 1", fixed = TRUE)
-  expect_match(text, "max_bundle_repair_rounds = 2", fixed = TRUE)
+  expect_match(text, "max_bundle_repairs_per_component = 2", fixed = TRUE)
+  expect_match(text, "max_bundle_repair_rounds = NULL", fixed = TRUE)
   expect_match(text, "result$status", fixed = TRUE)
   expect_match(text, "result$bundle_dir", fixed = TRUE)
   expect_match(text, "result$outputs_dir", fixed = TRUE)

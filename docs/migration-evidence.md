@@ -47,10 +47,20 @@ must be collected again.
 
 ## Dual Repair Loops & Attempt Isolation
 
-`sas2r` uses two separate, targeted repair loops configured by `max_program_repair_rounds` and `max_bundle_repair_rounds`:
+`sas2r` uses two separate, bounded repair loops:
 
 1. **Component-Level Immediate Repair**: Fast feedback loop (`max_program_repair_rounds = 1L`) fixing syntax, lint errors, and initial reviewer findings on individual components before full execution.
-2. **Bundle-Level Causal Repair**: Multi-component repair loop (`max_bundle_repair_rounds = 2L`) diagnosing execution and output failures across the whole dependency graph.
+2. **Bundle-Level Causal Repair**: Each component receives up to `max_bundle_repairs_per_component = 2L` fixer calls across bundle attempts. `max_bundle_repair_rounds = NULL` scales the overall allowance with the component count; an explicit number caps total bundle fixer calls, and zero disables bundle repair. Failed and identical patches count as calls. Run-wide usage limits still apply.
+
+After a bundle stops at an execution failure, isolated smoke checks diagnose
+unvisited independent branches. Known mechanical, execution, and output failures
+are grouped by component. Independent repairs can share a batch; dependent
+repairs wait for fresh evidence after upstream repairs. A shared-helper patch
+also requires a fresh run before further repairs. Failed or identical fixes are
+deferred without consuming another component's allowance. Diagnostic records
+remain separate from authoritative bundle results. Every changed batch is
+followed by a fresh complete bundle attempt before selection or acceptance.
+The report records repair counts, deferrals, and isolated diagnostics.
 
 Under the default `agent_evidence = "code_only"` policy, agents receive source code, AST context, and execution summaries without raw patient data.
 

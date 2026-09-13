@@ -242,3 +242,19 @@ test_that("read_comparison_report answers the model instead of aborting the run"
   traversal <- tools$read_comparison_report$call(list(report_id = "../secret.json"))
   expect_identical(traversal$error, "report_path_rejected")
 })
+
+test_that("more than two useful lookups fit inside one shared agent allowance", {
+  spec <- load_agent_specs()$translator
+  spec$tool_call_limit <- 5L
+  # build_tools must also support callers supplying a spec without resolved caps.
+  spec$tools <- list(search_skills = list(), read_skill = list())
+  tools <- build_tools(spec, list())
+  state <- new_agent_tool_state(spec$tool_call_limit)
+  bound <- bind_transport_tool_limits(tools, state)
+  for (query in c("merge", "missing", "sort", "format", "rounding")) {
+    result <- bound$search_skills$call(list(query = query))
+    expect_null(result$error)
+  }
+  expect_error(bound$read_skill$call(list(name = "anything")),
+               class = "sas2r_agent_tool_limit")
+})

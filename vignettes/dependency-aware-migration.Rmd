@@ -117,7 +117,8 @@ result <- sas_translate(
   usage_limits = list(max_calls = 20),
   execute = TRUE,
   max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = 2L
+  max_bundle_repairs_per_component = 2L,
+  max_bundle_repair_rounds = NULL
 )
 
 # Inspect the result object

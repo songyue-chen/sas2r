@@ -1,3 +1,15 @@
+# sas2r 0.4.0
+
+* Share each agent's tool allowance across lookups by default, while preserving
+  explicit per-tool and run-wide limits.
+* Give each component two bundle repair calls by default. The optional overall
+  cap remains a hard limit. Diagnose independent branches in isolation, queue
+  known failures by cause, and retain full fresh bundle execution for acceptance.
+* Preserve completed execution when selecting repaired bundles and report repair
+  counts, deferrals and isolated diagnostic evidence.
+* Keep isolated diagnostics with their owning bundle attempt and retain their
+  logs when temporary execution outputs are pruned.
+
 # sas2r 0.3.2
 
 * Deliver validated comparison reports as JSON-compatible tool results, fixing

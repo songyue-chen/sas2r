@@ -12,7 +12,8 @@
 #' @param config Project configuration list.
 #' @param execute Logical indicating if execution is enabled (default TRUE).
 #' @param max_program_repair_rounds Maximum repair rounds per program component (default 1L).
-#' @param max_bundle_repair_rounds Maximum repair rounds for full bundle (default 2L).
+#' @param max_bundle_repair_rounds Optional overall bundle fixer-call cap.
+#' @param max_bundle_repairs_per_component Maximum bundle fixer calls per component.
 #' @param usage_budget Optional shared usage budget.
 #' @return A `sas2r_migration_state` list object.
 #' @param plan Optional resolved contracts, graph and schedule from translation setup.
@@ -24,9 +25,10 @@ new_migration_state <- function(
   config = list(),
   execute = TRUE,
   max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = 2L,
+  max_bundle_repair_rounds = NULL,
   usage_budget = NULL,
-  plan = NULL
+  plan = NULL,
+  max_bundle_repairs_per_component = 2L
 ) {
   p <- if (inherits(project, "sas2r_project")) project else sas_project(project)
   # The budget carries the run identifier, and attempt directories are scoped
@@ -74,7 +76,8 @@ new_migration_state <- function(
     config = config,
     execute = isTRUE(execute),
     max_program_repair_rounds = as.integer(max_program_repair_rounds),
-    max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
+    max_bundle_repair_rounds = max_bundle_repair_rounds,
+    max_bundle_repairs_per_component = max_bundle_repairs_per_component,
     events = character(),
     selected_revisions = list(),
     histories = list(),
@@ -710,15 +713,17 @@ build_bundle_repair_packet <- function(
 #' worker patching, closure invalidation, and fresh complete reruns.
 #'
 #' @param state Migration state object, project, or output directory path.
-#' @param max_bundle_repair_rounds Maximum repair rounds for full bundle (default 2L).
+#' @param max_bundle_repair_rounds Optional overall bundle fixer-call cap.
+#' @param max_bundle_repairs_per_component Maximum bundle fixer calls per component.
 #' @param execute Logical indicating if execution is enabled (default TRUE).
 #' @param ... Additional arguments passed to normalize_migration_state.
 #' @return A `sas2r_bundle_pipeline_result` list object.
 #' @noRd
 run_bundle_pipeline <- function(
   state,
-  max_bundle_repair_rounds = 2L,
+  max_bundle_repair_rounds = NULL,
   execute = TRUE,
+  max_bundle_repairs_per_component = 2L,
   ...
 ) {
   state <- normalize_migration_state(
@@ -758,6 +763,14 @@ run_bundle_pipeline <- function(
     }
   }
 
+  component_limit <- bundle_repair_limit(max_bundle_repairs_per_component,
+    "max_bundle_repairs_per_component")
+  explicit_limit <- bundle_repair_limit(max_bundle_repair_rounds,
+    "max_bundle_repair_rounds", allow_null = TRUE)
+  total_limit <- explicit_limit %||% (as.double(component_limit) * length(state$selected_revisions))
+  repair_counts <- list()
+  deferred <- list()
+  diagnostic_history <- list()
   round <- 0L
   attempt_seq <- 1L
   attempts_summary <- list()
@@ -896,8 +909,8 @@ run_bundle_pipeline <- function(
       stop_reason <- "ready_or_validated"
       break
     }
-    if (round >= max_bundle_repair_rounds) {
-      stop_reason <- "max_bundle_repair_rounds_reached"
+    if (round >= total_limit) {
+      stop_reason <- if (is.null(explicit_limit)) "bundle_component_repair_limits_reached" else "max_bundle_repair_rounds_reached"
       break
     }
     if (!isTRUE(execute)) {
@@ -917,249 +930,47 @@ run_bundle_pipeline <- function(
       break
     }
 
-    # 5. Build causal repair packet
-    packet <- build_bundle_repair_packet(
-      state = state,
-      attempt = attempt_rec,
-      assessment = assessment,
-      previous_disposition = latest_diagnosis
-    )
-
-    primary_cid <- packet$primary_component_id
-    if (is.null(primary_cid) || !primary_cid %in% names(state$selected_revisions)) {
-      stop_reason <- "no_causal_evidence"
+    diagnostic <- collect_bundle_diagnostics(state, attempt_rec)
+    diagnostic_history[[attempt_rec$attempt_id]] <- diagnostic
+    queue <- bundle_repair_queue(state, attempt_rec, assessment, diagnostic,
+                                 previous_disposition = latest_diagnosis)
+    eligible <- names(queue)[vapply(names(queue), function(cid) {
+      (repair_counts[[cid]] %||% 0L) < component_limit && is.null(deferred[[cid]])
+    }, logical(1))]
+    if (!length(eligible)) {
+      stop_reason <- if (!length(queue)) "no_causal_evidence" else
+        if (length(deferred)) unname(deferred[[1L]]) else "bundle_component_repair_limits_reached"
       break
     }
-
-    primary_rev <- state$selected_revisions[[primary_cid]]
-
-    bundle_ev <- attempt_rec
-    bundle_ev$bundle_id <- attempt_rec$attempt_id
-    bundle_ev$execution_id <- attempt_rec$attempt_id
-    bundle_ev$failing_outputs <- vapply(packet$failed_targets, function(t) t$target_key, character(1))
-
-    # Bounded comparison reports: the sanctioned, capped surface that may
-    # carry example differences. Each failed dataset target with both files
-    # still on disk gets one, registered for the fixer's
-    # read_comparison_report tool; only the report id enters the prompt, and
-    # the examples cross the boundary solely when the model requests them.
-    report_registry <- new.env(parent = emptyenv())
-    read_target_frame <- function(path) {
-      if (is.null(path) || is.na(path) || !file.exists(path)) return(NULL)
-      tryCatch(
-        switch(tolower(tools::file_ext(path)),
-               rds = readRDS(path),
-               xpt = haven::read_xpt(path),
-               sas7bdat = haven::read_sas(path),
-               NULL),
-        error = function(e) NULL
-      )
+    signal_bundle_event("bundle_repair_queue", round = round,
+      reason = paste(eligible, collapse = ", "))
+    changed <- FALSE
+    for (primary_cid in eligible) {
+      if (round >= total_limit || !usage_budget_allows_future(state$usage_budget)) break
+      # Any upstream repair makes this candidate's evidence stale. It will be
+      # reconsidered after a fresh run rather than repaired for inherited errors.
+      if (length(intersect(dependency_closure(state$graph, primary_cid), names(queue))) > 0L) next
+      repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
+      outcome <- repair_bundle_component(state, queue[[primary_cid]], attempt_rec, round)
+      round <- round + 1L
+      state <- outcome$state
+      if (!isTRUE(outcome$applied)) {
+        deferred[[primary_cid]] <- outcome$reason
+        signal_bundle_event("bundle_component_deferred", round = round,
+          component_id = primary_cid, reason = outcome$reason)
+        next
+      }
+      changed <- TRUE
+      repairs[[length(repairs) + 1L]] <- outcome$repair
+      latest_diagnosis <- outcome$repair$diagnosis
+      # A shared helper change invalidates every queued component's evidence.
+      if (isTRUE(outcome$helper_changed)) break
     }
-
-    outputs_ev <- lapply(packet$failed_targets, function(t) {
-      # Model boundary: the raw mismatch table holds exact cell values with
-      # row numbers and must never reach the fixer. The redacted digest the
-      # gate computed (diff_digest: names, counts, magnitudes, pattern hints),
-      # plus structural and cosmetic summaries, is the whole difference
-      # evidence an LLM may see. The full table stays in the local assessment
-      # and report for human review.
-      diffs <- t$differences
-      if (is.list(diffs)) diffs$mismatches <- NULL
-      if (identical(t$kind, "dataset")) {
-        ref_data <- read_target_frame(t$reference_path)
-        cand_data <- read_target_frame(t$candidate_path)
-        if (!is.null(ref_data) && !is.null(cand_data)) {
-          rep <- tryCatch(
-            compare_aligned_outputs(ref_data, cand_data, target = list(
-              target_id = t$target_key,
-              logical_dataset = t$target_key,
-              role = "output",
-              contributing_unit_ids = integer()
-            )),
-            error = function(e) NULL
-          )
-          if (!is.null(rep)) {
-            assign(rep$report_id, rep, envir = report_registry)
-            if (is.list(diffs)) diffs$comparison_report_id <- rep$report_id
-          }
-        }
-      }
-      list(
-        target_key = t$target_key,
-        kind = t$kind,
-        status = t$status,
-        checks = t$checks,
-        differences = diffs
-      )
-    })
-
-    signal_bundle_event(
-      "bundle_fixer_invoked",
-      attempt_id = attempt_rec$attempt_id,
-      round = round + 1L,
-      component_id = primary_cid
-    )
-
-    # 6. Invoke fixer
-    fixed_rev <- tryCatch(
-      fix_program_revision(
-        revision = primary_rev,
-        bundle = bundle_ev,
-        outputs = outputs_ev,
-        mode = "bundle",
-        llm = state$fixer_llm,
-        usage = state$usage_budget,
-        paths = state$paths,
-        project = state$project,
-        config = state$config,
-        round = round + 1L,
-        attempt_id = attempt_rec$attempt_id,
-        evidence_ids = packet$evidence_ids,
-        report_registry = report_registry
-      ),
-      error = function(e) {
-        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
-        list(status = "repair_failed", message = conditionMessage(e))
-      }
-    )
-
-    if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {
-      stop_reason <- "repair_failed"
+    if (!changed) {
+      stop_reason <- if (!usage_budget_allows_future(state$usage_budget)) "budget_exhausted" else
+        if (length(deferred)) unname(deferred[[1L]]) else "bundle_component_repair_limits_reached"
       break
     }
-
-    # Check for identical / no-op patch
-    is_identical_code <- identical(trimws(fixed_rev$r_code %||% ""), trimws(primary_rev$r_code %||% ""))
-    is_identical_patch <- !is.null(fixed_rev$patch_hash) && !is.null(primary_rev$contract$patch_hash) && identical(fixed_rev$patch_hash, primary_rev$contract$patch_hash)
-    has_helper_patch <- !is.null(fixed_rev$bundle_helper_patch)
-
-    if ((is_identical_code || is_identical_patch) && !has_helper_patch) {
-      stop_reason <- "identical_patch"
-      break
-    }
-
-    # 7. Apply patch & invalidate bindings
-    if (has_helper_patch) {
-      hp <- fixed_rev$bundle_helper_patch
-      hp_path <- hp$path %||% "sas2r-helpers.R"
-      hp_content <- hp$content %||% ""
-
-      if (!is.null(state$paths) && !is.null(state$paths$state)) {
-        hp_dest <- file.path(state$paths$state, hp_path)
-        dir.create(dirname(hp_dest), recursive = TRUE, showWarnings = FALSE)
-        writeLines(hp_content, hp_dest)
-        state$runtime$helpers <- hp_dest
-      }
-
-      new_h_hash <- migration_hash(hp_content)
-      for (cid in names(state$selected_revisions)) {
-        c_rev <- state$selected_revisions[[cid]]
-        old_b <- c_rev$contract$binding %||% c_rev$binding
-        new_b <- new_component_binding(
-          source_hash = old_b$source_hash %||% migration_hash(c_rev$contract$sas_text %||% ""),
-          r_hash = old_b$r_hash %||% migration_hash(c_rev$r_code %||% ""),
-          helper_hash = new_h_hash,
-          prompt_skill_hash = old_b$prompt_skill_hash %||% migration_hash("fixer"),
-          dependency_closure_hash = old_b$dependency_closure_hash %||% migration_hash("closure")
-        )
-        c_rev$binding <- new_b
-        if (!is.null(c_rev$contract)) c_rev$contract$binding <- new_b
-        state$selected_revisions[[cid]] <- c_rev
-        state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], new_b)
-
-        c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract)
-        c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
-        state$selected_revisions[[cid]] <- c_rev
-        state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)
-        if (!is.null(state$reviewer_llm)) {
-          ctx <- list(
-            component_id = cid,
-            revision_id = c_rev$revision_id,
-            r_code = c_rev$r_code,
-            r_path = c_rev$r_path,
-            contract = c_rev$contract,
-            binding = new_b,
-            history = state$histories[[cid]],
-            sas_source = component_source_text(state$graph, cid),
-            project = state$project,
-            config = state$config %||% list()
-          )
-          rev_res <- review_program_revision(
-            c_rev,
-            context = ctx,
-            llm = state$reviewer_llm,
-            usage = state$usage_budget,
-            paths = state$paths,
-            round = round + 1L,
-            history = state$histories[[cid]]
-          )
-          if (!is.null(rev_res$history)) state$histories[[cid]] <- rev_res$history
-        }
-      }
-    }
-
-    if (!is_identical_code) {
-      state$selected_revisions[[primary_cid]] <- fixed_rev
-      new_b <- fixed_rev$contract$binding %||% fixed_rev$binding
-      state$histories[[primary_cid]] <- activate_component_binding(state$histories[[primary_cid]], new_b)
-
-      checks <- check_program_revision(fixed_rev$r_path, contract = fixed_rev$contract)
-      fixed_rev$checks <- checks
-      fixed_rev$status <- if (isTRUE(checks$pass)) "ok" else "check_failed"
-      state$histories[[primary_cid]] <- record_program_checks(state$histories[[primary_cid]], checks)
-
-      if (!is.null(state$reviewer_llm)) {
-        ctx <- list(
-          component_id = primary_cid,
-          revision_id = fixed_rev$revision_id,
-          r_code = fixed_rev$r_code,
-          r_path = fixed_rev$r_path,
-          contract = fixed_rev$contract,
-          binding = new_b,
-          history = state$histories[[primary_cid]],
-          sas_source = component_source_text(state$graph, primary_cid),
-          project = state$project,
-          config = state$config %||% list()
-        )
-        rev_res <- review_program_revision(
-          fixed_rev,
-          context = ctx,
-          llm = state$reviewer_llm,
-          usage = state$usage_budget,
-          paths = state$paths,
-          round = round + 1L,
-          history = state$histories[[primary_cid]]
-        )
-        if (!is.null(rev_res$history)) state$histories[[primary_cid]] <- rev_res$history
-      }
-      state$selected_revisions[[primary_cid]] <- fixed_rev
-    }
-
-    # Record repair
-    repair_rec <- list(
-      round = round + 1L,
-      component_id = fixed_rev$component_id %||% primary_cid,
-      revision_id = fixed_rev$revision_id,
-      diagnosis = fixed_rev$diagnosis,
-      summary = fixed_rev$summary,
-      patch_hash = fixed_rev$patch_hash,
-      helper_patch = fixed_rev$bundle_helper_patch,
-      changed_interfaces = fixed_rev$changed_interfaces,
-      affected_outputs = fixed_rev$affected_outputs,
-      spend_usd = fixed_rev$spend_usd %||% 0
-    )
-    repairs[[length(repairs) + 1L]] <- repair_rec
-    latest_diagnosis <- fixed_rev$diagnosis
-
-    signal_bundle_event(
-      "bundle_fixer_completed",
-      attempt_id = attempt_rec$attempt_id,
-      round = round + 1L,
-      component_id = primary_cid,
-      cost = fixed_rev$spend_usd
-    )
-
-    round <- round + 1L
     attempt_seq <- attempt_seq + 1L
   }
 
@@ -1197,7 +1008,10 @@ run_bundle_pipeline <- function(
     # instead of clobbering it.
     diagnostics = utils::modifyList(
       state$diagnostics %||% list(),
-      list(stop_reason = stop_reason, latest_diagnosis = latest_diagnosis),
+      list(stop_reason = stop_reason, latest_diagnosis = latest_diagnosis,
+        bundle_repair = list(per_component_limit = component_limit,
+          overall_limit = total_limit, repair_counts = repair_counts,
+          deferred = deferred, attempts = diagnostic_history)),
       keep.null = TRUE
     ),
     project = state$project,

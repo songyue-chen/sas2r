@@ -10,7 +10,7 @@ sas_translate(
   config = NULL,
   execute = TRUE,
   max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = 2L,
+  max_bundle_repair_rounds = NULL,
   outputs = NULL,
   agent_evidence = c("code_only", "bounded"),
   llm = NULL,
@@ -21,7 +21,8 @@ sas_translate(
   usage_limits = NULL,
   recursive = FALSE,
   resume = FALSE,
-  keep_raw_attempts = FALSE
+  keep_raw_attempts = FALSE,
+  max_bundle_repairs_per_component = 2L
 )
 }
 \arguments{
@@ -41,7 +42,9 @@ its directory; paths in R lists resolve from the project directory.}
 
 \item{max_program_repair_rounds}{Maximum repair rounds per component in immediate loop. Defaults to 1L.}
 
-\item{max_bundle_repair_rounds}{Maximum repair rounds for full bundle repair loop. Defaults to 2L.}
+\item{max_bundle_repair_rounds}{Optional overall cap on bundle fixer calls.
+Defaults to NULL, allowing each component its own bounded repair allowance.
+An explicit zero disables bundle repair.}
 
 \item{outputs}{Optional character vector or list specifying output contract overrides.
 Reference paths supplied here resolve from the calling working directory.
@@ -76,6 +79,9 @@ also regenerate; resume explains why before new provider calls. Defaults to FALS
 \item{keep_raw_attempts}{Logical; retain raw outputs from unselected attempts,
 including isolated component smoke outputs and their replay scripts. These
 are partial debugging artifacts, not validated final outputs. Defaults to FALSE.}
+
+\item{max_bundle_repairs_per_component}{Maximum bundle fixer calls per component
+across the run. Defaults to 2L; separate from immediate program repairs.}
 }
 \value{
 An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \verb{$out_dir},

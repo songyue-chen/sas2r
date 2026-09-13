@@ -138,12 +138,12 @@ test_that("regressive patch preserves prior selected attempt and stops", {
     list(required_columns = c("NONEXISTENT_COL"))
   )
 
-  # Fixer in round 1 produces a regressive patch for prog_a that breaks execution
-  regressive_code_a <- "stop('Regressive break in prog_a')"
+  # Fixer targets the failed output writer, prog_b, and breaks its execution
+  regressive_code_a <- "stop('Regressive break in prog_b')"
   fx$state$fixer_llm <- recording_fixer(function(context) {
     valid_program_fix_response(
       code = regressive_code_a,
-      diagnosis = "Bad fix broke prog_a",
+      diagnosis = "Bad fix broke prog_b",
       summary = "Regressed",
       evidence_ids = c("bundle_attempt_001")
     )
@@ -153,7 +153,7 @@ test_that("regressive patch preserves prior selected attempt and stops", {
     fx$state, max_bundle_repair_rounds = 2L, execute = TRUE
   )
 
-  # Should run attempt 1 (out1 passes), attempt 2 (crashes, 0 pass), and stop early
+  # Out1 still passes, but losing prog_b execution is itself a regression.
   expect_identical(result$attempts$sequence, 1:2)
   # Attempt 1 should remain selected
   expect_identical(result$selected_attempt$attempt_id, "bundle_attempt_001")

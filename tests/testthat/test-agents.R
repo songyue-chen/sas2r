@@ -46,15 +46,23 @@ test_that("immutable fields reject violating overrides", {
                class = "sas2r_agent_spec_error")
 })
 
-test_that("translator and fixer carry macro-hunting tools with correct budgets", {
+test_that("lookup tools share the agent allowance and honor explicit overrides", {
   specs <- load_agent_specs()
-  expect_identical(specs$translator$tools$find_macro$max_calls, 4L)
-  expect_identical(specs$translator$tools$get_macro_source$max_calls, 3L)
-  expect_identical(specs$translator$tools$list_macro_files$max_calls, 2L)
-
-  expect_identical(specs$fixer$tools$find_macro$max_calls, 3L)
-  expect_identical(specs$fixer$tools$get_macro_source$max_calls, 2L)
+  for (role in names(specs)) {
+    for (tool in specs[[role]]$tools) {
+      expect_identical(tool$max_calls, specs[[role]]$tool_call_limit)
+    }
+  }
   expect_null(specs$fixer$tools$list_macro_files)
+  dir <- withr::local_tempdir()
+  overrides <- file.path(dir, ".sas2r", "agents")
+  dir.create(overrides, recursive = TRUE)
+  writeLines(c("tool_call_limit: 30", "tools:",
+               "  search_skills: { max_calls: 4 }"),
+             file.path(overrides, "translator.yml"))
+  spec <- load_agent_specs(dir)$translator
+  expect_identical(spec$tools$search_skills$max_calls, 4L)
+  expect_identical(spec$tools$lookup_rulebook$max_calls, 30L)
 })
 
 test_that("an agent is only offered read_unit_context when its prompt lacks the unit", {

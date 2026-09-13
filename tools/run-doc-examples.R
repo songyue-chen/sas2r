@@ -64,6 +64,18 @@ for (block in blocks) {
       counts["executed"] <- counts["executed"] + 1L
     } else counts["parsed_network"] <- counts["parsed_network"] + 1L
   } else {
+    # Agent overrides use their role loader, not the project configuration schema.
+    agent <- regmatches(block$marker,
+      regexec("^<!-- sas2r-example: agent (translator|reviewer|fixer) -->$", block$marker))[[1L]]
+    if (length(agent)) {
+      project_dir <- file.path(workspace, "agent-example")
+      agent_dir <- file.path(project_dir, ".sas2r", "agents")
+      dir.create(agent_dir, recursive = TRUE, showWarnings = FALSE)
+      writeLines(block$code, file.path(agent_dir, paste0(agent[2L], ".yml")))
+      sas2r:::load_agent_specs(project_dir)
+      counts["configurations"] <- counts["configurations"] + 1L
+      next
+    }
     # README's provider menu shows alternative mappings separated by blank
     # lines. Validate each independently rather than accepting duplicate keys.
     parts <- if (length(grep("^provider:", strsplit(block$code, "\n")[[1L]])) > 1L)

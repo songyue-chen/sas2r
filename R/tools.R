@@ -278,7 +278,7 @@ build_tools <- function(spec, ctx) {
       if (isTRUE(ctx$config$search_docs$enabled) && !isFALSE(spec$tools$search_docs$enabled)) {
         if (exists("search_docs_impl", mode = "function")) {
           out[[nm]] <- make_tool(
-            nm, search_docs_impl(ctx), spec$tools[[nm]]$max_calls %||% 3L,
+            nm, search_docs_impl(ctx), spec$tools[[nm]]$max_calls %||% spec$tool_call_limit %||% 3L,
             schema = tool_argument_schema(nm),
             description = unname(TOOL_DESCRIPTIONS[[nm]])
           )
@@ -289,7 +289,7 @@ build_tools <- function(spec, ctx) {
     impl <- TOOL_IMPLS[[nm]]
     if (is.null(impl)) next
     out[[nm]] <- make_tool(
-      nm, impl(ctx), spec$tools[[nm]]$max_calls %||% 3L,
+      nm, impl(ctx), spec$tools[[nm]]$max_calls %||% spec$tool_call_limit %||% 3L,
       schema = tool_argument_schema(nm),
       description = unname(TOOL_DESCRIPTIONS[[nm]])
     )

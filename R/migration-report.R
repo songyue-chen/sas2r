@@ -391,6 +391,20 @@ write_migration_report <- function(state) {
     )
   }
 
+  repair_budget <- diagnostics$bundle_repair
+  if (!is.null(repair_budget)) {
+    counts <- repair_budget$repair_counts
+    count_text <- if (length(counts)) paste(names(counts), unlist(counts), sep = "=", collapse = ", ") else "none"
+    md_lines <- c(md_lines, "## Bundle Repair Budget", "",
+      sprintf("Maximum fixer calls: %d per component; %.0f overall. Used: %s.",
+        repair_budget$per_component_limit, repair_budget$overall_limit, count_text),
+      "Independent branch diagnostics are isolated smoke checks, not final-bundle validation.", "")
+    for (id in names(repair_budget$deferred)) {
+      md_lines <- c(md_lines, paste0("- ", id, ": ", repair_budget$deferred[[id]]))
+    }
+    md_lines <- c(md_lines, "")
+  }
+
   # Usage & Budget
   md_lines <- c(
     md_lines,
