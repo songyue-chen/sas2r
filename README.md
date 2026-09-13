@@ -269,18 +269,17 @@ live runs above. See [DeepSeek's current model documentation](https://api-docs.d
 
 ### Every available setting, in one example
 
-Only `provider` and `model` are required. Everything else below is optional, shown with example values:
+A provider and model identify the connection. Agent translation also needs the
+capability declarations shown below. For translation, start with high reasoning
+and an explicit output allowance on supported models:
 
 ```yaml
 llm:
   provider: anthropic          # one of the twelve provider names below
   model: claude-sonnet-4-6     # or name models per tier instead:
   tiers:
-    frontier: claude-opus-4-6     # the tier today's workflow uses -- put your
-                                  # strongest model here (an Opus-class model;
-                                  # Sonnet-class models are the mid tier)
-    cheap: claude-sonnet-4-6      # accepted and validated; reserved for
-    fast: claude-haiku-4-5        # roles that opt into cheaper tiers
+    frontier: claude-opus-4-6  # optional override for the active agent tier;
+                               # every active tier must support these settings
 
   auth_mode: api_key           # how sas2r signs in; each provider's
                                # choices and default are listed below
@@ -288,97 +287,149 @@ llm:
   max_tries: 1                 # transport attempts per request (default 1;
                                # sas2r retries brief outages on its own)
 
-  temperature: 0               # model settings, passed through when the
-  top_p: 1                     # provider supports them
-  reasoning_effort: high       # max_output_tokens is deliberately unset here:
-                               # sas2r then uses the model's own maximum. Cap it
-                               # only if you must -- a small ceiling is spent on
-                               # reasoning before any answer text emerges, and
-                               # the translation comes back truncated
+  reasoning_effort: high       # adaptive thinking for this Claude model
+  max_output_tokens: 32768     # starting allowance per response; increase for
+                               # long programs within the model's limit
 
   cache: 1h                    # prompt-cache lifetime (anthropic, posit,
                                # bedrock). 1h is the default: migration
                                # turns are minutes apart, so a 5m cache
                                # would expire between them
 
-  capabilities:                # only if you need to override what sas2r
-    structured_output: fallback   # detects about a model's abilities
+  capabilities:
+    structured_output: fallback
     tool_calling: native
 ```
 
 **Never write an API key into `_sas2r.yml`.** Leave keys out of the file and set the provider's environment variable instead (listed below); `sas2r` finds it there. Files get shared and committed — environment variables don't.
 
-### What each provider needs
+### Recommended `_sas2r.yml` profiles
 
-Add these provider-specific lines to the `llm:` block. Sign-in styles: **api_key** (an environment variable holds your key), **ambient** (your machine's existing cloud sign-in is used, e.g. AWS or Google credentials), **none** (no sign-in, e.g. a local model).
+Choose **one complete `llm:` block** below; replace the previous block when
+switching providers. These examples target ellmer 0.4.2's parameter mappings.
+Keep the rest of your study configuration unchanged. The full template is
+[inst/examples/_sas2r.example.yml](inst/examples/_sas2r.example.yml).
+
+`max_output_tokens: 32768` is an initial allowance, not a quality guarantee or a
+whole-run budget. Reasoning can consume part of it. Increase it for long programs
+within the model's supported output limit. Omitting it uses connector/provider
+defaults, which can be smaller than the model's maximum.
+
+At startup, `sas_translate()` probes explicitly configured model settings before
+agent work. Unknown reasoning support is checked with an invalid level followed
+by the requested level. A connector that drops the setting, or an endpoint that
+ignores it, stops the run. You no longer need `reasoning_effort: supported` or
+`max_output_tokens: supported` flags for automatic verification. Explicit
+`unsupported` flags remain authoritative.
+
+Checks share the run's budget and appear as `settings` / `probe` entries in
+`<out_dir>/.sas2r/llm_log.jsonl`. Successful checks are reused within the same
+adapter session for the exact endpoint, model, connector version and settings.
+`sas_preflight()` remains offline. The probe verifies request compatibility;
+it does not establish SAS-to-R correctness or measure the model's reasoning.
+
+**OpenAI — `OPENAI_API_KEY`**
 
 ```yaml
-# anthropic — sign-in: api_key. Key from ANTHROPIC_API_KEY.
-provider: anthropic
-model: claude-sonnet-4-6
-# base_url: https://your-company-gateway.example.com   # only if IT routes traffic
-# cache: 1h                                            # default 1h; also 5m or none
-
-# openai — sign-in: api_key (default) or ambient. Key from OPENAI_API_KEY.
-provider: openai
-model: gpt-5.6-terra
-# base_url: https://your-company-gateway.example.com/v1
-
-# gemini — sign-in: ambient (default) or api_key. Key from GOOGLE_API_KEY or GEMINI_API_KEY.
-provider: gemini
-model: gemini-3.7-flash
-
-# deepseek — sign-in: api_key. Key from DEEPSEEK_API_KEY.
-provider: deepseek
-model: deepseek-flash
-
-# azure — sign-in: ambient (default) or api_key (AZURE_OPENAI_API_KEY).
-provider: azure
-model: my-gpt-deployment          # your deployment name, chosen in Azure
-endpoint: https://my-resource.openai.azure.com
-api_version: 2024-10-21
-
-# bedrock — sign-in: ambient (your AWS credentials / AWS_PROFILE).
-provider: bedrock
-model: us.anthropic.claude-sonnet-4-6-v1:0    # a Bedrock model id from your account
-region: us-east-1
-# base_url: https://bedrock-runtime.us-east-1.amazonaws.com  # alternative to region
-# profile: my-aws-profile
-# cache: auto
-
-# vertex — sign-in: ambient (GOOGLE_APPLICATION_CREDENTIALS).
-provider: vertex
-model: gemini-3.7-flash
-project_id: my-gcp-project
-location: us-central1
-
-# databricks — sign-in: ambient (DATABRICKS_TOKEN or workspace sign-in).
-provider: databricks
-model: databricks-claude-sonnet-4-6   # an endpoint name from your workspace
-workspace: https://my-workspace.cloud.databricks.com
-
-# github — sign-in: api_key. Key from GITHUB_PAT. Retired upstream: needs
-# ellmer < 0.5.0 (GitHub Models was retired on 2026-07-30).
-provider: github
-model: gpt-5.6-terra
-
-# ollama — sign-in: none. A model running on your own machine.
-provider: ollama
-model: llama3.3
-base_url: http://localhost:11434
-
-# posit — sign-in: ambient (Posit Connect credentials).
-provider: posit
-model: claude-sonnet-4-6
-# cache: 1h                           # default 1h; also 5m or none
-
-# snowflake — sign-in: ambient (SNOWFLAKE_TOKEN or key pair).
-provider: snowflake
-model: claude-sonnet-4-6              # a model your Snowflake account serves
-account: my-account-identifier
+llm:
+  provider: openai
+  auth_mode: api_key
+  model: gpt-5.6-terra
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: native
+    tool_calling: native
+  timeout_seconds: 900
+  max_tries: 1
 ```
 
-The example model names for providers outside the live-run table are placeholders in the right shape — your account's own list (from `sas_llm_models()`) is the source of truth, and `sas2r` validates your choice when the configuration loads. The complete reference — every setting, sign-in mode, and troubleshooting — is in [docs/llm-providers.md](docs/llm-providers.md).
+**Anthropic — `ANTHROPIC_API_KEY`**
+
+```yaml
+llm:
+  provider: anthropic
+  auth_mode: api_key
+  model: claude-sonnet-4-6
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+  cache: 1h
+  timeout_seconds: 900
+  max_tries: 1
+```
+
+**Google Gemini — `GEMINI_API_KEY` or `GOOGLE_API_KEY`**
+
+```yaml
+llm:
+  provider: gemini
+  auth_mode: api_key
+  model: gemini-3.8-flash
+  reasoning_effort: high
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+  timeout_seconds: 900
+  max_tries: 1
+```
+
+**DeepSeek — `DEEPSEEK_API_KEY`**
+
+```yaml
+llm:
+  provider: deepseek
+  auth_mode: api_key
+  model: deepseek-flash              # or deepseek-v4-pro
+  # DeepSeek currently defaults to thinking enabled, high effort.
+  # ellmer 0.4.2 does not forward reasoning_effort on this route.
+  max_output_tokens: 32768
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported    # connector limitation; thinking is not disabled
+  timeout_seconds: 900
+  max_tries: 1
+```
+
+OpenAI forwards `high` to its reasoning setting; Gemini maps it to
+`thinkingLevel`; Claude enables adaptive thinking with high effort. These
+profiles retain provider-specific structured-output modes; schema adherence does
+not establish translation correctness. See the official
+[OpenAI model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[Gemini thinking guide](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
+and [Claude thinking guide](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost).
+
+DeepSeek's current API defaults to thinking enabled at high effort. With ellmer
+0.4.2, sas2r relies on that server default: setting `reasoning_effort: high` and
+marking it supported now stops the run when the connector tries to drop it. Omitting the field
+does **not** mean thinking is off. This default is documented by
+[DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/); it is not evidence
+of the reasoning used in a particular historical response.
+
+**Other provider routes**
+
+| Provider | Reasoning configuration with ellmer 0.4.2 |
+|---|---|
+| `vertex` | Gemini thinking models use `high` with startup verification, as above; use ADC and your project/location. |
+| `posit` | The Claude route supports the Claude profile's reasoning settings; the OpenAI-compatible route does not forward effort. |
+| `azure`, `bedrock`, `databricks`, `snowflake` | These connectors do not forward `reasoning_effort`; endpoint/model defaults apply. They cannot explicitly enforce high reasoning through this YAML setting. |
+| `ollama` | Reasoning support depends on the served model; the connection example does not establish thinking support. |
+| `github` | Retired upstream; not recommended for new runs. |
+
+Full connection examples for all twelve providers, including required cloud
+selectors, are in [docs/llm-providers.md](docs/llm-providers.md). Use
+`sas_llm_models()` to check model availability and `sas_llm_probe()` to test the
+connection; neither certifies translation accuracy.
+
+After a run, inspect `<out_dir>/.sas2r/llm_log.jsonl`: `requested_parameters`,
+`effective_parameters`, and `withheld_parameters` distinguish requested settings
+from what sas2r handed to ellmer. Connector warnings about dropping an explicitly
+required setting now stop the run. A missing effort setting does
+not establish that the provider disabled reasoning.
 
 ---
 

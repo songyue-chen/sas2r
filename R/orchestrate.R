@@ -420,7 +420,10 @@ process_program_component <- function(
         project = state$project,
         config = state$config
       ),
-      error = function(e) list(status = "repair_failed", message = conditionMessage(e))
+      error = function(e) {
+        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+        list(status = "repair_failed", message = conditionMessage(e))
+      }
     )
 
     if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {
@@ -956,7 +959,10 @@ run_bundle_pipeline <- function(
         evidence_ids = packet$evidence_ids,
         report_registry = report_registry
       ),
-      error = function(e) list(status = "repair_failed", message = conditionMessage(e))
+      error = function(e) {
+        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+        list(status = "repair_failed", message = conditionMessage(e))
+      }
     )
 
     if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {

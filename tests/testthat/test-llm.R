@@ -1505,7 +1505,10 @@ test_that("the probe honors the configured output ceiling and reasoning headroom
     seen <- NULL
     llm <- new_llm(function(request) {
       seen <<- request$parameters$max_output_tokens
-      normalize_provider_response(pong, request = request, provider = "mock")
+      result <- normalize_provider_response(pong, request = request, provider = "mock")
+      result$effective_parameters <- compact_non_null(request$parameters)
+      expect_identical(request$parameters$reasoning_effort, model_parameters$reasoning_effort)
+      result
     }, provider = "mock")
     if (length(model_parameters)) llm$model_parameters <- model_parameters
     expect_true(sas_llm_probe(llm, log_dir = log_dir))

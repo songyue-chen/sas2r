@@ -402,6 +402,13 @@ record_capability_rejection <- function(capabilities, parameter) {
 invoke_with_capability_retry <- function(request, capabilities, transport) {
   params <- effective_model_params(request, capabilities)
   withheld <- withheld_model_params(request, capabilities)
+  required <- request$required_parameters %||% character()
+  if (length(intersect(required, withheld))) {
+    return(normalize_provider_response(llm_settings_error(paste(
+      "Required model settings have not been verified:",
+      paste(intersect(required, withheld), collapse = ", ")
+    )), request = request))
+  }
   first <- tryCatch(
     list(value = invoke_capability_transport(
       request, params, transport, retry_of = NULL
@@ -418,7 +425,12 @@ invoke_with_capability_retry <- function(request, capabilities, transport) {
   }
 
   parameter <- optional_parameter_from_error(first$error, names(params))
-  can_downgrade <- !is.null(parameter)
+  if (rejected_required_setting(first$error, required)) {
+    first$error <- copy_llm_failure_metrics(first$error,
+      llm_settings_error(conditionMessage(first$error), "settings_rejected"))
+  }
+  can_downgrade <- !is.null(parameter) && !parameter %in% required &&
+    !inherits(first$error, "sas2r_llm_settings_error")
   if (!can_downgrade) {
     response <- normalize_provider_response(first$error, request = request)
     response$retry_count <- 0L

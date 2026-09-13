@@ -68,6 +68,7 @@ LLM_FAILURE_REASONS <- list(
   sas2r_llm_transport_error = "transport_failure",
   sas2r_llm_config_error = "configuration_error",
   sas2r_llm_capability_error = "capability_resolution_failed",
+  sas2r_llm_settings_error = c("settings_unverified", "settings_unsupported", "settings_rejected"),
   sas2r_llm_region_mismatch = "region_mismatch",
   sas2r_llm_model_not_found = "model_not_found",
   sas2r_llm_endpoint_invalid = "endpoint_invalid",
@@ -243,6 +244,7 @@ new_llm <- function(request, provider, capabilities = NULL, model = NULL,
     request = request, provider = provider, capabilities = capabilities,
     model = model, endpoint = endpoint, api_version = api_version,
     model_parameters = model_parameters,
+    verified_settings = new.env(parent = emptyenv()),
     request_policy = request_policy,
     capabilities_for = capabilities_for,
     transport_constraints = transport_constraints
@@ -1143,14 +1145,14 @@ ellmer_llm <- function(cfg) {
                      class = "sas2r_llm_request_error")
     }
     model <- selected_llm_model(cfg, request)
-    capabilities <- llm_capabilities_for(
-      adapter, tier = request$tier, model = request$model
-    )
+    capabilities <- llm_request_capabilities(adapter, request)
     response <- invoke_with_capability_retry(
       request, capabilities,
       function(request, params) with_ellmer_limits(
         cfg$timeout_seconds, cfg$max_tries,
-        ellmer_transport_request(cfg, request, model, params)
+        with_required_ellmer_settings(
+          request, ellmer_transport_request(cfg, request, model, params)
+        )
       )
     )
     response$provider <- cfg$provider
@@ -1498,7 +1500,7 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
       llm$model_parameters$reasoning_effort
     probe_max_tokens <- if (!is.null(configured_ceiling) &&
                             is.numeric(configured_ceiling)) {
-      max(as.integer(configured_ceiling), 32L)
+      as.integer(configured_ceiling)
     } else if (!is.null(probe_reasoning)) {
       # Extended thinking needs headroom before any answer text emerges.
       2048L
@@ -1512,8 +1514,15 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
         required = "ok", additionalProperties = FALSE
       ),
       schema_name = "probe", schema_version = "1", schema_mode = schema_mode,
-      phase = "probe", max_output_tokens = probe_max_tokens
+      phase = "probe", max_output_tokens = probe_max_tokens,
+      reasoning_effort = probe_reasoning,
+      temperature = llm$model_parameters$temperature,
+      top_p = llm$model_parameters$top_p
     )
+    request$required_parameters <- names(compact_non_null(llm$model_parameters))
+    request$settings_probe <- TRUE
+    capabilities <- llm_request_capabilities(llm, request)
+    state$capability_hash <- capabilities$record_hash
     request$parent_request_id <- state$last_request_id
     request$retry_of <- if (i > 1L) state$last_request_id else NULL
     state$stage <- "provider_request"
@@ -1610,7 +1619,11 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
       cumulative_spend_usd = cumulative_spend,
       request_id = response$request_id
     )
+    audit_entry$requested_parameters <- request$parameters
+    audit_entry$effective_parameters <- response$effective_parameters
+    audit_entry$withheld_parameters <- response$withheld_parameters
     llm_log(audit_entry, dir = log_dir, redactor = state$redactor)
+    assert_required_settings(request, response)
     if (identical(response$status, "completed") && isTRUE(response$data$ok)) {
       return(TRUE)
     }
@@ -1620,10 +1633,14 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
   FALSE
 }
 
-#' Probe LLM connectivity with a tiny structured ping
+#' Probe LLM connectivity and configured settings with a structured ping
 #'
 #' Validates authentication, endpoint reachability, and structured-output
-#' support on the configured model with one minimal 32-token request. The
+#' support and forwarding of explicit parameters on the configured model. The
+#' ping uses the configured output ceiling, or 2048 tokens when reasoning effort
+#' is configured, otherwise 32. It does not perform the negative control used by
+#' automatic translation startup to detect ignored reasoning settings, and does
+#' not populate that startup cache. The
 #' probe never launches an interactive browser or device login: a missing or
 #' expired ambient session raises a classed condition naming the command to
 #' run instead.
@@ -1656,7 +1673,7 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
 #' @seealso [sas_llm()], [sas_llm_models()]
 #' @examples
 #' \dontrun{
-#' # Sends one minimal ping to validate connectivity and model access.
+#' # Sends a structured ping to validate connectivity and model access.
 #' llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 #' sas_llm_probe(llm)
 #' }
