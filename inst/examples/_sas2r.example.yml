@@ -77,6 +77,8 @@ environment:
 # 6. LLM Provider Configuration (Optional)
 # ------------------------------------------------------------------------------
 # Connect to an LLM provider for agent translation and code review.
+# Requires ellmer >= 0.4.2; ellmer 0.5.0 is recommended for new installations.
+# Version-specific notes use 0.4.2 as the minimum supported baseline, not a pin.
 # Twelve native ellmer providers are supported: openai, anthropic, bedrock,
 # azure, databricks, deepseek, github, gemini, vertex, ollama, posit, snowflake.
 # NOTE: Secrets must NEVER be placed in this file. Provide them via environment
