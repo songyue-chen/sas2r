@@ -282,6 +282,11 @@ test_that("upstream execution failure blocks the consumer without invoking its f
   events <- current_component_evidence(result$histories$prog)$events
   smoke <- Filter(function(e) identical(e$type, "program_smoke"), events)[[1]]
   expect_identical(smoke$status, "blocked")
+  expect_true("smoke_blocked:r1" %in% result$events)
+  expect_false("smoke_failed:r1" %in% result$events)
+  blockers <- current_component_evidence(result$histories$prog)$blockers
+  expect_true("blocked_by:upstream" %in% blockers)
+  expect_false("smoke_failed" %in% blockers)
 })
 
 test_that("mechanical helper failures reach the fixer before smoke execution", {

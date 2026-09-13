@@ -768,7 +768,12 @@ record_program_smoke <- function(history, result) {
     execution_id = result$execution_id,
     created_at = strftime(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )))
-  if (isTRUE(result$passed)) rev$blockers <- setdiff(rev$blockers, "smoke_failed")
+  rev$blockers <- rev$blockers[rev$blockers != "smoke_failed" & !startsWith(rev$blockers, "blocked_by:")]
+  if (!is.null(result$blocked_by)) {
+    rev$blockers <- c(rev$blockers, paste0("blocked_by:", result$blocked_by))
+  } else if (!isTRUE(result$passed)) {
+    rev$blockers <- c(rev$blockers, "smoke_failed")
+  }
   history$revisions[[idx]] <- rev
   history
 }

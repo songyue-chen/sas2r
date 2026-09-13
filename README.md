@@ -230,6 +230,9 @@ simple IN filters. For example, a matched subject with three events must retain
 three records. Filters, unsupported step bodies, repeated member writes, source library
 assignments within a program, and unavailable intermediates remain `unverified`; see `source_population` in the
 Markdown report and `source_population_checks` in component JSON evidence.
+Incompatible BY types between source inputs leave the population check
+`unverified` with a diagnostic. When the source keys are compatible but the
+translation changes the output to an incompatible type, the check fails.
 These checks cover population behavior, not all derived values or SAS parity.
 
 The elapsed-time and

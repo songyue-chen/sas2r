@@ -320,7 +320,7 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call) {
     # Initialize fresh environment
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
@@ -382,7 +382,7 @@ run_program_smoke <- function(
       executed_calls = executed_calls, failed_component_id = current,
       population_checks = population_checks,
       condition = list(message = conditionMessage(e), class = class(e),
-                       call = paste(deparse(conditionCall(e)), collapse = " "),
+                       call = format_call(conditionCall(e)),
                        component_id = current, population_check = e$population_check)
     )})
   }
@@ -401,7 +401,8 @@ run_program_smoke <- function(
         call_site = call_site_str,
         component_id = component_id,
         population_specs = plan$population_specs %||% list(),
-        observe_population = observe_source_population
+        observe_population = observe_source_population,
+        format_call = execution_call_text
       ),
       stdout = stdout_path,
       stderr = stderr_path,
@@ -521,6 +522,7 @@ bounded_agent_diagnostics <- function(
     execution$executed_component_ids
   ))
   affected_ids <- affected_ids[!is.na(affected_ids) & nzchar(affected_ids)]
+  source_location <- execution_call_text(execution$condition$call) %||% NA_character_
 
   if (identical(policy, "code_only")) {
     return(list(
@@ -536,7 +538,7 @@ bounded_agent_diagnostics <- function(
       population_checks = execution$population_checks,
       condition_message = cond_msg,
       condition_class = execution$condition$class %||% character(),
-      source_location = if (is.null(execution$condition$call)) NA_character_ else paste(deparse(execution$condition$call), collapse = " "),
+      source_location = source_location,
       stack_frames = execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
@@ -583,7 +585,7 @@ bounded_agent_diagnostics <- function(
       population_checks = execution$population_checks,
       condition_message = cond_msg,
       condition_class = execution$condition$class %||% character(),
-      source_location = if (is.null(execution$condition$call)) NA_character_ else paste(deparse(execution$condition$call), collapse = " "),
+      source_location = source_location,
       stack_frames = execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
@@ -856,6 +858,19 @@ run_bundle_attempt <- function(
 execution_condition <- function(error) {
   while (inherits(error$parent, "condition")) error <- error$parent
   list(message = conditionMessage(error), class = class(error),
-       call = paste(deparse(conditionCall(error)), collapse = " "),
+       call = execution_call_text(conditionCall(error)),
        population_check = error$population_check)
+}
+
+# Calls in persisted execution records may already be formatted. Keep absent
+# calls absent, including the legacy deparse(NULL) representation.
+execution_call_text <- function(call) {
+  if (is.null(call)) return(NULL)
+  if (is.character(call)) {
+    if (!length(call) || all(is.na(call))) return(NULL)
+    text <- paste(call[!is.na(call)], collapse = " ")
+  } else {
+    text <- paste(deparse(call), collapse = " ")
+  }
+  if (!nzchar(text) || identical(text, "NULL")) NULL else text
 }

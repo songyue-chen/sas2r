@@ -23,7 +23,13 @@ runtime_helper_documentation <- function(man_dir) {
 }
 
 helper_documentation <- function() {
-  jsonlite::read_json(system.file("templates", "helper-reference.json", package = "sas2r"), simplifyVector = FALSE)
+  path <- system.file("templates", "helper-reference.json", package = "sas2r")
+  if (!nzchar(path) || !file.exists(path)) {
+    cli::cli_abort(c("Required runtime helper reference is missing.",
+      "i" = "Reinstall sas2r, or use {.code pkgload::load_all()} from the current source checkout."),
+      class = "sas2r_helper_reference_missing")
+  }
+  jsonlite::read_json(path, simplifyVector = FALSE)
 }
 
 helper_call_definition <- function(name, docs = helper_documentation()) {

@@ -57,12 +57,19 @@
 * Fixers receive bounded, structured smoke and bundle diagnostics, including the
   underlying R condition, exit status and log paths. Dependency failures name
   the failing upstream program and block consumer repair for that crash.
+  Call locations are formatted once and missing calls remain absent. Smoke
+  blockers distinguish upstream dependencies from local failures and reconcile
+  when execution is rerun.
 * All three agents receive a shared runtime reference generated from helper
   documentation and actual signatures. Mechanical gates reject unsupported
   helper arguments even when the agent omits its helper declaration.
+  A missing reference reports an actionable installation error.
 * Source-derived population checks detect row loss in supported SET and MERGE
   patterns during both smoke and bundle execution. Unsupported source behavior
   and unavailable intermediates remain explicitly unverified.
+  Incompatible source BY types remain unverified with diagnostics; output key
+  type changes fail with a structured population mismatch. Factor labels and
+  integer/double representations use the same BY comparison rules.
 * Repaired candidates cannot replace revisions with better mechanical, runtime,
   review or source population evidence. Rejected candidates retain their history
   and the selected revision retains unresolved review findings.

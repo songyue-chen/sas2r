@@ -91,6 +91,7 @@ observe_source_population <- function(specs, env) {
     df <- df[by]
     if (any(vapply(df, function(x) is.numeric(x) && any(haven::is_tagged_na(x)), logical(1)))) return(NULL)
     df[] <- lapply(df, function(x) {
+      if (is.factor(x)) x <- as.character(x)
       if (is.character(x)) { x <- sub(" +$", "", x); x[is.na(x)] <- ""; x }
       else if (is.numeric(x)) as.numeric(x) else x
     })
@@ -109,7 +110,18 @@ observe_source_population <- function(specs, env) {
     }
     keys <- lapply(c(data, list(df)), normalize_keys, by = rule$by)
     if (any(vapply(keys, is.null, logical(1)))) return(list(status = "unverified", reason = "by_keys_unavailable_or_special_missing"))
-    combined <- do.call(vctrs::vec_rbind, keys)
+    source_keys <- tryCatch(do.call(vctrs::vec_rbind, keys[seq_along(data)]),
+      vctrs_error_incompatible_type = function(e) e)
+    if (inherits(source_keys, "vctrs_error_incompatible_type")) {
+      return(list(status = "unverified", reason = "by_input_keys_incompatible_types",
+                  detail = conditionMessage(source_keys)))
+    }
+    combined <- tryCatch(vctrs::vec_rbind(source_keys, keys[[length(keys)]]),
+      vctrs_error_incompatible_type = function(e) e)
+    if (inherits(combined, "vctrs_error_incompatible_type")) {
+      return(list(status = "failed", reason = "by_output_keys_incompatible_types",
+                  actual_rows = nrow(df), detail = conditionMessage(combined)))
+    }
     groups <- vctrs::vec_group_id(combined)
     n <- attr(groups, "n")
     a_end <- nrow(keys[[1]]); b_end <- a_end + nrow(keys[[2]])
@@ -132,10 +144,12 @@ observe_source_population <- function(specs, env) {
         result <- check(rule, df)
         results[[i]] <<- c(list(unit_id = rule$unit_id, outputs = rule$outputs), result)
         if (identical(result$status, "failed")) {
-          stop(structure(list(message = sprintf(
-            "Source population check failed for %s (%s): expected %d rows, got %d; mismatched BY groups: %s",
-            name, result$reason, result$expected_rows, result$actual_rows,
-            if (is.null(result$mismatched_by_groups)) "n/a" else result$mismatched_by_groups),
+          detail <- result$detail
+          if (is.null(detail)) detail <- sprintf("expected %d rows, got %d; mismatched BY groups: %s",
+            result$expected_rows, result$actual_rows,
+            if (is.null(result$mismatched_by_groups)) "n/a" else result$mismatched_by_groups)
+          stop(structure(list(message = sprintf("Source population check failed for %s (%s): %s",
+            name, result$reason, detail),
             call = NULL, population_check = results[[i]]),
             class = c("sas2r_population_mismatch", "error", "condition")))
         }

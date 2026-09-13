@@ -290,3 +290,19 @@ test_that("evidence history constructors and edge cases behave correctly", {
   # Invalid target_id for output lineage
   expect_error(evidence_for_output_lineage(list(), list(), ""), class = "sas2r_invalid_argument")
 })
+
+test_that("smoke blockers distinguish upstream failures and reconcile after reruns", {
+  history <- new_component_evidence_history("consumer", new_component_binding("s", "r", "h", "p", "d"))
+  history <- record_completed_review(history, verdict = "repair_required")
+  history <- record_program_smoke(history, list(passed = FALSE, blocked_by = "producer_a"))
+  expect_setequal(current_component_evidence(history)$blockers, c("repair_required", "blocked_by:producer_a"))
+  history <- record_program_smoke(history, list(passed = FALSE))
+  expect_setequal(current_component_evidence(history)$blockers, c("repair_required", "smoke_failed"))
+  history <- record_program_smoke(history, list(passed = FALSE, blocked_by = "producer_b"))
+  expect_setequal(current_component_evidence(history)$blockers, c("repair_required", "blocked_by:producer_b"))
+  history <- record_program_smoke(history, list(passed = TRUE))
+  current <- current_component_evidence(history)
+  expect_identical(current$blockers, "repair_required")
+  smokes <- Filter(function(e) identical(e$type, "program_smoke"), current$events)
+  expect_identical(vapply(smokes, `[[`, character(1), "status"), c("blocked", "failed", "blocked", "passed"))
+})

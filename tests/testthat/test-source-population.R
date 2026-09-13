@@ -73,3 +73,28 @@ test_that("stale intermediates do not become source population evidence", {
   fx$env$lib_write(data.frame(id = 1:3), "work", "stage")
   expect_error(fx$env$lib_write(data.frame(id = 1), "work", "out"), "expected 3 rows, got 1")
 })
+
+test_that("incompatible source BY types defer while output type changes fail clearly", {
+  sas <- "data work.out; merge raw.a raw.b; by id; run;"
+  fx <- population_fixture(sas, list(raw.a = data.frame(id = 1), raw.b = data.frame(id = "1")))
+  expect_no_error(fx$env$lib_write(data.frame(id = "1"), "work", "out"))
+  expect_identical(fx$observer$finish()[[1]]$status, "unverified")
+  expect_identical(fx$observer$finish()[[1]]$reason, "by_input_keys_incompatible_types")
+
+  for (out in list(data.frame(id = "1"), data.frame(id = factor("1")))) {
+    fx <- population_fixture(sas, list(raw.a = data.frame(id = 1), raw.b = data.frame(id = 1)))
+    expect_error(fx$env$lib_write(out, "work", "out"), "by_output_keys_incompatible_types",
+                 class = "sas2r_population_mismatch")
+    expect_identical(fx$observer$finish()[[1]]$status, "failed")
+  }
+})
+
+test_that("compatible factor and integer BY representations preserve populations", {
+  sas <- "data work.out; merge raw.a raw.b; by id; run;"
+  fx <- population_fixture(sas, list(raw.a = data.frame(id = "A"), raw.b = data.frame(id = "A")))
+  expect_no_error(fx$env$lib_write(data.frame(id = factor("A ")), "work", "out"))
+  expect_identical(fx$observer$finish()[[1]]$status, "passed")
+  fx <- population_fixture(sas, list(raw.a = data.frame(id = 1L), raw.b = data.frame(id = 1)))
+  expect_no_error(fx$env$lib_write(data.frame(id = 1L), "work", "out"))
+  expect_identical(fx$observer$finish()[[1]]$status, "passed")
+})

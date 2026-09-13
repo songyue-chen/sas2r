@@ -298,3 +298,26 @@ test_that("build_program_smoke_plan and run_program_smoke validate arguments", {
   expect_error(build_program_smoke_plan(list(), "", list()), class = "sas2r_invalid_argument")
   expect_error(run_program_smoke(list(), list(), "attempt_dir"), class = "sas2r_invalid_argument")
 })
+
+test_that("execution call locations are formatted once and absent calls remain absent", {
+  call <- quote(stop("boom"))
+  for (value in list(call, 'stop("boom")')) {
+    execution <- list(condition = list(message = "boom", call = value))
+    for (policy in c("code_only", "bounded")) {
+      expect_identical(bounded_agent_diagnostics(execution, policy)$source_location, 'stop("boom")')
+    }
+  }
+  for (value in list(NULL, "NULL", "", NA_character_)) {
+    for (policy in c("code_only", "bounded")) {
+      expect_identical(bounded_agent_diagnostics(list(condition = list(call = value)), policy)$source_location, NA_character_)
+    }
+  }
+  expect_null(execution_condition(simpleError("boom"))$call)
+  expect_identical(execution_condition(simpleError("boom", call = call))$call, 'stop("boom")')
+
+  plan <- list(status = "runnable", component_id = "program", dependency_prefix = character(),
+               selected_revisions = list(program = 'stop("boom", call. = FALSE)'))
+  result <- run_program_smoke(plan, list(), withr::local_tempdir())
+  expect_null(result$condition$call)
+  expect_identical(bounded_agent_diagnostics(result)$source_location, NA_character_)
+})

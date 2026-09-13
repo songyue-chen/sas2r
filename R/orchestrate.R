@@ -154,7 +154,7 @@ normalize_migration_state <- function(
 #' 1. Generate/activate revision -> record "generated:<rev_id>"
 #' 2. Mechanical checks -> record "mechanical_pass:<rev_id>" or "mechanical_fail:<rev_id>"
 #' 3. Independent review -> record "reviewed:<rev_id>" or "review_unavailable:<rev_id>"
-#' 4. Meaningful smoke / defer -> record "smoke_passed:<rev_id>", "smoke_failed:<rev_id>", or "smoke_deferred:<rev_id>"
+#' 4. Smoke -> record "smoke_passed:<rev_id>", "smoke_failed:<rev_id>", "smoke_blocked:<rev_id>", or "smoke_deferred:<rev_id>"
 #' 5. Combine evidence -> fix if material and budget/rounds remain -> record "fixed:<next_rev_id>"
 #' 6. Repeat checks/review/smoke after patch
 #'
@@ -378,16 +378,8 @@ process_program_component <- function(
             )
           }
         } else {
-          state$events <- c(state$events, paste0("smoke_failed:", rev_id))
-          active_idx <- which(vapply(state$histories[[component_id]]$revisions, function(r) {
-            identical(r$revision_id, state$histories[[component_id]]$active_revision_id)
-          }, logical(1)))
-          if (length(active_idx)) {
-            state$histories[[component_id]]$revisions[[active_idx]]$blockers <- unique(c(
-              state$histories[[component_id]]$revisions[[active_idx]]$blockers,
-              "smoke_failed"
-            ))
-          }
+          event <- if (!is.null(smoke_res$blocked_by)) "smoke_blocked:" else "smoke_failed:"
+          state$events <- c(state$events, paste0(event, rev_id))
         }
       }
     }

@@ -27,3 +27,12 @@ test_that("helper call violations fail the program gate even without declared he
   expect_false(checks$pass)
   expect_true(any(grepl("unused argument", checks$errors)))
 })
+
+test_that("a missing helper reference gives an actionable error instead of empty interfaces", {
+  for (path in c("", tempfile("missing-reference-"))) {
+    lookup <- helper_documentation
+    environment(lookup) <- list2env(list(system.file = function(...) path),
+                                    parent = environment(helper_documentation))
+    expect_error(lookup(), "Reinstall sas2r", class = "sas2r_helper_reference_missing")
+  }
+})

@@ -189,3 +189,33 @@ test_that("bundle execution defers known mechanical failures", {
   expect_length(attempt$executed_component_ids, 0L)
   expect_identical(attempt$condition$component_id, "prog_a")
 })
+
+test_that("smoke and bundle retain a structured failure for translated BY type changes", {
+  base <- withr::local_tempdir()
+  input_dir <- file.path(base, "inputs")
+  dir.create(input_dir)
+  saveRDS(data.frame(id = 1), file.path(input_dir, "a.rds"))
+  saveRDS(data.frame(id = 1), file.path(input_dir, "b.rds"))
+  writeLines("data work.out; merge raw.a raw.b; by id; run;", file.path(base, "merge.sas"))
+  config <- list(libraries = list(raw = list(path = input_dir, engine = "rds")))
+  project <- sas_project(base, config = config)
+  state <- new_migration_state(project, out_dir = file.path(base, "migration"), config = config)
+  state$selected_revisions <- list(merge = list(component_id = "merge", revision_id = "r1",
+    staged_file = "merge.R", r_code = paste(
+      "out <- lib_read('raw', 'a')",
+      "out$id <- as.character(out$id)",
+      "lib_write(out, 'work', 'out')", sep = "\n")))
+  plan <- build_program_smoke_plan(state$graph, "merge", state$selected_revisions)
+  plan$population_specs <- source_population_specs(project, "merge")
+  smoke <- run_program_smoke(plan, state$runtime, withr::local_tempdir())
+  bundle <- run_bundle_attempt(state)
+  for (result in list(smoke, bundle)) {
+    expect_false(result$passed)
+    expect_true("sas2r_population_mismatch" %in% result$condition$class)
+    expect_match(result$condition$message, "by_output_keys_incompatible_types")
+    expect_identical(result$population_checks$merge[[1]]$status, "failed")
+    expect_identical(result$population_checks$merge[[1]]$reason, "by_output_keys_incompatible_types")
+    expect_identical(result$condition$population_check$status, "failed")
+    expect_identical(bounded_agent_diagnostics(result)$source_location, NA_character_)
+  }
+})
