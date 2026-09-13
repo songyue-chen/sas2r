@@ -11,8 +11,12 @@
 * Preflight lists called macro names, source files and planned R paths. Caller
   agents receive translated upstream contracts. Dynamic calls, missing macro
   definitions, nested definitions, macro-body includes and library files requiring
-  top-level initialization remain explicit
-  unresolved findings.
+  top-level initialization remain explicit unresolved findings.
+* Translation stops before model calls when a called macro cannot be resolved,
+  reporting names, source locations, searched folders and configuration guidance.
+  Preflight still returns its findings for inspection.
+* Recognize `%QSYSFUNC` and the built-in macro execution/existence functions
+  during dependency mapping instead of reporting them as missing user macros.
 
 # sas2r 0.3.1
 

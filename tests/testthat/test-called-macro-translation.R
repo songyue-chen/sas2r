@@ -235,3 +235,57 @@ test_that("nested macro definitions are deferred instead of sharing a translatio
   expect_equal(nrow(p$called_macros), 0L)
   expect_identical(p$status, "needs_attention")
 })
+
+test_that("translation stops before model calls when the macro folder was not configured", {
+  root <- withr::local_tempdir()
+  file <- file.path(root, "program.sas")
+  writeLines("data work.out; x=%missing_helper(value=1); run;", file)
+  out <- file.path(root, "translation")
+  calls <- 0L
+  llm <- new_llm(function(request, ...) {
+    calls <<- calls + 1L
+    stop("provider must not be reached")
+  }, provider = "mock")
+  condition <- tryCatch(sas_translate(file, out_dir = out, llm = llm), error = identity)
+  expect_s3_class(condition, "sas2r_macro_dependency_error")
+  expect_match(conditionMessage(condition), "%missing_helper", fixed = TRUE)
+  expect_match(conditionMessage(condition), "program.sas:1", fixed = TRUE)
+  expect_match(conditionMessage(condition), "macros.search_path", fixed = TRUE)
+  expect_match(conditionMessage(condition), "No macro search directories", fixed = TRUE)
+  expect_identical(calls, 0L)
+  expect_false(dir.exists(out))
+  pre <- sas_preflight(file)
+  expect_identical(pre$status, "needs_attention")
+  expect_identical(pre$model_calls, 0L)
+})
+
+test_that("missing macros in configured folders and dynamic calls also stop early", {
+  root <- called_macro_fixture()
+  file <- file.path(root, "programs", "first.sas")
+  writeLines("%not_in_library;", file)
+  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
+               "Searched macro directories:", class = "sas2r_macro_dependency_error")
+  writeLines("%&name;", file)
+  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
+               "Resolve dynamic macro names", class = "sas2r_macro_dependency_error")
+  writeLines("%add(value=3);", file)
+  writeLines("%macro scale(value=1); %missing_nested; %mend;",
+             file.path(root, "macros", "utilities.sas"))
+  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
+               "%missing_nested at .*utilities.sas:1", class = "sas2r_macro_dependency_error")
+  expect_false(dir.exists(file.path(root, "out")))
+})
+
+test_that("local macro definitions and SAS builtins need no search path", {
+  root <- withr::local_tempdir()
+  file <- file.path(root, "program.sas")
+  writeLines(c("%macro local_helper(value=1); %put &value; %mend;",
+               "%local_helper(value=3);", "%put %sysfunc(today());",
+               "%put %qsysfunc(pathname(work));",
+               "%put %sysmacexec(local_helper) %sysmacexist(local_helper);",
+               "%put %sysmexecdepth %sysmexecname(0);"), file)
+  project <- sas_project(file)
+  expect_identical(project$macros$resolution$name, "local_helper")
+  expect_identical(project$macros$resolution$status, "resolved_project")
+  expect_no_error(require_resolved_macros(project))
+})

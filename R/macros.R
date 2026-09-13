@@ -5,12 +5,13 @@
 MACRO_BUILTINS <- c(
   "let", "if", "then", "else", "do", "end", "to", "by", "while", "until",
   "macro", "mend", "put", "include", "global", "local", "eval", "sysevalf",
-  "sysfunc", "str", "nrstr", "scan", "substr", "upcase", "lowcase", "index",
+  "sysfunc", "qsysfunc", "str", "nrstr", "scan", "substr", "upcase", "lowcase", "index",
   "length", "quote", "nrquote", "bquote", "nrbquote", "superq", "unquote",
   "sysget", "abort", "goto", "return", "symdel", "sysrput", "syslput", "window",
   "display", "sysexec", "symexist", "symglobl", "symlocal", "qscan",
   "qsubstr", "qupcase", "qlowcase", "qtrim", "qleft", "qcmpres", "trim",
-  "left", "cmpres", "verify", "datatyp", "input", "sysprod", "sysmacdelete"
+  "left", "cmpres", "verify", "datatyp", "input", "sysprod", "sysmacdelete",
+  "sysmacexec", "sysmacexist", "sysmexecdepth", "sysmexecname"
 )
 
 #' Extract macro definitions

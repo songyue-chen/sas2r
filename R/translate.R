@@ -7,6 +7,13 @@
 #' baseline generation and immediate program repair -> full bundle attempt execution
 #' and output-driven repair -> deterministic gate selection and reporting.
 #'
+#' Called macro dependencies must resolve during offline dependency mapping.
+#' Missing definitions or unsupported dynamic macro calls raise a
+#' `sas2r_macro_dependency_error` before provider setup or model requests, with
+#' source locations and configuration guidance. Use [sas_preflight()] to inspect
+#' the findings, and configure `macros.search_path` in `_sas2r.yml` when definitions
+#' live outside the scanned sources.
+#'
 #' @param path Path to a SAS file or directory containing SAS files, or a `sas2r_project`.
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
 #' @param config Optional configuration list, YAML path, or `sas2r_config` object.
@@ -107,6 +114,7 @@ sas_translate <- function(
     ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
   )
   setup <- translation_setup(path, config, outputs, recursive, cache = TRUE)
+  require_resolved_macros(setup$project)
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan

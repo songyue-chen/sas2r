@@ -306,10 +306,14 @@ separate evidence about behavior.
 
 Inspect `sas_preflight(...)$called_macros` for the discovered definitions and
 planned file paths. Macro translation requires an AI provider. Dynamic macro
-names, nested macro definitions, `%INCLUDE` inside an autocall macro, and library files with executable
-initialization outside their macro definitions remain unresolved and need review;
-sas2r does not expand arbitrary
-SAS macro code.
+names, nested macro definitions, `%INCLUDE` inside an autocall macro, and library
+files with executable initialization outside their macro definitions remain
+unresolved. Translation
+stops before model calls and reports the macro name, source file and line. If a
+definition is missing, configure `macros.search_path` or supply the definition
+in the scanned sources, then run preflight again. Preflight reports findings
+without stopping, so they remain available for inspection. sas2r does not expand
+arbitrary SAS macro code.
 
 ## Connecting an AI Model
 

@@ -59,3 +59,30 @@ called_macro_units <- function(project) {
   defs$test_file <- if (nrow(defs)) paste0("tests_macros/test-", defs$name, ".R") else character()
   defs
 }
+
+# Called by translation after the offline plan is built and before any adapter,
+# output directory or model request is created. Preflight remains inspectable.
+require_resolved_macros <- function(project) {
+  calls <- project$macros$resolution
+  unresolved <- calls[calls$status %in% c("unresolved", "dynamic"), , drop = FALSE]
+  if (!nrow(unresolved)) return(invisible(NULL))
+  details <- sprintf("%%%s at %s:%s (%s)", unresolved$name,
+                     unresolved$source_file, unresolved$line, unresolved$status)
+  dirs <- project$config$macro_search_path
+  findings <- project$flags[grepl("^macro_", project$flags$kind), , drop = FALSE]
+  # Discovery failures carry "<name>: <source>" details. Other advisory macro
+  # findings are available in preflight and are not the cause of this error.
+  findings <- findings[sub(":.*$", "", findings$detail) %in% unresolved$name, , drop = FALSE]
+  cli::cli_abort(c(
+    "Cannot translate: called macro dependencies are unresolved.",
+    stats::setNames(details, rep("x", length(details))),
+    if (any(unresolved$status == "unresolved" & !nzchar(unresolved$source)))
+      c("i" = "Configure macros.search_path in _sas2r.yml, or supply the macro definitions in the scanned sources."),
+    "i" = if (length(dirs)) paste0("Searched macro directories: ", paste(dirs, collapse = ", "))
+          else "No macro search directories are configured.",
+    if (any(unresolved$status == "dynamic"))
+      c("i" = "Resolve dynamic macro names before translation; sas2r cannot guess which definition will run."),
+    if (nrow(findings)) stats::setNames(paste(findings$kind, findings$detail, sep = ": "), rep("i", nrow(findings))),
+    "i" = "Use sas_preflight() to inspect the dependency findings without making model calls."
+  ), class = "sas2r_macro_dependency_error", macro_calls = unresolved)
+}
