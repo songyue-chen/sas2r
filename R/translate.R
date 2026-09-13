@@ -25,7 +25,11 @@
 #'   its directory; paths in R lists resolve from the project directory.
 #' @param execute Logical; whether to run meaningful program smoke and full bundle execution. Defaults to TRUE.
 #' @param max_program_repair_rounds Maximum repair rounds per component in immediate loop. Defaults to 1L.
-#' @param max_bundle_repair_rounds Maximum repair rounds for full bundle repair loop. Defaults to 2L.
+#' @param max_bundle_repair_rounds Optional overall cap on bundle fixer calls.
+#'   Defaults to NULL, allowing each component its own bounded repair allowance.
+#'   An explicit zero disables bundle repair.
+#' @param max_bundle_repairs_per_component Maximum bundle fixer calls per component
+#'   across the run. Defaults to 2L; separate from immediate program repairs.
 #' @param outputs Optional character vector or list specifying output contract overrides.
 #'   Reference paths supplied here resolve from the calling working directory.
 #'   Output overrides are retained in the returned project for reuse.
@@ -93,7 +97,7 @@ sas_translate <- function(
   config = NULL,
   execute = TRUE,
   max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = 2L,
+  max_bundle_repair_rounds = NULL,
   outputs = NULL,
   agent_evidence = c("code_only", "bounded"),
   llm = NULL,
@@ -104,8 +108,13 @@ sas_translate <- function(
   usage_limits = NULL,
   recursive = FALSE,
   resume = FALSE,
-  keep_raw_attempts = FALSE
+  keep_raw_attempts = FALSE,
+  max_bundle_repairs_per_component = 2L
 ) {
+  max_bundle_repair_rounds <- bundle_repair_limit(max_bundle_repair_rounds,
+    "max_bundle_repair_rounds", allow_null = TRUE)
+  max_bundle_repairs_per_component <- bundle_repair_limit(max_bundle_repairs_per_component,
+    "max_bundle_repairs_per_component")
   agent_evidence <- if (is.character(agent_evidence)) match.arg(agent_evidence, c("code_only", "bounded")) else "code_only"
 
   # Resolve budget and configuration before output/cache writes or providers.
@@ -147,7 +156,8 @@ sas_translate <- function(
     config = cfg,
     execute = isTRUE(execute),
     max_program_repair_rounds = as.integer(max_program_repair_rounds),
-    max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
+    max_bundle_repair_rounds = max_bundle_repair_rounds,
+    max_bundle_repairs_per_component = max_bundle_repairs_per_component,
     usage_budget = budget,
     plan = plan
   )
@@ -176,7 +186,8 @@ sas_translate <- function(
     )
     run_bundle_pipeline(
       state = prog_state,
-      max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
+      max_bundle_repair_rounds = max_bundle_repair_rounds,
+      max_bundle_repairs_per_component = max_bundle_repairs_per_component,
       execute = isTRUE(execute)
     )
   }), error = function(error) {

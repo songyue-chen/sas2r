@@ -77,7 +77,10 @@ load_agent_specs <- function(project_dir = NULL) {
       t <- sp$tools[[t_name]]
       !isFALSE(t$enabled) || t_name == "search_docs"
     }, logical(1))
-    specs[[nm]]$tools <- sp$tools[keep]
+    specs[[nm]]$tools <- lapply(sp$tools[keep], function(tool) {
+      tool$max_calls <- tool$max_calls %||% as.integer(sp$tool_call_limit)
+      tool
+    })
     specs[[nm]]$tool_call_limit <- as.integer(sp$tool_call_limit)
     specs[[nm]]$retry_limit <- as.integer(sp$retry_limit)
     if (!is.null(sp$temperature)) {

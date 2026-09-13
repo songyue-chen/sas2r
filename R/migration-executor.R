@@ -745,11 +745,14 @@ run_bundle_attempt <- function(
     unique(c(exec_order, unlist(lapply(exec_order, function(id) dependency_closure(state$graph, id))))))
   if (length(failed_checks)) {
     id <- failed_checks[[1L]]
+    failures <- stats::setNames(lapply(failed_checks, function(cid) list(
+      component_id = cid, class = "sas2r_mechanical_check_failure",
+      message = paste(state$selected_revisions[[cid]]$checks$errors, collapse = "; ")
+    )), failed_checks)
     return(complete_attempt(attempt, passed = FALSE, deferred = TRUE,
       reason = "mechanical_checks_failed", exit_status = NA_integer_,
       execution_order = exec_order, executed_component_ids = character(),
-      condition = list(component_id = id, class = "sas2r_mechanical_check_failure",
-        message = paste(state$selected_revisions[[id]]$checks$errors, collapse = "; ")),
+      condition = failures[[id]], mechanical_failures = failures,
       input_hashes_before = before_hashes, input_hashes_after = before_hashes,
       output_hashes = list()))
   }

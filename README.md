@@ -163,7 +163,8 @@ result <- sas_translate(
   usage_limits = list(max_calls = 20),
   execute = TRUE,                  # actually run the translated programs
   max_program_repair_rounds = 1,   # immediate repair attempts per program
-  max_bundle_repair_rounds = 2,    # full-pipeline repair attempts
+  max_bundle_repairs_per_component = 2, # bundle repairs per component
+  max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
 )
 
@@ -186,6 +187,39 @@ README describing its inputs and R dependencies. From the exported folder, run
 already occupies `run.R`, `run-order.json` identifies the renamed launcher.
 Input data is not copied: update `autoexec.R` and any explicit source LIBNAME
 paths if those inputs move. A manual rerun does not update the exported report.
+
+Bundle repair defaults to **two fixer calls per component**, in addition to the
+immediate program-repair allowance. `max_bundle_repair_rounds = NULL` lets that
+bounded allowance scale with the number of components; supply a number to cap
+total bundle fixer calls, or `0` to disable them. `usage_limits` still bounds the
+whole run. Failed and ineffective repair calls consume their component allowance.
+
+The authoritative bundle run stops at the first execution error. sas2r then
+checks unvisited independent branches in fresh smoke environments, queues known
+mechanical and output failures by component, and repairs independent causes
+before rerunning the full bundle. Downstream failures caused by an upstream
+blocker wait for fresh evidence. An identical patch or failed fixer is deferred;
+other independent components can continue. A shared-helper patch requires a
+fresh run before further repairs. Diagnostic outputs never replace the complete
+bundle acceptance check, and lost execution or output coverage rejects a repair.
+Repair counts, deferred components, and diagnostic records appear in the report.
+
+Each translator, reviewer, or fixer invocation has a **15-tool-call shared
+allowance** by default. Individual tools inherit that allowance, so several
+useful rule or macro lookups do not exhaust a separate small quota. A project
+can adjust a role in `.sas2r/agents/translator.yml` (likewise `reviewer.yml` and
+`fixer.yml`):
+
+```yaml
+tool_call_limit: 30
+tools:
+  search_skills: { max_calls: 6 } # optional narrower quota for this tool
+```
+
+The shared ceiling and any explicit tool quotas remain enforced; they reset on
+the next agent invocation. The run-wide `usage_limits$max_tool_calls` is separate.
+At tool exhaustion the runner requests a final answer with the evidence already
+collected; an incomplete answer still cannot pass validation.
 
 ### The four statuses
 

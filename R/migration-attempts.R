@@ -526,6 +526,13 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
       )
     }
 
+    if (identical(candidate$execution_order, prev_rec$execution_order) &&
+        ((isTRUE(prev_rec$execution_passed) && !isTRUE(candidate$passed)) ||
+         length(setdiff(prev_rec$executed_component_ids, candidate$executed_component_ids)) > 0L)) {
+      cli::cli_abort("Candidate attempt lost previously completed program execution",
+                     class = "sas2r_regressive_selection")
+    }
+
     cand_passing <- length(assessment$passing_targets %||% character())
     prev_passing <- length(prev_rec$assessment$passing_targets %||% prev_rec$passing_targets %||% character())
     if (prev_passing > 0L && cand_passing < prev_passing) {
@@ -545,7 +552,9 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     attempt_dir = candidate$attempt_dir,
     outputs_dir = candidate$outputs_dir,
     output_hashes = candidate$output_hashes %||% list(),
-    execution_order = candidate$execution_order
+    execution_order = candidate$execution_order,
+    execution_passed = isTRUE(candidate$passed),
+    executed_component_ids = candidate$executed_component_ids %||% character()
   )
 
   dir.create(dirname(sel_path), recursive = TRUE, showWarnings = FALSE)

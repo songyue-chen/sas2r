@@ -351,6 +351,11 @@ format_sas2r_progress <- function(progress) {
         bundle_previous_selection_retained = paste0("current run blocked; previous selected bundle retained", progress_reason(progress$reason)),
         bundle_attempt_selected = sprintf("%s: %s selected", round, attempt),
         bundle_early_stop = sprintf("%s: stopping early%s", round, progress_reason(progress$reason)),
+        bundle_repair_queue = paste0("queued repairs", progress_reason(progress$reason)),
+        bundle_component_deferred = paste0(component, ": repair deferred", progress_reason(progress$reason)),
+        bundle_diagnostic_completed = paste0(component, ": isolated diagnostic ",
+          if (isTRUE(progress$passed)) "passed" else "failed",
+          progress_reason(progress$reason)),
         bundle_fixer_invoked = sprintf("%s: fixer invoked for %s", round, component),
         bundle_fixer_completed = sprintf("%s: fixer done for %s%s", round, component,
                                          if (!is.null(progress$cost) && length(progress$cost) == 1L &&

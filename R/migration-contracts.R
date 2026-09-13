@@ -159,7 +159,8 @@ init_migration_paths <- function(out_dir, run_id = NULL) {
 #' @param agent_evidence Agent evidence policy ("code_only" or "bounded").
 #' @param execute Logical indicating if execution is enabled.
 #' @param max_program_repair_rounds Integer repair budget for programs.
-#' @param max_bundle_repair_rounds Integer repair budget for bundles.
+#' @param max_bundle_repair_rounds Optional overall bundle fixer-call cap.
+#' @param max_bundle_repairs_per_component Maximum bundle fixer calls per component.
 #' @param schema_version Schema version string.
 #' @param created_at ISO 8601 creation timestamp.
 #' @param ... Additional metadata fields.
@@ -173,9 +174,10 @@ new_migration_run_record <- function(
   agent_evidence = "code_only",
   execute = TRUE,
   max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = 2L,
+  max_bundle_repair_rounds = NULL,
   schema_version = MIGRATION_SCHEMA_VERSION,
   created_at = NULL,
+  max_bundle_repairs_per_component = 2L,
   ...
 ) {
   if (!is.character(run_id) || length(run_id) != 1L || !nzchar(run_id)) {
@@ -206,7 +208,8 @@ new_migration_run_record <- function(
     agent_evidence = agent_evidence,
     execute = isTRUE(execute),
     max_program_repair_rounds = as.integer(max_program_repair_rounds),
-    max_bundle_repair_rounds = as.integer(max_bundle_repair_rounds),
+    max_bundle_repair_rounds = max_bundle_repair_rounds,
+    max_bundle_repairs_per_component = as.integer(max_bundle_repairs_per_component),
     created_at = created_at
   )
   extra <- list(...)
