@@ -256,8 +256,8 @@ run_program_smoke <- function(
   logs_dir <- file.path(attempt_dir, "logs")
   dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
 
-  stdout_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_stdout.log")), winslash = "/", mustWork = FALSE)
-  stderr_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_stderr.log")), winslash = "/", mustWork = FALSE)
+  stdout_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_", execution_id, "_stdout.log")), winslash = "/", mustWork = FALSE)
+  stderr_path <- normalizePath(file.path(logs_dir, paste0("smoke_", component_id, "_", execution_id, "_stderr.log")), winslash = "/", mustWork = FALSE)
 
   # Resolve runtime files: a bundle's own autoexec.R when there is one (it
   # loads the helpers and formats beside it), else the files named one by one.
@@ -320,7 +320,7 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call) {
     # Initialize fresh environment
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
@@ -340,27 +340,51 @@ run_program_smoke <- function(
 
     executed_components <- character()
     executed_calls <- character()
+    current <- component_id
+    population_checks <- list()
+    execute_component <- function(id, code) {
+      current <<- id
+      observer <- observe_population(population_specs[[id]], globalenv())
+      on.exit({
+        population_checks[[id]] <<- observer$finish()
+        observer$restore()
+      })
+      eval(parse(text = code), envir = globalenv())
+    }
+
+    tryCatch({
 
     if (length(dep_codes) > 0L) {
       for (nm in names(dep_codes)) {
-        eval(parse(text = dep_codes[[nm]]), envir = globalenv())
+        execute_component(nm, dep_codes[[nm]])
         executed_components <- c(executed_components, nm)
       }
     }
 
-    eval(parse(text = target_code), envir = globalenv())
-    executed_components <- c(executed_components, "target")
+    # Keep the observer active for callable programs through their call site.
+    execute_component(component_id, paste(target_code, call_site, sep = "\n"))
+    executed_components <- c(executed_components, component_id)
 
     if (!is.null(call_site) && nzchar(call_site)) {
-      eval(parse(text = call_site), envir = globalenv())
       executed_calls <- c(executed_calls, "call_site_1")
     }
 
     list(
       success = TRUE,
       executed_components = executed_components,
-      executed_calls = executed_calls
+      executed_calls = executed_calls,
+      population_checks = population_checks
     )
+    }, error = function(e) {
+      cat("Error: ", conditionMessage(e), "\n", sep = "", file = stderr())
+      list(
+      success = FALSE, executed_components = executed_components,
+      executed_calls = executed_calls, failed_component_id = current,
+      population_checks = population_checks,
+      condition = list(message = conditionMessage(e), class = class(e),
+                       call = format_call(conditionCall(e)),
+                       component_id = current, population_check = e$population_check)
+    )})
   }
 
   t_start <- Sys.time()
@@ -374,7 +398,11 @@ run_program_smoke <- function(
         formats_file = formats_file,
         dep_codes = dep_codes,
         target_code = target_code,
-        call_site = call_site_str
+        call_site = call_site_str,
+        component_id = component_id,
+        population_specs = plan$population_specs %||% list(),
+        observe_population = observe_source_population,
+        format_call = execution_call_text
       ),
       stdout = stdout_path,
       stderr = stderr_path,
@@ -391,30 +419,16 @@ run_program_smoke <- function(
   condition <- NULL
 
   if (!passed) {
-    err_msg <- conditionMessage(res)
-    err_class <- class(res)
-    # Check if stderr has more specific error message from the child process
-    if (file.exists(stderr_path)) {
-      stderr_lines <- readLines(stderr_path, warn = FALSE)
-      if (length(stderr_lines) > 0L) {
-        first_err <- stderr_lines[grep("(Error|stop):", stderr_lines)]
-        if (length(first_err) > 0L) {
-          err_msg <- trimws(sub(".*(Error|stop):", "", first_err[1L]))
-        }
-      }
-    }
-    condition <- list(
-      message = err_msg,
-      class = err_class,
-      call = conditionCall(res)
-    )
+    condition <- if (inherits(res, "error")) execution_condition(res) else res$condition
+    err_msg <- condition$message
     signal_program_smoke_event(
       "program_smoke_failed",
       component_id = component_id,
       attempt_id = attempt_id,
       execution_id = execution_id,
       path = stderr_path,
-      reason = err_msg
+      reason = if (!is.null(condition$component_id) && !identical(condition$component_id, component_id))
+        paste0("blocked by ", condition$component_id, ": ", err_msg) else err_msg
     )
   } else {
     signal_program_smoke_event(
@@ -447,6 +461,9 @@ run_program_smoke <- function(
     exit_status = if (passed) 0L else 1L,
     elapsed_sec = elapsed_sec,
     condition = condition,
+    failed_component_id = condition$component_id %||% NULL,
+    blocked_by = if (!is.null(condition$component_id) && !identical(condition$component_id, component_id)) condition$component_id else NULL,
+    population_checks = res$population_checks %||% list(),
     executed_component_ids = if (passed) c(names(dep_codes), component_id) else (res$executed_components %||% character()),
     executed_call_ids = if (passed && nzchar(call_site_str)) "call_site_1" else character(),
     stdout_path = stdout_path,
@@ -505,6 +522,7 @@ bounded_agent_diagnostics <- function(
     execution$executed_component_ids
   ))
   affected_ids <- affected_ids[!is.na(affected_ids) & nzchar(affected_ids)]
+  source_location <- execution_call_text(execution$condition$call) %||% NA_character_
 
   if (identical(policy, "code_only")) {
     return(list(
@@ -512,9 +530,15 @@ bounded_agent_diagnostics <- function(
       execution_id = execution$execution_id,
       component_id = execution$component_id,
       passed = execution$passed,
+      exit_status = execution$exit_status,
+      stdout_path = execution$stdout_path,
+      stderr_path = execution$stderr_path,
+      failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
+      blocked_by = execution$blocked_by,
+      population_checks = execution$population_checks,
       condition_message = cond_msg,
       condition_class = execution$condition$class %||% character(),
-      source_location = execution$condition$call %||% NA_character_,
+      source_location = source_location,
       stack_frames = execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
@@ -553,9 +577,15 @@ bounded_agent_diagnostics <- function(
       execution_id = execution$execution_id,
       component_id = execution$component_id,
       passed = execution$passed,
+      exit_status = execution$exit_status,
+      stdout_path = execution$stdout_path,
+      stderr_path = execution$stderr_path,
+      failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
+      blocked_by = execution$blocked_by,
+      population_checks = execution$population_checks,
       condition_message = cond_msg,
       condition_class = execution$condition$class %||% character(),
-      source_location = execution$condition$call %||% NA_character_,
+      source_location = source_location,
       stack_frames = execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
@@ -673,6 +703,17 @@ run_bundle_attempt <- function(
   bundle_dir <- snapshot_selected_bundle(state, attempt)
   plan <- build_bundle_execution_plan(state$graph)
   exec_order <- plan$execution_order
+  failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE), exec_order)
+  if (length(failed_checks)) {
+    id <- failed_checks[[1L]]
+    return(complete_attempt(attempt, passed = FALSE, deferred = TRUE,
+      reason = "mechanical_checks_failed", exit_status = NA_integer_,
+      execution_order = exec_order, executed_component_ids = character(),
+      condition = list(component_id = id, class = "sas2r_mechanical_check_failure",
+        message = paste(state$selected_revisions[[id]]$checks$errors, collapse = "; ")),
+      input_hashes_before = before_hashes, input_hashes_after = before_hashes,
+      output_hashes = list()))
+  }
   program_files <- vapply(exec_order, function(cid) {
     rev <- state$selected_revisions[[cid]]
     rev$staged_file %||% rev$contract$staged_file %||% paste0(cid, ".R")
@@ -682,7 +723,7 @@ run_bundle_attempt <- function(
   stdout_path <- normalizePath(file.path(logs_dir, "bundle_stdout.log"), winslash = "/", mustWork = FALSE)
   stderr_path <- normalizePath(file.path(logs_dir, "bundle_stderr.log"), winslash = "/", mustWork = FALSE)
 
-  bundle_runner_fn <- function(bundle_dir, execution_order, program_files) {
+  bundle_runner_fn <- function(bundle_dir, execution_order, program_files, population_specs, observe_population) {
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
 
     # The bundle's own autoexec.R loads the runtime, exactly as a program
@@ -702,8 +743,9 @@ run_bundle_attempt <- function(
 
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
+    population_checks <- list()
     for (item in execution_order) {
-      writeLines(jsonlite::toJSON(list(current = item, executed = executed), auto_unbox = TRUE), status_file)
+      writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
       candidates <- c(
         file.path(bundle_dir, program_files[[item]]),
         file.path(bundle_dir, item),
@@ -718,14 +760,22 @@ run_bundle_attempt <- function(
       }
 
       if (!is.na(target_file) && file.exists(target_file)) {
-        sys.source(target_file, envir = globalenv())
+        observer <- observe_population(population_specs[[item]], globalenv())
+        tryCatch({
+          sys.source(target_file, envir = globalenv())
+        }, finally = {
+          population_checks[[item]] <- observer$finish()
+          observer$restore()
+          writeLines(jsonlite::toJSON(list(current = item, executed = executed,
+            population_checks = population_checks), auto_unbox = TRUE), status_file)
+        })
         executed <- c(executed, item)
-        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed), auto_unbox = TRUE), status_file)
+        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
       } else {
         stop(sprintf("Target program %s not found in bundle", item))
       }
     }
-    list(success = TRUE, executed = executed)
+    list(success = TRUE, executed = executed, population_checks = population_checks)
   }
 
   t_start <- Sys.time()
@@ -735,7 +785,9 @@ run_bundle_attempt <- function(
       args = list(
         bundle_dir = bundle_dir,
         execution_order = exec_order,
-        program_files = program_files
+        program_files = program_files,
+        population_specs = source_population_specs(state$project, exec_order),
+        observe_population = observe_source_population
       ),
       wd = attempt$attempt_dir,
       stdout = stdout_path,
@@ -753,7 +805,7 @@ run_bundle_attempt <- function(
 
   status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
   prog_info <- if (file.exists(status_file)) {
-    tryCatch(jsonlite::fromJSON(status_file), error = function(e) NULL)
+    tryCatch(jsonlite::fromJSON(status_file, simplifyVector = FALSE), error = function(e) NULL)
   } else NULL
 
   executed_ids <- if (passed) {
@@ -776,23 +828,8 @@ run_bundle_attempt <- function(
 
   condition <- NULL
   if (!passed) {
-    err_msg <- conditionMessage(res)
-    err_class <- class(res)
-    if (file.exists(stderr_path)) {
-      stderr_lines <- readLines(stderr_path, warn = FALSE)
-      if (length(stderr_lines) > 0L) {
-        first_err <- stderr_lines[grep("(Error|stop):", stderr_lines)]
-        if (length(first_err) > 0L) {
-          err_msg <- trimws(sub(".*(Error|stop):", "", first_err[1L]))
-        }
-      }
-    }
-    condition <- list(
-      message = err_msg,
-      class = err_class,
-      call = conditionCall(res),
-      component_id = failed_cid
-    )
+    condition <- execution_condition(res)
+    condition$component_id <- failed_cid
   }
 
   output_hashes <- attempt_output_hashes(attempt$attempt_dir)
@@ -804,6 +841,7 @@ run_bundle_attempt <- function(
     elapsed_sec = elapsed_sec,
     execution_order = exec_order,
     executed_component_ids = executed_ids,
+    population_checks = res$population_checks %||% prog_info$population_checks %||% list(),
     condition = condition,
     stdout_path = stdout_path,
     stderr_path = stderr_path,
@@ -814,4 +852,25 @@ run_bundle_attempt <- function(
   )
 
   completed_rec
+}
+
+# callr wraps the useful child condition in parent; preserve the deepest cause.
+execution_condition <- function(error) {
+  while (inherits(error$parent, "condition")) error <- error$parent
+  list(message = conditionMessage(error), class = class(error),
+       call = execution_call_text(conditionCall(error)),
+       population_check = error$population_check)
+}
+
+# Calls in persisted execution records may already be formatted. Keep absent
+# calls absent, including the legacy deparse(NULL) representation.
+execution_call_text <- function(call) {
+  if (is.null(call)) return(NULL)
+  if (is.character(call)) {
+    if (!length(call) || all(is.na(call))) return(NULL)
+    text <- paste(call[!is.na(call)], collapse = " ")
+  } else {
+    text <- paste(deparse(call), collapse = " ")
+  }
+  if (!nzchar(text) || identical(text, "NULL")) NULL else text
 }

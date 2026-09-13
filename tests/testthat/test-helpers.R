@@ -8,6 +8,21 @@ helpers_env <- function() {
   e
 }
 
+test_that("comparison operators fail clearly instead of silently generating false flags", {
+  for (compare in list(chr_cmp, helpers_env()$chr_cmp)) {
+    for (op in list("=", "eq", "=>", "", NA_character_, character(), c("==", "!="), 1L)) {
+      for (values in list(c(61, 61), c("A", "A"), c(NA_real_, NA_real_))) {
+        expect_error(compare(values[1], values[2], op = op),
+                     'Use op = "==" for equality', info = paste(op, collapse = ","))
+      }
+    }
+    expect_identical(compare(c(61, 70, NA), c(61, 60, NA), op = "=="), c(TRUE, FALSE, TRUE))
+    expect_identical(compare(c("A ", "B", NA), c("A", "A", ""), op = "=="), c(TRUE, FALSE, TRUE))
+    expect_identical(compare(c(1, 2, 3), 2), c(-1L, 0L, 1L))
+    expect_identical(compare(c(1, 2, 3), 2, op = NULL), c(-1L, 0L, 1L))
+  }
+})
+
 test_that("numeric helpers reproduce SAS semantics", {
   h <- helpers_env()
   # SAS SUM()/MEAN() are row-wise across arguments; one argument passes through

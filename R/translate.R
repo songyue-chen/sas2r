@@ -178,8 +178,8 @@ sas_translate <- function(
   selected_att <- state$selected_attempt
   bundle_dir <- if (!is.null(selected_att) && !is.null(selected_att$attempt_dir)) {
     file.path(selected_att$attempt_dir, "bundle")
-  } else if (!is.null(state$attempt) && !is.null(state$attempt$attempt_dir)) {
-    file.path(state$attempt$attempt_dir, "bundle")
+  } else if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
+    file.path(state[["attempt"]]$attempt_dir, "bundle")
   } else {
     file.path(paths$state, "selected", "bundle")
   }

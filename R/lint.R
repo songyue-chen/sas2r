@@ -131,6 +131,7 @@ lint_r_code <- function(code,
   }
 
   base_fns <- c(ls(baseenv()), "|>", helpers)
+  helper_docs <- helper_documentation()
 
   walk <- function(e, parent_isna_vars = character()) {
     if (!is.call(e)) return(invisible())
@@ -146,8 +147,10 @@ lint_r_code <- function(code,
     if (plain %in% BANNED_FUNCTIONS) {
       add("error", "banned_function", fname)
     }
-    if (plain %in% c("lib_read", "lib_write")) {
-      misuse <- lib_call_misuse(e, plain)
+    if (plain %in% SAS2R_HELPER_NAMES &&
+        (!grepl("::", fname) || startsWith(fname, "sas2r::"))) {
+      misuse <- if (plain %in% c("lib_read", "lib_write")) lib_call_misuse(e, plain) else NULL
+      if (is.null(misuse)) misuse <- helper_call_misuse(e, plain, helper_docs)
       if (!is.null(misuse)) add("error", "helper_misuse", misuse)
     }
     if (grepl("::", fname)) {

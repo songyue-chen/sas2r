@@ -117,3 +117,37 @@ test_that("an unavailable semantic review keeps its reason and can recover", {
   expect_length(current$blockers, 0L)
   expect_identical(current$level, "reviewed_only")
 })
+
+test_that("actual subprocess diagnostics reach the fixer without data previews", {
+  fx <- review_fix_fixture()
+  plan <- list(status = "runnable", component_id = fx$revision$component_id,
+               dependency_prefix = character(), call_site = NULL,
+               selected_revisions = stats::setNames(list("stop('missing required column: outcome')"), fx$revision$component_id))
+  smoke <- run_program_smoke(plan, list(), withr::local_tempdir())
+  fixer <- recording_fixer(function(req) valid_program_fix_response(evidence_ids = req$evidence_ids))
+  fix_program_revision(fx$revision, smoke = smoke, llm = fixer)
+  prompt <- paste(vapply(fixer$requests()[[1]]$messages, `[[`, character(1), "content"), collapse = "\n")
+  expect_match(prompt, "missing required column: outcome", fixed = TRUE)
+  expect_match(prompt, smoke$stderr_path, fixed = TRUE)
+  expect_match(prompt, '"exit_status": 1', fixed = TRUE)
+  expect_match(prompt, '"output_previews":', fixed = TRUE)
+  expect_false(grepl('"output_previews": \\[\\{', prompt))
+  expect_match(prompt, "sas_merge(a, b, by", fixed = TRUE)
+  expect_match(prompt, "Many-to-many keys", fixed = TRUE)
+})
+
+test_that("an invalid equality operator reaches the fixer with its documented replacement", {
+  fx <- review_fix_fixture()
+  code <- 'flag <- sas_if_else(chr_cmp(3, 3, op = "<=") & chr_cmp(61, 61, op = "="), "Y", "N")'
+  plan <- list(status = "runnable", component_id = fx$revision$component_id,
+    dependency_prefix = character(), selected_revisions = stats::setNames(list(code), fx$revision$component_id))
+  smoke <- run_program_smoke(plan, list(), withr::local_tempdir())
+  expect_false(smoke$passed)
+  expect_match(smoke$condition$message, 'Use op = "==" for equality', fixed = TRUE)
+  fixer <- recording_fixer(function(req) valid_program_fix_response(evidence_ids = req$evidence_ids))
+  fix_program_revision(fx$revision, smoke = smoke, llm = fixer)
+  request <- fixer$requests()[[1L]]
+  expect_match(request$messages[[1L]]$content, 'op = "=="', fixed = TRUE)
+  prompt <- paste(vapply(request$messages, `[[`, character(1), "content"), collapse = "\n")
+  expect_match(prompt, "chr_cmp: op must be NULL", fixed = TRUE)
+})

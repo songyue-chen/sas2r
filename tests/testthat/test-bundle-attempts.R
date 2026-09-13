@@ -160,3 +160,62 @@ test_that("prune_rejected_attempt_outputs removes only rejected work and outputs
   # a2 (selected) intact
   expect_true(dir.exists(a2$work_dir))
 })
+
+test_that("both smoke and bundle reject source population loss despite a clean contract", {
+  fx <- bundle_attempt_fixture()
+  code <- "x <- lib_read('adam', 'adsl'); lib_write(x[1, , drop = FALSE], 'work', 't1')"
+  fx$state$selected_revisions$prog_a$r_code <- code
+  plan <- build_program_smoke_plan(fx$state$graph, "prog_a", fx$state$selected_revisions)
+  plan$population_specs <- source_population_specs(fx$project, "prog_a")
+  smoke <- run_program_smoke(plan, fx$state$runtime, withr::local_tempdir())
+  expect_false(smoke$passed)
+  expect_match(smoke$condition$message, "expected 2 rows, got 1")
+  expect_identical(smoke$population_checks$prog_a[[1]]$status, "failed")
+  bundle <- run_bundle_attempt(fx$state, sequence = 1L)
+  expect_false(bundle$passed)
+  expect_match(bundle$condition$message, "expected 2 rows, got 1")
+  expect_identical(bundle$condition$component_id, "prog_a")
+  expect_identical(bundle$population_checks$prog_a[[1]]$status, "failed")
+  expect_false(grepl("! in callr subprocess", bundle$condition$message, fixed = TRUE))
+})
+
+test_that("bundle execution defers known mechanical failures", {
+  fx <- bundle_attempt_fixture()
+  fx$state$selected_revisions$prog_a$checks <- list(pass = FALSE, errors = "unsupported helper argument")
+  attempt <- run_bundle_attempt(fx$state)
+  expect_false(attempt$passed)
+  expect_true(attempt$deferred)
+  expect_identical(attempt$reason, "mechanical_checks_failed")
+  expect_length(attempt$executed_component_ids, 0L)
+  expect_identical(attempt$condition$component_id, "prog_a")
+})
+
+test_that("smoke and bundle retain a structured failure for translated BY type changes", {
+  base <- withr::local_tempdir()
+  input_dir <- file.path(base, "inputs")
+  dir.create(input_dir)
+  saveRDS(data.frame(id = 1), file.path(input_dir, "a.rds"))
+  saveRDS(data.frame(id = 1), file.path(input_dir, "b.rds"))
+  writeLines("data work.out; merge raw.a raw.b; by id; run;", file.path(base, "merge.sas"))
+  config <- list(libraries = list(raw = list(path = input_dir, engine = "rds")))
+  project <- sas_project(base, config = config)
+  state <- new_migration_state(project, out_dir = file.path(base, "migration"), config = config)
+  state$selected_revisions <- list(merge = list(component_id = "merge", revision_id = "r1",
+    staged_file = "merge.R", r_code = paste(
+      "out <- lib_read('raw', 'a')",
+      "out$id <- as.character(out$id)",
+      "lib_write(out, 'work', 'out')", sep = "\n")))
+  plan <- build_program_smoke_plan(state$graph, "merge", state$selected_revisions)
+  plan$population_specs <- source_population_specs(project, "merge")
+  smoke <- run_program_smoke(plan, state$runtime, withr::local_tempdir())
+  bundle <- run_bundle_attempt(state)
+  for (result in list(smoke, bundle)) {
+    expect_false(result$passed)
+    expect_true("sas2r_population_mismatch" %in% result$condition$class)
+    expect_match(result$condition$message, "by_output_keys_incompatible_types")
+    expect_identical(result$population_checks$merge[[1]]$status, "failed")
+    expect_identical(result$population_checks$merge[[1]]$reason, "by_output_keys_incompatible_types")
+    expect_identical(result$condition$population_check$status, "failed")
+    expect_identical(bounded_agent_diagnostics(result)$source_location, NA_character_)
+  }
+})

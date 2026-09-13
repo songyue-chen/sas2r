@@ -26,16 +26,28 @@
 #'
 #' @param a,b Vectors to compare; recycled to a common length.
 #' @param op `NULL` for a three-way comparison, or one of `"=="`, `"!="`,
-#'   `"<"`, `"<="`, `">"`, `">="`.
+#'   `"<"`, `"<="`, `">"`, `">="`. Translate SAS equality (`=` or `EQ`) as
+#'   `op = "=="`; `op = "="` is unsupported. Invalid operators raise an error.
 #' @return With `op` `NULL`, an integer vector of `-1`, `0`, `1` (missing
 #'   equals missing). With an operator, the logical SAS would produce -- never
 #'   `NA`.
+#' @details
+#' Supply an explicit operator in Boolean conditions. Omitting `op` returns
+#' an ordering result: equality is `0`, which R treats as false. To test
+#' equality, use `chr_cmp(a, b, op = "==")`.
 #' @family runtime helpers
 #' @examples
 #' chr_cmp(c("A", NA, "B  "), c("A", NA, "B"))
+#' chr_cmp(c("A", NA, "B  "), c("A", NA, "B"), op = "==")
+#' chr_cmp(c(61, 70, NA), c(61, 60, NA), op = "==")
 #' chr_cmp(c(1, NA, 3), c(1, 2, 2), op = "<")
 #' @export
 chr_cmp <- function(a, b, op = NULL) {
+  if (!is.null(op) && (!is.character(op) || length(op) != 1L || is.na(op) ||
+      !op %in% c("==", "!=", "<", "<=", ">", ">="))) {
+    stop('chr_cmp: op must be NULL or one of "==", "!=", "<", "<=", ">", ">=". Use op = "==" for equality.',
+         call. = FALSE)
+  }
   if (missing(op) || is.null(op)) {
     if (is.character(a) || is.character(b)) {
       strip <- function(x) sub("\\s+$", "", x)

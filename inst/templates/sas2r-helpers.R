@@ -24,6 +24,11 @@
 }
 
 chr_cmp <- function(a, b, op = NULL) {
+  if (!is.null(op) && (!is.character(op) || length(op) != 1L || is.na(op) ||
+      !op %in% c("==", "!=", "<", "<=", ">", ">="))) {
+    stop('chr_cmp: op must be NULL or one of "==", "!=", "<", "<=", ">", ">=". Use op = "==" for equality.',
+         call. = FALSE)
+  }
   if (missing(op) || is.null(op)) {
     if (is.character(a) || is.character(b)) {
       strip <- function(x) sub("\\s+$", "", x)

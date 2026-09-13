@@ -154,7 +154,7 @@ normalize_migration_state <- function(
 #' 1. Generate/activate revision -> record "generated:<rev_id>"
 #' 2. Mechanical checks -> record "mechanical_pass:<rev_id>" or "mechanical_fail:<rev_id>"
 #' 3. Independent review -> record "reviewed:<rev_id>" or "review_unavailable:<rev_id>"
-#' 4. Meaningful smoke / defer -> record "smoke_passed:<rev_id>", "smoke_failed:<rev_id>", or "smoke_deferred:<rev_id>"
+#' 4. Smoke -> record "smoke_passed:<rev_id>", "smoke_failed:<rev_id>", "smoke_blocked:<rev_id>", or "smoke_deferred:<rev_id>"
 #' 5. Combine evidence -> fix if material and budget/rounds remain -> record "fixed:<next_rev_id>"
 #' 6. Repeat checks/review/smoke after patch
 #'
@@ -249,6 +249,7 @@ process_program_component <- function(
 
   # 2. Repair loop
   round <- 0L
+  prior_candidate <- NULL
   repeat {
     rev <- state$selected_revisions[[component_id]]
     rev_id <- rev$revision_id %||% paste0("r", round + 1L)
@@ -256,6 +257,8 @@ process_program_component <- function(
     # Step A: Mechanical checks
     registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
     checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p)
+    checks$check_id <- paste0("check_", substr(migration_hash(list(
+      component_id, rev_id, rev$r_code, checks)), 1L, 16L))
 
     if (isTRUE(checks$pass)) {
       state$events <- c(state$events, paste0("mechanical_pass:", rev_id))
@@ -312,12 +315,18 @@ process_program_component <- function(
     signal_immediate_coordinator_event(
       if (identical(review$verdict, "review_unavailable")) "review_unavailable"
       else if (reuse_review) "review_reused" else "program_reviewed",
-      component_id, rev_id, reason = review$reason
+      component_id, rev_id, reason = review$reason %||% review$verdict
     )
 
     # Step C: Meaningful smoke / defer
     smoke_res <- NULL
-    if (!isTRUE(execute)) {
+    if (!isTRUE(checks$pass)) {
+      smoke_res <- list(passed = FALSE, deferred = TRUE, reason = "mechanical_checks_failed")
+      state$histories[[component_id]] <- record_runtime_deferred(
+        state$histories[[component_id]], reason = smoke_res$reason)
+      state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
+      signal_program_smoke_event("program_smoke_deferred", component_id, reason = smoke_res$reason)
+    } else if (!isTRUE(execute)) {
       state$histories[[component_id]] <- record_runtime_deferred(
         state$histories[[component_id]],
         reason = "execute_disabled"
@@ -332,6 +341,8 @@ process_program_component <- function(
         execute = TRUE
       )
 
+      plan$population_specs <- source_population_specs(
+        state$project, c(plan$dependency_prefix, component_id))
       if (identical(plan$status, "deferred")) {
         state$histories[[component_id]] <- record_runtime_deferred(
           state$histories[[component_id]],
@@ -340,8 +351,8 @@ process_program_component <- function(
         state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
         smoke_res <- list(passed = FALSE, deferred = TRUE, reason = plan$reason)
       } else if (identical(plan$status, "runnable")) {
-        attempt_dir <- if (!is.null(state$attempt) && !is.null(state$attempt$attempt_dir)) {
-          state$attempt$attempt_dir
+        attempt_dir <- if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
+          state[["attempt"]]$attempt_dir
         } else if (!is.null(state$paths) && !is.null(state$paths$attempts)) {
           file.path(state$paths$attempts, "smoke_attempt_001")
         } else {
@@ -367,24 +378,44 @@ process_program_component <- function(
             )
           }
         } else {
-          state$events <- c(state$events, paste0("smoke_failed:", rev_id))
-          active_idx <- which(vapply(state$histories[[component_id]]$revisions, function(r) {
-            identical(r$revision_id, state$histories[[component_id]]$active_revision_id)
-          }, logical(1)))
-          if (length(active_idx)) {
-            state$histories[[component_id]]$revisions[[active_idx]]$blockers <- unique(c(
-              state$histories[[component_id]]$revisions[[active_idx]]$blockers,
-              "smoke_failed"
-            ))
-          }
+          event <- if (!is.null(smoke_res$blocked_by)) "smoke_blocked:" else "smoke_failed:"
+          state$events <- c(state$events, paste0(event, rev_id))
         }
       }
     }
 
+    rev$smoke <- smoke_res
+    state$selected_revisions[[component_id]] <- rev
+    # Candidates are checked, reviewed, and executed before replacing the
+    # previous selection. Keep both histories, including unresolved findings.
+    if (!is.null(prior_candidate)) {
+      regressions <- program_repair_regressions(prior_candidate, rev, review)
+      if (length(regressions)) {
+        history <- state$histories[[component_id]]
+        rejected <- history$active_revision_id
+        history$active_revision_id <- prior_candidate$active_revision_id
+        idx <- match(history$active_revision_id, vapply(history$revisions, `[[`, character(1), "revision_id"))
+        history$revisions[[idx]]$events <- c(history$revisions[[idx]]$events, list(list(
+          type = "repair_rejected", candidate_revision_id = rejected,
+          reasons = regressions
+        )))
+        state$histories[[component_id]] <- history
+        state$selected_revisions[[component_id]] <- prior_candidate$revision
+        state$events <- c(state$events, paste0("repair_rejected:", rev_id))
+        signal_immediate_coordinator_event("repair_rejected", component_id,
+          prior_candidate$revision$revision_id, reason = paste(regressions, collapse = "; "))
+        break
+      }
+      prior_candidate <- NULL
+    }
+
+    # An upstream crash is evidence against that dependency, not this program.
+    if (!is.null(smoke_res$blocked_by)) break
+
     # Step D: Check if repair is required
     has_review_issue <- identical(review$verdict, "repair_required")
     has_smoke_failure <- !is.null(smoke_res) && !isTRUE(smoke_res$passed) && !isTRUE(smoke_res$deferred)
-    needs_repair <- (has_review_issue || has_smoke_failure)
+    needs_repair <- (has_review_issue || has_smoke_failure || !isTRUE(checks$pass))
 
     if (!needs_repair) {
       # No issues found, loop complete
@@ -411,6 +442,7 @@ process_program_component <- function(
         revision = rev,
         review = if (has_review_issue) review else NULL,
         smoke = if (has_smoke_failure) smoke_res else NULL,
+        checks = if (!isTRUE(checks$pass)) checks else NULL,
         mode = "program",
         llm = state$fixer_llm,
         usage = state$usage_budget,
@@ -448,6 +480,8 @@ process_program_component <- function(
     fixed_rev$binding <- new_b
     if (!is.null(fixed_rev$contract)) fixed_rev$contract$binding <- new_b
 
+    prior_candidate <- list(revision = rev, verdict = review$verdict,
+      active_revision_id = state$histories[[component_id]]$active_revision_id)
     state$histories[[component_id]] <- activate_component_binding(state$histories[[component_id]], new_b)
     state$selected_revisions[[component_id]] <- fixed_rev
     round <- next_round
@@ -761,7 +795,7 @@ run_bundle_pipeline <- function(
       round = round,
       passed = isTRUE(attempt_rec$passed),
       deferred = isTRUE(attempt_rec$deferred),
-      reason = attempt_rec$reason
+      reason = attempt_rec$reason %||% attempt_rec$condition$message
     )
 
     # 2. Assess all outputs
@@ -817,6 +851,11 @@ run_bundle_pipeline <- function(
         round = round,
         reason = "regressive_attempt"
       )
+      if (is.null(selected_attempt) && file.exists(state$paths$selected)) {
+        previous <- jsonlite::read_json(state$paths$selected, simplifyVector = FALSE)
+        signal_bundle_event("bundle_previous_selection_retained", round = round,
+          reason = paste0(previous$attempt_id, " at ", previous$attempt_dir))
+      }
     }
 
     # Record attempt in summary
@@ -872,13 +911,10 @@ run_bundle_pipeline <- function(
 
     primary_rev <- state$selected_revisions[[primary_cid]]
 
-    bundle_ev <- list(
-      bundle_id = attempt_rec$attempt_id,
-      execution_id = attempt_rec$attempt_id,
-      failing_outputs = vapply(packet$failed_targets, function(t) t$target_key, character(1)),
-      error = attempt_rec$condition$message %||% packet$bounded_diagnostics$condition_message %||% "(execution error)",
-      log = packet$bounded_diagnostics$log_excerpt %||% "(none)"
-    )
+    bundle_ev <- attempt_rec
+    bundle_ev$bundle_id <- attempt_rec$attempt_id
+    bundle_ev$execution_id <- attempt_rec$attempt_id
+    bundle_ev$failing_outputs <- vapply(packet$failed_targets, function(t) t$target_key, character(1))
 
     # Bounded comparison reports: the sanctioned, capped surface that may
     # carry example differences. Each failed dataset target with both files
@@ -1131,6 +1167,8 @@ run_bundle_pipeline <- function(
     status_reason = status_reason,
     attempts = attempts_df,
     selected_attempt = selected_attempt,
+    attempt = latest_attempt,
+    current_run_status = latest_status,
     assessment = selected_assessment %||% latest_assessment,
     repairs = repairs,
     # Merge onto what the program pipeline recorded (e.g. agent_degraded)
@@ -1154,4 +1192,22 @@ run_bundle_pipeline <- function(
   )
 
   structure(res, class = c("sas2r_bundle_pipeline_result", "sas2r_migration_state", "list"))
+}
+
+# Evidence dimensions are compared individually: a clean review must not hide
+# a new crash, failed mechanical check, or lost semantic-check coverage.
+program_repair_regressions <- function(previous, candidate, review) {
+  old <- previous$revision
+  reasons <- character()
+  if (isTRUE(old$checks$pass) && !isTRUE(candidate$checks$pass)) reasons <- c(reasons, "mechanical checks regressed")
+  if (isTRUE(old$smoke$passed) && !isTRUE(candidate$smoke$passed)) reasons <- c(reasons, "execution regressed")
+  if (identical(previous$verdict, "reviewed_no_material_finding") &&
+      !identical(review$verdict, "reviewed_no_material_finding")) reasons <- c(reasons, "review regressed")
+  passed_checks <- function(smoke) {
+    records <- unlist(smoke$population_checks, recursive = FALSE)
+    vapply(Filter(function(x) identical(x$status, "passed"), records),
+           function(x) paste(x$unit_id, paste(x$outputs, collapse = ","), sep = ":"), character(1))
+  }
+  if (length(setdiff(passed_checks(old$smoke), passed_checks(candidate$smoke)))) reasons <- c(reasons, "source population coverage regressed")
+  reasons
 }

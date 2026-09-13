@@ -115,7 +115,7 @@ signal_immediate_coordinator_event <- function(
 #' @param status,tool_calls,reason How the agent ended, for `agent_finished`.
 #' @noRd
 signal_agent_event <- function(event, agent, context = list(), status = NULL,
-                               tool_calls = NULL, reason = NULL) {
+                               tool_calls = NULL, reason = NULL, verdict = NULL) {
   condition <- structure(
     class = c(as.character(event), "sas2r_agent_event", "sas2r_progress", "condition"),
     list(
@@ -131,6 +131,7 @@ signal_agent_event <- function(event, agent, context = list(), status = NULL,
       round = context$round,
       status = status,
       tool_calls = tool_calls,
+      verdict = verdict,
       reason = reason
     )
   )
@@ -306,7 +307,7 @@ format_sas2r_progress <- function(progress) {
         calls <- if (!is.null(calls) && length(calls) == 1L && !is.na(calls) && calls > 0)
           sprintf(", %d tool call%s", as.integer(calls), if (calls == 1) "" else "s") else ""
         sprintf("%s  %s: %s%s%s", progress$agent, target,
-                progress$status %||% "finished", calls, progress_reason(progress$reason))
+                if (!is.null(progress$verdict)) paste0("review completed: ", progress$verdict) else progress$status %||% "finished", calls, progress_reason(progress$reason))
       }
     },
     coordinator = {
@@ -316,7 +317,8 @@ format_sas2r_progress <- function(progress) {
         agent_degraded = paste0("agent degraded", progress_reason(progress$reason)),
         mechanical_pass = "mechanical checks passed",
         mechanical_fail = paste0("mechanical checks failed", progress_reason(progress$reason)),
-        program_reviewed = "reviewed",
+        program_reviewed = paste0("review completed", progress_reason(progress$reason)),
+        repair_rejected = paste0("repair rejected; retained prior revision", progress_reason(progress$reason)),
         review_unavailable = paste0("review unavailable", progress_reason(progress$reason)),
         review_reused = "saved review reused",
         program_fixed = "repaired",
@@ -343,9 +345,10 @@ format_sas2r_progress <- function(progress) {
         bundle_attempt_started = sprintf("%s: running %s", round, attempt),
         bundle_attempt_completed = sprintf("%s: %s %s", round, attempt,
                                            if (isTRUE(progress$deferred)) paste0("deferred", progress_reason(progress$reason))
-                                           else if (isTRUE(progress$passed)) "ran to completion" else "failed"),
+                                           else if (isTRUE(progress$passed)) "ran to completion" else paste0("failed", progress_reason(progress$reason))),
         bundle_gate_evaluated = sprintf("%s: %s assessed -- %s", round, attempt,
                                         progress$status %||% "unknown"),
+        bundle_previous_selection_retained = paste0("current run blocked; previous selected bundle retained", progress_reason(progress$reason)),
         bundle_attempt_selected = sprintf("%s: %s selected", round, attempt),
         bundle_early_stop = sprintf("%s: stopping early%s", round, progress_reason(progress$reason)),
         bundle_fixer_invoked = sprintf("%s: fixer invoked for %s", round, component),

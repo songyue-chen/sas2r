@@ -264,7 +264,7 @@ test_that("public mechanical retry receives failed code and package-loading guid
   expect_identical(report$component_evidence[[1L]]$smoke_status, "passed")
 })
 
-test_that("failed mechanical checks remain visible even when smoke and review pass", {
+test_that("failed mechanical checks prevent execution even when semantic review passes", {
   fx <- review_public_fixture()
   bad_code <- paste("library(dplyr)", review_public_code, sep = "\n")
   unavailable <- valid_program_review_response(verdict = "review_unavailable",
@@ -274,17 +274,18 @@ test_that("failed mechanical checks remain visible even when smoke and review pa
     events <- list()
     result <- withCallingHandlers(
       sas_translate(fx$source, config = fx$config, llm = adapter$llm,
-                    outputs = list(datasets = "work.out")),
+                    outputs = list(datasets = "work.out"),
+                    max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L),
       sas2r_progress = function(e) events[[length(events) + 1L]] <<- e
     )
     expect_identical(adapter$calls$n, 3L)
-    expect_identical(result$status, "needs_review")
-    expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+    expect_identical(result$status, "blocked")
+    expect_false(file.exists(file.path(result$outputs_dir, "work/out.rds")))
     text <- unlist(lapply(events, format_sas2r_progress))
     expect_true(any(grepl("mechanical checks failed.*banned_function.*library", text)))
     report <- jsonlite::read_json(result$report_json_path)
     component <- report$component_evidence[[1L]]
-    expect_identical(component$smoke_status, "passed")
+    expect_identical(component$smoke_status, "deferred (mechanical_checks_failed)")
     expect_false(component$mechanical_checks$pass)
     expect_true("mechanical_checks_failed" %in% unlist(component$blockers))
     if (identical(component$review_status, "review_unavailable")) {

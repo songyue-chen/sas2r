@@ -203,15 +203,42 @@ produce `validated`; it does not mean all three were compared.
 
 | Log message | What it establishes |
 | --- | --- |
-| `reviewer ...: ok, 3 tool calls` | The reviewer agent call completed successfully. This is not its semantic verdict. The tool count describes tool use, not findings. |
+| `reviewer ...: review completed: repair_required, 3 tool calls` | The request completed and the review found a material issue. The tool count describes tool use, not findings. Older logs use `ok` for request completion alone. |
 | `coordinator ...: mechanical checks passed` | Generated code passed syntax and mechanical contract checks. |
-| `coordinator ...: reviewed` | A review result was recorded. Inspect its verdict and findings; it can still require repair. |
+| `coordinator ...: review completed -- reviewed_no_material_finding` | The review found no material issue. Execution and reference comparison remain separate checks. |
 | `coordinator ...: review unavailable` | No usable review was obtained. The reason is recorded, and smoke execution may continue. |
-| `smoke ...: passed` | The program executed in its smoke attempt. This does not establish agreement with SAS reference data. |
+| `smoke ...: passed` | The program executed and any applicable source population checks passed. Inspect unverified checks separately; this does not establish agreement with SAS reference data. |
+| `smoke ...: failed -- blocked by upstream: ...` | Execution failed in the named dependency. The consumer is recorded as blocked and is not sent to the fixer for that upstream crash. |
 | `bundle ... assessed -- migration_ready` | The selected bundle met the requirements described above. Read reference coverage separately. |
 
 Review findings can trigger a fixer even after mechanical checks and smoke tests
-pass. A repaired revision is checked and reviewed again. The elapsed-time and
+pass. A repaired revision is checked, reviewed, and executed before selection.
+A repair that loses passing mechanical, execution, review, or source population
+evidence is rejected; the previous revision and its unresolved findings remain.
+Errors include the underlying R condition and saved execution logs. If a current
+run is blocked while an older selected bundle remains on disk, the progress log
+identifies that older selection explicitly.
+
+Translator, reviewer, and fixer receive runtime signatures, argument rules,
+return values, limitations, and examples directly from the package's helper
+reference. Mechanical checks reject invented helper arguments before execution.
+For equality, use `chr_cmp(a, b, op = "==")`; `op = "="` raises an error.
+Omitting `op` returns an ordering result (`-1`, `0`, `1`), so an explicit operator
+is required when using the result as a Boolean condition.
+
+Source population checks use parsed SAS and local inputs, independently of the
+agent's declared contract. Supported checks cover row counts for single-input
+SET steps without row filters and BY-group counts for two-input MERGE steps with
+simple IN filters. For example, a matched subject with three events must retain
+three records. Filters, unsupported step bodies, repeated member writes, source library
+assignments within a program, and unavailable intermediates remain `unverified`; see `source_population` in the
+Markdown report and `source_population_checks` in component JSON evidence.
+Incompatible BY types between source inputs leave the population check
+`unverified` with a diagnostic. When the source keys are compatible but the
+translation changes the output to an incompatible type, the check fails.
+These checks cover population behavior, not all derived values or SAS parity.
+
+The elapsed-time and
 usage summary distinguishes known spend from unknown-cost calls: `$0.0000`
 known spend with unknown-cost calls does not mean the run was free.
 

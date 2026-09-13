@@ -128,7 +128,8 @@ write_migration_report <- function(state) {
     smoke_status <- if (!is.null(curr$runtime_deferred)) {
       paste0("deferred (", curr$runtime_deferred, ")")
     } else if (length(smoke_events)) {
-      smoke_events[[length(smoke_events)]]$status
+      last_smoke <- smoke_events[[length(smoke_events)]]
+      if (!is.null(last_smoke$blocked_by)) paste0("blocked by ", last_smoke$blocked_by) else last_smoke$status
     } else if ("smoke_failed" %in% curr$blockers) {
       "failed"
     } else if (level %in% c("runtime_verified", "output_verified", "reference_validated")) {
@@ -136,6 +137,9 @@ write_migration_report <- function(state) {
     } else {
       "unexecuted"
     }
+    population <- state$selected_revisions[[cid]]$smoke$population_checks[[cid]] %||% list()
+    population_status <- if (!length(population)) "unverified" else paste(
+      vapply(population, function(x) paste0(x$status, " (", x$reason, ")"), character(1)), collapse = "; ")
     blockers <- paste(curr$blockers %||% character(), collapse = ", ")
     if (!nzchar(blockers)) blockers <- "(none)"
 
@@ -145,6 +149,7 @@ write_migration_report <- function(state) {
       review_status = rev_status,
       smoke_status = smoke_status,
       mechanical_checks = state$selected_revisions[[cid]]$checks,
+      source_population_checks = state$selected_revisions[[cid]]$smoke$population_checks,
       blockers = curr$blockers %||% character(),
       revisions = h$revisions %||% list()
     )
@@ -154,7 +159,8 @@ write_migration_report <- function(state) {
       evidence_level = level,
       review_status = rev_status,
       smoke_status = smoke_status,
-      blockers = blockers
+      blockers = blockers,
+      source_population = population_status
     )
   }
 
@@ -164,6 +170,7 @@ write_migration_report <- function(state) {
       level = vapply(comp_table_rows, `[[`, character(1), "evidence_level"),
       review = vapply(comp_table_rows, `[[`, character(1), "review_status"),
       smoke = vapply(comp_table_rows, `[[`, character(1), "smoke_status"),
+      source_population = vapply(comp_table_rows, `[[`, character(1), "source_population"),
       blockers = vapply(comp_table_rows, `[[`, character(1), "blockers")
     )
   } else {
@@ -203,6 +210,8 @@ write_migration_report <- function(state) {
     run_id = run_id,
     status = status,
     status_reason = status_reason,
+    current_run_status = state$current_run_status %||% status,
+    selected_attempt_id = state$selected_attempt$attempt_id,
     selected_paths = list(
       bundle_dir = bundle_dir,
       outputs_dir = outputs_dir,
@@ -250,6 +259,7 @@ write_migration_report <- function(state) {
     "",
     paste0("- **Status:** `", status, "`"),
     if (!is.null(status_reason) && nzchar(status_reason)) paste0("- **Status Reason:** ", status_reason) else NULL,
+    paste0("- **Current run status:** `", state$current_run_status %||% status, "`"),
     paste0("- **Run ID:** `", run_id, "`"),
     paste0("- **Timestamp:** `", report_payload$created_at, "`"),
     "",
