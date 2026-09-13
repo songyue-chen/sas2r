@@ -86,6 +86,19 @@ test_that("independent failures are diagnosed in isolation and repaired before o
   prompt <- paste(vapply(requests[[2L]]$messages, `[[`, character(1), "content"), collapse = "\n")
   expect_match(prompt, "translation fault p03", fixed = TRUE)
   expect_match(prompt, first$executions$p03$execution_id, fixed = TRUE)
+  bundle_dir <- normalizePath(file.path(result$paths$attempts, "bundle_attempt_001"), winslash = "/")
+  for (record in first$executions) {
+    # The current failed bundle owns these diagnostics; the earlier program
+    # smoke attempt must not collect the logs for every subsequent bundle.
+    expect_identical(dirname(dirname(record$attempt_dir)), bundle_dir)
+    expect_identical(normalizePath(dirname(record$record_path), winslash = "/"),
+                     file.path(bundle_dir, "logs"))
+  }
+  prune_rejected_attempt_outputs(result$paths)
+  for (record in first$executions) {
+    expect_false(dir.exists(record$attempt_dir))
+    expect_true(all(file.exists(c(record$record_path, record$stdout_path, record$stderr_path))))
+  }
 })
 
 test_that("independent reference mismatches are repaired together at their writers", {
