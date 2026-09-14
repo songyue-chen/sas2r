@@ -166,7 +166,7 @@ fix_program_revision <- function(
   routed <- route_agent_skills(routing_ctx, catalog = catalog)
   rendered_skills <- render_agent_skills(routed)
 
-  specs <- load_agent_specs(project_dir = project_dir)
+  specs <- load_agent_specs(project_dir = project_dir %||% project$project_dir)
   spec <- as.list(specs$fixer)
   spec$output_schema <- "program_fix_v1"
 
@@ -189,8 +189,11 @@ fix_program_revision <- function(
     staged_r = r_code,
     evidence = evidence_text,
     skills = paste(rendered_skills,
+      render_component_libraries(project, component_id),
       "Declared component interface (preserve names and defaults):",
-      jsonlite::toJSON(contract$macro_contract %||% list(), auto_unbox = TRUE),
+      render_macro_interface(contract$macro_contract),
+      "Upstream macro interfaces (loaded by autoexec.R):",
+      render_dependency_interfaces(project, component_id),
       "Resolved project functions (call by name; do not redefine):",
       paste(contract$dependency_functions %||% character(), collapse = ", "), sep = "\n"),
     allowlist = config$allowlist %||% "dplyr, tidyr, haven"

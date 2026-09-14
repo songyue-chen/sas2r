@@ -185,7 +185,16 @@ The export includes `run.R`, `run-order.json`, `outputs-manifest.json`, and a
 README describing its inputs and R dependencies. From the exported folder, run
 `Rscript run.R`, or use `source("run.R", chdir = TRUE)` in R. If a source program
 already occupies `run.R`, `run-order.json` identifies the renamed launcher.
-Input data is not copied: update `autoexec.R` and any explicit source LIBNAME
+Relative paths inside translated LIBNAME calls resolve against
+`.sas2r_execution_root` in `autoexec.R`, initially the source project directory.
+Relative paths in the registry itself remain relative to the bundle folder.
+Rebinding a known physical library retains its separate write folder, so later
+programs can read earlier generated datasets. New library assignments receive
+separate output folders; an explicit `write_path` still takes effect. Missing
+input errors list the paths searched and execution root.
+
+Input data is not copied: update `.sas2r_execution_root`, the registry in
+`autoexec.R`, and any explicit source LIBNAME
 paths if those inputs move. A manual rerun does not update the exported report.
 
 Bundle repair defaults to **two fixer calls per component**, in addition to the
@@ -204,7 +213,7 @@ fresh run before further repairs. Diagnostic outputs never replace the complete
 bundle acceptance check, and lost execution or output coverage rejects a repair.
 Repair counts, deferred components, and diagnostic records appear in the report.
 
-Each translator, reviewer, or fixer invocation has a **15-tool-call shared
+Each translator, reviewer, or fixer invocation has a **30-tool-call shared
 allowance** by default. Individual tools inherit that allowance, so several
 useful rule or macro lookups do not exhaust a separate small quota. A project
 can adjust a role in `.sas2r/agents/translator.yml` (likewise `reviewer.yml` and
@@ -212,15 +221,24 @@ can adjust a role in `.sas2r/agents/translator.yml` (likewise `reviewer.yml` and
 
 <!-- sas2r-example: agent translator -->
 ```yaml
-tool_call_limit: 30
+tool_call_limit: 45
 tools:
   search_skills: { max_calls: 6 } # optional narrower quota for this tool
 ```
 
 The shared ceiling and any explicit tool quotas remain enforced; they reset on
 the next agent invocation. The run-wide `usage_limits$max_tool_calls` is separate.
-At tool exhaustion the runner requests a final answer with the evidence already
-collected; an incomplete answer still cannot pass validation.
+The model sees its remaining allowance. At exhaustion, native ellmer gathering
+stops and the runner requests a final answer with tools closed and the evidence
+already collected. Final-answer retries remain bounded; an incomplete answer
+still cannot pass validation. Expected tool refusals and invalid arguments return
+feedback, while unexpected tool errors remain visible. Completing an agent
+request does not mean that every requested lookup succeeded.
+
+Before generation, the console shows loaded R, sas2r and ellmer versions and the
+effective agent and repair limits. The same information is saved in the run report
+and usage ledger. Tool records include component, revision, request and invocation
+identifiers; completion messages identify denied or failed lookups.
 
 ### The four statuses
 

@@ -59,6 +59,7 @@ build_skill_context <- function(agent_name, project, unit_id, comparison_reasons
     unlist(strsplit(unit$flags %||% "", "[, ]+"))
   } else character(0)
   flags <- flags[nzchar(flags)]
+  flags <- unique(c(flags, skill_flags_from_sas(unit$text)))
   if (is.list(comparison_reasons)) comparison_reasons <- unlist(comparison_reasons)
   comparison_reasons <- as.character(comparison_reasons)
   comparison_reasons <- comparison_reasons[!is.na(comparison_reasons) & nzchar(comparison_reasons)]
@@ -351,6 +352,10 @@ review_program_revision <- function(
 
   context_packet <- paste(c(
     "Component:", component_id,
+    render_component_libraries(context$project, component_id),
+    "Source-owned macro interface:", render_macro_interface(contract$macro_contract),
+    "Upstream macro interfaces (loaded by autoexec.R):",
+    render_dependency_interfaces(context$project, component_id),
     "Resolved interfaces:", if_txt,
     "Helper guarantees:", helpers_txt,
     "Unresolved graph facts:", unres_txt,
@@ -376,7 +381,7 @@ review_program_revision <- function(
   routed <- route_agent_skills(routing_ctx, catalog = catalog)
   rendered_skills <- render_agent_skills(routed)
 
-  specs <- load_agent_specs(project_dir = project_dir)
+  specs <- load_agent_specs(project_dir = project_dir %||% context$project$project_dir)
   spec <- as.list(specs$reviewer)
   spec$output_schema <- "program_review_v1"
 

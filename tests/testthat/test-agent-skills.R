@@ -2,7 +2,7 @@ test_that("installed package skills validate with stable hashes", {
   skills <- sas2r:::agent_skill_catalog()
   expect_setequal(names(skills),
                   c("sas-missing-sort-semantics",
-                    "sas-dataset-row-alignment"))
+                    "sas-dataset-row-alignment", "sas-statistical-defaults"))
   expect_true(all(vapply(skills, function(x)
     grepl("^[a-f0-9]{64}$", x$content_hash), logical(1))))
   expect_true(all(vapply(skills, function(x)

@@ -214,6 +214,56 @@ macro_contract_for_unit <- function(project, unit_id) {
   parse_macro_contract(matches$name[[1L]], matches$params[[1L]])
 }
 
+#' The source-owned interface used by generation and the behavioral contract
+#' @noRd
+component_macro_contract <- function(project, graph, component_id) {
+  nodes <- graph$nodes
+  uids <- nodes$original_index[nodes$component_id == component_id]
+  defs <- project$macros$defs
+  matches <- defs[defs$unit_id %in% uids, , drop = FALSE]
+  if (is.null(matches) || nrow(matches) != 1L) return(NULL)
+  contract <- parse_macro_contract(matches$name[[1L]], matches$params[[1L]])
+  if (any(nodes$type[nodes$component_id == component_id] == "macro")) {
+    contract$standalone <- TRUE
+  }
+  contract
+}
+
+#' Render known literals without turning unresolved SAS expressions into defaults
+#' @noRd
+render_macro_interface <- function(contract) {
+  if (is.null(contract)) return("(no standalone macro interface)")
+  parameters <- contract$parameters
+  args <- vapply(seq_len(nrow(parameters)), function(i) {
+    name <- deparse(as.name(parameters$name[i]))
+    if (parameters$default_status[i] != "known") return(name)
+    paste0(name, " = ", paste(deparse(parameters$r_default[[i]]), collapse = ""))
+  }, character(1))
+  unresolved <- which(parameters$default_status != "known")
+  paste(c(
+    paste0(deparse(as.name(contract$name)), " <- function(", paste(args, collapse = ", "), ")"),
+    "Preserve the function name, argument order and known literal defaults exactly, including empty strings.",
+    if (length(unresolved)) c(
+      "Unresolved defaults (bare arguments in the header are placeholders, not a claimed SAS default):",
+      paste0(parameters$name[unresolved], ": ", parameters$sas_default[unresolved]),
+      "Do not invent literal defaults; keep these expressions unresolved and report their required context."
+    )
+  ), collapse = "\n")
+}
+
+#' Source interfaces for the dependency closure, shared by reviewer and fixer
+#' @noRd
+render_dependency_interfaces <- function(project, component_id) {
+  graph <- project$graph
+  if (is.null(graph)) return("(none)")
+  contracts <- lapply(dependency_closure(graph, component_id), function(cid) {
+    component_macro_contract(project, graph, cid)
+  })
+  contracts <- Filter(Negate(is.null), contracts)
+  if (!length(contracts)) return("(none)")
+  paste(vapply(contracts, render_macro_interface, character(1)), collapse = "\n\n")
+}
+
 #' Normalize one R AST literal to the same key used by known macro defaults
 #' @noRd
 r_ast_default_key <- function(expr) {

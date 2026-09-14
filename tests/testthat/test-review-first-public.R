@@ -264,7 +264,7 @@ test_that("public mechanical retry receives failed code and package-loading guid
   expect_identical(report$component_evidence[[1L]]$smoke_status, "passed")
 })
 
-test_that("failed mechanical checks prevent execution even when semantic review passes", {
+test_that("failed mechanical checks prevent execution and skip semantic review", {
   fx <- review_public_fixture()
   bad_code <- paste("library(dplyr)", review_public_code, sep = "\n")
   unavailable <- valid_program_review_response(verdict = "review_unavailable",
@@ -278,7 +278,7 @@ test_that("failed mechanical checks prevent execution even when semantic review 
                     max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L),
       sas2r_progress = function(e) events[[length(events) + 1L]] <<- e
     )
-    expect_identical(adapter$calls$n, 3L)
+    expect_identical(adapter$calls$n, 2L)
     expect_identical(result$status, "blocked")
     expect_false(file.exists(file.path(result$outputs_dir, "work/out.rds")))
     text <- unlist(lapply(events, format_sas2r_progress))
@@ -289,7 +289,7 @@ test_that("failed mechanical checks prevent execution even when semantic review 
     expect_false(component$mechanical_checks$pass)
     expect_true("mechanical_checks_failed" %in% unlist(component$blockers))
     if (identical(component$review_status, "review_unavailable")) {
-      expect_true(any(grepl("review unavailable.*sas_source", text)))
+      expect_true(any(grepl("review unavailable.*mechanical_checks_failed", text)))
       expect_equal(report$coverage$components_independently_reviewed, 0)
     }
   }

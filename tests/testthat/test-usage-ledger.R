@@ -1376,9 +1376,9 @@ test_that("invalid model arguments never persist source bodies", {
   ), state)
   leaked <- "%macro leaked_body; %put private; %mend;"
 
-  expect_error(
-    bound$get_macro_source$call(list(name = "helper", source = leaked)),
-    class = "sas2r_tool_arguments_error"
+  expect_identical(
+    bound$get_macro_source$call(list(name = "helper", source = leaked))$error,
+    "invalid_tool_arguments"
   )
 
   serialized <- jsonlite::toJSON(budget$records, auto_unbox = TRUE)

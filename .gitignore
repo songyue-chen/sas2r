@@ -14,16 +14,8 @@ scratch/
 phuse-validation/
 AGENTS.md
 
-# docs/: publish user guides and the established runtime decision records.
-# Other plans, specs, reviews, and decision notes stay local.
-docs/*
-!docs/llm-providers.md
-!docs/migration-evidence.md
-!docs/output-evidence.md
-!docs/clinical-qc-preflight.md
-!docs/decisions/
-docs/decisions/*
-!docs/decisions/0003-runtime-helpers-distribution.md
-!docs/decisions/0004-autoexec.md
+# Local reviews, plans, validation notes, and design decisions.
+docs/local/
+docs/decisions/
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds

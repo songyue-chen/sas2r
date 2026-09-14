@@ -169,6 +169,10 @@ class ReplayHandler(BaseHTTPRequestHandler):
                     },
                 }],
             }
+            if body.get("model") == "offline-batch-model":
+                message["tool_calls"].append({
+                    **message["tool_calls"][0], "id": "real_auto_2"
+                })
             finish_reason = "tool_calls"
         elif response_kind == "gathered":
             message = {"role": "assistant", "content": "gathered context"}
@@ -210,6 +214,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "name": "lookup",
                 "arguments": json.dumps({"name": "round"}),
             }]
+            if body.get("model") == "offline-batch-model":
+                output.append({**output[0], "id": "real_auto_2", "call_id": "real_auto_2"})
         else:
             text = "gathered context" if response_kind == "gathered" else json.dumps(
                 structured_payload(body), separators=(",", ":")

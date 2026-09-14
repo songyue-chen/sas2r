@@ -255,6 +255,6 @@ test_that("more than two useful lookups fit inside one shared agent allowance", 
     result <- bound$search_skills$call(list(query = query))
     expect_null(result$error)
   }
-  expect_error(bound$read_skill$call(list(name = "anything")),
-               class = "sas2r_agent_tool_limit")
+  expect_identical(bound$read_skill$call(list(name = "anything"))$error,
+                   "agent_tool_limit")
 })

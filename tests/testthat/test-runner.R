@@ -155,7 +155,7 @@ test_that("transport-bound tools record agent and global ceiling refusals", {
     spec_min(tool_limit = 0L), bound_llm(), tools, "unit",
     log_dir = withr::local_tempdir(), usage_budget = agent_budget
   )
-  expect_identical(agent_result$status, "agent_tool_limit_reached")
+  expect_identical(agent_result$status, "ok")
   expect_identical(agent_budget$tool_request_count, 1L)
   expect_identical(agent_budget$tool_count, 0L)
   expect_identical(
@@ -829,7 +829,7 @@ test_that("a completed answer survives a tool allowance spent inside the transpo
   )
 
   bound$t$call(list())
-  expect_error(bound$t$call(list()), class = "sas2r_agent_tool_limit")
+  expect_identical(bound$t$call(list())$error, "agent_tool_limit")
   expect_true(state$exhausted)
 
   # Emulate the transport: it invokes the bound tools itself, inside one
@@ -937,4 +937,27 @@ test_that("the finalization prompts tell the model its tools are closed", {
   expect_match(AGENT_FINALIZE_MESSAGE, "required schema")
   expect_match(AGENT_TOOL_LIMIT_MESSAGE, "tools are now closed")
   expect_match(AGENT_TOOL_LIMIT_MESSAGE, "context already gathered")
+})
+
+test_that("valid, malformed and refused lookups have distinct observable outcomes", {
+  calls <- 0L
+  tool <- make_tool("search", function(args) { calls <<- calls + 1L; list(found = args$query) },
+    max_calls = 30L, schema = closed_tool_schema(
+      list(query = list(type = "string", minLength = 1L)), required = "query"))
+  budget <- new_usage_budget()
+  # Use the same envelope as the ordinary runner, including tool ids.
+  turn <- function(q, id) list(type = "tool", tool = "search",
+    args = list(query = q), tool_call_id = id)
+  result <- run_agent(spec_min(tool_limit = 2L),
+    mock_llm(list(turn("merge", "one"), turn("", "two"), turn("sort", "three"), good)),
+    list(search = tool), "unit", log_dir = withr::local_tempdir(), usage_budget = budget,
+    audit_context = list(component_id = "summary", revision_id = "r2", round = 1L))
+  expect_identical(result$status, "ok")
+  expect_identical(calls, 1L)
+  expect_identical(result$tool_outcomes, list(attempted = 3L, completed = 1L, failed = 0L, refused = 2L))
+  terminal <- Filter(function(r) r$record_type %in% c("tool_executed", "tool_failed", "tool_refused"), budget$records)
+  expect_length(terminal, 3L)
+  expect_true(all(vapply(terminal, function(r) identical(r$component_id, "summary"), logical(1))))
+  expect_true(all(vapply(terminal, function(r) identical(r$revision_id, "r2"), logical(1))))
+  expect_length(unique(vapply(terminal, `[[`, "", "invocation_id")), 1L)
 })

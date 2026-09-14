@@ -161,5 +161,4 @@ The promise behind that:
 The runtime is now an exported, versioned source of truth inside sas2r, vendored into bundles
 from that source. When usage justifies it, it becomes a separate `sas2r.runtime` package that
 organizations can validate once, with an opt-in mode that writes `library(sas2r.runtime)` into
-bundles. The decision and its phases are recorded in the repository at
-`docs/decisions/0003-runtime-helpers-distribution.md`.
+bundles.

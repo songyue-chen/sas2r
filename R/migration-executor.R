@@ -216,7 +216,8 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   plan$record_dir <- file.path(attempt_dir, "logs")
   list(plan = plan, attempt_dir = dir, runtime = list(
     autoexec = file.path(dir, "autoexec.R"), helpers = helpers,
-    output_dirs = vapply(libraries, function(entry) entry$write_path, character(1))))
+    output_dirs = c(vapply(libraries, function(entry) entry$write_path, character(1)),
+                    libraries = file.path(dir, "libraries"))))
 }
 
 #' Run a program smoke test in a fresh callr subprocess

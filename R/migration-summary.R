@@ -66,3 +66,44 @@ migration_usage_lines <- function(usage) {
             usage$elapsed_seconds, usage$calls, usage$known_amount, usage$billed_amount, usage$estimated_amount, usage$unknown_cost_calls),
     paste0("Effective limits (", usage$mode, "): ", paste(names(usage$limits), unlist(usage$limits), sep = "=", collapse = ", ")))
 }
+
+# Versions come from this process's namespaces, not the installed DESCRIPTION
+# that another R session (or an install while this session runs) might see.
+migration_environment <- function(state) {
+  loaded_version <- function(package) {
+    if (!package %in% loadedNamespaces()) return("not_loaded")
+    as.character(getNamespaceVersion(package))
+  }
+  specs <- load_agent_specs(project_dir = state$project$project_dir)
+  specs <- specs[migration_agent_names()]
+  agents <- lapply(specs, function(spec) {
+    narrower <- Filter(function(tool) tool$max_calls != spec$tool_call_limit, spec$tools)
+    list(tool_call_limit = spec$tool_call_limit,
+         tool_overrides = lapply(narrower, function(tool) tool$max_calls))
+  })
+  list(
+    versions = list(sas2r = loaded_version("sas2r"), ellmer = loaded_version("ellmer"),
+                    R = as.character(getRversion())),
+    execution_root = state$project$project_dir,
+    agents = agents,
+    repairs = list(immediate_per_component = state$max_program_repair_rounds,
+                   bundle_per_component = state$max_bundle_repairs_per_component,
+                   bundle_overall_cap = state$max_bundle_repair_rounds %||% "not_set",
+                   bundle_derived_ceiling = as.double(state$max_bundle_repairs_per_component) *
+                     length(unique(state$schedule$component_id)))
+  )
+}
+
+migration_environment_lines <- function(info) {
+  if (is.null(info)) return(character())
+  c(paste("Loaded versions:", paste(names(info$versions), unlist(info$versions),
+                                    sep = "=", collapse = ", ")),
+    paste0("Execution root: ", info$execution_root),
+    vapply(names(info$agents), function(role) {
+      agent <- info$agents[[role]]
+      paste0(role, ": ", agent$tool_call_limit, " tool calls per invocation",
+             if (length(agent$tool_overrides)) paste0("; tool overrides: ", paste(
+               names(agent$tool_overrides), unlist(agent$tool_overrides), sep = "=", collapse = ", ")))
+    }, character(1)),
+    paste("Repair limits:", paste(names(info$repairs), unlist(info$repairs), sep = "=", collapse = ", ")))
+}

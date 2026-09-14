@@ -150,7 +150,7 @@ translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
   vars <- list(dialect = config$dialect %||% "tidyverse",
                allowlist = config$allowlist %||% "dplyr, tidyr, haven",
                unit = format_sas_statements(ctxp$us$text),
-               context = ctxp$packet,
+               context = paste(ctxp$packet, render_macro_interface(macro_contract), sep = "\n"),
                comments = ctxp$comments,
                skills = rendered_skills)
   attempt <- function(extra_user = NULL, purpose = "translation") {
@@ -332,7 +332,8 @@ build_translator_context <- function(
   schedule = NULL,
   outputs = NULL,
   resolved_contracts = list(),
-  config = list()
+  config = list(),
+  macro_contract = component_macro_contract(project, graph, component_id)
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   src_files <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
@@ -371,13 +372,16 @@ build_translator_context <- function(
   upstream_txt <- if (length(upstream_contracts) > 0L) {
     paste(vapply(names(upstream_contracts), function(cid) {
       uc <- upstream_contracts[[cid]]
-      sprintf(
+      summary <- sprintf(
         "Component %s: parameters=(%s), reads=(%s), writes=(%s)",
         if (!is.null(uc$macro_contract)) paste0(cid, " (call ", uc$macro_contract$name, "; loaded by autoexec.R)") else cid,
         paste(vapply(uc$parameters %||% list(), function(p) p$name %||% "", character(1)), collapse = ", "),
         paste(uc$reads %||% character(), collapse = ", "),
         paste(uc$writes %||% character(), collapse = ", ")
       )
+      if (!is.null(uc$macro_contract)) {
+        paste(summary, render_macro_interface(uc$macro_contract), sep = "\n")
+      } else summary
     }, character(1)), collapse = "\n")
   } else {
     "(none)"
@@ -431,7 +435,9 @@ build_translator_context <- function(
     c(
       "input schemas (inferred from code references):", sch_txt,
       paste("librefs:", paste(lib_names, collapse = ", ")),
+      render_component_libraries(project, component_id),
       line_txt,
+      "Source-owned macro interface:", render_macro_interface(macro_contract),
       "resolved upstream contracts:", upstream_txt,
       "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
       "known call sites:", call_txt
@@ -489,6 +495,7 @@ build_translator_context <- function(
 #' @param resolved_contracts List of upstream behavioral contracts.
 #' @param helper_hash Hash of runtime helpers.
 #' @param prompt_skill_hash Hash of prompt and skills used.
+#' @param macro_contract Parsed source macro contract, when available.
 #' @return A behavioral contract list.
 #' @noRd
 build_behavioral_contract <- function(
@@ -502,7 +509,8 @@ build_behavioral_contract <- function(
   tr_data = NULL,
   resolved_contracts = list(),
   helper_hash = NULL,
-  prompt_skill_hash = NULL
+  prompt_skill_hash = NULL,
+  macro_contract = component_macro_contract(project, graph, component_id)
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   uids <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) comp_nodes$original_index[!is.na(comp_nodes$original_index)] else integer()
@@ -521,34 +529,24 @@ build_behavioral_contract <- function(
 
   params <- list()
   defaults <- structure(list(), names = character(0))
-  macro_contract_obj <- NULL
-
-  if (!is.null(project$macros$defs) && nrow(project$macros$defs) > 0L && length(uids) > 0L) {
-    m_matches <- project$macros$defs[project$macros$defs$unit_id %in% uids, , drop = FALSE]
-    if (nrow(m_matches) == 1L) {
-      macro_contract_obj <- tryCatch(
-        parse_macro_contract(m_matches$name[[1L]], m_matches$params[[1L]]),
-        error = function(e) NULL
+  macro_contract_obj <- macro_contract
+  if (!is.null(macro_contract_obj) && nrow(macro_contract_obj$parameters) > 0L) {
+    mp <- macro_contract_obj$parameters
+    params <- lapply(seq_len(nrow(mp)), function(i) {
+      list(
+        name = mp$name[i],
+        type = if (identical(mp$default_status[i], "known") && is.numeric(mp$r_default[[i]])) "numeric" else "character",
+        required = identical(mp$default_status[i], "unresolved") && !nzchar(mp$sas_default[i]),
+        default = if (mp$default_status[i] == "known") mp$r_default[[i]] else NULL
       )
-      if (!is.null(macro_contract_obj) && nrow(macro_contract_obj$parameters) > 0L) {
-        mp <- macro_contract_obj$parameters
-        params <- lapply(seq_len(nrow(mp)), function(i) {
-          list(
-            name = mp$name[i],
-            type = if (identical(mp$default_status[i], "known") && is.numeric(mp$r_default[[i]])) "numeric" else "character",
-            required = identical(mp$default_status[i], "unresolved") && !nzchar(mp$sas_default[i]),
-            default = if (mp$default_status[i] == "known") mp$r_default[[i]] else NULL
-          )
-        })
-        known_i <- which(mp$default_status == "known")
-        if (length(known_i) > 0L) {
-          defaults <- stats::setNames(lapply(known_i, function(i) mp$r_default[[i]]), mp$name[known_i])
-        }
-      }
+    })
+    known_i <- which(mp$default_status == "known")
+    if (length(known_i) > 0L) {
+      defaults <- stats::setNames(lapply(known_i, function(i) mp$r_default[[i]]), mp$name[known_i])
     }
   }
 
-  if (length(params) == 0L && !is.null(tr_data$parameters) && length(tr_data$parameters) > 0L) {
+  if (is.null(macro_contract_obj) && length(params) == 0L && !is.null(tr_data$parameters) && length(tr_data$parameters) > 0L) {
     params <- as.list(tr_data$parameters)
     if (!is.null(tr_data$defaults)) defaults <- tr_data$defaults
   }
@@ -749,6 +747,7 @@ generate_program_revision <- function(
   # run_agent() status, so a run whose LLM calls all failed cannot read like a
   # successful deterministic run.
   agent_status <- NA_character_
+  macro_contract <- component_macro_contract(project, graph, component_id)
 
   if (needs_agent) {
     specs <- load_agent_specs(project_dir = project$project_dir)
@@ -762,7 +761,8 @@ generate_program_revision <- function(
       schedule = schedule,
       outputs = outputs,
       resolved_contracts = resolved_contracts,
-      config = config
+      config = config,
+      macro_contract = macro_contract
     )
     prompt_skill_h <- ctx$prompt_skill_hash
 
@@ -885,7 +885,8 @@ generate_program_revision <- function(
     tr_data = tr_data,
     resolved_contracts = resolved_contracts,
     helper_hash = helper_h,
-    prompt_skill_hash = prompt_skill_h
+    prompt_skill_hash = prompt_skill_h,
+    macro_contract = macro_contract
   )
 
   rev_dir <- file.path(paths$programs, component_id, "revisions", revision_id)

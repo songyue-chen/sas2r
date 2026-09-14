@@ -62,6 +62,7 @@
 #' then the global environment, then any active frame), `sas2r_lib_entry()`
 #' (the registry entry for a libref), `sas2r_lib_member_path()` (the file a
 #' member resolves to, refusing any name that is not a plain member name),
+#' `sas2r_assignment_path()` (resolve a LIBNAME path against the execution root),
 #' `sas2r_libref_stop()` (classed libref errors), `split_ds()` (split a
 #' two-level SAS name after macro substitution).
 #'
@@ -71,12 +72,11 @@
 #' changes what it does for the same inputs; a helper is retired only after a
 #' replacement ships and the old name has warned for at least one minor
 #' version. Tests hold the source files, the vendored template, the help
-#' pages, and the lint allowlist in sync. The direction of travel -- a
-#' separate `sas2r.runtime` package when usage justifies it -- is recorded in
-#' `docs/decisions/0003-runtime-helpers-distribution.md`.
+#' pages, and the lint allowlist in sync. A separate `sas2r.runtime` package
+#' is a future option when usage justifies it.
 #'
 #' @name sas2r_runtime
 #' @aliases sas2r_helpers sas2r_registry_env sas2r_lib_entry
-#'   sas2r_lib_member_path sas2r_libref_stop split_ds
+#'   sas2r_lib_member_path sas2r_libref_stop sas2r_assignment_path split_ds
 #' @seealso [sas_translate()], [sas_write()], [sas_code()]
 NULL

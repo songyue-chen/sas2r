@@ -632,6 +632,15 @@ ellmer_public_prop <- function(object, name) {
   getExportedValue("S7", "prop")(object, name)
 }
 
+ellmer_result_content <- function(result) {
+  error <- ellmer_public_prop(result, "error")
+  value <- if (is.null(error)) ellmer_public_prop(result, "value") else list(
+    error = "tool_execution_failed",
+    message = if (inherits(error, "condition")) conditionMessage(error) else as.character(error)
+  )
+  ellmer_tool_result(value)
+}
+
 ellmer_conversation_messages <- function(chat) {
   if (is.null(chat$get_turns) || !is.function(chat$get_turns)) return(NULL)
   turns <- tryCatch(
@@ -688,7 +697,7 @@ ellmer_conversation_messages <- function(chat) {
             # The value ellmer hands back may already be JSON text (its own
             # normalization on >= 0.5.0, or ellmer_tool_result() on the way
             # in); re-encoding it would double-encode the replayed result.
-            content = ellmer_tool_result(ellmer_public_prop(result, "value"))
+            content = ellmer_result_content(result)
           ))
         }
       } else {
@@ -1025,6 +1034,59 @@ ELLMER_TRANSPORT_CONSTRAINTS <- list(
   tools_with_structured_output = "unsupported"
 )
 
+# End native gathering at the allowance, rather than asking the provider to
+# stop while leaving its internal tool loop running. Public callbacks preserve
+# the last result even when ellmer has not appended the whole parallel batch.
+ellmer_gather_tools <- function(chat, prompt, tools) {
+  state <- if (length(tools)) tools[[1L]]$budget_state else NULL
+  if (!is.environment(state) || !is.function(chat$on_tool_result) ||
+      !is.function(chat$set_tools)) return(chat$chat(prompt))
+  seen <- list()
+  chat$on_tool_result(function(result) {
+    request <- ellmer_public_prop(result, "request")
+    seen[[length(seen) + 1L]] <<- list(
+      role = "tool", name = ellmer_public_prop(request, "name"),
+      tool_call_id = ellmer_public_prop(request, "id"),
+      content = ellmer_result_content(result)
+    )
+    if (!is.null(state$budget_error)) stop(state$budget_error)
+    if (state$count >= state$limit) {
+      state$exhausted <- TRUE
+      chat$set_tools(list())
+      stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
+                     class = c("sas2r_tools_closed", "error", "condition")))
+    }
+    # Update descriptions for the next native turn without altering the
+    # lookup's JSON result schema or adding unpaired messages to its history.
+    chat$set_tools(lapply(tools, function(tool) {
+      tool$description <- paste(tool$description, agent_tool_allowance_message(state))
+      ellmer_tool_contract(tool)
+    }))
+  })
+  tryCatch(chat$chat(prompt), sas2r_tools_closed = function(error) {
+    messages <- ellmer_conversation_messages(chat)
+    result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
+                         function(m) m$tool_call_id %||% "", character(1))
+    messages <- c(messages, Filter(function(m) !m$tool_call_id %in% result_ids, seen))
+    result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
+                         function(m) m$tool_call_id %||% "", character(1))
+    pending <- Filter(function(m) identical(m$role, "assistant") && !is.null(m$tool_call) &&
+                        !m$tool_call$id %in% result_ids, messages)
+    for (message in pending) {
+      call <- message$tool_call
+      tryCatch(reserve_agent_tool_call(state, call$name, call$arguments),
+               sas2r_agent_tool_limit = function(error) NULL)
+      messages[[length(messages) + 1L]] <- list(
+        role = "tool", name = call$name, tool_call_id = call$id,
+        content = ellmer_tool_result(list(error = "agent_tool_limit",
+                                          message = AGENT_TOOL_LIMIT_MESSAGE))
+      )
+    }
+    structure(AGENT_TOOL_LIMIT_MESSAGE,
+              conversation = interleave_tool_messages(messages))
+  })
+}
+
 ellmer_transport_request <- function(cfg, request, model, params) {
   if (length(request$tools) && !is.null(request$output_schema)) {
     cli::cli_abort(
@@ -1064,8 +1126,10 @@ ellmer_transport_request <- function(cfg, request, model, params) {
       )
     )
   } else {
-    value <- chat$chat(prompt)
-    value <- ellmer_last_text(chat, fallback = value)
+    value <- ellmer_gather_tools(chat, prompt, request$tools)
+    gathered_conversation <- attr(value, "conversation", exact = TRUE)
+    if (!is.null(gathered_conversation)) value <- as.character(value)
+    if (is.null(gathered_conversation)) value <- ellmer_last_text(chat, fallback = value)
     if (identical(request$schema_mode, "fallback")) {
       parsed <- strict_json_list(value, strip_markdown_fences = TRUE)
       if (is.null(parsed)) {
@@ -1078,7 +1142,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     } else if (identical(request$phase, "gathering")) {
       list(
         type = "final", data = list(gathered = value),
-        conversation = ellmer_conversation_messages(chat)
+        conversation = gathered_conversation %||% ellmer_conversation_messages(chat)
       )
     } else value
   }

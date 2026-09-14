@@ -528,6 +528,9 @@ skill_flags_from_sas <- function(sas_text) {
   if (grepl("\\b(first|last)\\.", x)) flags <- c(flags, "by_group", "order_dependent")
   if (grepl("\\bretain\\b", x)) flags <- c(flags, "order_dependent")
   if (grepl("\\bproc\\s+sort\\b", x)) flags <- c(flags, "order_dependent")
+  if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {
+    flags <- c(flags, "statistical_defaults")
+  }
   unique(flags)
 }
 
@@ -587,4 +590,24 @@ component_statements <- function(project, component_id) {
   }
   rows <- stmts[!is.na(hit) & hit, , drop = FALSE]
   if (nrow(rows)) rows else NULL
+}
+
+# Reuse offline binding decisions, including configured fallbacks, rather than
+# asking an agent to reinterpret a source path using a different working folder.
+render_component_libraries <- function(project, component_id) {
+  if (is.null(project$libref_registry)) return("(no library binding context)")
+  stmts <- component_statements(project, component_id)
+  bindings <- effective_librefs(project)$bindings
+  bindings <- bindings[bindings$use_file %in% unique(stmts$file), , drop = FALSE]
+  paste(c(
+    paste0("Execution root for relative SAS paths: ", project$libref_registry$project_root),
+    "Offline library bindings (use the selected path; retain the recorded reason for configured fallbacks):",
+    vapply(seq_len(nrow(bindings)), function(i) {
+      b <- bindings[i, , drop = FALSE]
+      paste0(b$libref, " at line ", b$use_line, ": source=", b$source_path_expression,
+             "; status=", b$status, "; selected_path=", b$selected_path,
+             "; origin=", b$selection_origin, "; reason=", b$fallback_reason)
+    }, character(1)),
+    "Do not replace an established binding with a guessed relative path. Explicit later reassignments still apply."
+  ), collapse = "\n")
 }
