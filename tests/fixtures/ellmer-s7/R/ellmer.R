@@ -24,7 +24,8 @@ ContentToolResult <- S7::new_class(
   "ContentToolResult",
   properties = list(
     request = ContentToolRequest,
-    value = S7::class_any
+    value = S7::class_any,
+    error = S7::new_property(S7::class_any, default = NULL)
   )
 )
 
