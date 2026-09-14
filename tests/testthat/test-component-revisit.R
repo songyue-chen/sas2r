@@ -85,7 +85,7 @@ component_revisit_fixture <- function(envir = parent.frame()) {
 
   # Setup initial revisions on disk
   setup_comp <- function(cid, code, sas_text) {
-    r_dir <- file.path(paths$programs, cid, "revisions", "r1")
+    r_dir <- file.path(paths$component_revisions, cid, "revisions", "r1")
     dir.create(r_dir, recursive = TRUE, showWarnings = FALSE)
     r_path <- file.path(r_dir, "program.R")
     c_path <- file.path(r_dir, "contract.json")

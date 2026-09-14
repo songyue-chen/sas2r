@@ -419,7 +419,7 @@ review_program_revision <- function(
     llm = llm,
     tools = tools,
     user_content = "Review this SAS component and assembled R program.",
-    log_dir = if (!is.null(paths)) paths$state else ".sas2r",
+    log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
     prompt_vars = prompt_vars,
     audit_context = audit_context,
     usage_budget = usage_budget
@@ -489,7 +489,7 @@ review_program_revision <- function(
   )
 
   if (!is.null(paths)) {
-    rev_dir <- file.path(paths$programs %||% paths$root, component_id, "reviews")
+    rev_dir <- file.path(paths$component_revisions %||% paths$root, component_id, "reviews")
     dir.create(rev_dir, recursive = TRUE, showWarnings = FALSE)
     atomic_write_json(review_record, file.path(rev_dir, paste0(review_id, ".json")))
   }

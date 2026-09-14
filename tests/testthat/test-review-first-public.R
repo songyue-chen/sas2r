@@ -22,7 +22,8 @@ review_public_fixture <- function(envir = parent.frame()) {
   source <- file.path(root, "program.sas")
   writeLines("data work.out; set raw.src; do; x = x + 10; end; where x < 5; run;", source)
   list(root = root, source = source, inputs = inputs,
-       config = list(libraries = list(raw = list(path = inputs, engine = "rds", write = "rds"))))
+       config = list(outputs = list(datasets = "work.out"),
+                     libraries = list(raw = list(path = inputs, engine = "rds", write = "rds"))))
 }
 
 review_public_code <- paste(
@@ -54,13 +55,17 @@ test_that("public resume uses actual saved revisions and makes no repeated provi
   adapter <- counted_review_llm(list(good_translation(review_public_code), good_review()))
   first <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm)
   expect_identical(adapter$calls$n, 2L)
-  expect_equal(readRDS(file.path(first$outputs_dir, "work", "out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(first$outputs_dir, "datasets", "work", "out.rds"))$x, 11)
   again <- sas_translate(sas_preflight(fx$source, config = fx$config)$project, out_dir = out, llm = adapter$llm, resume = TRUE)
   expect_identical(adapter$calls$n, 2L)
   expect_identical(sas_code(first), sas_code(again))
   expect_identical(again$status, first$status)
   expect_length(again$diagnostics$resumed_components, 1L)
-  expect_equal(readRDS(file.path(again$outputs_dir, "work", "out.rds"))$x, 11)
+  md <- paste(readLines(again$report_path), collapse = "\n")
+  links <- regmatches(md, gregexpr("(?<=\\]\\(<)[^>]+(?=>\\))", md, perl = TRUE))[[1L]]
+  expect_true(all(startsWith(links, "../diagnostics/")))
+  expect_true(all(file.exists(file.path(dirname(again$report_path), links))))
+  expect_equal(readRDS(file.path(again$outputs_dir, "datasets", "work", "out.rds"))$x, 11)
 
   # A changed source invalidates the saved translation/review as a whole.
   write("* changed source;", file = fx$source, append = TRUE)
@@ -74,7 +79,7 @@ test_that("public resume uses actual saved revisions and makes no repeated provi
   fresh2 <- counted_review_llm(list(good_translation(review_public_code), good_review()))
   changed_input <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = fresh2$llm, resume = TRUE)
   expect_identical(fresh2$calls$n, 2L)
-  expect_equal(readRDS(file.path(changed_input$outputs_dir, "work", "out.rds"))$x, 12)
+  expect_equal(readRDS(file.path(changed_input$outputs_dir, "datasets", "work", "out.rds"))$x, 12)
 })
 
 test_that("public progress distinguishes unavailable review and deferred execution", {
@@ -100,6 +105,7 @@ test_that("public progress distinguishes unavailable review and deferred executi
 
 test_that("public exports include every library and TLF and run after moving", {
   fx <- review_public_fixture()
+  fx$config$outputs <- NULL
   # Name roots in reverse alphabetical order to exercise dependency order.
   writeLines("data work.mid; set raw.src; run;", file.path(fx$root, "z_first.sas"))
   writeLines("data adam.out; set work.mid; x = x + 1; run; ods html file='outputs/table.html'; proc print data=adam.out; run; ods html close;", file.path(fx$root, "a_second.sas"))
@@ -113,22 +119,25 @@ test_that("public exports include every library and TLF and run after moving", {
   adapter <- counted_review_llm(list(good_review(), good_translation(second_code), good_review()))
   result <- sas_translate(fx$root, config = fx$config, out_dir = file.path(fx$root, "migration"), llm = adapter$llm)
   expect_identical(result$status, "migration_ready")
-  for (rel in c("work/mid.rds", "adam/out.rds", "outputs/table.html", "summary.txt")) {
+  for (rel in c("datasets/adam/out.rds", "tlf/outputs/table.html")) {
     expect_true(file.exists(file.path(result$outputs_dir, rel)), info = rel)
   }
-  before <- attempt_output_hashes(dirname(result$bundle_dir))
+  run_root <- dirname(result$bundle_dir)
+  expect_true(file.exists(file.path(run_root, "diagnostics/work/work/mid.rds")))
+  expect_true(file.exists(file.path(run_root, "diagnostics/work/summary.txt")))
+  before <- attempt_output_hashes(run_root)
   export <- file.path(fx$root, "export")
   sas_write(result, export)
   moved <- file.path(fx$root, "moved")
   expect_true(file.rename(export, moved))
-  expect_true(file.exists(file.path(moved, "outputs/table.html")))
+  expect_true(file.exists(file.path(moved, "saved-outputs/tlf/outputs/table.html")))
   expect_true(file.exists(file.path(moved, "README.md")))
-  expect_true(file.exists(file.path(moved, "outputs-manifest.json")))
+  expect_true(file.exists(file.path(moved, "run-order.json")))
   # Delete copies to prove this execution creates fresh results in the moved folder.
-  unlink(file.path(moved, c("work", "adam", "outputs")), recursive = TRUE)
+  expect_false(dir.exists(file.path(moved, "output")))
   callr::r(function() source("run.R", chdir = TRUE), wd = moved)
-  expect_equal(readRDS(file.path(moved, "adam/out.rds"))$x, c(2, 8))
-  expect_true(file.exists(file.path(moved, "outputs/table.html")))
+  expect_equal(readRDS(file.path(moved, "output/datasets/adam/out.rds"))$x, c(2, 8))
+  expect_true(file.exists(file.path(moved, "output/tlf/outputs/table.html")))
   expect_identical(attempt_output_hashes(dirname(result$bundle_dir)), before)
   expect_equal(readRDS(file.path(fx$inputs, "src.rds"))$x, c(1, 7))
 })
@@ -177,7 +186,7 @@ test_that("public resume preserves a fixer revision's actual path and its review
                                   function(m) m$content %||% "", character(1)), collapse = "\n")
     expect_match(review_prompt, readLines(fx$source), fixed = TRUE)
   }
-  expect_equal(readRDS(file.path(first$outputs_dir, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(first$outputs_dir, "datasets/work/out.rds"))$x, 11)
   checkpoint <- readRDS(file.path(out, ".sas2r/resume.rds"))
   selected <- checkpoint$selected_revisions[[1L]]
   expect_match(selected$r_path, "/revisions/rev_")
@@ -186,14 +195,14 @@ test_that("public resume preserves a fixer revision's actual path and its review
   again <- sas_translate(sas_preflight(fx$source, config = fx$config)$project, out_dir = out, llm = adapter$llm, resume = TRUE)
   expect_equal(adapter$calls$n, 4L)
   expect_identical(sas_code(again), sas_code(first))
-  expect_equal(readRDS(file.path(again$outputs_dir, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(again$outputs_dir, "datasets/work/out.rds"))$x, 11)
 
   # Lost revision files cause regeneration, rather than selecting empty code.
   unlink(selected$r_path)
   fresh <- counted_review_llm(list(good_translation(review_public_code), good_review()))
   recovered <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = fresh$llm, resume = TRUE)
   expect_equal(fresh$calls$n, 2L)
-  expect_equal(readRDS(file.path(recovered$outputs_dir, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(recovered$outputs_dir, "datasets/work/out.rds"))$x, 11)
 })
 
 test_that("mixed reference coverage identifies exactly what contributes validation", {
@@ -221,7 +230,7 @@ test_that("public deterministic translation preserves WHERE timing and numeric f
   writeLines("data work.out; set raw.src; flag=x<0; x=x+10; where x<5; run;", fx$source)
   result <- sas_translate(fx$source, config = fx$config, llm = mock_llm(list(good_review())))
   expect_identical(result$status, "migration_ready")
-  actual <- readRDS(file.path(result$outputs_dir, "work/out.rds"))
+  actual <- readRDS(file.path(result$outputs_dir, "datasets/work/out.rds"))
   expect_identical(actual$x, c(NA_real_, 9, 12))
   expect_identical(actual$flag, c(1, 1, 0))
 })
@@ -237,10 +246,11 @@ test_that("export entry point cannot overwrite a source program named run", {
   dest <- file.path(fx$root, "delivery")
   sas_write(result, dest)
   entrypoint <- jsonlite::read_json(file.path(dest, "run-order.json"))$entrypoint
-  expect_identical(entrypoint, "_run.R")
-  unlink(file.path(dest, "work"), recursive = TRUE)
+  expect_identical(entrypoint, "run.R")
+  expect_true(file.exists(file.path(dest, "programs/run.R")))
+  expect_false(dir.exists(file.path(dest, "output")))
   callr::r(function(entry) source(entry, chdir = TRUE), args = list(entrypoint), wd = dest)
-  expect_equal(readRDS(file.path(dest, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(dest, "output/work/out.rds"))$x, 11)
 })
 
 test_that("public mechanical retry receives failed code and package-loading guidance", {
@@ -258,7 +268,7 @@ test_that("public mechanical retry receives failed code and package-loading guid
   expect_match(request_text(2L), "dplyr::mutate", fixed = TRUE)
   expect_match(request_text(3L), readLines(fx$source), fixed = TRUE)
   expect_identical(result$status, "migration_ready")
-  expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(result$outputs_dir, "datasets/work/out.rds"))$x, 11)
   report <- jsonlite::read_json(result$report_json_path)
   expect_true(report$component_evidence[[1L]]$mechanical_checks$pass)
   expect_identical(report$component_evidence[[1L]]$smoke_status, "passed")
@@ -280,7 +290,7 @@ test_that("failed mechanical checks prevent execution and skip semantic review",
     )
     expect_identical(adapter$calls$n, 2L)
     expect_identical(result$status, "blocked")
-    expect_false(file.exists(file.path(result$outputs_dir, "work/out.rds")))
+    expect_null(result$outputs_dir)
     text <- unlist(lapply(events, format_sas2r_progress))
     expect_true(any(grepl("mechanical checks failed.*banned_function.*library", text)))
     report <- jsonlite::read_json(result$report_json_path)
@@ -310,7 +320,7 @@ test_that("a script with declared path inputs and a helper can become migration 
                           outputs = list(datasets = "work.out"))
   expect_identical(adapter$calls$n, 2L)
   expect_identical(result$status, "migration_ready")
-  expect_equal(readRDS(file.path(result$outputs_dir, "work/out.rds"))$x, 11)
+  expect_equal(readRDS(file.path(result$outputs_dir, "datasets/work/out.rds"))$x, 11)
   component <- jsonlite::read_json(result$report_json_path)$component_evidence[[1L]]
   expect_true(component$mechanical_checks$pass)
   expect_length(component$blockers, 0L)

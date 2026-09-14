@@ -49,7 +49,7 @@ migration_md_table <- function(df) {
 
 #' Write authoritative migration report in JSON and Markdown formats
 #'
-#' Produces `.sas2r/report.json` and `report.md` capturing graph, execution order,
+#' Produces `report/report.json` and `report/translation.md` capturing graph, execution order,
 #' unresolved edges, output inventory, component evidence revisions, review/smoke
 #' records, attempts, output assessments, status reasons, repair history, input hashes,
 #' selected paths, and usage/cost accounting.
@@ -71,10 +71,11 @@ write_migration_report <- function(state) {
   }
 
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$report_dir, recursive = TRUE, showWarnings = FALSE)
 
   run_id <- state$run_id %||% paths$run_id %||% state$usage_budget$run_id %||% new_usage_run_id()
   status <- state$status %||% "blocked"
-  status_reason <- state$status_reason %||% NULL
+  status_reason <- redact_secrets(state$status_reason %||% NULL)
 
   bundle_dir <- state$bundle_dir %||% (
     if (!is.null(state$selected_attempt)) {
@@ -101,7 +102,7 @@ write_migration_report <- function(state) {
 
   # Output contracts & assessments
   output_contracts <- state$output_contracts %||% empty_output_contracts()
-  output_contracts_path <- file.path(paths$state, "output-contracts.json")
+  output_contracts_path <- file.path(paths$report_dir, "output-contracts.json")
   if (nrow(output_contracts) > 0L) {
     write_output_contracts(output_contracts, output_contracts_path)
   }
@@ -216,7 +217,7 @@ write_migration_report <- function(state) {
     selected_paths = list(
       bundle_dir = bundle_dir,
       outputs_dir = outputs_dir,
-      graph_path = paths$graph,
+      graph_path = file.path(paths$report_dir, "graph.json"),
       output_contracts_path = output_contracts_path,
       report_path = paths$report_md,
       report_json_path = paths$report_json
@@ -229,7 +230,8 @@ write_migration_report <- function(state) {
     ),
     output_inventory = list(
       contracts = output_contracts,
-      generated_files = state$selected_attempt$output_hashes %||% list()
+      generated_files = state$selected_attempt$output_hashes %||% list(),
+      saved_deliverables = state$saved_outputs %||% list()
     ),
     coverage = coverage,
     output_assessments = output_assessments,
@@ -243,17 +245,11 @@ write_migration_report <- function(state) {
     created_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
 
+  atomic_write_json(state$graph %||% list(), file.path(paths$report_dir, "graph.json"))
   # Write JSON report
   atomic_write_json(report_payload, paths$report_json)
 
-  # When paths are run-scoped, the run's own folder gets a copy of the machine
-  # report so runs/<run_id>/ is self-contained evidence; the .sas2r/ copy
-  # stays authoritative for the latest run (resume reads it). The markdown
-  # report needs no copy: paths$report_md already points inside the run folder.
-  run_dir <- if (identical(basename(paths$attempts %||% ""), run_id)) paths$attempts else NULL
-  if (!is.null(run_dir) && dir.exists(run_dir)) {
-    atomic_write_json(report_payload, file.path(run_dir, "report.json"))
-  }
+  atomic_write_json(report_payload, paths$latest_report_json)
 
   # 2. Construct Markdown report lines
   md_lines <- c(
@@ -270,7 +266,7 @@ write_migration_report <- function(state) {
     "",
     paste0("- **Generated R Bundle:** `", bundle_dir %||% "(none)", "`"),
     paste0("- **Outputs Directory:** `", outputs_dir %||% "(none - execution disabled or no outputs generated)", "`"),
-    paste0("- **Dependency Graph:** `", paths$graph, "`"),
+    paste0("- **Dependency Graph:** `", file.path(paths$report_dir, "graph.json"), "`"),
     paste0("- **Output Contracts:** `", output_contracts_path, "`"),
     paste0("- **Machine Report:** `", paths$report_json, "`"),
     "",
@@ -291,11 +287,30 @@ write_migration_report <- function(state) {
       "These records describe component smoke runs, not final-bundle or reference validation.", "",
       vapply(names(smoke_records), function(cid) {
         record <- smoke_records[[cid]]
+        run_root <- normalizePath(paths$run_root, winslash = "/", mustWork = TRUE)
+        record_path <- record$record_path
+        relative <- function(path) {
+          full <- normalizePath(path, winslash = "/", mustWork = FALSE)
+          if (startsWith(full, paste0(run_root, "/"))) file.path("..", substring(full, nchar(run_root) + 2L)) else NULL
+        }
+        # A resumed review may refer to an earlier run. Keep its small record
+        # and logs with this report without changing their historical contents.
+        if (file.exists(record_path) && is.null(relative(record_path))) {
+          dest <- file.path(paths$component_revisions, cid, "reused-smoke-evidence")
+          dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+          for (file in c(record_path, record$stdout_path, record$stderr_path)) {
+            if (file.exists(file) && !file.copy(file, dest, overwrite = TRUE)) {
+              cli::cli_abort("Could not retain smoke evidence {.file {file}}")
+            }
+          }
+          record_path <- file.path(dest, basename(record_path))
+        }
         replay <- record$replay_script
-        available <- !is.null(replay) && file.exists(replay)
-        paste0("- **", cid, "**: [execution record](<", record$record_path, ">)",
-          if (available) paste0("; [replay script](<", replay, ">)") else
-            "; raw artifacts not retained (use `keep_raw_attempts = TRUE`).")
+        available <- !is.null(replay) && file.exists(replay) && !is.null(relative(replay))
+        paste0("- **", cid, "**: ",
+          if (file.exists(record_path)) paste0("[execution record](<", relative(record_path), ">)") else "execution record not retained",
+          if (available) paste0("; [replay script](<", relative(replay), ">)") else
+            "; replay artifacts not retained in this run (see original paths in the record).")
       }, character(1)), "")
   }
 
@@ -424,6 +439,7 @@ write_migration_report <- function(state) {
   dir.create(dirname(paths$report_md), recursive = TRUE, showWarnings = FALSE)
   writeLines(md_lines, paths$report_md)
 
+  write_run_navigation(state, report_payload)
   invisible(paths$report_md)
 }
 
@@ -434,12 +450,12 @@ write_migration_report <- function(state) {
 #' @noRd
 read_migration_report <- function(path) {
   json_file <- if (dir.exists(path)) {
-    f1 <- file.path(path, ".sas2r", "report.json")
-    if (file.exists(f1)) f1 else file.path(path, "report.json")
+    candidates <- file.path(path, c("report/report.json", ".sas2r/report.json", "report.json"))
+    candidates[file.exists(candidates)][1L]
   } else {
     path
   }
-  if (!file.exists(json_file)) {
+  if (is.na(json_file) || !file.exists(json_file)) {
     cli::cli_abort("Migration report file not found: {.file {path}}", class = "sas2r_file_not_found")
   }
   jsonlite::fromJSON(json_file, simplifyVector = TRUE, simplifyDataFrame = FALSE)

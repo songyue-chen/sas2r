@@ -170,8 +170,8 @@ result <- sas_translate(
 
 # What you get back
 result$status        # one of the four statuses below
-result$bundle_dir    # the finished, standalone R programs
-result$outputs_dir   # selected outputs, e.g. adam/adsl.rds or outputs/table.html
+result$bundle_dir    # all available selected programs and macros, including failed code
+result$outputs_dir   # saved deliverables: datasets/<library>/ and tlf/ (NULL if none)
 result$report_path   # a readable report of everything that happened
 
 # Read a translated program
@@ -181,10 +181,47 @@ cat(sas_code(result, 1))
 sas_write(result, "r_production/")
 ```
 
-The export includes `run.R`, `run-order.json`, `outputs-manifest.json`, and a
-README describing its inputs and R dependencies. From the exported folder, run
-`Rscript run.R`, or use `source("run.R", chdir = TRUE)` in R. If a source program
-already occupies `run.R`, `run-order.json` identifies the renamed launcher.
+Open `migration_output/<run_id>/START_HERE.html` first. It links the selected
+scripts, errors, output comparisons, and instructions for running or editing code.
+
+```text
+<run_id>/
+  START_HERE.html
+  manifest.json
+  bundle/                 # all available selected code, including failed code
+    README.md
+    run.R
+    autoexec.R
+    programs/
+    macros/
+    runtime/
+    output/               # manual reruns only; created when needed
+  outputs/                # saved automated deliverables
+    datasets/<library>/
+    tlf/
+  report/                 # translation.md, report.json, comparison-details/
+  diagnostics/            # attempts, revisions, smoke tests, logs, scratch data
+```
+
+A component that produced no code is labelled **not generated**. A completed
+execution is separate from reference equivalence; saved outputs can be partial
+or unvalidated. Requested WORK datasets are deliverables too. Unrequested scratch
+files stay in diagnostics, and previous attempts retain their own evidence.
+
+From `result$bundle_dir`, run `Rscript run.R` or `source("run.R")` in a fresh R
+session. The launcher loads the runtime and macros, then runs programs in
+order. Manual writes use `.sas2r_output_root` in `autoexec.R`, initially
+`bundle/output/`; they do not overwrite saved automated outputs. Change that
+root to keep separate manual iterations. Relative report files are written below
+`output/tlf/`; review explicit paths or other relative file access in edited code.
+
+`sas_write()` copies this editable bundle and its guide. Saved automated outputs
+are exported separately under `saved-outputs/`, and reports under `report/`.
+Copy the whole bundle when moving it, install the R packages listed in its guide,
+and either copy inputs or configure accessible external data paths. No LLM key or
+sas2r installation is needed to run the included runtime. Failed scripts remain
+available for human repair; edits and reruns require new QC.
+
 Relative paths inside translated LIBNAME calls resolve against
 `.sas2r_execution_root` in `autoexec.R`, initially the source project directory.
 Relative paths in the registry itself remain relative to the bundle folder.
@@ -359,7 +396,7 @@ macros:
 ```
 
 When a program calls `%my_macro(...)`, sas2r finds its definition in those
-folders and translates it into `R/macros/my_macro.R`. It also follows calls
+folders and translates it into `bundle/macros/my_macro.R`. It also follows calls
 from that macro to other macros. Each called definition has one reusable R
 function, even when several programs use it or several definitions share a SAS
 file. Uncalled library macros are not sent for translation.
@@ -665,7 +702,7 @@ sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-4-6"))
 # named-library datasets retain their library subdirectory.
 comparison <- compare_datasets(
   base = haven::read_xpt("data/reference/adsl.xpt"),
-  comp = readRDS(file.path(result$outputs_dir, "adam", "adsl.rds")),
+  comp = readRDS(file.path(result$outputs_dir, "datasets", "adam", "adsl.rds")),
   keys = c("STUDYID", "USUBJID"),
   profile = compare_profile(abs = 1e-8, rel = 1e-8)
 )

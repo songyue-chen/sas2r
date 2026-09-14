@@ -109,7 +109,7 @@ test_that("sas_write copies selected bundle, outputs, and report", {
   dst <- withr::local_tempdir()
   written <- sas_write(result, dst)
   expect_identical(written, dst)
-  expect_true(file.exists(file.path(dst, "report.md")))
+  expect_true(file.exists(file.path(dst, "report", "translation.md")))
 })
 
 test_that("sas_write warns on blocked or needs_review status", {

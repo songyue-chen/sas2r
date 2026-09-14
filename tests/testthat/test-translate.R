@@ -55,8 +55,8 @@ test_that("sas_write copies selected bundle and reports to destination", {
   dst <- withr::local_tempdir()
   expect_warning(sas_write(res, dst), class = "sas2r_unverified_write")
 
-  expect_true(file.exists(file.path(dst, "report.md")))
-  expect_true(file.exists(file.path(dst, "sas2r-helpers.R")))
+  expect_true(file.exists(file.path(dst, "report", "translation.md")))
+  expect_true(file.exists(file.path(dst, "runtime", "sas2r-helpers.R")))
 })
 
 test_that("print.sas2r_translation formats status and paths", {

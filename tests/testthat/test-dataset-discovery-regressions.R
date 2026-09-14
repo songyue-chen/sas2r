@@ -63,7 +63,7 @@ test_that("a bundle executes nested include modules once at their include sites"
   file <- review_source(root, "%include 'inc/prep.sas'; data out; set stage; x=x+1; run;")
   result <- sas_translate(file, execute = TRUE, outputs = "work.out",
     config = list(libraries = list(raw = list(path = root, engine = "rds"))))
-  expect_equal(readRDS(file.path(result$outputs_dir, "work", "out.rds"))$x, 3)
+  expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "out.rds"))$x, 3)
   plan <- build_bundle_execution_plan(result$project$graph)
   expect_identical(plan$root_programs, "main")
   expect_true("prep" %in% plan$included_modules)

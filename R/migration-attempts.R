@@ -44,19 +44,11 @@ init_attempt <- function(paths, kind = "smoke", parent_attempt_id = NULL, sequen
     )
   }
 
-  attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
-    paths$attempts
-  } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) %in% c("runs", "attempts")) {
-      paths
-    } else {
-      file.path(paths, "runs")
-    }
-  } else {
-    cli::cli_abort(
-      "{.arg paths} must be a migration_paths object or directory path",
-      class = "sas2r_invalid_argument"
-    )
+  if (is.character(paths) && length(paths) == 1L) paths <- migration_paths(paths)
+  if (!is.list(paths)) cli::cli_abort("paths must be a migration_paths object or output directory", class = "sas2r_invalid_argument")
+  attempts_root <- if (identical(kind, "bundle")) paths$bundle_attempts else paths$smoke_tests
+  if (is.null(attempts_root)) {
+    cli::cli_abort("paths must be a migration_paths object or output directory", class = "sas2r_invalid_argument")
   }
 
   dir.create(attempts_root, recursive = TRUE, showWarnings = FALSE)
@@ -248,55 +240,14 @@ input_hash_manifest <- function(project) {
   manifest
 }
 
-#' Snapshot active selected bundle into an immutable attempt directory
-#'
-#' Copies active generated programs, contracts, format catalogs, and runtime
-#' helpers into `attempt/bundle/`, and emits the attempt-specific read/write
-#' registry template. Never executes mutable files outside the snapshot.
-#'
-#' Materialize the selected translation at the run folder root
-#'
-#' Copies the selected attempt's bundle files to the top of the run folder so
-#' users find the translated programs (and the runtime files they need)
-#' without descending into bundle_attempt_NNN/bundle/. Machine metadata
-#' (*.contract.json, _sas2r_bundle_progress.json) stays behind in the attempt
-#' bundle, which remains the canonical, complete artifact that
-#' `sas_code()`/`sas_write()` and `$bundle_dir` refer to. Written only after
-#' selection is final, so unlike a pre-selection staging copy it cannot
-#' diverge from the selected result.
-#'
-#' @param bundle_dir The selected attempt's bundle directory.
-#' @param run_dir The run folder root.
-#' @param project Optional `sas2r_project`. When supplied, the materialized
-#'   copy gets its own `autoexec.R` anchored at the run folder -- `work` and every
-#'   configured libref's write path point beside the programs, not into the
-#'   attempt evidence directories (which pruning may already have emptied) --
-#'   so `lib_read()`/`lib_write()` work when the user re-runs the programs in
-#'   place. Reads still come from the configured input libraries.
-#' @return The run directory, invisibly (NULL when either side is missing).
-#' @noRd
-materialize_run_translation <- function(bundle_dir, run_dir, project = NULL) {
-  if (is.null(bundle_dir) || length(bundle_dir) != 1L || !dir.exists(bundle_dir)) {
-    return(invisible(NULL))
-  }
-  if (is.null(run_dir) || length(run_dir) != 1L || !dir.exists(run_dir)) {
-    return(invisible(NULL))
-  }
-  fresh_registry <- !is.null(project) && inherits(project, "sas2r_project")
-  rels <- list.files(bundle_dir, recursive = TRUE)
-  keep <- !grepl("\\.contract\\.json$", rels) &
-    rels != "_sas2r_bundle_progress.json"
-  if (fresh_registry) keep <- keep & rels != "autoexec.R"
-  for (rel in rels[keep]) {
-    dest <- file.path(run_dir, rel)
-    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-    file.copy(file.path(bundle_dir, rel), dest, overwrite = TRUE)
-  }
-  if (fresh_registry) {
-    lib_map <- build_attempt_library_map(project, run_dir)
-    write_autoexec(project, run_dir, library_map = lib_map)
-  }
-  invisible(run_dir)
+# Explicit roots prevent smoke work and bundle finalization sharing a directory.
+migration_attempt_dirs <- function(paths) {
+  roots <- c(paths$bundle_attempts, paths$smoke_tests)
+  dirs <- unlist(lapply(roots, function(root) {
+    if (!dir.exists(root)) return(character())
+    list.dirs(root, recursive = FALSE, full.names = TRUE)
+  }), use.names = FALSE)
+  dirs[grepl("^[a-z]+_attempt_[0-9]+$", basename(dirs))]
 }
 
 #' @param state Migration state object.
@@ -378,14 +329,6 @@ snapshot_selected_bundle <- function(state, attempt) {
         atomic_write_json(rev$contract, contract_dest)
       }
     }
-  } else if (!is.null(state$paths$programs) && dir.exists(state$paths$programs)) {
-    prog_files <- list.files(state$paths$programs, pattern = "\\.[rR]$", recursive = TRUE, full.names = TRUE)
-    for (pf in prog_files) {
-      rel <- substring(pf, nchar(state$paths$programs) + 2L)
-      dest <- file.path(bundle_dir, rel)
-      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-      file.copy(pf, dest, overwrite = TRUE)
-    }
   }
 
   write_bundle_entrypoint(state, bundle_dir)
@@ -403,28 +346,9 @@ snapshot_selected_bundle <- function(state, attempt) {
 #'   `completed_attempts`, and `latest_completed`.
 #' @noRd
 resume_migration_attempts <- function(paths, run_binding = NULL) {
-  attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
-    paths$attempts
-  } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) %in% c("runs", "attempts")) paths else file.path(paths, "runs")
-  } else {
-    cli::cli_abort("{.arg paths} must be a migration_paths object or directory path", class = "sas2r_invalid_argument")
-  }
+  if (is.character(paths) && length(paths) == 1L) paths <- migration_paths(paths)
+  attempt_dirs <- migration_attempt_dirs(paths)
 
-  if (!dir.exists(attempts_root)) {
-    return(list(
-      paths = paths,
-      reusable_attempt_ids = character(),
-      incomplete_attempt_ids = character(),
-      completed_attempts = list(),
-      latest_completed = NULL
-    ))
-  }
-
-  attempt_dirs <- list.dirs(attempts_root, full.names = TRUE, recursive = FALSE)
-  # The run folder holds more than attempts (programs/ evidence, report
-  # copies); only <kind>_attempt_<NNN> directories are attempt records.
-  attempt_dirs <- attempt_dirs[grepl("^[a-z]+_attempt_[0-9]+$", basename(attempt_dirs))]
   reusable_ids <- character()
   incomplete_ids <- character()
   completed_list <- list()
@@ -595,26 +519,9 @@ prune_rejected_attempt_outputs <- function(paths, keep_raw = FALSE) {
   )
   selected_id <- sel$attempt_id
 
-  attempts_root <- if (is.list(paths) && !is.null(paths$attempts)) {
-    paths$attempts
-  } else if (is.character(paths) && length(paths) == 1L) {
-    if (basename(paths) %in% c("runs", "attempts")) paths else file.path(paths, "runs")
-  } else {
-    file.path(dirname(dirname(sel_path)), "runs")
-  }
+  if (is.character(paths) && length(paths) == 1L) paths <- migration_paths(paths)
+  attempt_dirs <- migration_attempt_dirs(paths)
 
-  if (!dir.exists(attempts_root)) {
-    return(list(
-      selected_attempt_id = selected_id,
-      pruned_attempts = character(),
-      removed_paths = character()
-    ))
-  }
-
-  attempt_dirs <- list.dirs(attempts_root, full.names = TRUE, recursive = FALSE)
-  # Prune must only ever touch attempt directories: the run folder also holds
-  # the run's programs/ evidence and report copies, which are permanent.
-  attempt_dirs <- attempt_dirs[grepl("^[a-z]+_attempt_[0-9]+$", basename(attempt_dirs))]
   pruned_attempts <- character()
   removed_paths <- character()
 

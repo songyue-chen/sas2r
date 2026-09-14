@@ -84,25 +84,10 @@ test_that("migration demo executes from local RDS input and produces dataset and
   expect_true(!is.null(res_single$bundle_dir) && dir.exists(res_single$bundle_dir))
   expect_true(!is.null(res_dir$bundle_dir) && dir.exists(res_dir$bundle_dir))
 
-  single_attempt <- dirname(res_single$bundle_dir)
-  dir_attempt <- dirname(res_dir$bundle_dir)
-
-  expect_true(
-    file.exists(file.path(single_attempt, "adam", "final_ds.rds")) ||
-    file.exists(file.path(single_attempt, "candidates", "adam", "final_ds.rds")) ||
-    file.exists(file.path(single_attempt, "work", "final_ds.rds")) ||
-    (!is.null(res_single$outputs_dir) && file.exists(file.path(res_single$outputs_dir, "final_ds.rds")))
-  )
-  expect_true(
-    file.exists(file.path(dir_attempt, "adam", "final_ds.rds")) ||
-    file.exists(file.path(dir_attempt, "candidates", "adam", "final_ds.rds")) ||
-    file.exists(file.path(dir_attempt, "work", "final_ds.rds")) ||
-    (!is.null(res_dir$outputs_dir) && file.exists(file.path(res_dir$outputs_dir, "final_ds.rds")))
-  )
-
-  # Check TLF exists in both
-  expect_true(file.exists(file.path(single_attempt, "outputs", "figure1.pdf")))
-  expect_true(file.exists(file.path(dir_attempt, "outputs", "figure1.pdf")))
+  for (result in list(res_single, res_dir)) {
+    expect_true(file.exists(file.path(result$outputs_dir, "datasets", "adam", "final_ds.rds")))
+    expect_true(file.exists(file.path(result$outputs_dir, "tlf", "outputs", "figure1.pdf")))
+  }
 
   # Normalized content equivalence
   code_single <- sas_code(res_single, 1L)

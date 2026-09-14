@@ -15,9 +15,10 @@ sas_write(x, dir)
 The target directory path, invisibly.
 }
 \description{
-Copies the selected programs, runtime, all generated files, and migration
-reports. Rebuilds \code{autoexec.R} with destination-relative output paths and
-includes a dependency-ordered \code{run.R}, an output manifest, and a README.
+Copies the selected editable bundle (including failed code), with its
+\verb{programs/}, \verb{macros/}, \verb{runtime/}, \code{autoexec.R}, \code{run.R}, and README.
+Saved automated deliverables go to \verb{saved-outputs/} and reports to \verb{report/}.
+Existing manual \verb{output/} files are not copied; configuration edits are kept.
 Input libraries remain external dependencies documented in the README.
 Run \verb{Rscript run.R} from the exported folder, or \code{source("run.R", chdir = TRUE)}.
 Warns if status is \code{blocked} or \code{needs_review}.

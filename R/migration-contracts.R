@@ -81,11 +81,9 @@ migration_hash <- function(x) {
 #' Get canonical on-disk paths for a migration output directory
 #'
 #' @param out_dir Output root directory.
-#' @param run_id Optional run identifier. When supplied, attempt directories
-#'   are scoped under `attempts/<run_id>/` so repeated runs into the same
-#'   `out_dir` can never collide with or silently overwrite a previous run's
-#'   attempts. Without it (direct tooling and tests), the unscoped
-#'   `attempts/` root is used.
+#' @param run_id Optional run identifier. Runs are scoped under this name with
+#'   separate bundle, outputs, report, and diagnostics folders. Direct internal
+#'   tools without a run ID use `runs/`.
 #' @return Named list of canonical paths.
 #' @noRd
 migration_paths <- function(out_dir, run_id = NULL) {
@@ -94,47 +92,50 @@ migration_paths <- function(out_dir, run_id = NULL) {
   }
   root <- sub("(?<!^)/+$", "", out_dir, perl = TRUE)
   state <- file.path(root, ".sas2r")
-  # Scoped, everything a run produces lives inside its own <run_id>/ folder
-  # directly under out_dir -- attempt directories, per-component program
-  # evidence (revisions and reviews), and that run's reports. Nothing else
-  # visible shares that level, so the runs need no extra grouping folder.
-  # Unscoped (direct tooling and tests), attempts sit under runs/ and program
-  # evidence under programs/.
-  attempts <- if (is.null(run_id)) file.path(root, "runs") else file.path(root, run_id)
-  programs <- if (is.null(run_id)) {
-    file.path(root, "programs")
-  } else {
-    file.path(root, run_id, "programs")
-  }
+  run_root <- file.path(root, run_id %||% "runs")
+  diagnostics <- file.path(run_root, "diagnostics")
+  report <- file.path(run_root, "report")
+  bundle <- file.path(run_root, "bundle")
   list(
     root = root,
     state = state,
+    run_root = run_root,
     graph = file.path(state, "graph.json"),
-    programs = programs,
+    component_revisions = file.path(diagnostics, "component_revisions"),
     # The staged working bundle lives under .sas2r/, not at the out_dir root:
     # staging is an intermediate the pipeline patches in place, and surfacing
     # it at the top level made users mistake it for the final translation.
     staging = file.path(state, "staging"),
-    attempts = attempts,
-    generated_outputs = file.path(attempts, "generated-outputs"),
+    bundle = bundle,
+    bundle_programs = file.path(bundle, "programs"),
+    bundle_macros = file.path(bundle, "macros"),
+    bundle_runtime = file.path(bundle, "runtime"),
+    bundle_output = file.path(bundle, "output"),
+    diagnostics = diagnostics,
+    bundle_attempts = file.path(diagnostics, "bundle_attempts"),
+    smoke_tests = file.path(diagnostics, "smoke_tests"),
+    logs = file.path(diagnostics, "logs"),
+    work = file.path(diagnostics, "work"),
+    outputs = file.path(run_root, "outputs"),
+    outputs_datasets = file.path(run_root, "outputs", "datasets"),
+    outputs_tlf = file.path(run_root, "outputs", "tlf"),
+    start_here = file.path(run_root, "START_HERE.html"),
+    manifest = file.path(run_root, "manifest.json"),
     selected = file.path(state, "selected.json"),
     usage = file.path(state, "usage.json"),
-    # The machine report stays at a fixed state-level path: resume reads it
-    # to reconcile the previous run. The human report belongs to its run --
-    # scoped, it lives inside runs/<run_id>/ next to the attempts it explains.
-    report_json = file.path(state, "report.json"),
-    report_md = if (is.null(run_id)) {
-      file.path(root, "report.md")
-    } else {
-      file.path(root, run_id, "report.md")
-    }
+    # Keep a latest-report cache for output-root readers; run reports are
+    # independent and remain authoritative for their own invocation.
+    latest_report_json = file.path(state, "report.json"),
+    report_dir = report,
+    report_json = file.path(report, "report.json"),
+    report_md = file.path(report, "translation.md"),
+    comparisons = file.path(report, "comparison-details")
   )
 }
 
 #' Initialize on-disk migration directories
 #'
-#' Creates `.sas2r/` (with `staging/`), the run (or `runs/`) directory, and
-#' its `programs/` evidence directory under `out_dir`.
+#' Creates shared `.sas2r/` staging/cache and run-scoped diagnostics and reports.
 #'
 #' @param out_dir Output root directory.
 #' @param run_id Optional run identifier forwarded to [migration_paths()].
@@ -145,8 +146,10 @@ init_migration_paths <- function(out_dir, run_id = NULL) {
   dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$staging, recursive = TRUE, showWarnings = FALSE)
-  dir.create(paths$attempts, recursive = TRUE, showWarnings = FALSE)
-  dir.create(paths$programs, recursive = TRUE, showWarnings = FALSE)
+  for (name in c("run_root", "bundle_attempts", "smoke_tests", "component_revisions",
+                 "logs", "report_dir")) {
+    dir.create(paths[[name]], recursive = TRUE, showWarnings = FALSE)
+  }
   paths
 }
 

@@ -325,7 +325,6 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
   invisible(registry[[key]])
 }
 
-# Resolve assignments independently of a temporary smoke/bundle working directory.
 sas2r_assignment_path <- function(path, env) {
   root <- get0(".sas2r_execution_root", envir = env, inherits = FALSE,
                ifnotfound = getwd())
@@ -341,7 +340,6 @@ sas2r_libname_clear <- function(libref) {
   invisible(NULL)
 }
 
-# Internal: raise a classed libref error (sas2r_libref_error plus `cls`).
 sas2r_libref_stop <- function(cls, msg) {
   stop(structure(
     class = c(cls, "sas2r_libref_error", "error", "condition"),
@@ -364,8 +362,6 @@ sas2r_lib_entry <- function(libref) {
   reg
 }
 
-# Internal: the file a dataset member resolves to inside its library; refuses
-# any member name that is not a plain name.
 sas2r_lib_member_path <- function(dir, member, ext) {
   if (!is.character(member) || length(member) != 1L || is.na(member) ||
       !nzchar(member) || grepl("[/\\\\]", member) ||
@@ -703,7 +699,9 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
          paste0("no staged bundle root (autoexec.R) at or above ", start))
   }
 
-  target <- file.path(root, path)
+  program_root <- get0(".sas2r_program_root", envir = envir, inherits = TRUE)
+  if (is.null(program_root)) program_root <- root
+  target <- file.path(program_root, path)
   if (!file.exists(target) || dir.exists(target)) {
     fail("sas2r_include_missing_error",
          paste0("staged include module not found: ", path))
@@ -723,8 +721,6 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
 # Runtime helpers: generated-code plumbing. Part of the runtime every
 # translated program carries; see ?sas2r_runtime.
 
-# Internal: split a SAS two-level name ("lib.member"; a bare name means work)
-# after substituting &macro variables. Generated code, not users, calls this.
 split_ds <- function(ds, macro_vars = character()) {
   if (length(macro_vars) > 0L && is.character(ds) && length(ds) == 1L) {
     for (nm in names(macro_vars)) {

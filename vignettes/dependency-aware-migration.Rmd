@@ -32,7 +32,7 @@ A complete migration workflow follows six coordinated phases:
 3. **Immediate Component Repair**: Translates and checks program units, verifies syntax, and asks a separate reviewer to evaluate the candidate against the original SAS source.
 4. **Subprocess Attempt Execution**: Executes the complete generated R bundle inside an isolated subprocess using copy-on-write library registries.
 5. **Output Verification Gate**: Evaluates generated candidate datasets and Table/Listing/Figure (TLF) outputs against structural assertions and optional SAS reference datasets (`.xpt`, `.sas7bdat`, `.rds`).
-6. **Authoritative Reporting**: Produces machine-readable (`.sas2r/report.json`) and human-readable (`report.md`) audit documentation.
+6. **Authoritative Reporting**: Produces machine-readable (`report/report.json`) and human-readable (`report/translation.md`) audit documentation.
 
 ## Configuring a Clinical Study Migration (`_sas2r.yml`)
 
@@ -136,10 +136,10 @@ sas_write(result, "production_r/")
 ```
 
 Outputs preserve library subdirectories: ADSL is at
-`file.path(result$outputs_dir, "adam", "adsl.rds")`. The export contains a
-dependency-ordered `run.R`, `run-order.json`, and `outputs-manifest.json`.
-If a source program already occupies `run.R`, the run-order file identifies the
-renamed launcher. From the export directory, use `Rscript run.R` or
+`file.path(result$outputs_dir, "datasets", "adam", "adsl.rds")`. The export contains a
+dependency-ordered `run.R`, `run-order.json`, and a README with run/edit/move instructions.
+Programs and macros are in `programs/` and `macros/`; saved automated outputs
+are under `saved-outputs/`, separate from manual writes to `output/`. From the export directory, use `Rscript run.R` or
 `source("run.R", chdir = TRUE)`. Install the R dependencies listed in its guide
 and update input paths in `autoexec.R` and explicit source LIBNAME statements
 when inputs move. Input datasets are external dependencies; the exported report
@@ -200,7 +200,7 @@ separately from the comparison result.
 `sas2r` protects production and raw input datasets from inadvertent mutation during translation:
 
 - Input libraries are mounted read-only.
-- Write targets and scratch `work` libraries are mapped into attempt-specific isolated folders (`<run_id>/bundle_attempt_001/`). Each run gets its own timestamp-first `run_<timestamp>_<hash>/` folder directly in the output directory -- the selected translated programs and the run's `report.md` sit at its top, with attempts and per-component program evidence beneath -- so re-running into the same `out_dir` never overwrites an earlier run's work.
+- Write targets and scratch WORK libraries are isolated under `<run_id>/diagnostics/bundle_attempts/bundle_attempt_001/`. Every run has its own timestamp-first folder. Open its `START_HERE.html` for reports and all available selected code in `bundle/`. Saved deliverables go to `outputs/`; requested WORK datasets count as deliverables, while unrequested scratch stays in diagnostics. Manual reruns write to `bundle/output/` and do not change the original evidence.
 - Multi-round repairs select improved attempts deterministically and prune rejected attempts according to configuration.
 
 ## Model Privacy & Clinical Data Protection

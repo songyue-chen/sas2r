@@ -3,12 +3,6 @@
 \name{sas2r_runtime}
 \alias{sas2r_runtime}
 \alias{sas2r_helpers}
-\alias{sas2r_registry_env}
-\alias{sas2r_lib_entry}
-\alias{sas2r_lib_member_path}
-\alias{sas2r_libref_stop}
-\alias{sas2r_assignment_path}
-\alias{split_ds}
 \title{The runtime every translated program carries}
 \description{
 Every program sas2r translates calls a small runtime -- \code{\link[=lib_read]{lib_read()}},

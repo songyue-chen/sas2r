@@ -45,35 +45,51 @@ write_bundle_entrypoint <- function(state, bundle_dir) {
   invisible(files)
 }
 
-write_bundle_guide <- function(project, dir, inventory = list()) {
-  entrypoint <- read_json_record(file.path(dir, "run-order.json"))$entrypoint
+# The page and README share these same instructions.
+bundle_instructions <- function(project, dir) {
+  order <- read_json_record(file.path(dir, "run-order.json"))
+  programs <- as.character(unlist(order$programs))
   code_files <- list.files(dir, pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
   code <- paste(unlist(lapply(code_files, readLines, warn = FALSE)), collapse = "\n")
   packages <- unique(sub("::.*$", "", regmatches(code, gregexpr("[A-Za-z][A-Za-z0-9.]*::", code))[[1L]]))
   packages <- sort(setdiff(packages, c("base", "utils", "stats", "tools", "methods", "grDevices", "graphics")))
   inputs <- build_attempt_library_map(project, dir)
-  input_lines <- vapply(setdiff(names(inputs), "work"), function(lib) {
-    paste0("- `", lib, "`: reads `", inputs[[lib]]$read_path, "`; writes `", lib, "/` in this folder.")
-  }, character(1))
-  writeLines(c(
-    "# Translated SAS program folder", "",
-    sprintf("Run `Rscript %s` from this folder. In R, use `source(\"%s\", chdir = TRUE)`.", entrypoint, entrypoint),
-    "The entry point runs root programs in dependency order; included programs are called by their parents.", "",
-    "## Dependencies", "", "Requires R 4.1 or later. The generated runtime is included.",
-    if (length(packages)) paste0("Install the packages used by this bundle: `install.packages(c(", paste(sprintf('"%s"', packages), collapse = ", "), "))`."),
-    "Packages used by optional runtime readers/formatters are listed too; load only the features you need.", "",
-    "## Input and output paths", "",
-    "Edit library paths in `autoexec.R` when inputs move. Input datasets are external dependencies and are not copied.",
-    input_lines,
-    "WORK reads and writes `work/` in this folder. Other generated files retain their relative paths.",
-    "Relative LIBNAME calls use `.sas2r_execution_root` in `autoexec.R`, initially the source project directory; update it when moving the project.",
-    "Registry seed paths remain bundle-relative. Explicit LIBNAME assignments still apply at their source positions; inspect absolute paths when moving input libraries.",
-    "Reassigning a known physical library preserves its generated members. New assignments use separate `libraries/` output folders unless write_path is explicit.",
-    "`outputs-manifest.json` lists the generated files copied from the selected execution.", "",
-    "## Verification", "",
-    "The report describes the selected execution before export. Rerunning this folder creates new outputs but does not update that report.",
-    "Check the report's separate output and independent-review coverage before using these results."
-  ), file.path(dir, "README.md"))
-  atomic_write_json(inventory, file.path(dir, "outputs-manifest.json"))
+  c(
+    "# Use and edit your translated scripts", "",
+    "All available selected code is included, even when it failed checks or execution. Missing code is listed in the run manifest; no empty replacements are supplied.", "",
+    "## Prepare R", "",
+    "Requires R 4.1 or later. The bundled runtime needs no sas2r installation, LLM account, or translation call.",
+    if (length(packages)) paste0("Packages referenced by this bundle (including optional runtime features): ", paste(packages, collapse = ", "), "."),
+    if (length(packages)) paste0("Install required packages with install.packages(c(", paste(sprintf('"%s"', packages), collapse = ", "), "))."),
+    "Observed package versions are in the migration report; they are not minimum requirements.", "",
+    "## Choose data locations", "",
+    "Edit read_path in autoexec.R for each input library; data can stay external or be copied beside this bundle and given a relative path. Keep engine consistent with the input format (for example rds or sas7bdat). Reference datasets used only for comparison are separate from program inputs.",
+    vapply(setdiff(names(inputs), "work"), function(lib) paste0("- ", lib, ": original input ", inputs[[lib]]$read_path), character(1)),
+    "Manual outputs use .sas2r_output_root in autoexec.R, initially bundle/output/: datasets/<library>/, work/, and tlf/ for relative report files. New source LIBNAME bindings use libraries/ under the same write root. Change the root to keep separate manual iterations.",
+    "Relative translated LIBNAME calls use .sas2r_execution_root (initially the source project directory), whereas relative registry seed paths use the bundle directory. Explicit script-level paths and external resources may also need editing.", "",
+    "## Run here", "",
+    "Start a fresh R session, set the working directory to this bundle folder, and run:", "",
+    "```r", 'source("run.R")', "```", "",
+    "Or run Rscript run.R from this folder. Failed code can stop execution until repaired.",
+    paste0("Program order: ", paste(programs, collapse = " -> "), ". Macros are loaded as function definitions, not executed as separate jobs."), "",
+    "## Fix one script or supply existing upstream datasets", "",
+    "Use the starting page's component table to find the code, upstream dependencies, and error. From a fresh session in this bundle folder:", "",
+    "```r", 'source("autoexec.R")',
+    'dir.create(file.path(.sas2r_output_root, "tlf"), recursive = TRUE, showWarnings = FALSE)',
+    'setwd(file.path(.sas2r_output_root, "tlf"))',
+    if (length(programs)) paste0('source(file.path(.sas2r_bundle_root, ', vapply(programs, deparse, character(1)), '))'),
+    "```", "",
+    "Run the needed upstream lines followed by the edited script; rerun affected downstream scripts afterwards. To use supplied upstream datasets, configure their input libraries and run only the downstream lines. Use a fresh write root: generated members take precedence over input members, so running the full derivation order or keeping old manual outputs can replace the data you meant to test.",
+    "The runner uses output/tlf/ as its working directory for relative report files. Review other relative file reads/writes in hand-edited code; arbitrary hard-coded paths are not relocated automatically.", "",
+    "## Move the bundle", "",
+    "Copy this entire folder, including programs, macros, runtime, formats, autoexec.R, run.R, and support files. Install required R packages, copy input data or set accessible external paths, update autoexec.R and explicit paths in scripts, then run from the new folder.", "",
+    "## Check edited results", "",
+    "The saved migration outputs and report describe the original automated run. Manual runs do not replace them or update their validation status. Compare edited results against your reference datasets and review unresolved findings before use. The run's report/comparison-details folder contains available original comparison evidence; there is no automatic revalidation command in this bundle.",
+    "Repeated manual runs may overwrite earlier manual outputs; select a fresh .sas2r_output_root to keep them."
+  )
+}
+
+write_bundle_guide <- function(project, dir, inventory = list()) {
+  writeLines(bundle_instructions(project, dir), file.path(dir, "README.md"))
   invisible(dir)
 }

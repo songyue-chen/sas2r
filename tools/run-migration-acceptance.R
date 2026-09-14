@@ -261,7 +261,7 @@ run_fixture_acceptance <- function(artifacts_dir) {
   sas_write(res, fresh2)
   # Remove copied outputs so a stale file cannot make the execution gate pass.
   for (fdir in c(fresh1, fresh2)) {
-    unlink(file.path(fdir, c("adam/adsl_out.rds", "outputs/vs_summary_plot.pdf")))
+    unlink(file.path(fdir, "output"), recursive = TRUE)
   }
   run_export <- function(root) {
     tryCatch(callr::r(function(bdir) {
@@ -276,10 +276,10 @@ run_fixture_acceptance <- function(artifacts_dir) {
   res1 <- run_export(fresh1)
   res2 <- run_export(fresh2)
 
-  ds1_path <- file.path(fresh1, "adam", "adsl_out.rds")
-  ds2_path <- file.path(fresh2, "adam", "adsl_out.rds")
-  tlf1_path <- file.path(fresh1, "outputs", "vs_summary_plot.pdf")
-  tlf2_path <- file.path(fresh2, "outputs", "vs_summary_plot.pdf")
+  ds1_path <- file.path(fresh1, "output", "datasets", "adam", "adsl_out.rds")
+  ds2_path <- file.path(fresh2, "output", "datasets", "adam", "adsl_out.rds")
+  tlf1_path <- file.path(fresh1, "output", "tlf", "outputs", "vs_summary_plot.pdf")
+  tlf2_path <- file.path(fresh2, "output", "tlf", "outputs", "vs_summary_plot.pdf")
 
   ds_match <- file.exists(ds1_path) && file.exists(ds2_path) &&
     identical(readRDS(ds1_path), readRDS(ds2_path))

@@ -80,13 +80,13 @@ test_that("independent failures are diagnosed in isolation and repaired before o
   expect_false(first$executions$p03$passed)
   expect_true(first$executions$p04$passed)
   for (record in first$executions) expect_identical(record$scope, "program_smoke")
-  expect_false(file.exists(file.path(result$paths$attempts, "bundle_attempt_001", "work", "out2.rds")))
+  expect_false(file.exists(file.path(result$paths$bundle_attempts, "bundle_attempt_001", "work", "out2.rds")))
   expect_identical(result$attempt$executed_component_ids, fx$ids)
   requests <- fx$state$fixer_llm$requests()
   prompt <- paste(vapply(requests[[2L]]$messages, `[[`, character(1), "content"), collapse = "\n")
   expect_match(prompt, "translation fault p03", fixed = TRUE)
   expect_match(prompt, first$executions$p03$execution_id, fixed = TRUE)
-  bundle_dir <- normalizePath(file.path(result$paths$attempts, "bundle_attempt_001"), winslash = "/")
+  bundle_dir <- normalizePath(file.path(result$paths$bundle_attempts, "bundle_attempt_001"), winslash = "/")
   for (record in first$executions) {
     # The current failed bundle owns these diagnostics; the earlier program
     # smoke attempt must not collect the logs for every subsequent bundle.
@@ -123,7 +123,7 @@ test_that("a shared helper patch requires fresh evidence before another repair",
     response <- valid_program_fix_response(code = fx$fixed[[id]],
       diagnosis = "Repair", summary = "Restore source derivation")
     if (id == "p01") {
-      helper <- file.path(fx$state$paths$attempts, "bundle_attempt_001", "bundle", "sas2r-helpers.R")
+      helper <- file.path(fx$state$paths$bundle_attempts, "bundle_attempt_001", "bundle", "sas2r-helpers.R")
       response$data$bundle_helper_patch <- list(path = "sas2r-helpers.R", reason = "Refresh helper definition",
         content = paste(c(readLines(helper, warn = FALSE), "# Helper revision"), collapse = "\n"))
     }
@@ -173,7 +173,7 @@ test_that("all known mechanical failures are retained and queued", {
   result <- run_bundle_pipeline(fx$state)
   expect_identical(result$status, "migration_ready")
   expect_identical(result$attempts$sequence, 1:2)
-  first <- read_attempt_record(file.path(result$paths$attempts, "bundle_attempt_001"))
+  first <- read_attempt_record(file.path(result$paths$bundle_attempts, "bundle_attempt_001"))
   expect_setequal(names(first$mechanical_failures), c("p01", "p03"))
 })
 

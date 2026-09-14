@@ -182,10 +182,10 @@ prepare_migration_llm_settings <- function(state) {
     if (key %in% seen) next
     seen <- c(seen, key)
     cached <- exists(key, llm$verified_settings, inherits = FALSE)
-    ensure_llm_settings(llm, parameters, tier, state$paths$state, state$usage_budget)
+    ensure_llm_settings(llm, parameters, tier, state$paths$logs, state$usage_budget)
     if (!length(parameters) || cached) {
       settings_event(llm, capabilities, parameters,
-                     if (cached) "cached" else "provider_defaults", state$paths$state)
+                     if (cached) "cached" else "provider_defaults", state$paths$logs)
     }
   }
   invisible(NULL)

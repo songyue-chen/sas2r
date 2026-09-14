@@ -40,7 +40,7 @@ BANNER <- c(
 #' @noRd
 module_bootstrap <- function() {
   c(
-    "# sas2r bootstrap: run this program from its folder (autoexec.R beside it holds the library",
+    "# sas2r bootstrap: run from the bundle folder (autoexec.R holds the library",
     '# paths and loads the runtime), or source("autoexec.R", chdir = TRUE) once per session first.',
     'if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) source("autoexec.R", local = environment(), chdir = TRUE)'
   )

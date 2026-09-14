@@ -157,7 +157,7 @@ test_that("mechanically invalid revisions go to repair before independent review
   binding <- new_component_binding(migration_hash("source"), migration_hash(code),
     migration_hash("helper"), migration_hash("prompt"), migration_hash("closure"))
   contract <- new_behavioral_contract("calc", writes = "work.out", binding = binding)
-  path <- file.path(state$paths$programs, "bad.R")
+  path <- file.path(state$paths$component_revisions, "bad.R")
   writeLines(code, path)
   state$selected_revisions$calc <- list(component_id = "calc", revision_id = "r1",
     r_code = code, r_path = path, contract = contract, binding = binding)

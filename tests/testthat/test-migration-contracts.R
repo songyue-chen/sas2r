@@ -4,25 +4,19 @@ test_that("migration records have deterministic identities and paths", {
   expect_identical(a, b)
 
   p <- migration_paths(file.path(tempdir(), "out"))
-  expect_named(p, c(
-    "root", "state", "graph", "programs", "staging", "attempts", "generated_outputs",
-    "selected", "usage", "report_json", "report_md"
-  ))
   expect_identical(p$staging, file.path(p$state, "staging"))
-  expect_identical(p$attempts, file.path(p$root, "runs"))
-
-  # A run-scoped view nests attempts, generated outputs, program evidence, and the markdown
-  # report under the run id; nothing else moves (report_json in particular
-  # stays at the state level -- resume reads it there).
+  expect_identical(p$run_root, file.path(p$root, "runs"))
   scoped <- migration_paths(file.path(tempdir(), "out"), run_id = "run_abc")
-  expect_identical(scoped$attempts, file.path(scoped$root, "run_abc"))
-  expect_identical(scoped$programs, file.path(scoped$root, "run_abc", "programs"))
-  expect_identical(scoped$report_md, file.path(scoped$root, "run_abc", "report.md"))
-  expect_identical(scoped$report_json, p$report_json)
-  expect_identical(scoped$generated_outputs, file.path(scoped$attempts, "generated-outputs"))
-  moved <- c("attempts", "programs", "generated_outputs", "report_md")
-  expect_identical(scoped[setdiff(names(scoped), moved)],
-                   p[setdiff(names(p), moved)])
+  expect_identical(scoped$run_root, file.path(scoped$root, "run_abc"))
+  expect_identical(scoped$component_revisions, file.path(scoped$run_root, "diagnostics", "component_revisions"))
+  expect_identical(scoped$bundle_attempts, file.path(scoped$run_root, "diagnostics", "bundle_attempts"))
+  expect_identical(scoped$smoke_tests, file.path(scoped$run_root, "diagnostics", "smoke_tests"))
+  expect_identical(scoped$report_md, file.path(scoped$run_root, "report", "translation.md"))
+  expect_identical(scoped$report_json, file.path(scoped$run_root, "report", "report.json"))
+  expect_identical(scoped$latest_report_json, p$latest_report_json)
+  expect_identical(scoped$outputs, file.path(scoped$run_root, "outputs"))
+  expect_identical(scoped$bundle, file.path(scoped$run_root, "bundle"))
+  expect_identical(scoped$state, p$state)
   expect_identical(COMPONENT_EVIDENCE_LEVELS, c(
     "reviewed_only", "runtime_verified", "output_verified",
     "reference_validated"
@@ -46,8 +40,8 @@ test_that("init_migration_paths creates required directories and returns path li
 
   paths <- init_migration_paths(td)
   expect_true(dir.exists(paths$state))
-  expect_true(dir.exists(paths$programs))
-  expect_true(dir.exists(paths$attempts))
+  expect_true(dir.exists(paths$component_revisions))
+  expect_true(dir.exists(paths$bundle_attempts))
   expect_identical(paths$root, td)
 })
 

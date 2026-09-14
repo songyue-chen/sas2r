@@ -57,9 +57,9 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   unresolved <- findings$kind %in% preflight_blocking_findings()
   needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing")
   paths <- migration_paths(root, "<run_id>")
-  destinations <- list(root = root, run = paths$attempts, state = paths$state,
-                       generated_outputs = paths$generated_outputs,
-                       bundle = file.path(paths$attempts, "<bundle_attempt_id>", "bundle"),
+  destinations <- list(root = root, run = paths$run_root, state = paths$state,
+                       generated_outputs = paths$outputs,
+                       bundle = paths$bundle,
                        report_json = paths$report_json,
                        report_md = paths$report_md)
   sources <- project$files
