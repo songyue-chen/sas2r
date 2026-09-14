@@ -7,16 +7,16 @@
 #' executes that module at one include site, into the calling program's own
 #' environment, exactly where the `%INCLUDE` stood.
 #'
-#' The path is always relative to the staged bundle root -- the nearest
-#' ancestor of the running script holding `autoexec.R` -- and never to
-#' the working directory, so the bundle can be run from anywhere. Absolute
+#' The path is relative to the staged module root, and never to the working
+#' directory. The editable bundle sets this to `programs/` in `autoexec.R`;
+#' flat execution snapshots use the nearest ancestor holding `autoexec.R`. Absolute
 #' paths and `.` or `..` components are rejected, and the file the joined path
 #' actually resolves to is then required to lie under the root: rejecting the
 #' components alone would still let a symlinked directory inside the bundle
 #' read outside it, so the confinement is checked on the resolved path, where
 #' a hand-edited bundle cannot talk its way out.
 #'
-#' @param relative_path The module's path relative to the bundle root.
+#' @param relative_path The module's path relative to the staged module root.
 #' @param envir The environment to run it in; the caller's by default.
 #' @return The resolved path of the module, invisibly.
 #' @family runtime helpers
@@ -90,7 +90,9 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
          paste0("no staged bundle root (autoexec.R) at or above ", start))
   }
 
-  target <- file.path(root, path)
+  program_root <- get0(".sas2r_program_root", envir = envir, inherits = TRUE)
+  if (is.null(program_root)) program_root <- root
+  target <- file.path(program_root, path)
   if (!file.exists(target) || dir.exists(target)) {
     fail("sas2r_include_missing_error",
          paste0("staged include module not found: ", path))

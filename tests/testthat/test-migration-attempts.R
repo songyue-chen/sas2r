@@ -21,13 +21,13 @@ test_that("init_attempt creates directories and incomplete record", {
   expect_false(attempt$completed)
   expect_null(attempt$parent_attempt_id)
 
-  expect_true(dir.exists(file.path(paths$attempts, "smoke_attempt_001")))
-  expect_true(dir.exists(file.path(paths$attempts, "smoke_attempt_001", "bundle")))
-  expect_true(dir.exists(file.path(paths$attempts, "smoke_attempt_001", "work")))
-  expect_true(dir.exists(file.path(paths$attempts, "smoke_attempt_001", "outputs")))
-  expect_true(dir.exists(file.path(paths$attempts, "smoke_attempt_001", "logs")))
+  expect_true(dir.exists(file.path(paths$smoke_tests, "smoke_attempt_001")))
+  expect_true(dir.exists(file.path(paths$smoke_tests, "smoke_attempt_001", "bundle")))
+  expect_true(dir.exists(file.path(paths$smoke_tests, "smoke_attempt_001", "work")))
+  expect_true(dir.exists(file.path(paths$smoke_tests, "smoke_attempt_001", "outputs")))
+  expect_true(dir.exists(file.path(paths$smoke_tests, "smoke_attempt_001", "logs")))
 
-  rec_file <- file.path(paths$attempts, "smoke_attempt_001", "record.json")
+  rec_file <- file.path(paths$smoke_tests, "smoke_attempt_001", "record.json")
   expect_true(file.exists(rec_file))
 
   saved_rec <- jsonlite::fromJSON(rec_file)
@@ -73,7 +73,7 @@ test_that("complete_attempt marks record completed and immutable", {
   expect_identical(completed$executed_component_ids, c("comp_a", "comp_b"))
   expect_true(!is.null(completed$completed_at))
 
-  rec_file <- file.path(paths$attempts, "smoke_attempt_001", "record.json")
+  rec_file <- file.path(paths$smoke_tests, "smoke_attempt_001", "record.json")
   saved_rec <- jsonlite::fromJSON(rec_file)
   expect_true(saved_rec$completed)
 

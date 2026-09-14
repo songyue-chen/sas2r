@@ -23,14 +23,14 @@ for (i in seq_along(blocks)) {
 workspace <- tempfile("sas2r-doc-examples-")
 dir.create(workspace)
 old <- setwd(workspace)
-for (dir in c("programs", "data/sdtm", "data/adam", "data/reference", "saved/generated-outputs/adam")) {
+for (dir in c("programs", "data/sdtm", "data/adam", "data/reference", "saved/generated-outputs/datasets/adam")) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
 }
 reference <- data.frame(STUDYID = c("DOCS", "DOCS"), USUBJID = c("01", "02"), AVAL = c(10, 20))
 haven::write_xpt(reference, "data/sdtm/dm.xpt")
 haven::write_xpt(reference, "data/reference/adsl.xpt")
 haven::write_xpt(reference, "data/reference/adae.xpt")
-saveRDS(reference[c(2, 1), ], "saved/generated-outputs/adam/adsl.rds")
+saveRDS(reference[c(2, 1), ], "saved/generated-outputs/datasets/adam/adsl.rds")
 writeLines("data adam.adsl; set sdtm.dm; run;", "programs/adsl.sas")
 # The study configuration is also read verbatim from the README.
 quickstart <- Filter(function(b) b$file == "README.md" && b$language == "yaml", blocks)[[1L]]
@@ -48,7 +48,7 @@ fixture_result <- sas_translate(
   usage_limits = list(max_calls = 0), max_program_repair_rounds = 0,
   max_bundle_repair_rounds = 0
 )
-stopifnot(file.exists(file.path(fixture_result$outputs_dir, "adam", "adsl.rds")))
+stopifnot(file.exists(file.path(fixture_result$outputs_dir, "datasets", "adam", "adsl.rds")))
 sas_write(fixture_result, "run_20260907T120000Z_1a2b3c4d")
 env <- new.env(parent = globalenv())
 env$result <- list(outputs_dir = normalizePath("saved/generated-outputs"))

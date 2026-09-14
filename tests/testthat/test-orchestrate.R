@@ -20,9 +20,9 @@ test_that("new_migration_state initializes canonical directories and records", {
   state <- new_migration_state(project, out)
   expect_s3_class(state, "sas2r_migration_state")
   expect_true(dir.exists(state$paths$state))
-  expect_true(dir.exists(state$paths$programs))
-  expect_true(dir.exists(state$paths$attempts))
-  expect_true(dir.exists(state$paths$programs))
+  expect_true(dir.exists(state$paths$component_revisions))
+  expect_true(dir.exists(state$paths$bundle_attempts))
+  expect_true(dir.exists(state$paths$component_revisions))
   expect_true(!is.null(state$graph$nodes))
   expect_true(nrow(state$schedule) >= 1L)
   expect_true(!is.null(state$attempt))
@@ -38,7 +38,7 @@ test_that("process_program_component generates, checks, reviews, and smokes prog
   state <- new_migration_state(project, out)
 
   # Pre-populate selected revision with working code
-  r_dir <- file.path(state$paths$programs, "calc", "revisions", "r1")
+  r_dir <- file.path(state$paths$component_revisions, "calc", "revisions", "r1")
   dir.create(r_dir, recursive = TRUE, showWarnings = FALSE)
   r_path <- file.path(r_dir, "program.R")
   c_path <- file.path(r_dir, "contract.json")

@@ -120,7 +120,7 @@ immediate_loop_fixture <- function(
   fixer_llm <- recording_fixer(fixer_fn)
 
   # Initial pre-generated revision r1
-  rev_dir <- file.path(paths$programs, "prog", "revisions", "r1")
+  rev_dir <- file.path(paths$component_revisions, "prog", "revisions", "r1")
   dir.create(rev_dir, recursive = TRUE, showWarnings = FALSE)
   r1_path <- file.path(rev_dir, "program.R")
   contract1_path <- file.path(rev_dir, "contract.json")

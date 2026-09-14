@@ -124,7 +124,16 @@ sas_translate <- function(
     budget_usd, budget_mode, pricing_source, pricing_rates, usage_limits,
     ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
   )
+  paths <- migration_paths(out_dir, budget$run_id)
+  state <- list(paths = paths, usage_budget = budget, execute = isTRUE(execute))
+  stage <- "preflight"
+  tryCatch({
   setup <- translation_setup(path, config, outputs, recursive, cache = TRUE)
+  paths <- init_migration_paths(out_dir, budget$run_id)
+  state$project <- setup$project
+  state$graph <- setup$plan$graph
+  state$schedule <- setup$plan$schedule
+  state$output_contracts <- setup$plan$contracts
   require_resolved_macros(setup$project)
   cfg <- setup$config
   project <- setup$project
@@ -148,6 +157,7 @@ sas_translate <- function(
     NULL
   }
 
+  stage <- "initialize"
   # 8. Initialize migration state
   state <- new_migration_state(
     project = project,
@@ -161,8 +171,7 @@ sas_translate <- function(
     usage_budget = budget,
     plan = plan
   )
-  # Adopt the state's run-scoped paths: attempts (and thus pruning and the
-  # selected-bundle fallbacks below) live under attempts/<run_id>/.
+  # Adopt the state's run-scoped paths for code, execution evidence, and reports.
   paths <- state$paths
   state$output_contracts <- output_contracts
   state$agent_evidence <- agent_evidence
@@ -177,7 +186,8 @@ sas_translate <- function(
   # assessment, bundle repair, selection). Both signal sas2r_progress
   # conditions, and this is the one place the console renderer is installed --
   # without it a long metered run prints nothing.
-  state <- tryCatch(with_sas2r_progress({
+  stage <- "translation"
+  state <- with_sas2r_progress({
     state$environment <- migration_environment(state)
     append_usage_record(budget, list(record_type = "run_environment",
                                     run_id = state$run_id, environment = state$environment))
@@ -196,36 +206,18 @@ sas_translate <- function(
       max_bundle_repairs_per_component = max_bundle_repairs_per_component,
       execute = isTRUE(execute)
     )
-  }), error = function(error) {
-    finalize_usage_run(budget, terminal_status = "failed")
-    stop(error)
   })
 
-  # 11. Determine selected bundle and outputs directories
+  stage <- "finalization"
   selected_att <- state$selected_attempt
-  bundle_dir <- if (!is.null(selected_att) && !is.null(selected_att$attempt_dir)) {
+  executed_bundle <- if (!is.null(selected_att$attempt_dir)) {
     file.path(selected_att$attempt_dir, "bundle")
-  } else if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
-    file.path(state[["attempt"]]$attempt_dir, "bundle")
-  } else {
-    file.path(paths$state, "selected", "bundle")
-  }
-
-  # If bundle_dir doesn't exist, create snapshot
-  if (!dir.exists(bundle_dir)) {
-    dir.create(bundle_dir, recursive = TRUE, showWarnings = FALSE)
-    snapshot_selected_bundle(state, dirname(bundle_dir))
-  }
-
-  outputs_dir <- if (isTRUE(execute) && !is.null(selected_att) && !is.null(selected_att$attempt_dir)) {
-    destination <- paths$generated_outputs
-    copy_output_inventory(selected_att$attempt_dir, destination, selected_att$output_hashes)
-    destination
-  } else {
-    NULL
-  }
-
+  } else snapshot_selected_bundle(state, file.path(paths$diagnostics, "partial_bundle"))
+  materialize_user_bundle(executed_bundle, paths$bundle, state$project)
+  bundle_dir <- paths$bundle
   state$bundle_dir <- bundle_dir
+  state$saved_outputs <- materialize_run_outputs(state)
+  outputs_dir <- if (length(state$saved_outputs)) paths$outputs else NULL
   state$outputs_dir <- outputs_dir
 
   # Status adjustments for execute = FALSE
@@ -268,12 +260,6 @@ sas_translate <- function(
     prune_rejected_attempt_outputs(paths, keep_raw = FALSE)
   }
 
-  # 12b. Surface the selected translation at the top of the run folder, next
-  # to its report; the attempt bundle underneath stays canonical.
-  if (identical(basename(paths$attempts), budget$run_id)) {
-    materialize_run_translation(bundle_dir, paths$attempts, project = state$project)
-  }
-
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()
   write_migration_report(state)
@@ -281,6 +267,10 @@ sas_translate <- function(
   with_sas2r_progress(signal_bundle_event(
     "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
   ))
+
+  cli::cat_line("Start here: ", paths$start_here)
+  cli::cat_line("Bundle: ", bundle_dir)
+  if (!is.null(outputs_dir)) cli::cat_line("Saved outputs: ", outputs_dir)
 
   # 14. Return canonical sas2r_translation object
   structure(
@@ -291,8 +281,8 @@ sas_translate <- function(
       outputs_dir = outputs_dir,
       status = state$status,
       status_reason = state$status_reason,
-      graph_path = paths$graph,
-      output_contracts_path = output_contracts_path,
+      graph_path = file.path(paths$report_dir, "graph.json"),
+      output_contracts_path = file.path(paths$report_dir, "output-contracts.json"),
       report_path = paths$report_md,
       report_json_path = paths$report_json,
       component_evidence = state$histories,
@@ -304,6 +294,29 @@ sas_translate <- function(
     ),
     class = c("sas2r_translation", "list")
   )
+  }, error = function(error) {
+    if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
+        "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error"))) stop(error)
+    finalize_usage_run(budget, terminal_status = "failed")
+    # Evidence writing must never hide the original failure, including an
+    # unwritable output location. No additional success state is invented.
+    tryCatch({
+      init_migration_paths(out_dir, budget$run_id)
+      state$status <- "blocked"
+      state$status_reason <- conditionMessage(error)
+      state$diagnostics$failure <- list(stage = stage, message = conditionMessage(error))
+      if (length(state$selected_revisions) && !dir.exists(paths$bundle)) {
+        partial <- snapshot_selected_bundle(state, file.path(paths$diagnostics, "partial_bundle"))
+        materialize_user_bundle(partial, paths$bundle, state$project)
+      }
+      state$bundle_dir <- if (dir.exists(paths$bundle)) paths$bundle else NULL
+      write_migration_report(state)
+      cli::cat_line("Blocked run: ", paths$start_here)
+    }, error = function(report_error) {
+      cli::cat_line("Could not write run report: ", conditionMessage(report_error))
+    })
+    stop(error)
+  })
 }
 
 #' Print a sas2r translation summary
@@ -346,9 +359,10 @@ print.sas2r_translation <- function(x, ...) {
 
 #' Write translated code artifacts and outputs to a destination directory
 #'
-#' Copies the selected programs, runtime, all generated files, and migration
-#' reports. Rebuilds `autoexec.R` with destination-relative output paths and
-#' includes a dependency-ordered `run.R`, an output manifest, and a README.
+#' Copies the selected editable bundle (including failed code), with its
+#' `programs/`, `macros/`, `runtime/`, `autoexec.R`, `run.R`, and README.
+#' Saved automated deliverables go to `saved-outputs/` and reports to `report/`.
+#' Existing manual `output/` files are not copied; configuration edits are kept.
 #' Input libraries remain external dependencies documented in the README.
 #' Run `Rscript run.R` from the exported folder, or `source("run.R", chdir = TRUE)`.
 #' Warns if status is `blocked` or `needs_review`.
@@ -379,17 +393,17 @@ sas_write <- function(x, dir) {
   }
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
 
-  materialize_run_translation(x$bundle_dir, dir, project = x$project)
+  materialize_user_bundle(x$bundle_dir, dir, project = x$project)
   inventory <- if (!is.null(x$outputs_dir)) attempt_output_hashes(x$outputs_dir) else list()
-  if (length(inventory)) copy_output_inventory(x$outputs_dir, dir, inventory)
-  write_bundle_guide(x$project, dir, inventory)
+  if (length(inventory)) copy_output_inventory(x$outputs_dir, file.path(dir, "saved-outputs"), inventory)
 
   if (!is.null(x$report_path) && file.exists(x$report_path)) {
-    file.copy(x$report_path, file.path(dir, basename(x$report_path)), overwrite = TRUE)
+    dir.create(file.path(dir, "report"), showWarnings = FALSE)
+    file.copy(x$report_path, file.path(dir, "report", basename(x$report_path)), overwrite = TRUE)
   }
 
   if (!is.null(x$report_json_path) && file.exists(x$report_json_path)) {
-    state_dir <- file.path(dir, ".sas2r")
+    state_dir <- file.path(dir, "report")
     dir.create(state_dir, recursive = TRUE, showWarnings = FALSE)
     file.copy(x$report_json_path, file.path(state_dir, "report.json"), overwrite = TRUE)
   }
@@ -425,14 +439,17 @@ sas_code <- function(x, file = 1L) {
 
   all_files <- list.files(b_dir, pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
   run_order_path <- file.path(b_dir, "run-order.json")
-  entrypoint <- if (file.exists(run_order_path)) read_json_record(run_order_path)$entrypoint else NULL
+  run_order <- if (file.exists(run_order_path)) read_json_record(run_order_path) else list()
+  entrypoint <- run_order$entrypoint
   prog_files <- all_files[!basename(all_files) %in% SAS2R_BUNDLE_FILES &
                            !all_files %in% file.path(b_dir, entrypoint)]
-  if (length(prog_files) == 0L) {
-    prog_files <- all_files
+  if (identical(run_order$layout, "organized")) {
+    prog_files <- all_files[startsWith(all_files, paste0(b_dir, "/programs/")) |
+                              startsWith(all_files, paste0(b_dir, "/macros/"))]
+    all_files <- prog_files
   }
-  if (length(all_files) == 0L) {
-    cli::cli_abort("No R files found in bundle directory {.file {b_dir}}", class = "sas2r_file_not_found")
+  if (!length(prog_files)) {
+    cli::cli_abort("No program code generated in {.file {b_dir}}", class = "sas2r_file_not_found")
   }
 
   target <- NULL

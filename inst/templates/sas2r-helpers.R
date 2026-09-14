@@ -699,7 +699,9 @@ sas2r_source_include <- function(relative_path, envir = parent.frame()) {
          paste0("no staged bundle root (autoexec.R) at or above ", start))
   }
 
-  target <- file.path(root, path)
+  program_root <- get0(".sas2r_program_root", envir = envir, inherits = TRUE)
+  if (is.null(program_root)) program_root <- root
+  target <- file.path(program_root, path)
   if (!file.exists(target) || dir.exists(target)) {
     fail("sas2r_include_missing_error",
          paste0("staged include module not found: ", path))

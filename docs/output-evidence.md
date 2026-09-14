@@ -19,7 +19,7 @@
 ### Use Case 3: Saved Final Outputs
 - **Inputs**: SAS source, configured library directories containing authentic SAS outputs (`.sas7bdat` / `.xpt`), and candidate R output datasets (`.rds` / `.xpt`).
 - **Internal Work**: The output-review inventory discovers dataset targets from AST lineage and pairs accessible files. Standalone comparison functions instead take data frames directly. Migration reference checks use the configured `outputs.references` paths and optional assertions for keys and tolerances.
-- **Observable Outputs**: Structured target plans and bounded comparison reports under `<out_dir>/.sas2r/output-review/<run_id>/`. The separate migration summary is saved in the run folder as `report.json` and `report.md`; `.sas2r/report.json` also tracks the latest run.
+- **Observable Outputs**: Structured target plans and bounded comparison reports under `<out_dir>/.sas2r/output-review/<run_id>/`. The separate migration summary is saved in the run folder as `report/report.json` and `report/translation.md`; `.sas2r/report.json` also tracks the latest run.
 
 ### Use Case 4: TLF (Table, Listing, Figure) Preparation Data
 - **Inputs**: SAS programs producing intermediate datasets that feed report procedures (`PROC REPORT`, `PROC TABULATE`, `PROC PRINT`, `PROC SGPLOT`, `PROC SGPANEL`, `PROC SGRENDER`).
@@ -83,7 +83,7 @@ stopifnot(passed(comparison), file.exists("dataset-comparison.md"))
 
 For a saved migration, substitute
 `haven::read_xpt("data/reference/adsl.xpt")` and
-`readRDS(file.path(result$outputs_dir, "adam", "adsl.rds"))`.
+`readRDS(file.path(result$outputs_dir, "datasets", "adam", "adsl.rds"))`.
 Named-library output files retain their library subdirectory. This reads the
 saved outputs and writes a separate comparison report; it does not rerun the
 bundle or change its recorded status.

@@ -30,27 +30,19 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
   # path components: normalizePath() resolves /var -> /private/var on macOS,
   # so absolute-prefix comparison is not portable), and the first run's
   # bundle survives the second run untouched.
-  run_scope_of <- function(bundle_dir) basename(dirname(dirname(bundle_dir)))
+  run_scope_of <- function(bundle_dir) basename(dirname(bundle_dir))
   expect_identical(run_scope_of(r1$bundle_dir), r1$run_id)
   expect_identical(run_scope_of(r2$bundle_dir), r2$run_id)
   expect_true(dir.exists(r1$bundle_dir))
   expect_true(length(list.files(r1$bundle_dir, pattern = "\\.R$")) > 0L)
 
-  # The selected translation is materialized at the top of each run folder:
-  # program .R files plus the runtime trio, with machine metadata left in
-  # the attempt bundle.
   for (r in list(r1, r2)) {
-    run_root_files <- list.files(file.path(out, r$run_id))
-    expect_true("sas2r-helpers.R" %in% run_root_files)
-    expect_true("autoexec.R" %in% run_root_files)
-    expect_false("_sas2r_registry.R" %in% run_root_files)
-    programs_at_root <- setdiff(
-      grep("\\.R$", run_root_files, value = TRUE),
-      c("autoexec.R", "sas2r-helpers.R", "_sas2r_formats.R")
-    )
-    expect_gt(length(programs_at_root), 0L)
-    expect_identical(grep("contract\\.json$", run_root_files, value = TRUE), character(0))
-    expect_false("_sas2r_bundle_progress.json" %in% run_root_files)
+    root <- file.path(out, r$run_id)
+    expect_true(file.exists(file.path(root, "START_HERE.html")))
+    expect_true(file.exists(file.path(root, "bundle", "autoexec.R")))
+    expect_true(file.exists(file.path(root, "bundle", "runtime", "sas2r-helpers.R")))
+    expect_length(list.files(root, pattern = "\\.R$"), 0L)
+    expect_gt(length(list.files(file.path(root, "bundle", "programs"), pattern = "\\.R$", recursive = TRUE)), 0L)
   }
 
   # Run ids are timestamp-first (chronologically sortable directory names)
@@ -60,11 +52,11 @@ test_that("two runs into the same out_dir keep separate attempt trees", {
 
   # Each run folder carries its own report; no report surfaces at the
   # out_dir root, and each result points at its own run's copy.
-  expect_true(file.exists(file.path(out, r1$run_id, "report.md")))
-  expect_true(file.exists(file.path(out, r2$run_id, "report.json")))
+  expect_true(file.exists(file.path(out, r1$run_id, "report", "translation.md")))
+  expect_true(file.exists(file.path(out, r2$run_id, "report", "report.json")))
   expect_false(file.exists(file.path(out, "report.md")))
-  expect_identical(basename(dirname(r1$report_path)), r1$run_id)
-  expect_identical(basename(dirname(r2$report_path)), r2$run_id)
+  expect_identical(basename(dirname(dirname(r1$report_path))), r1$run_id)
+  expect_identical(basename(dirname(dirname(r2$report_path))), r2$run_id)
   expect_true(file.exists(r1$report_path))
 })
 
@@ -89,13 +81,13 @@ test_that("staging lives under .sas2r/ and no programs surface at the out_dir ro
   # outputs/ decoy is gone.
   expect_false(dir.exists(file.path(out, "programs")))
   expect_false(dir.exists(file.path(out, "outputs")))
-  expect_true(dir.exists(file.path(out, res$run_id, "programs")))
+  expect_true(dir.exists(file.path(out, res$run_id, "diagnostics", "component_revisions")))
 
   # The run's program evidence (revisions, reviews) must survive attempt
   # pruning: prune only touches <kind>_attempt_NNN directories, never the
   # programs/ folder that shares the run directory with them.
   expect_gt(
-    length(list.files(file.path(out, res$run_id, "programs"),
+    length(list.files(file.path(out, res$run_id, "diagnostics", "component_revisions"),
                       recursive = TRUE)),
     0L
   )
@@ -140,18 +132,18 @@ test_that("the materialized run folder re-runs standalone: helpers and librefs j
 
   out <- withr::local_tempdir()
   res <- sas_translate(proj, out_dir = out, execute = TRUE)
-  run_dir <- file.path(out, res$run_id)
-  expect_true(file.exists(file.path(run_dir, "prog.R")))
+  run_dir <- res$bundle_dir
+  expect_true(file.exists(file.path(run_dir, "programs", "prog.R")))
 
   # The regenerated autoexec points work at the run folder, not the attempt.
   reg <- readLines(file.path(run_dir, "autoexec.R"), warn = FALSE)
   expect_false(any(grepl("bundle_attempt", reg, fixed = TRUE)))
 
-  r <- callr::rscript(file.path(run_dir, "prog.R"),
+  r <- callr::rscript(file.path(run_dir, "run.R"),
                       wd = run_dir, show = FALSE, fail_on_status = FALSE)
   expect_identical(r$status, 0L)
 
-  b_path <- file.path(run_dir, "work", "b.rds")
+  b_path <- file.path(run_dir, "output", "work", "b.rds")
   expect_true(file.exists(b_path))
   b <- readRDS(b_path)
   expect_identical(as.character(b$usubjid), c("01", "02"))

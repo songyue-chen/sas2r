@@ -1,3 +1,17 @@
+# sas2r (development version)
+
+* Runtime helper guidance now describes internal return structures, including
+  `split_ds()` and library-registry helpers. Translator, reviewer, and fixer
+  receive these details through the same packaged helper reference.
+* Migration runs have an offline `START_HERE.html`, an editable `bundle/` with
+  separate programs, macros, and runtime, saved `outputs/`, `report/`, and
+  `diagnostics/`. All available selected code remains accessible, including
+  failed code; missing components are explicitly labelled.
+* Manual runs write under the existing configurable `.sas2r_output_root`,
+  defaulting to `bundle/output/`. `sas_write()` keeps saved automated outputs
+  separate under `saved-outputs/`. The generated guide explains running,
+  editing, supplying upstream data, and moving the bundle.
+
 # sas2r 0.4.1
 
 - Give translator, reviewer and fixer exact source-derived macro interfaces,

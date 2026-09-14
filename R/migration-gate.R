@@ -27,7 +27,7 @@ find_attempt_candidate_file <- function(contract, attempt) {
 
   # Extract attempt directory paths
   attempt_dir <- if (is.list(attempt)) {
-    attempt$attempt_dir %||% (if (!is.null(attempt$paths)) attempt$paths$attempts else NULL)
+    attempt$attempt_dir %||% (if (!is.null(attempt$paths)) attempt$paths$bundle_attempts else NULL)
   } else if (is.character(attempt) && length(attempt) == 1L) {
     attempt
   } else {

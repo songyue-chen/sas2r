@@ -216,7 +216,7 @@ fix_program_revision <- function(
     llm = llm,
     tools = tools,
     user_content = "Repair the program using the failing evidence.",
-    log_dir = if (!is.null(paths)) paths$state else ".sas2r",
+    log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
     prompt_vars = prompt_vars,
     audit_context = audit_context,
     usage_budget = usage_budget
@@ -280,7 +280,7 @@ fix_program_revision <- function(
   new_contract_path <- NULL
 
   if (!is.null(paths)) {
-    new_rev_dir <- file.path(paths$programs %||% paths$root, component_id, "revisions", new_rev_id)
+    new_rev_dir <- file.path(paths$component_revisions %||% paths$root, component_id, "revisions", new_rev_id)
     dir.create(new_rev_dir, recursive = TRUE, showWarnings = FALSE)
     new_r_path <- file.path(new_rev_dir, "program.R")
     new_contract_path <- file.path(new_rev_dir, "contract.json")

@@ -255,7 +255,7 @@ review_fix_fixture <- function() {
     component_id = "transform",
     revision_id = "r1",
     r_code = "target <- source |> dplyr::mutate(y = x * 2)",
-    r_path = file.path(paths$programs, "transform", "revisions", "r1", "program.R"),
+    r_path = file.path(paths$component_revisions, "transform", "revisions", "r1", "program.R"),
     contract = contract,
     binding = binding
   )

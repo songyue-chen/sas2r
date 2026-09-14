@@ -7,7 +7,7 @@
 sas2r_source_include(relative_path, envir = parent.frame())
 }
 \arguments{
-\item{relative_path}{The module's path relative to the bundle root.}
+\item{relative_path}{The module's path relative to the staged module root.}
 
 \item{envir}{The environment to run it in; the caller's by default.}
 }
@@ -20,9 +20,9 @@ executes that module at one include site, into the calling program's own
 environment, exactly where the \verb{\%INCLUDE} stood.
 }
 \details{
-The path is always relative to the staged bundle root -- the nearest
-ancestor of the running script holding \code{autoexec.R} -- and never to
-the working directory, so the bundle can be run from anywhere. Absolute
+The path is relative to the staged module root, and never to the working
+directory. The editable bundle sets this to \verb{programs/} in \code{autoexec.R};
+flat execution snapshots use the nearest ancestor holding \code{autoexec.R}. Absolute
 paths and \code{.} or \code{..} components are rejected, and the file the joined path
 actually resolves to is then required to lie under the root: rejecting the
 components alone would still let a symlinked directory inside the bundle

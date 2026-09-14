@@ -279,7 +279,8 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
     string_literal <- function(value) paste(deparse(value), collapse = "")
     test_lines <- c(
       sprintf('test_that("%s is a callable function with stable formals", {', safe_name),
-      sprintf('  fn_path <- if (file.exists(file.path("R", "macros", "%s.R"))) file.path("R", "macros", "%s.R") else file.path("..", "R", "macros", "%s.R")', safe_name, safe_name, safe_name),
+      sprintf('  candidates <- file.path(c("macros", "../macros", "R/macros", "../R/macros"), "%s.R")', safe_name),
+      '  fn_path <- candidates[file.exists(candidates)][1L]',
       '  source(fn_path, local = TRUE)',
       sprintf("  fn <- get(%s, inherits = FALSE)", string_literal(safe_name)),
       '  expect_true(is.function(fn))',
@@ -814,7 +815,7 @@ generate_program_revision <- function(
       llm = llm,
       tools = build_tools(spec, tool_ctx),
       user_content = "Translate this SAS component and emit its behavioral contract.",
-      log_dir = paths$state %||% file.path(paths$root, ".sas2r"),
+      log_dir = paths$logs %||% file.path(paths$root, ".sas2r"),
       prompt_vars = prompt_vars,
       audit_context = audit_context,
       usage_budget = usage_budget
@@ -841,7 +842,7 @@ generate_program_revision <- function(
             "Correct the code below and return the complete translation JSON.",
             "Do not call library() or require(); qualify package functions (for example dplyr::mutate) and use the base |> pipe.",
             "Previous R code:", tr_data$r_code, sep = "\n"),
-          log_dir = paths$state %||% file.path(paths$root, ".sas2r"),
+          log_dir = paths$logs %||% file.path(paths$root, ".sas2r"),
           prompt_vars = prompt_vars,
           audit_context = utils::modifyList(audit_context, list(purpose = "mechanical_retry")),
           usage_budget = usage_budget
@@ -889,7 +890,7 @@ generate_program_revision <- function(
     macro_contract = macro_contract
   )
 
-  rev_dir <- file.path(paths$programs, component_id, "revisions", revision_id)
+  rev_dir <- file.path(paths$component_revisions, component_id, "revisions", revision_id)
   dir.create(rev_dir, recursive = TRUE, showWarnings = FALSE)
 
   r_path <- file.path(rev_dir, "program.R")

@@ -82,7 +82,7 @@ write_migration_checkpoint <- function(state, fingerprint) {
     fingerprint = fingerprint,
     selected_revisions = state$selected_revisions,
     histories = state$histories,
-    helper_code = paste(readLines(file.path(state$bundle_dir, "sas2r-helpers.R"), warn = FALSE), collapse = "\n"),
+    helper_code = paste(readLines(file.path(state$bundle_dir, "runtime", "sas2r-helpers.R"), warn = FALSE), collapse = "\n"),
     diagnostics = state$diagnostics
   )
   atomic_write_file(function(path) saveRDS(checkpoint, path),

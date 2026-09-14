@@ -376,8 +376,8 @@ process_program_component <- function(
       } else if (identical(plan$status, "runnable")) {
         attempt_dir <- if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
           state[["attempt"]]$attempt_dir
-        } else if (!is.null(state$paths) && !is.null(state$paths$attempts)) {
-          file.path(state$paths$attempts, "smoke_attempt_001")
+        } else if (!is.null(state$paths) && !is.null(state$paths$smoke_tests)) {
+          file.path(state$paths$smoke_tests, "smoke_attempt_001")
         } else {
           tempdir()
         }
@@ -1026,6 +1026,8 @@ run_bundle_pipeline <- function(
     selected_revisions = selected_revisions %||% state$selected_revisions,
     histories = selected_histories %||% state$histories,
     runtime = state$runtime,
+    execute = isTRUE(execute),
+    environment = state$environment,
     usage_budget = state$usage_budget,
     config = state$config,
     events = state$events

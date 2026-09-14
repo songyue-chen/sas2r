@@ -115,23 +115,24 @@ test_that("called macros generate reusable files and execute through the public 
   expect_equal(sum(translated == "macro__scale"), 1L)
   expect_equal(sum(translated == "macro__add"), 1L)
   expect_true(all(table(reviewed) == 1L))
-  expect_true(file.exists(file.path(result$bundle_dir, "R/macros/add.R")))
-  expect_true(file.exists(file.path(result$bundle_dir, "R/macros/scale.R")))
+  expect_true(file.exists(file.path(result$bundle_dir, "macros/add.R")))
+  expect_true(file.exists(file.path(result$bundle_dir, "macros/scale.R")))
   expect_true(file.exists(file.path(result$bundle_dir, "tests_macros/test-add.R")))
-  expect_false(file.exists(file.path(result$bundle_dir, "R/macros/unused.R")))
+  expect_false(file.exists(file.path(result$bundle_dir, "macros/unused.R")))
   expect_false(identical(result$status, "blocked"))
   exported <- withr::local_tempdir()
   suppressWarnings(sas_write(result, exported))
   values <- callr::r(function(bundle) {
     setwd(bundle)
-    source("first.R")
-    source("second.R")
+    source("autoexec.R")
+    source("programs/first.R")
+    source("programs/second.R")
     c(lib_read("work", "first")$x, lib_read("work", "second")$x)
   }, args = list(bundle = exported))
   expect_identical(values, c(6, 8))
   tests <- testthat::test_dir(file.path(exported, "tests_macros"), reporter = "silent", stop_on_failure = FALSE)
   expect_equal(sum(as.data.frame(tests)$failed), 0L)
-  expect_match(readLines(file.path(exported, "R/macros/add.R"))[1L], "llm_authored", fixed = TRUE)
+  expect_match(readLines(file.path(exported, "macros/add.R"))[1L], "llm_authored", fixed = TRUE)
 })
 
 test_that("standalone macro gates reject missing zero-argument functions and top-level execution", {
@@ -221,7 +222,7 @@ test_that("a macro without an AI translation is emitted as deferred with failing
     out_dir = withr::local_tempdir(), execute = FALSE,
     max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L)
   expect_identical(result$status, "blocked")
-  header <- readLines(file.path(result$bundle_dir, "R/macros/add.R"))[1L]
+  header <- readLines(file.path(result$bundle_dir, "macros/add.R"))[1L]
   expect_match(header, "macro_deferred", fixed = TRUE)
   expect_false(grepl("llm_authored", header, fixed = TRUE))
 })
@@ -267,7 +268,7 @@ test_that("translation stops before model calls when the macro folder was not co
   expect_match(conditionMessage(condition), "macros.search_path", fixed = TRUE)
   expect_match(conditionMessage(condition), "No macro search directories", fixed = TRUE)
   expect_identical(calls, 0L)
-  expect_false(dir.exists(out))
+  expect_length(list.files(out, pattern = "START_HERE.html", recursive = TRUE), 1L)
   pre <- sas_preflight(file)
   expect_identical(pre$status, "needs_attention")
   expect_identical(pre$model_calls, 0L)
@@ -287,7 +288,7 @@ test_that("missing macros in configured folders and dynamic calls also stop earl
              file.path(root, "macros", "utilities.sas"))
   expect_error(sas_translate(file, out_dir = file.path(root, "out")),
                "%missing_nested at .*utilities.sas:1", class = "sas2r_macro_dependency_error")
-  expect_false(dir.exists(file.path(root, "out")))
+  expect_length(list.files(file.path(root, "out"), pattern = "START_HERE.html", recursive = TRUE), 3L)
 })
 
 test_that("local macro definitions and SAS builtins need no search path", {

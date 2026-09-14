@@ -67,7 +67,7 @@ test_that("preflight reports missing references and rejects misspelled config pa
   expect_identical(check$references$status, "missing")
   expect_true(any(grepl("reference files", check$next_actions)))
   expect_identical(check$destinations$generated_outputs,
-                   file.path(check$destinations$root, "<run_id>", "generated-outputs"))
+                   file.path(check$destinations$root, "<run_id>", "outputs"))
   expect_error(sas_preflight(source, config = file.path(root, "typo.yml")), "Configuration file not found")
 })
 

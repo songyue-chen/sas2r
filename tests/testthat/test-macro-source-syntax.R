@@ -57,7 +57,7 @@ test_that("unterminated macro comments fail with the source location before tran
     expect_match(conditionMessage(error), "quotation marks", fixed = TRUE)
   }
   expect_identical(requests, 0L)
-  expect_false(dir.exists(out))
+  expect_length(list.files(out, pattern = "START_HERE.html", recursive = TRUE), 2L)
   writeLines('%* "hidden; %also_hidden"; data out; %real_call; run;', file)
   expect_identical(sas_project(file)$macros$calls$name, "real_call")
   writeLines("/* Don't run %hidden; */ data out; %real_call; run;", file)
