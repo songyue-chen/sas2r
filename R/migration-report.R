@@ -238,6 +238,7 @@ write_migration_report <- function(state) {
     repair_history = repair_history,
     input_hashes = input_hashes,
     usage = usage_summary,
+    environment = state$environment,
     diagnostics = diagnostics,
     created_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
@@ -263,6 +264,7 @@ write_migration_report <- function(state) {
     paste0("- **Current run status:** `", state$current_run_status %||% status, "`"),
     paste0("- **Run ID:** `", run_id, "`"),
     paste0("- **Timestamp:** `", report_payload$created_at, "`"),
+    migration_environment_lines(state$environment),
     "",
     "## Selected Artifacts",
     "",

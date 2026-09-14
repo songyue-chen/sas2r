@@ -1352,7 +1352,7 @@ USAGE_SAFE_RESULT_STATUSES <- c(
   "empty_query", "global_tool_limit", "no_evidence", "not_in_index",
   "policy_refused", "report_not_registered", "report_path_rejected",
   "search_docs_disabled", "skill_not_registered", "tool_budget_hard_stop",
-  "unknown_tool"
+  "unknown_tool", "invalid_tool_arguments"
 )
 
 USAGE_SAFE_ERROR_CLASSES <- c(
@@ -1438,6 +1438,11 @@ begin_usage_tool_call <- function(budget, tool_name = NULL,
   event <- append_usage_record(budget, list(
     record_type = "tool_attempted", run_id = budget$run_id,
     tool_event_id = event_id,
+    invocation_id = audit_context$invocation_id %||% NULL,
+    component_id = audit_context$component_id %||% NULL,
+    revision_id = audit_context$revision_id %||% NULL,
+    round = audit_context$round %||% NULL,
+    attempt_id = audit_context$attempt_id %||% NULL,
     request_id = audit_context$request_id %||% NULL,
     parent_request_id = audit_context$parent_request_id %||% NULL,
     timestamp = usage_timestamp(started_at),

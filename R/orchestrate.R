@@ -304,11 +304,13 @@ process_program_component <- function(
     ))
     cached <- state$review_cache[[component_id]]
     cached_verdict <- component_review_verdict(state$histories[[component_id]])
-    reuse_review <- identical(cached$key, review_key) &&
+    reuse_review <- isTRUE(checks$pass) && identical(cached$key, review_key) &&
       cached$review$verdict %in% c("reviewed_no_material_finding", "repair_required")
-    resumed_review <- is.null(cached) && component_id %in% state$resumed_components &&
+    resumed_review <- isTRUE(checks$pass) && is.null(cached) && component_id %in% state$resumed_components &&
       cached_verdict %in% c("reviewed_no_material_finding", "repair_required")
-    review <- if (reuse_review) cached$review else if (resumed_review)
+    review <- if (!isTRUE(checks$pass)) {
+      list(verdict = "review_unavailable", reason = "mechanical_checks_failed; repair before semantic review")
+    } else if (reuse_review) cached$review else if (resumed_review)
       list(verdict = cached_verdict) else review_program_revision(
       revision = rev,
       context = ctx,
@@ -324,7 +326,9 @@ process_program_component <- function(
     }
     cached_record <- review
     cached_record$history <- NULL
-    state$review_cache[[component_id]] <- list(key = review_key, review = cached_record)
+    if (isTRUE(checks$pass)) {
+      state$review_cache[[component_id]] <- list(key = review_key, review = cached_record)
+    }
 
     if (identical(review$verdict, "review_unavailable")) {
       state$events <- c(state$events, paste0("review_unavailable:", rev_id))

@@ -7,6 +7,7 @@
 \alias{sas2r_lib_entry}
 \alias{sas2r_lib_member_path}
 \alias{sas2r_libref_stop}
+\alias{sas2r_assignment_path}
 \alias{split_ds}
 \title{The runtime every translated program carries}
 \description{
@@ -76,6 +77,7 @@ use, and may change with the generator: \code{sas2r_registry_env()} (where the
 then the global environment, then any active frame), \code{sas2r_lib_entry()}
 (the registry entry for a libref), \code{sas2r_lib_member_path()} (the file a
 member resolves to, refusing any name that is not a plain member name),
+\code{sas2r_assignment_path()} (resolve a LIBNAME path against the execution root),
 \code{sas2r_libref_stop()} (classed libref errors), \code{split_ds()} (split a
 two-level SAS name after macro substitution).
 }

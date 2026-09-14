@@ -1,3 +1,21 @@
+# sas2r 0.4.1
+
+- Give translator, reviewer and fixer exact source-derived macro interfaces,
+  including empty-string defaults, before they act. Route mechanically invalid
+  revisions to repair before semantic review.
+- Route focused statistical-default guidance to relevant components, including
+  differences between summary calculations and calculations inside plots.
+- Resolve relative LIBNAME assignments against the project execution root.
+  Preserve generated members and separate output locations across reassignment;
+  missing-dataset errors list the searched paths and execution root.
+- Increase the shared tool allowance to 30 per agent invocation. Preserve
+  explicit overrides, report remaining calls, and close native ellmer gathering
+  at the limit while retaining evidence for bounded finalization. Invalid tool
+  arguments return corrective feedback; unexpected failures remain visible.
+- Record loaded R, sas2r and ellmer versions, effective agent/repair limits and
+  component/revision identifiers for tool outcomes. Completion messages identify
+  denied and failed lookups separately from request completion.
+
 # sas2r 0.4.0
 
 * Share each agent's tool allowance across lookups by default, while preserving

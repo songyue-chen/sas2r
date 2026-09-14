@@ -986,6 +986,82 @@ for (native in list(
   }
 }
 
+# Spend the allowance inside ellmer's native loop. The last result must survive
+# the public callback handoff, and the next wire request must have no tools.
+quota_log_start <- length(readLines(log_file, warn = FALSE))
+quota_executions <- 0L
+quota_lookup <- sas2r:::make_tool("lookup", function(args) {
+  quota_executions <<- quota_executions + 1L
+  list(name = args$name)
+}, max_calls = 20L, schema = list(type = "object",
+  properties = list(name = list(type = "string")), required = "name",
+  additionalProperties = FALSE))
+quota_agent <- withCallingHandlers(sas2r:::run_agent(
+  list(name = "quota", prompt = "translator.md", tool_call_limit = 1L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  adapter, list(lookup = quota_lookup), "quota translation",
+  log_dir = tempfile("sas2r-real-quota-")), warning = function(w) {
+    if (grepl("tool", conditionMessage(w), ignore.case = TRUE)) stop(w)
+  })
+stopifnot(identical(quota_agent$status, "ok"), quota_executions == 1L,
+          quota_agent$tool_outcomes$completed == 1L,
+          quota_agent$tool_outcomes$attempted == 1L)
+quota_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - quota_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(length(quota_wire) == 2L,
+          length(quota_wire[[2]]$body$tools %||% list()) == 0L,
+          count_value(quota_wire[[2]]$body, "real_auto_1") >= 2L,
+          contains_text(quota_wire[[2]]$body, "round"))
+
+batch_adapter <- sas2r:::ellmer_llm(list(provider = "openai", model = "offline-batch-model",
+  base_url = base_url, api_key = api_key, capabilities = capabilities))
+batch_log_start <- length(readLines(log_file, warn = FALSE))
+batch_executions <- 0L
+batch_lookup <- sas2r:::make_tool("lookup", function(args) {
+  batch_executions <<- batch_executions + 1L
+  list(name = args$name)
+}, max_calls = 20L, schema = quota_lookup$schema)
+batch_agent <- sas2r:::run_agent(
+  list(name = "batch", prompt = "translator.md", tool_call_limit = 1L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  batch_adapter, list(lookup = batch_lookup), "batch translation",
+  log_dir = tempfile("sas2r-real-batch-"))
+stopifnot(identical(batch_agent$status, "ok"), batch_executions == 1L,
+          batch_agent$tool_outcomes$completed == 1L,
+          batch_agent$tool_outcomes$refused == 1L,
+          batch_agent$tool_outcomes$attempted == 2L)
+batch_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - batch_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(length(batch_wire) == 2L,
+          length(batch_wire[[2]]$body$tools %||% list()) == 0L,
+          count_value(batch_wire[[2]]$body, "real_auto_1") >= 2L,
+          count_value(batch_wire[[2]]$body, "real_auto_2") >= 2L,
+          contains_text(batch_wire[[2]]$body, "agent_tool_limit"))
+
+failure_log_start <- length(readLines(log_file, warn = FALSE))
+failure_lookup <- sas2r:::make_tool("lookup", function(args) {
+  stop("Reference index is unavailable")
+}, max_calls = 20L, schema = quota_lookup$schema)
+failure_progress <- character()
+failure_agent <- withCallingHandlers(sas2r:::run_agent(
+  list(name = "failure", prompt = "translator.md", tool_call_limit = 1L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  adapter, list(lookup = failure_lookup), "translation with failed lookup",
+  log_dir = tempfile("sas2r-real-failure-")), sas2r_agent_event = function(event) {
+    failure_progress <<- c(failure_progress, sas2r:::format_sas2r_progress(event))
+  })
+failure_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - failure_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(any(grepl("1 lookups failed", failure_progress, fixed = TRUE)),
+          identical(failure_agent$status, "ok"),
+          failure_agent$tool_outcomes$failed == 1L,
+          failure_agent$tool_outcomes$completed == 0L,
+          length(failure_wire) == 2L,
+          contains_text(failure_wire[[2]]$body, "Reference index is unavailable"))
+
 message(
   "real ellmer loopback contract passed: version=", installed_version,
   " path=", ellmer_path,
@@ -993,9 +1069,6 @@ message(
   " native=", length(anthropic_requests) + length(gemini_requests),
   " github=", if (github_retired) "retired-refusal-verified" else "exercised"
 )
-  if (nzchar(Sys.getenv("SAS2R_LOG_COPY"))) {
-    file.copy(log_file, Sys.getenv("SAS2R_LOG_COPY"), overwrite = TRUE)
-  }
 }
 
 run_real_ellmer_contract()

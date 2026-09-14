@@ -35,6 +35,11 @@ executes changes the registry where that statement stood, so a libref that
 is rebound or cleared part-way through behaves at run time the way it does
 in SAS. \code{sas2r_libname_assign()} is \verb{LIBNAME libref '<path>'};
 \code{sas2r_libname_clear()} is \verb{LIBNAME libref CLEAR}.
+Relative assignment paths use \code{.sas2r_execution_root} from \code{autoexec.R},
+initially the source project directory. Registry seed paths still use the
+bundle folder. Reassigning a known physical library preserves its separate
+write directory. Newly assigned libraries write under the execution output
+\verb{libraries/} folder unless \code{write_path} is explicitly supplied.
 }
 \examples{
 .sas2r_registry <- list()

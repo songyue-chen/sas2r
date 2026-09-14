@@ -178,6 +178,12 @@ sas_translate <- function(
   # conditions, and this is the one place the console renderer is installed --
   # without it a long metered run prints nothing.
   state <- tryCatch(with_sas2r_progress({
+    state$environment <- migration_environment(state)
+    append_usage_record(budget, list(record_type = "run_environment",
+                                    run_id = state$run_id, environment = state$environment))
+    signalCondition(structure(list(event = "run_environment", phase = "environment",
+                                   environment = state$environment),
+                              class = c("sas2r_progress", "condition")))
     prepare_migration_llm_settings(state)
     prog_state <- run_program_pipeline(
       state = state,

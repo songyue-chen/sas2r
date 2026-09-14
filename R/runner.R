@@ -240,6 +240,7 @@ new_agent_tool_state <- function(limit, usage_budget = NULL) {
   state$count <- 0L
   state$limit <- as.integer(limit)
   state$exhausted <- FALSE
+  state$outcomes <- c(attempted = 0L, completed = 0L, failed = 0L, refused = 0L)
   state$usage_budget <- usage_budget
   state$audit_context <- list()
   state
@@ -250,8 +251,10 @@ reserve_agent_tool_call <- function(state, tool_name = NULL,
   dynamic_context <- current_usage_tool_audit_context()
   if (!is.list(dynamic_context)) dynamic_context <- list()
   audit_context <- utils::modifyList(state$audit_context, dynamic_context)
+  state$outcomes[["attempted"]] <- state$outcomes[["attempted"]] + 1L
   if (state$count >= state$limit) {
     state$exhausted <- TRUE
+    state$outcomes[["refused"]] <- state$outcomes[["refused"]] + 1L
     # Per invocation, not global: tool_state is built inside run_agent(), so
     # this allowance covers one unit and resets for the next. The project-wide
     # ceiling is budget: max_tool_calls, enforced separately by the ledger.
@@ -265,10 +268,14 @@ reserve_agent_tool_call <- function(state, tool_name = NULL,
       class = "sas2r_agent_tool_limit"
     )
   }
-  reservation <- reserve_usage_tool_call(
+  reservation <- tryCatch(reserve_usage_tool_call(
     state$usage_budget, tool_name = tool_name, arguments = arguments,
     audit_context = audit_context
-  )
+  ), sas2r_budget_error = function(error) {
+    state$outcomes[["refused"]] <- state$outcomes[["refused"]] + 1L
+    state$budget_error <- error
+    stop(error)
+  })
   state$count <- state$count + 1L
   invisible(reservation)
 }
@@ -279,7 +286,7 @@ record_agent_tool_result <- function(state, reservation, value = NULL,
                        is.character(value$error) &&
                        length(value$error) == 1L) value$error else NULL
   refused_results <- c(
-    "budget_exhausted", "tool_budget_hard_stop", "unknown_tool"
+    "budget_exhausted", "tool_budget_hard_stop", "unknown_tool", "invalid_tool_arguments"
   )
   refused_errors <- c(
     "sas2r_tool_budget_error", "sas2r_tool_arguments_error",
@@ -297,20 +304,37 @@ record_agent_tool_result <- function(state, reservation, value = NULL,
     result_status = result_status,
     error_class = if (is.null(error)) NULL else class(error)[[1L]]
   )
+  state$outcomes[[outcome]] <- state$outcomes[[outcome]] + 1L
   invisible(outcome)
+}
+
+agent_tool_allowance_message <- function(state) {
+  paste0("Tool allowance: ", max(0L, state$limit - state$count), " of ",
+         state$limit, " calls remaining for this agent invocation. ",
+         "Reuse retained evidence. When no calls remain, return the final answer.")
 }
 
 bind_transport_tool_limits <- function(tools, state) {
   lapply(tools, function(tool) {
     bound <- tool
+    bound$budget_state <- state
     call <- tool$call
     bound$call <- function(args) {
-      reservation <- reserve_agent_tool_call(
+      reservation <- tryCatch(reserve_agent_tool_call(
         state, tool_name = tool$name %||% NULL, arguments = args
-      )
+      ), sas2r_agent_tool_limit = identity)
+      if (inherits(reservation, "sas2r_agent_tool_limit")) {
+        return(list(error = "agent_tool_limit", message = AGENT_TOOL_LIMIT_MESSAGE))
+      }
       value <- tryCatch(call(args), error = identity)
       if (inherits(value, "condition")) {
         record_agent_tool_result(state, reservation, error = value)
+        if (inherits(value, "sas2r_tool_budget_error")) {
+          return(list(error = "tool_budget_hard_stop", message = conditionMessage(value)))
+        }
+        if (inherits(value, "sas2r_tool_arguments_error")) {
+          return(list(error = "invalid_tool_arguments", message = conditionMessage(value)))
+        }
         stop(value)
       }
       record_agent_tool_result(state, reservation, value = value)
@@ -383,7 +407,13 @@ run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   )
   signal_agent_event("agent_finished", agent, audit_context,
                      status = result$status, tool_calls = result$tool_calls,
-                     verdict = result$data$verdict)
+                     verdict = result$data$verdict, tool_outcomes = result$tool_outcomes,
+                     reason = paste(c(
+                       if (isTRUE(result$tool_outcomes$refused > 0L))
+                         paste(result$tool_outcomes$refused, "requested lookups denied"),
+                       if (isTRUE(result$tool_outcomes$failed > 0L))
+                         paste(result$tool_outcomes$failed, "lookups failed")
+                     ), collapse = "; "))
   result
 }
 
@@ -411,6 +441,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   capabilities <- llm_capabilities_for(llm, tier = tier)
   has_tools <- length(tools) > 0L
   tool_state <- new_agent_tool_state(spec$tool_call_limit, usage_budget)
+  messages[[1L]]$content <- paste(messages[[1L]]$content,
+                                agent_tool_allowance_message(tool_state), sep = "\n\n")
   transport_tools <- bind_transport_tool_limits(tools, tool_state)
   if (has_tools && !identical(capabilities$tool_calling, "native")) {
     return(list(
@@ -430,12 +462,15 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   phase <- if (has_tools && !coexist) "gathering" else "finalization"
   schema <- agent_output_schema(spec$output_schema)
   parent_request_id <- NULL
+  invocation_id <- NULL
   retry_of <- NULL
   result_costs <- function(result) {
     result$known_cost_usd <- usage_budget$known_amount - start_known
     result$estimated_cost_usd <- usage_budget$estimated_amount - start_estimated
     result$spend_usd <- usage_budget$billed_amount - start_billed
     result$cost_unknown <- usage_budget$unknown_count > start_unknown
+    result$tool_outcomes <- as.list(tool_state$outcomes)
+    result$tool_call_limit <- tool_state$limit
     result
   }
   repeat {
@@ -443,7 +478,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
     request <- llm_request(
       messages = messages,
       tier = tier,
-      tools = if (identical(phase, "gathering") || coexist)
+      tools = if (!tool_limit_finalized && (identical(phase, "gathering") || coexist))
         transport_tools else list(),
       output_schema = if (identical(phase, "finalization")) schema else NULL,
       schema_name = if (identical(phase, "finalization")) spec$output_schema else NULL,
@@ -458,6 +493,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       phase = phase
     )
     request$parent_request_id <- parent_request_id
+    invocation_id <- invocation_id %||% request$request_id
     request$retry_of <- retry_of
     request$required_parameters <- names(required_settings)
     capabilities <- llm_request_capabilities(llm, request)
@@ -472,6 +508,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       max_tool_calls = spec$tool_call_limit,
       capability_hash = capabilities$record_hash
     ))
+    request_context$invocation_id <- invocation_id
     tool_state$audit_context <- utils::modifyList(request_context, list(
       request_id = request$request_id,
       phase = phase
@@ -505,6 +542,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       type = resp$action %||% "none",
       status = resp$status,
       request_id = resp$request_id,
+      invocation_id = invocation_id,
       response_id = resp$response_id,
       provider = llm$provider,
       requested_model = resp$requested_model,
@@ -531,7 +569,9 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
       reasoning_tokens = usage$reasoning_tokens,
       cost_usd = call_cost,
       cost_status = resp$cost$status %||%
-        if (is.na(call_cost)) "unknown" else "catalog_estimate"
+        if (is.na(call_cost)) "unknown" else "catalog_estimate",
+      tool_outcomes = as.list(tool_state$outcomes),
+      tool_call_limit = tool_state$limit
     )
     for (k in c("component_id", "revision_id", "round", "attempt_id", "prompt_hash", "skill_hash", "skill_provenance")) {
       if (!is.null(audit_context[[k]])) {
@@ -638,6 +678,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
         tryCatch(tool$call(resp$tool_arguments %||% list()),
                  sas2r_tool_budget_error = function(e)
                    list(error = "tool_budget_hard_stop"),
+                 sas2r_tool_arguments_error = function(e)
+                   list(error = "invalid_tool_arguments", message = conditionMessage(e)),
                  error = function(e) {
                    record_agent_tool_result(
                      tool_state, tool_reservation, error = e
@@ -662,7 +704,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
         content = jsonlite::toJSON(out, auto_unbox = TRUE, force = TRUE)),
         list(
           role = "user",
-          content = "Continue using the retained tool result."
+          content = paste("Continue using the retained tool result.",
+                          agent_tool_allowance_message(tool_state))
         )
       ))
       parent_request_id <- request$request_id
@@ -684,6 +727,7 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
         content = AGENT_FINALIZE_MESSAGE
       )))
       phase <- "finalization"
+      tool_limit_finalized <- tool_state$count >= tool_state$limit
       parent_request_id <- request$request_id
     } else if (identical(resp$action, "final")) {
       v <- validate_output(resp$data, spec$output_schema)

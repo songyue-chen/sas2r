@@ -115,7 +115,8 @@ signal_immediate_coordinator_event <- function(
 #' @param status,tool_calls,reason How the agent ended, for `agent_finished`.
 #' @noRd
 signal_agent_event <- function(event, agent, context = list(), status = NULL,
-                               tool_calls = NULL, reason = NULL, verdict = NULL) {
+                               tool_calls = NULL, reason = NULL, verdict = NULL,
+                               tool_outcomes = NULL) {
   condition <- structure(
     class = c(as.character(event), "sas2r_agent_event", "sas2r_progress", "condition"),
     list(
@@ -131,6 +132,7 @@ signal_agent_event <- function(event, agent, context = list(), status = NULL,
       round = context$round,
       status = status,
       tool_calls = tool_calls,
+      tool_outcomes = tool_outcomes,
       verdict = verdict,
       reason = reason
     )
@@ -286,6 +288,7 @@ format_sas2r_progress <- function(progress) {
   target <- progress_target(progress) %||% "?"
   switch(
     progress$phase %||% "",
+    environment = paste(migration_environment_lines(progress$environment), collapse = "\n"),
     settings = sprintf("settings  %s: %s%s", progress$resolved_model %||% "model",
       gsub("_", " ", progress$status, fixed = TRUE),
       if (length(progress$requested_parameters)) paste0(" -- ", paste(

@@ -339,7 +339,7 @@ snapshot_selected_bundle <- function(state, attempt) {
   # 3. Attempt registry with copy-on-write mapping
   if (!is.null(state$project)) {
     lib_map <- build_attempt_library_map(state$project, attempt_dir)
-    write_autoexec(state$project, bundle_dir, library_map = lib_map)
+    write_autoexec(state$project, bundle_dir, library_map = lib_map, output_root = attempt_dir)
     for (libref in names(lib_map)) {
       w_dir <- lib_map[[libref]]$write_path
       if (!is.null(w_dir) && nzchar(w_dir)) {

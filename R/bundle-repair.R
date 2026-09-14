@@ -147,7 +147,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
       state$selected_revisions[[cid]] <- c_rev
       state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)
-      if (!is.null(state$reviewer_llm)) {
+      if (isTRUE(c_rev$checks$pass) && !is.null(state$reviewer_llm)) {
         ctx <- list(
           component_id = cid,
           revision_id = c_rev$revision_id,
@@ -184,7 +184,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     fixed_rev$status <- if (isTRUE(checks$pass)) "ok" else "check_failed"
     state$histories[[primary_cid]] <- record_program_checks(state$histories[[primary_cid]], checks)
 
-    if (!is.null(state$reviewer_llm)) {
+    if (isTRUE(checks$pass) && !is.null(state$reviewer_llm)) {
       ctx <- list(
         component_id = primary_cid,
         revision_id = fixed_rev$revision_id,

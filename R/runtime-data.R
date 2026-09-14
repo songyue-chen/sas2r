@@ -88,6 +88,11 @@ sas2r_resolve_registry <- function(registry, root) {
 #' is rebound or cleared part-way through behaves at run time the way it does
 #' in SAS. `sas2r_libname_assign()` is `LIBNAME libref '<path>'`;
 #' `sas2r_libname_clear()` is `LIBNAME libref CLEAR`.
+#' Relative assignment paths use `.sas2r_execution_root` from `autoexec.R`,
+#' initially the source project directory. Registry seed paths still use the
+#' bundle folder. Reassigning a known physical library preserves its separate
+#' write directory. Newly assigned libraries write under the execution output
+#' `libraries/` folder unless `write_path` is explicitly supplied.
 #'
 #' @param libref The libref (case-insensitive).
 #' @param read_path,write_path Directories the libref reads from and writes to.
@@ -109,6 +114,24 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)
   key <- tolower(libref)
+  read_path <- sas2r_assignment_path(read_path, env)
+  bindings <- get0(".sas2r_library_bindings", envir = env, inherits = FALSE)
+  if (missing(write_path) && !is.null(bindings)) {
+    # A repeated LIBNAME (including an alias or a bind after CLEAR) names the
+    # same physical data. Keep the generated members in that library visible.
+    paths <- vapply(bindings, function(entry) {
+      sas2r_assignment_path(entry$read_path, env)
+    }, character(1))
+    idx <- match(read_path, paths)
+    if (!is.na(idx)) {
+      write_path <- bindings[[idx]]$write_path
+    } else {
+      root <- get(".sas2r_output_root", envir = env, inherits = FALSE)
+      write_path <- file.path(root, "libraries", paste0(key, "_", length(bindings) + 1L))
+    }
+  } else {
+    write_path <- sas2r_assignment_path(write_path, env)
+  }
   registry[[key]] <- list(
     read_path = read_path,
     write_path = write_path,
@@ -116,7 +139,23 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
     write = write
   )
   assign(".sas2r_registry", registry, envir = env)
+  if (!is.null(bindings)) {
+    existing <- which(vapply(bindings, function(entry) {
+      identical(sas2r_assignment_path(entry$read_path, env), read_path)
+    }, logical(1)))
+    idx <- if (length(existing)) existing[1L] else length(bindings) + 1L
+    bindings[[idx]] <- registry[[key]]
+    assign(".sas2r_library_bindings", bindings, envir = env)
+  }
   invisible(registry[[key]])
+}
+
+# Resolve assignments independently of a temporary smoke/bundle working directory.
+sas2r_assignment_path <- function(path, env) {
+  root <- get0(".sas2r_execution_root", envir = env, inherits = FALSE,
+               ifnotfound = getwd())
+  if (!grepl("^(/|[A-Za-z]:[/\\\\]|\\\\\\\\|~)", path)) path <- file.path(root, path)
+  normalizePath(path.expand(path), winslash = "/", mustWork = FALSE)
 }
 
 #' @rdname sas2r_libname_assign
@@ -284,7 +323,19 @@ lib_read <- function(libref, member, ...) {
   target <- find_file(w_dir)
   if (is.null(target)) target <- find_file(r_dir)
   if (is.null(target)) {
-    stop("Dataset not found: ", libref, ".", member, call. = FALSE)
+    dirs <- unique(c(w_dir, r_dir))
+    dirs <- dirs[!is.na(dirs) & nzchar(dirs)]
+    searched <- unlist(lapply(dirs, function(dir) {
+      vapply(c(".rds", ".sas7bdat", ".xpt"), function(ext) {
+        sas2r_lib_member_path(dir, member, ext)
+      }, character(1))
+    }))
+    env <- sas2r_registry_env()
+    root <- get0(".sas2r_execution_root", envir = env, inherits = FALSE,
+                 ifnotfound = getwd())
+    stop("Dataset not found: ", libref, ".", member,
+         "\nSearched: ", paste(searched, collapse = ", "),
+         "\nExecution root: ", root, call. = FALSE)
   }
   df <- if (target$type == "rds") readRDS(target$path)
   else if (target$type == "sas7bdat") haven::read_sas(target$path)

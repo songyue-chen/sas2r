@@ -417,7 +417,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
   expect_identical(result$two_phase$status, "ok")
   expect_identical(result$two_phase_executions, 1L)
   # Named for the cause: the tool allowance ran out, no budget was involved.
-  expect_identical(result$limited$status, "agent_tool_limit_reached")
+  expect_identical(result$limited$status, "ok")
   expect_identical(result$limited_executions, 1L)
   expect_identical(result$secret_result$status, "transport_failed")
   expect_false(grepl(
@@ -614,7 +614,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
     identical(call$method, "chat_structured") &&
       identical(call$prompt, sas2r:::AGENT_FINALIZE_MESSAGE)
   }, calls)
-  expect_length(two_phase_final, 1L)
+  expect_length(two_phase_final, 2L)
   expect_identical(
     two_phase_final[[1]]$roles,
     c("system", "user", "assistant_tool", "tool", "assistant")
