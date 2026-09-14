@@ -72,9 +72,8 @@
 #' changes what it does for the same inputs; a helper is retired only after a
 #' replacement ships and the old name has warned for at least one minor
 #' version. Tests hold the source files, the vendored template, the help
-#' pages, and the lint allowlist in sync. The direction of travel -- a
-#' separate `sas2r.runtime` package when usage justifies it -- is recorded in
-#' `docs/decisions/0003-runtime-helpers-distribution.md`.
+#' pages, and the lint allowlist in sync. A separate `sas2r.runtime` package
+#' is a future option when usage justifies it.
 #'
 #' @name sas2r_runtime
 #' @aliases sas2r_helpers sas2r_registry_env sas2r_lib_entry

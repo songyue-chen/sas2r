@@ -54,7 +54,7 @@ write_helpers <- function(out_dir) {
   lines <- readLines(src, warn = FALSE)
   # Every vendored copy states which sas2r generated it: a bundle is frozen
   # on purpose, so the version is how a reader tells one runtime snapshot
-  # from another (docs/decisions/0003-runtime-helpers-distribution.md).
+  # from another.
   version <- tryCatch(as.character(utils::packageVersion("sas2r")),
                       error = function(e) "unknown")
   stamp <- paste0(
@@ -228,7 +228,7 @@ undeclared_registry_entry <- function(libref, bindings) {
 #' Emit `autoexec.R`: the bundle's library settings, then its loader
 #'
 #' Emits `autoexec.R`, the file every program in a bundle sources first and
-#' the one a person maintains afterwards (`docs/decisions/0004-autoexec.md`).
+#' the one a person maintains afterwards.
 #' Its LIBRARIES section is the *seed* of the bundle's runtime registry: the
 #' libraries configuration declares, plus a session `work` directory. It is
 #' deliberately not a static project-wide map of every

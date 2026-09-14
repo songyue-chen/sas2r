@@ -89,9 +89,8 @@ version that generated it. Within a major version an existing helper never
 changes what it does for the same inputs; a helper is retired only after a
 replacement ships and the old name has warned for at least one minor
 version. Tests hold the source files, the vendored template, the help
-pages, and the lint allowlist in sync. The direction of travel -- a
-separate \code{sas2r.runtime} package when usage justifies it -- is recorded in
-\code{docs/decisions/0003-runtime-helpers-distribution.md}.
+pages, and the lint allowlist in sync. A separate \code{sas2r.runtime} package
+is a future option when usage justifies it.
 }
 
 \seealso{
