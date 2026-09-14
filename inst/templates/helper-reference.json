@@ -20,7 +20,7 @@
     "dots": false
   },
   "sas2r_assignment_path": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "Registry seed paths are resolved separately by sas2r_resolve_registry().\n\nArguments:\npath: Character scalar path, absolute or relative.\nenv: Runtime environment containing .sas2r_execution_root.\n\nReturns:\nA normalized character scalar path. Relative paths use the execution\nroot, or the working directory when no root is set. The target need not exist.\n\nExamples:\nresolve <- getFromNamespace(\"sas2r_assignment_path\", \"sas2r\")\nenv <- new.env()\nenv$.sas2r_execution_root <- tempdir()\nresolve(\"inputs\", env)",
     "dots": false
   },
   "sas2r_fold_names": {
@@ -28,11 +28,11 @@
     "dots": false
   },
   "sas2r_lib_entry": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "Read one library entry from the loaded registry\n\nArguments:\nlibref: Character scalar library name, matched case-insensitively.\n\nReturns:\nThe registry entry as a list, normally with read_path, write_path,\nengine, and write fields. Signals sas2r_unknown_libref when absent;\ndoes not read a dataset or return a data frame.\n\nExamples:\nentry <- getFromNamespace(\"sas2r_lib_entry\", \"sas2r\")\nlocal({\n  .sas2r_registry <- list(work = list(read_path = tempdir(),\n    write_path = tempdir(), engine = \"rds\", write = \"rds\"))\n  entry(\"WORK\")$write_path\n})",
     "dots": false
   },
   "sas2r_lib_member_path": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "Construct a member filename inside a library directory\n\nArguments:\ndir: Character scalar library directory.\nmember: Character scalar dataset member name, without path separators.\next: File extension including its dot, for example \".rds\".\n\nReturns:\nA character scalar filename. Does not read or create the file.\nInvalid member names signal sas2r_libref_member_error.\n\nExamples:\nmember_path <- getFromNamespace(\"sas2r_lib_member_path\", \"sas2r\")\nmember_path(tempdir(), \"measurements\", \".rds\")",
     "dots": false
   },
   "sas2r_libname_assign": {
@@ -44,11 +44,11 @@
     "dots": false
   },
   "sas2r_libref_stop": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "Signal a runtime library error\n\nArguments:\ncls: Character scalar giving the specific error class.\nmsg: Character scalar error message.\n\nReturns:\nDoes not return normally. Signals an error with classes cls,\nsas2r_libref_error, error, and condition, and fields message and call.\n\nExamples:\nfail <- getFromNamespace(\"sas2r_libref_stop\", \"sas2r\")\ntryCatch(fail(\"example_library_error\", \"Example failure\"),\n         sas2r_libref_error = function(e) conditionMessage(e))",
     "dots": false
   },
   "sas2r_registry_env": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "Looks first along the runtime's enclosing environments, then active call\nframes. Load autoexec.R before calling data-access helpers.\n\nReturns:\nAn environment containing .sas2r_registry, not the registry list.\nSignals sas2r_no_registry if no registry is loaded.\n\nExamples:\nregistry_env <- getFromNamespace(\"sas2r_registry_env\", \"sas2r\")\nlocal({\n  .sas2r_registry <- list()\n  is.environment(registry_env())\n})",
     "dots": false
   },
   "sas2r_resolve_registry": {
@@ -112,7 +112,7 @@
     "dots": true
   },
   "split_ds": {
-    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "text": "This internal helper is available in a generated bundle's runtime.\nUse the returned names exactly; it returns a character vector, not a list.\nAccessing an absent name with [[ raises an error, rather than returning NULL.\n\nArguments:\nds: A character scalar such as \"source.measurements\" or \"measurements\".\nmacro_vars: Named character vector of macro variables to substitute\nbefore splitting, without the leading ampersand in each name.\n\nReturns:\nA named character vector of length two, with elements lib and\nmember. A one-level name uses lib = \"work\". There is no libref element.\n\nExamples:\nsplit_ds <- getFromNamespace(\"split_ds\", \"sas2r\")\nparts <- split_ds(\"source.measurements\")\nparts[[\"lib\"]]     # \"source\"\nparts[[\"member\"]]  # \"measurements\"\nsplit_ds(\"measurements\") # c(lib = \"work\", member = \"measurements\")",
     "dots": false
   }
 }

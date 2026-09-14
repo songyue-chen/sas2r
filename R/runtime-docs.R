@@ -76,7 +76,6 @@
 #' is a future option when usage justifies it.
 #'
 #' @name sas2r_runtime
-#' @aliases sas2r_helpers sas2r_registry_env sas2r_lib_entry
-#'   sas2r_lib_member_path sas2r_libref_stop sas2r_assignment_path split_ds
+#' @aliases sas2r_helpers
 #' @seealso [sas_translate()], [sas_write()], [sas_code()]
 NULL

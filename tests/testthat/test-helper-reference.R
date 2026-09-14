@@ -46,6 +46,26 @@ test_that("the shared helper reference includes argument rules and return values
   expect_match(docs$sas_sort$text, 'Returns:\ndf reordered.', fixed = TRUE)
   expect_match(docs$sas_merge$text, 'a, b: Data frames, in statement order.', fixed = TRUE)
   expect_match(docs$sas_merge$text, 'Returns:\nThe merged data frame.', fixed = TRUE)
+  expect_match(docs$split_ds$text, 'lib', fixed = TRUE)
+  expect_match(docs$split_ds$text, 'member', fixed = TRUE)
+  expect_match(docs$split_ds$text, 'named character vector', fixed = TRUE)
+  for (name in c("sas2r_registry_env", "sas2r_lib_entry", "sas2r_lib_member_path",
+                 "sas2r_libref_stop", "sas2r_assignment_path")) {
+    expect_match(docs[[name]]$text, "Returns:", fixed = TRUE, info = name)
+    expect_match(docs[[name]]$text, "Examples:", fixed = TRUE, info = name)
+  }
+})
+
+test_that("dataset-name consumers can use the documented named-vector interface", {
+  expect_identical(split_ds("source.measurements"), c(lib = "source", member = "measurements"))
+  expect_identical(split_ds("measurements"), c(lib = "work", member = "measurements"))
+  expect_identical(split_ds("&library.measurements", c(library = "source")),
+                   c(lib = "source", member = "measurements"))
+  parts <- split_ds("source.measurements")
+  expect_identical(parts[["lib"]], "source")
+  expect_identical(parts[["member"]], "measurements")
+  expect_error(parts[["libref"]], "subscript out of bounds")
+  expect_false("split_ds" %in% getNamespaceExports("sas2r"))
 })
 
 test_that("all three agents receive complete helper contracts without tool calls", {
@@ -68,6 +88,8 @@ test_that("all three agents receive complete helper contracts without tool calls
     expect_match(system, 'integer vector of -1, 0, 1', fixed = TRUE, info = agent)
     expect_match(system, 'op = "=="', fixed = TRUE, info = agent)
     expect_match(system, 'Returns:\nThe merged data frame.', fixed = TRUE, info = agent)
+    expect_match(system, 'named character vector of length two', fixed = TRUE, info = agent)
+    expect_match(system, 'parts[["member"]]', fixed = TRUE, info = agent)
   }
 })
 
