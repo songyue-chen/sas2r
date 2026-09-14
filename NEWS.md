@@ -1,4 +1,4 @@
-# sas2r (development version)
+# sas2r 0.4.2
 
 * Runtime helper guidance now describes internal return structures, including
   `split_ds()` and library-registry helpers. Translator, reviewer, and fixer
