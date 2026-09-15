@@ -7,7 +7,7 @@
 
 **sas2r** is an open-source R package for **clinical statistical programmers and biostatisticians** in pharmaceutical, biotech, and CRO organizations. It runs a **coordinated multi-agent workflow** that moves clinical trial data pipelines (SDTM, ADaM, Tables, Listings, and Figures) from SAS to R — an AI translator, an independent AI reviewer, and an AI fixer, each with a defined role inside a deterministic process — and shows you the evidence for every step it took.
 
-`sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the evidence described below. Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
+`sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the [code, context and diagnostics described below](#privacy-what-your-model-provider-can-receive). Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
 
 > **Also check out [sas2r.ai](https://sas2r.ai)** — a web-based companion tool for quick, browser-based SAS to R code translation. While sas2r.ai currently uses direct model translation for rapid code conversions, we plan to bring this R package's multi-agent workflow and dataset QC capabilities to the cloud platform in the future!
 
@@ -690,15 +690,73 @@ not establish that the provider disabled reasoning.
 
 ---
 
-## What the AI Model Sees — and What It Never Sees
+## Privacy: What Your Model Provider Can Receive
 
-By default, agents receive SAS and R code, input column names and types, helper interfaces, and execution diagnostics. Reference comparison values, IDs, counts, difference hints and reports are kept out of code-writing requests and tools, including project tool overrides.
+Dataset reading, generated R execution and output comparison run on the machine
+where you run sas2r, including its local R subprocesses. When AI is enabled,
+translation, review and repair send prompts and tool results through ellmer to
+your configured provider endpoint. The normal workflow does not attach dataset
+files or TLF files to model requests, but **local data processing does not mean
+that no sensitive information can reach the model**.
 
-An unexplained comparison mismatch can trigger one focused source review per unchanged component context. Only a source-grounded finding can turn that mismatch into a code repair. The package rejects repairs that lose established source-review, execution or non-reference check evidence. A correction can still be retained when it disagrees with an inconsistent reference; a failed required reference keeps the overall result `blocked` and is reported separately.
+With the default `agent_evidence = "code_only"`, a request can contain:
 
-Setting `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. The default `code_only` policy omits those previews; source code and error messages may themselves contain data. A dataset that the SAS legitimately reads remains an input even if it is also used as a reference. Complete comparisons remain available locally for human review. These controls enforce repair decisions; they do not prove arbitrary SAS/R equivalence.
+| Information | Examples |
+|---|---|
+| SAS source and comments | Program statements, macro definitions and calls, included source, attached comments, and literal values written in the source |
+| Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
+| Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
+| Execution diagnostics | Error messages, stack traces, capped stderr excerpts, failed component identifiers and source-derived checks, including expected/actual row counts or counts of mismatched BY groups |
+| Guidance and lookup results | Helper interfaces, translation rules, registered skills, and matching documentation from an enabled local documentation mirror |
 
-All data reading, program execution, and output comparison happen in your local R session. Before enabling any provider, confirm the endpoint you configure meets your organization's data residency requirements.
+**`code_only` omits explicit dataset-row and output previews; it is not an
+anonymization setting.** For example, a subject ID in a SAS filter, a name in a
+comment, or a patient value printed in an error can appear in a request. Paths
+can reveal usernames, study names or internal folder structure. Credential
+redaction in audit/error handling is not general removal of clinical identifiers
+from prompts, source code or execution logs.
+
+Setting `agent_evidence = "bounded"` permits capped candidate-output summaries
+and previews in execution diagnostics where available. These may contain
+row numbers, key values, cell values and subject identifiers. A cap limits the
+amount of information; it does not de-identify it.
+
+Reference comparison values, subject IDs, counts, difference hints and reports
+are excluded from translator, reviewer and fixer requests and tools, including
+project tool overrides. A focused source review can receive the affected output
+names and the fact that a mismatch occurred. It receives no reference answers
+to imitate. A dataset that the SAS legitimately reads retains its input role
+even if it is also configured as a reference; that does not make its source
+usage or execution diagnostics confidential to the local process.
+
+Only a source-grounded finding can turn a reference mismatch into a code repair.
+A correction can be retained despite an inconsistent reference; a failed
+required reference still reports `blocked`. These controls protect repair
+decisions and do not prove arbitrary SAS/R equivalence.
+
+Before using AI with confidential programs or clinical data:
+
+- Use an endpoint approved by your organization. Confirm its data residency,
+  retention, access and model-training terms for your account. sas2r does not
+  set those provider policies.
+- Keep `agent_evidence = "code_only"` unless sharing candidate previews is
+  approved. Review source, comments, paths, custom guidance and error-producing
+  code for sensitive content before a run.
+- For offline inspection, use `sas_preflight()` or the standalone comparison
+  functions. In `sas_translate()`, `usage_limits = list(max_calls = 0)` prevents
+  model requests, including automatic settings probes. `llm = NULL` alone can
+  still use the provider in `_sas2r.yml`; `execute = FALSE` disables execution,
+  not AI calls. Without model calls, unsupported translations and AI reviews
+  can remain incomplete.
+- Treat the local run folder as confidential too: scripts, reports, diagnostic
+  logs and saved outputs can contain sensitive information. The
+  `<out_dir>/.sas2r/llm_log.jsonl` and `usage.jsonl` files record model settings,
+  calls and usage metadata, not a complete transcript of everything sent. Review
+  local artifacts before sharing them.
+
+See the [output-evidence guide](docs/output-evidence.md#4-data--model-privacy-boundary)
+for local comparison and audit details. This section describes the R package;
+it does not describe the separate sas2r.ai website.
 
 ---
 
