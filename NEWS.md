@@ -1,5 +1,8 @@
 # sas2r 0.4.2
 
+* New runs can use their bounded bundle repair allowance when an older run
+  remains selected. A worse attempt cannot replace that selection; regressions
+  against an attempt selected within the current pipeline still stop repair.
 * Bundle repair carries pending static findings forward and can fix a downstream
   code defect after an upstream no-op, without treating unresolved comparisons
   as passed. Rejected mechanical candidates retain their code and diagnostics.

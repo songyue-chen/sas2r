@@ -79,7 +79,11 @@ The workflow runs in two stages: first each program is translated and checked on
                               └─────────────────────────────┘
 ```
 
-A repaired run only replaces a previous one if it is genuinely better — a patch that makes things worse is discarded, and the earlier attempt stays selected.
+A new attempt replaces the selected one only if it preserves or improves the
+existing pass criteria. If a new run initially performs worse than an older run,
+the older result stays selected while the new run uses its bounded repair
+allowance. A repair that regresses an attempt already selected in the current
+run stops further repair and keeps that selected attempt.
 
 ---
 

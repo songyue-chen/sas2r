@@ -62,6 +62,11 @@ remain separate from authoritative bundle results. Every changed batch is
 followed by a fresh complete bundle attempt before selection or acceptance.
 The report records repair counts, deferrals, and isolated diagnostics.
 
+A saved selection from an older run does not stop a new run's repair loop.
+It remains selected until a new attempt meets the replacement criteria; repair
+and usage limits still apply. A regression against an attempt selected within
+the current pipeline stops further repair and retains that attempt.
+
 Under the default `agent_evidence = "code_only"` policy, agents receive source code, AST context, and execution summaries without raw patient data.
 
 ### Copy-on-Write Attempt Isolation

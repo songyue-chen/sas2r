@@ -883,14 +883,18 @@ run_bundle_pipeline <- function(
         status = status
       )
     } else if (inherits(cand_selection, "sas2r_regressive_selection")) {
-      is_regression <- TRUE
-      signal_bundle_event(
-        "bundle_early_stop",
-        attempt_id = attempt_rec$attempt_id,
-        round = round,
-        reason = "regressive_attempt"
-      )
-      if (is.null(selected_attempt) && file.exists(state$paths$selected)) {
+      # A selected attempt from this pipeline protects against regressive
+      # repairs. An older run's selection protects publication only: give the
+      # new run its bounded repair allowance before considering replacement.
+      is_regression <- !is.null(selected_attempt)
+      if (is_regression) {
+        signal_bundle_event(
+          "bundle_early_stop",
+          attempt_id = attempt_rec$attempt_id,
+          round = round,
+          reason = "regressive_attempt"
+        )
+      } else if (file.exists(state$paths$selected)) {
         previous <- jsonlite::read_json(state$paths$selected, simplifyVector = FALSE)
         signal_bundle_event("bundle_previous_selection_retained", round = round,
           reason = paste0(previous$attempt_id, " at ", previous$attempt_dir))
