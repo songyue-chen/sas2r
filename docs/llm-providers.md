@@ -534,6 +534,6 @@ unbounded.
 
 `sas2r` maintains a declared, bounded boundary between local data and remote language models:
 
-- **Default Payload**: Program source code, macro interfaces, structural column metadata, and redacted comparison digests (variable names, mismatch counts, difference magnitudes, pattern hints — never the mismatching cells) are what cross the model boundary.
-- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may quote a small, capped set of example differences — including row numbers, key values, and differing cell values (subject identifiers among them when key columns identify subjects) — and `agent_evidence = "bounded"` adds capped output metadata with short previews to repair evidence. The default `agent_evidence = "code_only"` sends neither.
+- **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
+- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. `code_only` omits these previews. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
 - **Data Residency**: All dataset reading, writing, and execution take place in the local R process on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.

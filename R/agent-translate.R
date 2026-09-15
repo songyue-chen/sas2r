@@ -144,7 +144,7 @@ translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
     "skill_id", "version", "content_hash", "activation_reason"
   )]))
 
-  ctx <- list(project = project, unit_stmts = ctxp$us,
+  ctx <- list(agent_role = "translator", project = project, unit_stmts = ctxp$us,
               schemas = infer_schemas(project), config = config,
               macro_index = macro_index, skill_catalog = catalog)
   vars <- list(dialect = config$dialect %||% "tidyverse",
@@ -806,6 +806,7 @@ generate_program_revision <- function(
     }
     macro_idx <- project_macro_index(project, config)
     tool_ctx <- list(
+      agent_role = "translator",
       project = project,
       unit_stmts = unit_stmts,
       schemas = tryCatch(infer_schemas(project), error = function(e) list()),

@@ -1,48 +1,3 @@
-# A source-defined workflow with seeded generated R execution or value errors.
-repair_workflow_fixture <- function(n = 4L, failures = c(1L, 3L), chain = FALSE,
-                                    value_errors = integer(), envir = parent.frame()) {
-  root <- withr::local_tempdir(.local_envir = envir)
-  inputs <- file.path(root, "inputs")
-  dir.create(inputs)
-  saveRDS(data.frame(id = 1:3, value = 10:12), file.path(inputs, "input.rds"))
-  config <- list(libraries = list(raw = list(path = inputs, engine = "rds")))
-  ids <- sprintf("p%02d", seq_len(n))
-  code <- sas <- list()
-  for (i in seq_len(n)) {
-    id <- ids[i]
-    parent <- if (chain && i > 1L) paste0("work.out", i - 1L) else "raw.input"
-    sas[[id]] <- sprintf("data work.out%d; set %s; value = value + 1; run;", i, parent)
-    writeLines(sas[[id]], file.path(root, paste0(id, ".sas")))
-    bits <- strsplit(parent, ".", fixed = TRUE)[[1L]]
-    code[[id]] <- sprintf("x <- lib_read('%s', '%s')\nx$value <- x$value + 1\nlib_write(x, 'work', 'out%d')", bits[1], bits[2], i)
-  }
-  project <- sas_project(root, config = config)
-  state <- new_migration_state(project, file.path(root, "migration"), config = config)
-  for (i in seq_len(n)) {
-    id <- ids[i]
-    r <- if (i %in% failures) sprintf("stop('translation fault %s')", id) else code[[id]]
-    if (i %in% value_errors) r <- sub("+ 1", "+ 9", r, fixed = TRUE)
-    r_path <- file.path(root, paste0(id, ".R"))
-    writeLines(r, r_path)
-    binding <- new_component_binding(migration_hash(sas[[id]]), migration_hash(r),
-      migration_hash("helpers"), migration_hash("review"), migration_hash("closure"))
-    state$selected_revisions[[id]] <- list(component_id = id, revision_id = "r1", r_code = r,
-      staged_file = paste0(id, ".R"), r_path = r_path, binding = binding,
-      contract = list(component_id = id, staged_file = paste0(id, ".R"),
-        sas_text = sas[[id]], binding = binding))
-    h <- new_component_evidence_history(id, binding)
-    state$histories[[id]] <- record_completed_review(h)
-  }
-  state$output_contracts <- infer_output_contracts(project,
-    overrides = list(datasets = paste0("work.out", seq_len(n))))
-  state$fixer_llm <- recording_fixer(function(context) {
-    valid_program_fix_response(code = code[[context$component_id]],
-      diagnosis = paste("Repair", context$component_id), summary = "Restore source derivation")
-  })
-  state$reviewer_llm <- recording_reviewer(function(context) valid_program_review_response())
-  list(state = state, root = root, fixed = code, ids = ids)
-}
-
 test_that("twenty dependent scripts can repair three newly exposed blockers by default", {
   fx <- repair_workflow_fixture(n = 20L, failures = c(5L, 12L, 18L), chain = TRUE)
   result <- run_bundle_pipeline(fx$state)
@@ -107,6 +62,11 @@ test_that("independent reference mismatches are repaired together at their write
   saveRDS(data.frame(id = 1:3, value = 11:13), reference)
   fx$state$comparison_rules <- list(references =
     stats::setNames(rep(list(reference), 4L), paste0("work.out", 1:4)))
+  fx$state$reviewer_llm <- recording_reviewer(function(req) {
+    text <- paste(vapply(req$messages, function(m) as.character(m$content), ""), collapse = "\n")
+    if (grepl("value + 9", text, fixed = TRUE)) material_review_response(
+      sas_evidence = "value = value + 1", r_evidence = "value + 9 contradicts source") else valid_program_review_response()
+  })
   result <- run_bundle_pipeline(fx$state)
   expect_identical(result$status, "validated")
   expect_identical(result$attempts$sequence, 1:2)
@@ -199,10 +159,10 @@ test_that("an upstream no-op does not suppress an independently reviewed downstr
   })
   result <- run_bundle_pipeline(fx$state)
   expect_identical(vapply(result$repairs, `[[`, "", "component_id"), "p02")
-  expect_identical(result$diagnostics$bundle_repair$deferred$p01, "identical_patch")
+  expect_null(result$diagnostics$bundle_repair$deferred$p01)
   expect_false(result$assessment$targets$work.out1$passed)
   expect_identical(result$status, "blocked")
-  prompt <- paste(vapply(fx$state$fixer_llm$requests()[[2L]]$messages, `[[`, "", "content"), collapse = "\n")
+  prompt <- paste(vapply(fx$state$fixer_llm$requests()[[1L]]$messages, `[[`, "", "content"), collapse = "\n")
   expect_match(prompt, "value + 9 instead of + 1", fixed = TRUE)
   expect_match(prompt, "review:p02:source-addition", fixed = TRUE)
   expect_false(grepl("different-source-reference", prompt, fixed = TRUE))
@@ -216,7 +176,7 @@ test_that("inherited mismatches are not sent downstream after an upstream no-op"
   saveRDS(data.frame(id = 1:3, value = 100:102), reference)
   fx$state$comparison_rules <- list(references = list(work.out1 = reference, work.out2 = reference))
   result <- run_bundle_pipeline(fx$state)
-  expect_length(fx$state$fixer_llm$requests(), 1L)
+  expect_length(fx$state$fixer_llm$requests(), 0L)
   expect_length(result$repairs, 0L)
   expect_identical(result$status, "blocked")
   expect_false(result$assessment$targets$work.out2$passed)

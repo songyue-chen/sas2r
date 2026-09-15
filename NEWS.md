@@ -1,3 +1,10 @@
+# sas2r (development version)
+
+* Keep reference comparison answers out of translation and repair requests and tools. Unexplained differences receive one bounded source-focused review per unchanged component context; only source-grounded findings authorize code repair.
+* Reject source-review regressions before bundle repairs are applied, retain coherent shared-helper revisions, and compare individual source/non-reference checks before selecting freshly executed bundles. Correct source translations can be retained despite inconsistent references, whose required failures remain blocked.
+* Preserve focused-review history across reference-only configuration changes and resume, and report source evidence separately from unresolved reference differences.
+* Retain completed review evidence when an extra review is inconclusive, scope cross-run checks to unchanged sources, and route missing generated intermediates to their source-declared writers. Preserve all artifact errors and rejected revision identifiers, and reuse target observations after focused review.
+
 # sas2r 0.4.2
 
 * New runs can use their bounded bundle repair allowance when an older run

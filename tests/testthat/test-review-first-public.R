@@ -326,7 +326,7 @@ test_that("a script with declared path inputs and a helper can become migration 
   expect_length(component$blockers, 0L)
 })
 
-test_that("resume ignores transport changes but invalidates changed QC and clears old diagnostics", {
+test_that("resume ignores comparison and transport changes but invalidates changed source settings", {
   fx <- review_public_fixture()
   write("options sasautos=('macros');", file = fx$source, append = TRUE)
   dir.create(file.path(fx$root, "macros"))
@@ -343,6 +343,10 @@ test_that("resume ignores transport changes but invalidates changed QC and clear
   expect_identical(adapter$calls$n, 2L)
   expect_identical(again$diagnostics$resumed_components, "program")
   cfg$comparison_rules <- list(min_rows = 1)
+  compared <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
+  expect_identical(adapter$calls$n, 2L)
+  expect_identical(compared$diagnostics$resumed_components, "program")
+  cfg$allowlist <- c("dplyr", "tidyr")
   changed <- sas_translate(fx$source, config = cfg, out_dir = out, llm = adapter$llm, execute = FALSE, resume = TRUE)
   expect_identical(adapter$calls$n, 4L)
   expect_match(changed$diagnostics$resume_invalidated, "configuration")

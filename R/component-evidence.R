@@ -746,6 +746,7 @@ evidence_for_output_lineage <- function(graph, histories, target_id) {
 record_program_checks <- function(history, checks) {
   idx <- match(history$active_revision_id,
                vapply(history$revisions, `[[`, character(1), "revision_id"))
+  history$revisions[[idx]]$mechanical_check <- list(check_id = checks$check_id, pass = isTRUE(checks$pass))
   history$revisions[[idx]]$blockers <- unique(c(
     setdiff(history$revisions[[idx]]$blockers, "mechanical_checks_failed"),
     if (!isTRUE(checks$pass)) "mechanical_checks_failed"

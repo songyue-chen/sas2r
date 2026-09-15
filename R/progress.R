@@ -355,6 +355,8 @@ format_sas2r_progress <- function(progress) {
         bundle_attempt_selected = sprintf("%s: %s selected", round, attempt),
         bundle_early_stop = sprintf("%s: stopping early%s", round, progress_reason(progress$reason)),
         bundle_repair_queue = paste0("queued repairs", progress_reason(progress$reason)),
+        bundle_source_review_completed = paste0(component, ": focused source review", progress_reason(progress$reason)),
+        bundle_repair_rejected = paste0(component, ": repair rejected", progress_reason(progress$reason)),
         bundle_component_deferred = paste0(component, ": repair deferred", progress_reason(progress$reason)),
         bundle_diagnostic_completed = paste0(component, ": isolated diagnostic ",
           if (isTRUE(progress$passed)) "passed" else "failed",

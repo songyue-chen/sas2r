@@ -69,6 +69,36 @@ the current pipeline stops further repair and retains that attempt.
 
 Under the default `agent_evidence = "code_only"` policy, agents receive source code, AST context, and execution summaries without raw patient data.
 
+### Source-based repair and selection
+
+A reference mismatch alone does not authorize code changes. It can request one focused source review per unchanged component context, grouping affected outputs. The reviewer traces SAS and R operations without reference counts, values or mismatch-variable hints. An unavailable investigation consumes its opportunity; reference-only changes and resume do not reset it. Actual source, input, dependency or reviewer-context changes may justify a new review within finite budgets.
+
+An inconclusive extra review is recorded separately and retains any completed review of the unchanged code. Only an actionable material source finding updates its active review evidence. An unexplained upstream reference mismatch does not establish that downstream differences are inherited: independent source review remains available within the same per-component cap. Known upstream repair findings take precedence.
+
+Mechanical failures, attributable runtime errors, malformed/missing artifacts and source-grounded findings still enter bounded repair. Candidates are reviewed before subsequent repairs use them. Shared-helper changes are checked with their consumers using candidate files; rejected code, helpers and review records remain local diagnostics while earlier active code is retained. Fresh execution then protects established execution and source-check coverage before selection.
+
+Selection compares individual components and required non-reference checks. Better reference agreement cannot compensate for a source regression, and losing an inconsistent reference match does not veto a source-supported correction. Required reference failures still produce `blocked`; the output assessment separately records `reference_issue` and `source_evidence`. Unverified source checks remain unverified, and a clean static review is not a proof of semantic equivalence.
+
+Across runs, source-review and population comparisons apply to components still present with unchanged source. Population check identities use component and output names, so project-wide statement renumbering does not invalidate them. Required output checks are compared within unchanged source lineage. Removing or editing SAS programs changes that comparison scope; it does not make an older source task permanently selected. A missing external input remains an input problem. A missing intermediate with a uniquely identified, completed upstream writer is routed to that writer for repair, retaining the reader's actual execution error.
+
+### Repair reasons and evidence records
+
+| Reason, event or field | Meaning |
+|---|---|
+| `no_source_grounded_repair` | Differences remain, but no source-supported defect authorizes another repair. The code and comparison results are retained. |
+| `repair_review_regressed` | A candidate's review or mechanical checks regressed, or candidate review raised an error; the retained revision stays active. |
+| `source_input_unavailable: <dataset>` | SAS reads a missing dataset that no bundle component is declared to produce. Supply or configure the input; the missing file alone does not authorize a rewrite. |
+| `execution_timeout; no translation defect established` | Execution timed out; that observation alone does not establish a code defect. |
+| `bundle_repair_rejected` | Progress event identifying the rejected component, attempt and reason. |
+| `bundle_source_review_completed` | Progress event reporting the focused review's outcome, including an unavailable review. |
+| `source_mismatch_review` | Component-history event storing the attempted context, target identities, review basis and outcome. Inconclusive results do not replace an existing completed verdict. |
+| `diagnostics.rejected_repairs` | Rejected fixer revision and paths; `revisions` maps each affected component's artifact revision ID, evidence revision ID and code path. History events link both revision IDs. |
+| `diagnostics.selection_rejections` | Per-attempt replacement-rejection details; the retained-selection progress message also includes the reason and previous attempt location. |
+| `reference_issue` | An unresolved reference mismatch, separate from code correctness. |
+| `source_evidence` | Existing component review verdicts, evidence identifiers and supported source-check counts for an output's lineage. |
+
+After focused review, lineage and status are refreshed from the same attempt's saved target observations; unchanged datasets are not compared a second time.
+
 ### Copy-on-Write Attempt Isolation
 
 Each run has a timestamp-first folder directly in the output directory. Attempts are isolated beneath `<run_id>/diagnostics/bundle_attempts/`; revisions, smoke executions, and logs have separate diagnostics folders. Open `START_HERE.html` for navigation. The selected editable code lives in `bundle/`, saved contract-declared deliverables in `outputs/`, and reports in `report/`. Missing code and partial results remain explicit. Manual runs write beneath `bundle/output/` without changing automated evidence. The shared `.sas2r/` folder retains resume state and a copy of the latest report.
@@ -80,9 +110,9 @@ Each run has a timestamp-first folder directly in the output directory. Attempts
 
 `sas2r` enforces a declared, bounded boundary between local data and remote language models:
 
-- **Default Payload**: SAS source code, macro structures, aggregated column metadata, and redacted comparison digests (variable names, mismatch counts, difference magnitudes, pattern hints — never the mismatching cells) are what reach the model. Bundle-repair evidence carries the digest in place of the raw mismatch table.
-- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may quote a small, capped set of example differences — including row numbers, key values, and differing cell values (subject identifiers among them when key columns identify subjects) — and `agent_evidence = "bounded"` adds capped output metadata with short previews to repair evidence. The default `agent_evidence = "code_only"` sends neither.
-- **Data Residency**: Clinical datasets and outputs stay in the local R process on your infrastructure; confirm your configured endpoint meets your enterprise data residency obligations.
+- **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
+- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. `code_only` omits these previews; source code and error messages may themselves contain data. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
+- **Data Residency**: Dataset reading, execution and comparison run locally; confirm your configured endpoint meets your enterprise data residency obligations.
 
 ## Regulatory Review & Validation Disclaimer
 

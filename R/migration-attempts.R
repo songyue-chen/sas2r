@@ -420,9 +420,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     )
   }
 
-  status_ranks <- c(blocked = 1L, needs_review = 2L, migration_ready = 3L, validated = 4L)
   status_str <- if (is.list(assessment)) (assessment$status %||% "migration_ready") else as.character(assessment)
-  cand_rank <- status_ranks[[status_str]] %||% 1L
 
   sel_path <- if (is.list(paths) && !is.null(paths$selected)) {
     paths$selected
@@ -441,30 +439,28 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
   }
 
   if (!is.null(prev_rec)) {
-    prev_status <- prev_rec$status %||% prev_rec$assessment$status %||% "migration_ready"
-    prev_rank <- status_ranks[[prev_status]] %||% 1L
-    if (cand_rank < prev_rank) {
-      cli::cli_abort(
-        "Candidate attempt has regressed in status from {.val {prev_status}} to {.val {status_str}}",
-        class = "sas2r_regressive_selection"
-      )
-    }
+    reasons <- source_history_regressions(prev_rec$assessment$evidence_histories,
+                                           assessment$evidence_histories)
+    if (length(reasons)) cli::cli_abort(paste(reasons, collapse = "; "),
+                                       class = "sas2r_regressive_selection")
 
-    if (identical(candidate$execution_order, prev_rec$execution_order) &&
-        ((isTRUE(prev_rec$execution_passed) && !isTRUE(candidate$passed)) ||
+    if ((isTRUE(prev_rec$execution_passed) && !isTRUE(candidate$passed)) ||
+        (identical(candidate$execution_order, prev_rec$execution_order) &&
          length(setdiff(prev_rec$executed_component_ids, candidate$executed_component_ids)) > 0L)) {
       cli::cli_abort("Candidate attempt lost previously completed program execution",
                      class = "sas2r_regressive_selection")
     }
 
-    cand_passing <- length(assessment$passing_targets %||% character())
-    prev_passing <- length(prev_rec$assessment$passing_targets %||% prev_rec$passing_targets %||% character())
-    if (prev_passing > 0L && cand_passing < prev_passing) {
-      cli::cli_abort(
-        "Candidate attempt has fewer passing required outputs ({cand_passing}) than previous selected attempt ({prev_passing})",
-        class = "sas2r_regressive_selection"
-      )
+    components <- unchanged_source_components(prev_rec$assessment$evidence_histories,
+                                               assessment$evidence_histories)
+    targets <- comparable_output_targets(prev_rec$assessment, assessment, components)
+    lost <- setdiff(passed_output_checks(prev_rec$assessment, targets), passed_output_checks(assessment, targets))
+    lost_population <- setdiff(passed_population_checks(prev_rec, components), passed_population_checks(candidate, components))
+    if (length(lost) || length(lost_population)) {
+      cli::cli_abort(paste("Candidate lost established non-reference checks:",
+        paste(c(lost, lost_population), collapse = ", ")), class = "sas2r_regressive_selection")
     }
+
   }
 
   sel_rec <- list(
@@ -478,6 +474,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     output_hashes = candidate$output_hashes %||% list(),
     execution_order = candidate$execution_order,
     execution_passed = isTRUE(candidate$passed),
+    population_checks = candidate$population_checks %||% list(),
     executed_component_ids = candidate$executed_component_ids %||% character()
   )
 

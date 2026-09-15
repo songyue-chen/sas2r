@@ -151,8 +151,8 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 `sas2r` enforces strict data containment to protect proprietary and clinical trial data:
 
 - **Complete Datasets Stay Local**: Complete saved dataset objects remain entirely within the local R process.
-- **Default Model Evidence**: With `agent_evidence = "code_only"`, agents receive source/code context, metadata, and redacted difference digests: names, counts, and magnitudes, without mismatching cells.
-- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may contain capped examples with row numbers, subject identifiers, key values, and differing cell values. Setting `agent_evidence = "bounded"` adds output summaries with short previews to repair evidence. The default `code_only` policy sends neither. Reports are serialized and capped.
+- **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
+- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. `code_only` omits these previews; source code and error messages may themselves contain data. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
 - **Data Residency Compliance**: Organizations must ensure configured model endpoints comply with their enterprise data residency and privacy obligations.
 
 ---
