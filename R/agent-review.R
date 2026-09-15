@@ -129,6 +129,7 @@ run_review_agent <- function(spec, llm, ctx, unit, staged_code,
     comments = ctxp$comments,
     skills = rendered_skills
   )
+  ctx$agent_role <- "reviewer"
   tools <- build_tools(spec, ctx)
   r <- run_agent(
     spec, llm, tools,
@@ -359,7 +360,8 @@ review_program_revision <- function(
     "Resolved interfaces:", if_txt,
     "Helper guarantees:", helpers_txt,
     "Unresolved graph facts:", unres_txt,
-    "Output lineage:", lineage_txt
+    "Output lineage:", lineage_txt,
+    if (!is.null(context$helper_code)) c("Candidate shared R helpers:", context$helper_code)
   ), collapse = "\n")
 
   # Route skills from the component's actual content: its PROC statements and
@@ -393,7 +395,7 @@ review_program_revision <- function(
     revision_id = revision_id,
     round = round,
     attempt_id = attempt_id,
-    purpose = "program_review"
+    purpose = if (length(context$focus_outputs)) "source_mismatch_review" else "program_review"
   )
 
   prompt_vars <- list(
@@ -408,6 +410,7 @@ review_program_revision <- function(
   # query_project_graph needs the lineage, and read_skill/search_skills keep
   # their catalog fallback either way.
   tools <- build_tools(spec, list(
+    agent_role = "reviewer",
     project = context$project,
     unit_stmts = comp_stmts,
     schemas = tryCatch(infer_schemas(context$project), error = function(e) list()),
@@ -418,7 +421,13 @@ review_program_revision <- function(
     spec = spec,
     llm = llm,
     tools = tools,
-    user_content = "Review this SAS component and assembled R program.",
+    user_content = if (length(context$focus_outputs)) paste(
+      "Focused source review. A comparison mismatch was observed for source outputs:",
+      paste(context$focus_outputs, collapse = ", "),
+      "Trace their row selection, joins and derivations through the SAS and R.",
+      "Identify a concrete conflicting source/R operation, or report no established defect.",
+      "The comparison may be inconsistent with the SAS. Do not infer desired values or change source rules."
+    ) else "Review this SAS component and assembled R program.",
     log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
     prompt_vars = prompt_vars,
     audit_context = audit_context,

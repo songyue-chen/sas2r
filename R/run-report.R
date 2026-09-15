@@ -120,9 +120,13 @@ write_run_navigation <- function(state, report) {
     saved <- manifest$outputs[[target]]
     ass <- report$output_assessments[[target]]
     paste0("<li>", if (!is.null(saved)) link(saved$path, target) else
-      paste0(run_html_escape(target), " - not generated"), " - ", run_html_escape(ass$status %||% "unverified"),
+      paste0(run_html_escape(target), if (identical(ass$status, "unresolved_target"))
+        " - source expression; concrete outputs unknown" else " - not generated"), " - ", run_html_escape(ass$status %||% "unverified"),
       " | ", if (!is.null(comparisons[[target]])) link(comparisons[[target]], "Comparison details") else "No comparison recorded", "</li>")
   }, character(1))
+  unresolved_rows <- vapply(state$output_contracts$target_key, function(key) {
+    identical(report$output_assessments[[key]]$status, "unresolved_target")
+  }, logical(1))
   instructions <- if (file.exists(file.path(paths$bundle, "README.md"))) {
     readLines(file.path(paths$bundle, "README.md"), warn = FALSE)
   } else "No bundle is available yet. Resolve the error below and start a new translation."
@@ -149,7 +153,10 @@ write_run_navigation <- function(state, report) {
       link("diagnostics", "Diagnostics")), collapse = " | "), '</nav>'),
     '<h2>Programs and called macros</h2>',
     if (length(rows)) c('<div style="overflow-x:auto"><table><thead><tr><th>Component / source</th><th>Dependencies</th><th>Checks</th><th>Review</th><th>Execution</th><th>Output assessment</th><th>Next action</th></tr></thead><tbody>', rows, '</tbody></table></div>') else '<p>No component code was generated.</p>',
-    '<h2>Saved outputs</h2>', if (length(output_rows)) c('<ul>', output_rows, '</ul>') else '<p>No output targets were recorded.</p>',
+    '<h2>Saved outputs</h2>', if (any(!unresolved_rows)) c('<ul>', output_rows[!unresolved_rows], '</ul>') else '<p>No concrete output targets were recorded.</p>',
+    if (any(unresolved_rows)) c('<h2>Unresolved output expressions</h2>',
+      '<p>These source expressions are not additional missing files. Concrete filenames and complete coverage remain unverified.</p>',
+      '<ul>', output_rows[unresolved_rows], '</ul>'),
     '<h2>Model, settings, and usage</h2><pre>',
     run_html_escape(jsonlite::toJSON(settings, auto_unbox = TRUE, pretty = TRUE, null = "null")),
     run_html_escape(paste(c(migration_environment_lines(report$environment), migration_usage_lines(report$usage)), collapse = "\n")), '</pre>',

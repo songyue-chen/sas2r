@@ -14,60 +14,6 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   bundle_ev$execution_id <- attempt_rec$execution_id %||% attempt_rec$attempt_id
   bundle_ev$failing_outputs <- vapply(packet$failed_targets, function(t) t$target_key, character(1))
 
-  # Bounded comparison reports: the sanctioned, capped surface that may
-  # carry example differences. Each failed dataset target with both files
-  # still on disk gets one, registered for the fixer's
-  # read_comparison_report tool; only the report id enters the prompt, and
-  # the examples cross the boundary solely when the model requests them.
-  report_registry <- new.env(parent = emptyenv())
-  read_target_frame <- function(path) {
-    if (is.null(path) || is.na(path) || !file.exists(path)) return(NULL)
-    tryCatch(
-      switch(tolower(tools::file_ext(path)),
-             rds = readRDS(path),
-             xpt = haven::read_xpt(path),
-             sas7bdat = haven::read_sas(path),
-             NULL),
-      error = function(e) NULL
-    )
-  }
-
-  outputs_ev <- lapply(packet$failed_targets, function(t) {
-    # Model boundary: the raw mismatch table holds exact cell values with
-    # row numbers and must never reach the fixer. The redacted digest the
-    # gate computed (diff_digest: names, counts, magnitudes, pattern hints),
-    # plus structural and cosmetic summaries, is the whole difference
-    # evidence an LLM may see. The full table stays in the local assessment
-    # and report for human review.
-    diffs <- t$differences
-    if (is.list(diffs)) diffs$mismatches <- NULL
-    if (identical(t$kind, "dataset")) {
-      ref_data <- read_target_frame(t$reference_path)
-      cand_data <- read_target_frame(t$candidate_path)
-      if (!is.null(ref_data) && !is.null(cand_data)) {
-        rep <- tryCatch(
-          compare_aligned_outputs(ref_data, cand_data, target = list(
-            target_id = t$target_key,
-            logical_dataset = t$target_key,
-            role = "output",
-            contributing_unit_ids = integer()
-          )),
-          error = function(e) NULL
-        )
-        if (!is.null(rep)) {
-          assign(rep$report_id, rep, envir = report_registry)
-          if (is.list(diffs)) diffs$comparison_report_id <- rep$report_id
-        }
-      }
-    }
-    list(
-      target_key = t$target_key,
-      kind = t$kind,
-      status = t$status,
-      checks = t$checks,
-      differences = diffs
-    )
-  })
 
   signal_bundle_event(
     "bundle_fixer_invoked",
@@ -80,8 +26,9 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   fixed_rev <- tryCatch(
     fix_program_revision(
       revision = primary_rev,
+      review = packet$review,
+      checks = packet$checks,
       bundle = bundle_ev,
-      outputs = outputs_ev,
       mode = "bundle",
       llm = state$fixer_llm,
       usage = state$usage_budget,
@@ -90,8 +37,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       config = state$config,
       round = round + 1L,
       attempt_id = attempt_rec$attempt_id,
-      evidence_ids = packet$evidence_ids,
-      report_registry = report_registry
+      evidence_ids = packet$evidence_ids
     ),
     error = function(e) {
       if (inherits(e, "sas2r_llm_settings_error")) stop(e)
@@ -104,6 +50,14 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     return(list(state = state, applied = FALSE, reason = stop_reason))
   }
 
+  if (!isTRUE(fixed_rev$checks$pass)) {
+    state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
+      component_id = primary_cid, revision_id = fixed_rev$revision_id,
+      r_path = fixed_rev$r_path, errors = fixed_rev$checks$errors)))
+    return(list(state = state, applied = FALSE, reason = paste(
+      "repair_mechanical_checks_failed", paste(fixed_rev$checks$errors, collapse = "; "), sep = ": ")))
+  }
+
   # Check for identical / no-op patch
   is_identical_code <- identical(trimws(fixed_rev$r_code %||% ""), trimws(primary_rev$r_code %||% ""))
   is_identical_patch <- !is.null(fixed_rev$patch_hash) && !is.null(primary_rev$contract$patch_hash) && identical(fixed_rev$patch_hash, primary_rev$contract$patch_hash)
@@ -114,102 +68,95 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     return(list(state = state, applied = FALSE, reason = stop_reason))
   }
 
-  # 7. Apply patch & invalidate bindings
+  # Candidate files live with the revision; retained runtime files are never
+  # overwritten. R list state is local, while the usage budget remains shared.
+  retained <- state
+  affected <- if (has_helper_patch) names(state$selected_revisions) else primary_cid
+  state$selected_revisions[[primary_cid]] <- fixed_rev
   if (has_helper_patch) {
     hp <- fixed_rev$bundle_helper_patch
-    hp_path <- hp$path %||% "sas2r-helpers.R"
-    hp_content <- hp$content %||% ""
-
-    if (!is.null(state$paths) && !is.null(state$paths$state)) {
-      hp_dest <- file.path(state$paths$state, hp_path)
-      dir.create(dirname(hp_dest), recursive = TRUE, showWarnings = FALSE)
-      writeLines(hp_content, hp_dest)
-      state$runtime$helpers <- hp_dest
-    }
-
-    new_h_hash <- migration_hash(hp_content)
-    for (cid in names(state$selected_revisions)) {
+    hp_dest <- file.path(dirname(fixed_rev$r_path), "candidate-helpers.R")
+    writeLines(hp$content, hp_dest)
+    state$runtime$helpers <- hp_dest
+  }
+  rejection <- tryCatch({
+    reasons <- character()
+    for (cid in affected) {
       c_rev <- state$selected_revisions[[cid]]
-      old_b <- c_rev$contract$binding %||% c_rev$binding
-      new_b <- new_component_binding(
-        source_hash = old_b$source_hash %||% migration_hash(c_rev$contract$sas_text %||% ""),
-        r_hash = old_b$r_hash %||% migration_hash(c_rev$r_code %||% ""),
-        helper_hash = new_h_hash,
-        prompt_skill_hash = old_b$prompt_skill_hash %||% migration_hash("fixer"),
-        dependency_closure_hash = old_b$dependency_closure_hash %||% migration_hash("closure")
-      )
-      c_rev$binding <- new_b
-      if (!is.null(c_rev$contract)) c_rev$contract$binding <- new_b
-      state$selected_revisions[[cid]] <- c_rev
-      state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], new_b)
-
+      old_b <- c_rev$binding %||% c_rev$contract$binding %||%
+        current_component_evidence(retained$histories[[cid]])$binding
+      if (has_helper_patch) {
+        old_b <- new_component_binding(old_b$source_hash, old_b$r_hash,
+          migration_hash(hp$content), old_b$prompt_skill_hash, old_b$dependency_closure_hash)
+        c_rev$binding <- old_b
+        c_rev$contract$binding <- old_b
+        c_rev$revision_id <- paste0("rev_", substr(old_b$binding_hash, 1L, 16L))
+        revision_dir <- file.path(state$paths$component_revisions, cid, "revisions", c_rev$revision_id)
+        dir.create(revision_dir, recursive = TRUE, showWarnings = FALSE)
+        c_rev$r_path <- file.path(revision_dir, "program.R")
+        c_rev$contract_path <- file.path(revision_dir, "contract.json")
+        writeLines(c_rev$r_code, c_rev$r_path)
+        atomic_write_json(c_rev$contract, c_rev$contract_path)
+      }
+      state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], old_b)
+      if (is.null(c_rev$r_path) || !file.exists(c_rev$r_path)) {
+        c_rev$r_path <- file.path(dirname(fixed_rev$r_path), paste0(cid, ".R"))
+        writeLines(c_rev$r_code, c_rev$r_path)
+      }
       c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract)
       c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
       state$selected_revisions[[cid]] <- c_rev
       state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)
+      review <- list(verdict = "review_unavailable")
       if (isTRUE(c_rev$checks$pass) && !is.null(state$reviewer_llm)) {
-        ctx <- list(
-          component_id = cid,
-          revision_id = c_rev$revision_id,
-          r_code = c_rev$r_code,
-          r_path = c_rev$r_path,
-          contract = c_rev$contract,
-          binding = new_b,
-          history = state$histories[[cid]],
-          sas_source = component_source_text(state$graph, cid),
-          project = state$project,
-          config = state$config %||% list()
-        )
-        rev_res <- review_program_revision(
-          c_rev,
-          context = ctx,
-          llm = state$reviewer_llm,
-          usage = state$usage_budget,
-          paths = state$paths,
-          round = round + 1L,
-          history = state$histories[[cid]]
-        )
-        if (!is.null(rev_res$history)) state$histories[[cid]] <- rev_res$history
+        review <- review_program_revision(c_rev, context = list(
+          component_id = cid, contract = c_rev$contract,
+          sas_source = component_source_text(state$graph, cid), project = state$project,
+          config = state$config, helper_code = if (has_helper_patch) hp$content else NULL),
+          llm = state$reviewer_llm, usage = state$usage_budget, paths = state$paths,
+          round = round + 1L, history = state$histories[[cid]])
+        if (!is.null(review$history)) state$histories[[cid]] <- review$history
+      } else if (isTRUE(c_rev$checks$pass)) {
+        state$histories[[cid]] <- record_review_unavailable(state$histories[[cid]])
       }
+      previous <- list(revision = retained$selected_revisions[[cid]],
+        verdict = component_review_verdict(retained$histories[[cid]]))
+      regressions <- program_repair_regressions(previous, c_rev, review, execution = FALSE)
+      if (!isTRUE(c_rev$checks$pass)) regressions <- c(regressions, c_rev$checks$errors)
+      if (length(regressions)) reasons <- c(reasons, paste(cid, regressions))
     }
-  }
-
-  if (!is_identical_code) {
-    state$selected_revisions[[primary_cid]] <- fixed_rev
-    new_b <- fixed_rev$contract$binding %||% fixed_rev$binding
-    state$histories[[primary_cid]] <- activate_component_binding(state$histories[[primary_cid]], new_b)
-
-    checks <- check_program_revision(fixed_rev$r_path, contract = fixed_rev$contract)
-    fixed_rev$checks <- checks
-    fixed_rev$status <- if (isTRUE(checks$pass)) "ok" else "check_failed"
-    state$histories[[primary_cid]] <- record_program_checks(state$histories[[primary_cid]], checks)
-
-    if (isTRUE(checks$pass) && !is.null(state$reviewer_llm)) {
-      ctx <- list(
-        component_id = primary_cid,
-        revision_id = fixed_rev$revision_id,
-        r_code = fixed_rev$r_code,
-        r_path = fixed_rev$r_path,
-        contract = fixed_rev$contract,
-        binding = new_b,
-        history = state$histories[[primary_cid]],
-        sas_source = component_source_text(state$graph, primary_cid),
-        project = state$project,
-        config = state$config %||% list()
-      )
-      rev_res <- review_program_revision(
-        fixed_rev,
-        context = ctx,
-        llm = state$reviewer_llm,
-        usage = state$usage_budget,
-        paths = state$paths,
-        round = round + 1L,
-        history = state$histories[[primary_cid]]
-      )
-      if (!is.null(rev_res$history)) state$histories[[primary_cid]] <- rev_res$history
+    reasons
+  }, error = function(e) {
+    if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+    paste("candidate review unavailable:", conditionMessage(e))
+  })
+  if (length(rejection)) {
+    rejected_revisions <- list()
+    for (cid in affected) {
+      h <- state$histories[[cid]]
+      old <- retained$histories[[cid]]
+      rejected_id <- h$active_revision_id
+      if (identical(rejected_id, old$active_revision_id)) next
+      candidate <- state$selected_revisions[[cid]]
+      rejected_revisions[[cid]] <- list(evidence_revision_id = rejected_id,
+        artifact_revision_id = candidate$revision_id, r_path = candidate$r_path)
+      h$active_revision_id <- old$active_revision_id
+      idx <- match(h$active_revision_id, vapply(h$revisions, `[[`, "", "revision_id"))
+      h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
+        type = "repair_rejected", candidate_revision_id = rejected_id,
+        candidate_artifact_revision_id = candidate$revision_id, reasons = rejection)))
+      retained$histories[[cid]] <- h
     }
-    state$selected_revisions[[primary_cid]] <- fixed_rev
+    retained$diagnostics$rejected_repairs <- c(retained$diagnostics$rejected_repairs,
+      list(list(component_id = primary_cid, revision_id = fixed_rev$revision_id,
+        revisions = rejected_revisions,
+        r_path = fixed_rev$r_path, helper_path = if (has_helper_patch) hp_dest else NULL,
+        errors = rejection)))
+    signal_bundle_event("bundle_repair_rejected", component_id = primary_cid,
+      attempt_id = attempt_rec$attempt_id, reason = paste(rejection, collapse = "; "))
+    return(list(state = retained, applied = FALSE, reason = "repair_review_regressed"))
   }
+  fixed_rev <- state$selected_revisions[[primary_cid]]
 
   # Record repair
   repair_rec <- list(
@@ -293,6 +240,20 @@ collect_bundle_diagnostics <- function(state, attempt) {
 
 # Group findings by known failing component or the source-derived output writer.
 # An absent downstream output after a crash is not an independent defect.
+source_grounded_review_findings <- function(review) {
+  Filter(function(f) {
+    (f$severity %||% "") %in% c("material", "high") && nzchar(f$sas_evidence %||% "") &&
+      nzchar(f$r_evidence %||% "") && !length(f$unresolved_dependencies)
+  }, review$findings %||% list())
+}
+
+combine_repair_checks <- function(previous, current) {
+  if (is.null(previous)) return(current)
+  if (is.null(current)) return(previous)
+  list(check_id = paste(unique(c(previous$check_id, current$check_id)), collapse = ", "),
+    pass = FALSE, errors = unique(c(previous$errors, current$errors)))
+}
+
 bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
                                 previous_disposition = NULL) {
   failures <- diagnostic$failures
@@ -302,8 +263,23 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   }
   packets <- list()
   for (cid in names(failures)) {
+    if (!is.null(non_translation_runtime_reason(state, cid, failures[[cid]]))) next
+    repair_cid <- cid
+    artifact_checks <- NULL
+    missing <- missing_source_dataset(state, cid, failures[[cid]])
+    writers <- if (!is.null(missing)) source_output_writers(state, missing) else character()
+    if (length(writers) == 1L && writers != cid &&
+        writers %in% dependency_closure(state$graph, cid)) {
+      # A reader's missing intermediate identifies a producer defect only when
+      # that producer completed. Preserve the actual reader error and log paths.
+      if (!writers %in% attempt$executed_component_ids) next
+      repair_cid <- writers
+      artifact_checks <- list(check_id = paste0("artifact:", missing), pass = FALSE,
+        errors = paste("Source-declared output", missing, "was not available after", writers,
+                       "completed; required by", cid))
+    }
     relevant <- names(assessment$targets)[vapply(names(assessment$targets), function(key) {
-      cid %in% target_lineage(key)
+      repair_cid %in% target_lineage(key)
     }, logical(1))]
     subset <- assessment
     subset$targets <- assessment$targets[relevant]
@@ -317,15 +293,22 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
       failed_attempt$stderr_path <- execution$stderr_path
       failed_attempt$execution_id <- execution$execution_id
     }
-    packets[[cid]] <- build_bundle_repair_packet(state, failed_attempt, subset, previous_disposition)
-    packets[[cid]]$primary_component_id <- cid
-    packets[[cid]]$attempt <- failed_attempt
+    packet <- build_bundle_repair_packet(state, failed_attempt, subset, previous_disposition)
+    packet$primary_component_id <- repair_cid
+    packet$attempt <- failed_attempt
+    packet$checks <- artifact_checks
+    if (is.null(packets[[repair_cid]])) packets[[repair_cid]] <- packet else
+      packets[[repair_cid]]$checks <- combine_repair_checks(packets[[repair_cid]]$checks, artifact_checks)
   }
   # After a complete run, every failed target can contribute a repair candidate.
   # After a crash, only targets whose writer actually completed can do so.
   for (key in names(assessment$targets)) {
     target <- assessment$targets[[key]]
-    if (isTRUE(target$passed)) next
+    if (isTRUE(target$passed) || identical(target$status, "unresolved_target")) next
+    artifact_errors <- artifact_failure_checks(target)
+    other_failed <- any(vapply(non_reference_checks(target), function(x) isFALSE(x$passed), logical(1)))
+    if (!length(artifact_errors) && !other_failed &&
+        !isFALSE(target$checks$reference_comparison$passed)) next
     lineage <- target_lineage(key)
     if (length(intersect(lineage, names(failures)))) next
     subset <- assessment
@@ -334,23 +317,55 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     clean_attempt$condition <- NULL
     clean_attempt$passed <- TRUE
     packet <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
-    graph <- state$graph
-    edges <- graph$edges
-    writers <- if (!is.null(edges) && nrow(edges)) {
-      from <- edges$from[edges$type %in% c("writes_dataset", "writes_output") &
-        edges$detail == target$target_key & edges$resolution == "resolved"]
-      unique(graph$nodes$component_id[match(from, graph$nodes$node_id)])
-    } else character()
+    writers <- source_output_writers(state, target$target_key)
     writers <- intersect(writers, names(state$selected_revisions))
     cid <- if (length(writers) == 1L) writers[[1L]] else packet$primary_component_id
     if (is.null(cid) || !cid %in% names(state$selected_revisions)) next
     if (!isTRUE(attempt$passed) && !cid %in% attempt$executed_component_ids) next
     packet$primary_component_id <- cid
+    packet$source_review_only <- !length(artifact_errors)
+    if (length(artifact_errors)) packet$checks <- list(
+      check_id = paste0("artifact:", key), pass = FALSE,
+      errors = vapply(artifact_errors, function(x) paste0(key, ": ", x$details), ""))
     packet$attempt <- clean_attempt
     if (is.null(packets[[cid]])) packets[[cid]] <- packet else {
+      packets[[cid]]$source_review_only <- isTRUE(packets[[cid]]$source_review_only) && isTRUE(packet$source_review_only)
+      packets[[cid]]$checks <- combine_repair_checks(packets[[cid]]$checks, packet$checks)
       packets[[cid]]$failed_targets <- c(packets[[cid]]$failed_targets, packet$failed_targets)
       packets[[cid]]$evidence_ids <- unique(c(packets[[cid]]$evidence_ids, packet$evidence_ids))
     }
+  }
+  # Static source/code findings remain actionable even when upstream output
+  # comparisons are unresolved. Use only the active revision's saved evidence.
+  for (cid in names(state$selected_revisions)) {
+    history <- state$histories[[cid]]
+    active <- current_component_evidence(history)
+    reviews <- Filter(function(ev) identical(ev$type, "review_completed"), active$events %||% list())
+    review <- if (length(reviews)) reviews[[length(reviews)]] else NULL
+    pending_review <- identical(component_review_verdict(history), "repair_required") &&
+      length(source_grounded_review_findings(review)) > 0L
+    checks <- state$selected_revisions[[cid]]$checks
+    pending_checks <- !is.null(checks) && !isTRUE(checks$pass)
+    if (!pending_review && !pending_checks) next
+    if (is.null(packets[[cid]])) {
+      clean_attempt <- attempt
+      clean_attempt$condition <- NULL
+      clean_attempt$passed <- TRUE
+      subset <- assessment
+      subset$targets <- list()
+      packets[[cid]] <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
+      packets[[cid]]$primary_component_id <- cid
+      packets[[cid]]$attempt <- clean_attempt
+    }
+    packets[[cid]]$code_local <- pending_checks || (pending_review && length(source_grounded_review_findings(review)) > 0L)
+    if (isTRUE(packets[[cid]]$code_local)) packets[[cid]]$source_review_only <- FALSE
+    if (pending_review) {
+      review$findings <- source_grounded_review_findings(review)
+      review$review_id <- review$basis_id %||% paste0("review:", cid, ":", active$revision_id)
+      packets[[cid]]$review <- review
+      packets[[cid]]$evidence_ids <- unique(c(packets[[cid]]$evidence_ids, active$basis_ids))
+    }
+    if (pending_checks) packets[[cid]]$checks <- checks
   }
   order <- state$schedule$component_id %||% names(state$selected_revisions)
   packets[intersect(order, names(packets))]

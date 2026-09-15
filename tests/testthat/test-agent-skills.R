@@ -2,7 +2,7 @@ test_that("installed package skills validate with stable hashes", {
   skills <- sas2r:::agent_skill_catalog()
   expect_setequal(names(skills),
                   c("sas-missing-sort-semantics",
-                    "sas-dataset-row-alignment", "sas-statistical-defaults"))
+                    "sas-dataset-row-alignment", "sas-statistical-defaults", "sas-macro-execution"))
   expect_true(all(vapply(skills, function(x)
     grepl("^[a-f0-9]{64}$", x$content_hash), logical(1))))
   expect_true(all(vapply(skills, function(x)
@@ -600,7 +600,7 @@ test_that("ordering skills route for translator components with retain or by-gro
   expect_match(ctx$rendered_skills, "sas-missing-sort-semantics")
 })
 
-test_that("the fixer gets routed skills, the allowlist, working macro tools, and the comparison report", {
+test_that("the fixer keeps source tools and the allowlist without comparison evidence", {
   dir <- withr::local_tempdir()
   macro_dir <- file.path(dir, "macros")
   dir.create(macro_dir)
@@ -646,12 +646,11 @@ test_that("the fixer gets routed skills, the allowlist, working macro tools, and
 
   req <- captured[[1L]]$request
   sys_txt <- req$messages[[1L]]$content
-  # Routed via the mapped comparison reasons.
-  expect_match(sys_txt, "sas-dataset-row-alignment")
+  # Reference differences cannot route skills or enter the prompt.
+  expect_no_match(sys_txt, "sas-dataset-row-alignment")
   # The allowlist reaches the prompt (fixer default).
   expect_match(sys_txt, "dplyr, tidyr, haven")
-  # The report id is named in the evidence so the model can request it.
-  expect_match(sys_txt, report$report_id, fixed = TRUE)
+  expect_no_match(sys_txt, report$report_id, fixed = TRUE)
 
   find_tool <- function(nm) {
     for (t in req$tools) if (identical(t$name, nm)) return(t)
@@ -659,8 +658,7 @@ test_that("the fixer gets routed skills, the allowlist, working macro tools, and
   }
   ans <- find_tool("find_macro")$call(list(name = "dostuff"))
   expect_null(ans$error)
-  got <- find_tool("read_comparison_report")$call(list(report_id = report$report_id))
-  expect_identical(got$report_id, report$report_id)
+  expect_null(find_tool("read_comparison_report"))
   unit <- find_tool("read_unit_context")$call(list())
   expect_match(unit$sas, "adam.adsl", fixed = TRUE)
 })

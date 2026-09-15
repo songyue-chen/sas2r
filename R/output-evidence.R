@@ -1071,7 +1071,7 @@ resolve_ambiguous_output_pairs <- function(plan, llm, specs = load_agent_specs()
       skills = ""
     )
 
-    ctx <- list(project = NULL, unit_stmts = NULL, schemas = list(), config = list())
+    ctx <- list(agent_role = "reviewer", project = NULL, unit_stmts = NULL, schemas = list(), config = list())
     tools <- build_tools(spec, ctx)
 
     r <- run_agent(

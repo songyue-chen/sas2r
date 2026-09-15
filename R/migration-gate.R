@@ -21,6 +21,7 @@ BUNDLE_STATUSES <- c(
 #' @noRd
 find_attempt_candidate_file <- function(contract, attempt) {
   if (is.null(contract) || is.null(attempt)) return(NA_character_)
+  if ((contract$resolution %||% "") %in% c("dynamic", "unresolved")) return(NA_character_)
 
   # If candidate_data is directly provided as data frame
   if (is.data.frame(attempt)) return(NA_character_)
@@ -125,7 +126,23 @@ find_attempt_candidate_file <- function(contract, attempt) {
 #' @param comparison_rules Optional list of comparison rules and overrides.
 #' @return Named list containing explicit checks, differences, passed flag, and target status.
 #' @noRd
+unresolved_output_assessment <- function(contract) {
+  if (!(contract$resolution %||% "") %in% c("dynamic", "unresolved")) return(NULL)
+  output_assessment(
+    target_id = contract$target_id, target_key = contract$target_key,
+    kind = contract$kind, required = isTRUE(contract$required), passed = FALSE,
+    status = "unresolved_target", has_reference = FALSE, reference_passed = FALSE,
+    has_assertions = FALSE, differences = list(),
+    checks = list(target_resolution = list(name = "target_resolution", passed = FALSE,
+      details = paste("Unexpanded source output expression; concrete filenames and family completeness are unknown.",
+        "This is not an additional missing file. Review the source producer and declare concrete output targets.",
+        "Matching filenames alone do not establish complete coverage."))),
+    candidate_path = NA_character_, reference_path = NA_character_)
+}
+
 assess_dataset_target <- function(contract, attempt, comparison_rules = list()) {
+  unresolved <- unresolved_output_assessment(contract)
+  if (!is.null(unresolved)) return(unresolved)
   t_id <- if (is.data.frame(contract)) contract$target_id[1L] else contract$target_id %||% ""
   t_key <- if (is.data.frame(contract)) contract$target_key[1L] else contract$target_key %||% ""
   l_name <- if (is.data.frame(contract)) contract$logical_name[1L] else contract$logical_name %||% ""
@@ -294,11 +311,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
           diffs$mismatches <- comp_res$details
           diffs$cosmetic <- comp_res$cosmetic
           diffs$structure <- comp_res$structure
-          # The redacted digest is the only comparison artifact that may cross
-          # to an LLM (names, counts, magnitudes, pattern hints -- never cell
-          # values or row numbers). It is derived here, where the full
-          # comparison object exists; the repair loop forwards it in place of
-          # the raw mismatch details.
+          # Full differences and compact digests are local reporting artifacts.
+          # Neither serves as evidence for the code-writing agents.
           diffs$digest <- tryCatch(
             unclass(diff_digest(comp_res, label = t_key)),
             error = function(e) NULL
@@ -357,6 +371,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
 #' @return Named list containing explicit checks, differences, passed flag, and target status.
 #' @noRd
 assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
+  unresolved <- unresolved_output_assessment(contract)
+  if (!is.null(unresolved)) return(unresolved)
   t_id <- if (is.data.frame(contract)) contract$target_id[1L] else contract$target_id %||% ""
   t_key <- if (is.data.frame(contract)) contract$target_key[1L] else contract$target_key %||% ""
   l_name <- if (is.data.frame(contract)) contract$logical_name[1L] else contract$logical_name %||% ""
@@ -675,6 +691,8 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
 #' @param graph Dependency graph.
 #' @param evidence_histories Named list of component evidence histories.
 #' @param comparison_rules Optional comparison rules and tolerance configuration.
+#' @param target_results Existing target observations from this same immutable attempt,
+#'   when only source-review history has changed.
 #' @return Comprehensive assessment record.
 #' @noRd
 assess_final_outputs <- function(
@@ -682,7 +700,8 @@ assess_final_outputs <- function(
   attempt,
   graph = NULL,
   evidence_histories = list(),
-  comparison_rules = list()
+  comparison_rules = list(),
+  target_results = NULL
 ) {
   # Normalize contracts to a data frame or empty contracts
   contract_df <- if (inherits(contracts, "sas2r_output_contracts") || is.data.frame(contracts)) {
@@ -720,7 +739,7 @@ assess_final_outputs <- function(
       c_row <- contract_df[i, ]
       kind <- c_row$kind %||% "dataset"
 
-      res <- if (identical(kind, "tlf")) {
+      res <- target_results[[c_row$target_key]] %||% if (identical(kind, "tlf")) {
         assess_tlf_target(c_row, attempt, comparison_rules = comparison_rules)
       } else {
         assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules)
@@ -774,6 +793,12 @@ assess_final_outputs <- function(
       )
     }
     lineage_summaries[[t_key]] <- c_lineage
+    assessed_targets[[t_key]]$source_evidence <- stats::setNames(lapply(c_lineage$upstream_components,
+      function(cid) source_evidence_summary(updated_histories[[cid]], attempt$population_checks[[cid]])),
+      c_lineage$upstream_components)
+    if (isFALSE(tgt_res$checks$reference_comparison$passed)) {
+      assessed_targets[[t_key]]$reference_issue <- "reference mismatch; cause unresolved"
+    }
 
     if (isTRUE(tgt_res$required)) {
       all_lineage_cids <- unique(c(all_lineage_cids, c_lineage$upstream_components))
@@ -919,14 +944,14 @@ derive_bundle_status <- function(assessment) {
       t_status <- t$status %||% (if (t_passed) "passed" else "failed")
 
       if (req) {
-        if (t_status %in% c("missing_candidate", "unreadable")) {
+        if (t_status %in% c("needs_review", "unresolved_target")) {
+          any_target_needs_review = TRUE
+          all_required_passed = FALSE
+        } else if (t_status %in% c("missing_candidate", "unreadable")) {
           any_target_missing = TRUE
           all_required_passed = FALSE
         } else if (t_status == "failed" || !t_passed) {
           any_target_failed = TRUE
-          all_required_passed = FALSE
-        } else if (t_status == "needs_review") {
-          any_target_needs_review = TRUE
           all_required_passed = FALSE
         }
 

@@ -144,7 +144,7 @@ translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
     "skill_id", "version", "content_hash", "activation_reason"
   )]))
 
-  ctx <- list(project = project, unit_stmts = ctxp$us,
+  ctx <- list(agent_role = "translator", project = project, unit_stmts = ctxp$us,
               schemas = infer_schemas(project), config = config,
               macro_index = macro_index, skill_catalog = catalog)
   vars <- list(dialect = config$dialect %||% "tidyverse",
@@ -654,6 +654,7 @@ build_behavioral_contract <- function(
 
   new_behavioral_contract(
     component_id = component_id,
+    sas_text = sas_text,
     parameters = params,
     defaults = defaults,
     reads = reads,
@@ -767,7 +768,9 @@ generate_program_revision <- function(
     )
     prompt_skill_h <- ctx$prompt_skill_hash
 
-    is_macro <- any(comp_units$unit_type == "macro_def")
+    # A source program can contain definitions and invoke them. Only standalone
+    # macro components receive the definitions-only translation instruction.
+    is_macro <- isTRUE(macro_contract$standalone)
     if (is_macro) {
       spec$prompt <- spec$prompt_macro %||% "translator-macro.md"
     }
@@ -803,6 +806,7 @@ generate_program_revision <- function(
     }
     macro_idx <- project_macro_index(project, config)
     tool_ctx <- list(
+      agent_role = "translator",
       project = project,
       unit_stmts = unit_stmts,
       schemas = tryCatch(infer_schemas(project), error = function(e) list()),

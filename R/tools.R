@@ -242,6 +242,8 @@ TOOL_IMPLS <- list(
       sas2r_skill_not_registered = function(e) list(error = "skill_not_registered", message = conditionMessage(e))
     )
   },
+  # Retain the report-only adapter and its serialization contract tests.
+  # Authoring roles cannot register it, even through project overrides.
   read_comparison_report = function(ctx) function(args) {
     report_id <- args$report_id %||% ""
     registry <- ctx$report_registry %||% ctx$comparison_reports %||% new.env(parent = emptyenv())
@@ -274,6 +276,8 @@ TOOL_IMPLS <- list(
 build_tools <- function(spec, ctx) {
   out <- list()
   for (nm in names(spec$tools)) {
+    # Project overrides cannot reintroduce reference answers into authoring.
+    if (nm == "read_comparison_report" && (ctx$agent_role %||% spec$name %||% "") %in% c("translator", "fixer", "reviewer")) next
     if (nm == "search_docs") {
       if (isTRUE(ctx$config$search_docs$enabled) && !isFALSE(spec$tools$search_docs$enabled)) {
         if (exists("search_docs_impl", mode = "function")) {

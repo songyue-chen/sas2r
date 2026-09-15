@@ -1,5 +1,8 @@
 # Coverage comes from target checks, independently of a bundle-level label.
 migration_coverage <- function(targets = list(), histories = list()) {
+  is_unresolved <- vapply(targets, function(t) identical(t$status, "unresolved_target"), logical(1))
+  unresolved <- names(targets)[is_unresolved]
+  targets <- targets[!is_unresolved]
   detail <- lapply(targets, function(t) {
     compared <- !is.null(t$checks$reference_comparison) &&
       !is.null(t$checks$reference_comparison$passed) && !is.na(t$checks$reference_comparison$passed)
@@ -18,6 +21,7 @@ migration_coverage <- function(targets = list(), histories = list()) {
     c("reviewed_no_material_finding", "repair_required")
   list(
     outputs_total = length(targets),
+    unresolved_output_expressions = unresolved,
     outputs_produced = count("produced"),
     outputs_reference_compared = count("reference_compared"),
     outputs_passed = count("passed"),
@@ -56,6 +60,7 @@ migration_coverage_lines <- function(coverage) {
   c(sprintf("Outputs: %d produced / %d targets; %d reference-compared; %d passed (%d reference comparisons passed).",
             coverage$outputs_produced, coverage$outputs_total, coverage$outputs_reference_compared,
             coverage$outputs_passed, coverage$outputs_reference_passed),
+    paste0("Unresolved output expressions (not counted as concrete targets): ", shown(coverage$unresolved_output_expressions)),
     sprintf("Independent reviews: %d / %d components.", coverage$components_independently_reviewed, coverage$components_total),
     paste0("Targets contributing validation evidence: ", shown(coverage$validated_targets)),
     paste0("Targets without a completed reference comparison: ", shown(coverage$unreferenced_targets)))

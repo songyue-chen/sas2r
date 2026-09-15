@@ -7,7 +7,7 @@
 
 **sas2r** is an open-source R package for **clinical statistical programmers and biostatisticians** in pharmaceutical, biotech, and CRO organizations. It runs a **coordinated multi-agent workflow** that moves clinical trial data pipelines (SDTM, ADaM, Tables, Listings, and Figures) from SAS to R — an AI translator, an independent AI reviewer, and an AI fixer, each with a defined role inside a deterministic process — and shows you the evidence for every step it took.
 
-`sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the evidence described below. Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
+`sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the [code, context and diagnostics described below](#privacy-what-your-model-provider-can-receive). Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
 
 > **Also check out [sas2r.ai](https://sas2r.ai)** — a web-based companion tool for quick, browser-based SAS to R code translation. While sas2r.ai currently uses direct model translation for rapid code conversions, we plan to bring this R package's multi-agent workflow and dataset QC capabilities to the cloud platform in the future!
 
@@ -20,13 +20,13 @@
 - **Automated dataset QC.** If you provide reference SAS datasets (`.sas7bdat`, `.xpt`, or `.rds`), `sas2r` compares each generated R dataset against them: it lines up rows even when their order differs, understands duplicate key values, applies SAS missing-value and blank-padding rules, and checks numbers to configurable tolerances.
 - **Your source data is never touched.** Input libraries are opened read-only, and every run writes into its own separate working copy (copy-on-write), so a failed attempt can never contaminate your data or a previous good result.
 - **Standalone R programs you can take anywhere.** Export plain R scripts, `autoexec.R`, runtime files, and a dependency-ordered launcher with `sas_write()`. The exported guide lists required R packages and external input libraries; `sas2r` itself is not required to run the bundle. The runtime is documented and versioned: see `?sas2r_runtime` and `vignette("runtime-helpers")`.
-- **Repairs with evidence, not guesswork.** When a translated program errors or an output doesn't match its reference, an AI fixer receives a focused summary of what went wrong, patches the one program responsible, and the whole pipeline re-runs from scratch to prove the patch actually helped.
+- **Repairs grounded in the source.** Execution errors and findings supported by the SAS can trigger an AI repair. A reference mismatch alone triggers a bounded source review. Each accepted repair is tested in a fresh bundle run, with earlier evidence protected from regressions.
 
 ---
 
 ## How a Migration Runs: a Coordinated Multi-Agent Workflow
 
-`sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, bounded comparison evidence) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
+`sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, registered translation skills) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
 
 The workflow runs in two stages: first each program is translated and checked on its own, then the whole pipeline runs end to end and the outputs are judged together. Each stage has its own repair loop.
 
@@ -79,7 +79,11 @@ The workflow runs in two stages: first each program is translated and checked on
                               └─────────────────────────────┘
 ```
 
-A repaired run only replaces a previous one if it is genuinely better — a patch that makes things worse is discarded, and the earlier attempt stays selected.
+A new attempt replaces the selected one only if it preserves or improves the
+existing pass criteria. If a new run initially performs worse than an older run,
+the older result stays selected while the new run uses its bounded repair
+allowance. A repair that regresses an attempt already selected in the current
+run stops further repair and keeps that selected attempt.
 
 ---
 
@@ -320,6 +324,20 @@ its relevant dependencies change or a specifically awaited caller becomes
 available. Completed reviews are reused within a run when the code, dependency
 code, helper runtime and review configuration are unchanged.
 
+Each fixer invocation can make one additional, budgeted request to correct a
+parse or lint error in its proposed code. Persistent mechanical failures keep
+the previous selected revision and save the rejected candidate's diagnostics.
+An identical patch means no change was proposed; it does not clear the failure.
+Bundle repair can still address a separately documented downstream code defect
+after an upstream no-op. Downstream mismatches inherited from unresolved inputs
+wait for those inputs to be resolved.
+
+Unexpanded output expressions, such as `figure-&group..pdf`, appear separately
+from concrete output targets in the report and starting page. Finding matching
+files does not establish that the entire expected family was produced. An
+unresolved required expression prevents readiness; its filenames and coverage
+need source-grounded review.
+
 For debugging a failed bundle, use `sas_translate(..., keep_raw_attempts = TRUE)`
 to retain each component smoke execution's separate library folders and `run.R`
 replay script. The component's `smoke_execution` in `report.json` lists the
@@ -416,6 +434,14 @@ that has not been generated reports `caller_not_generated`; calls requiring
 prior setup, variables, loops or other enclosing context report
 `caller_context_required` and run as part of their containing program. A smoke
 pass for that program does not establish that every conditional macro ran.
+
+Programs that define and invoke internal macros must retain that invocation.
+A mechanical check catches definitions-only R when the source invokes a macro
+outside its definitions. Shared guidance also covers returned values, nested
+macro scopes and repeated calls, including intentional clearing or retention of
+state. Graphics guidance preserves source statistical definitions through the
+renderer, requested summary content, axis behavior and pagination settings;
+visual polish remains a human task.
 
 For explicit dataset cleanup, generated functions can use
 `lib_delete("work", c("scratch_a", "scratch_b"))`. This removes stored datasets;
@@ -664,16 +690,73 @@ not establish that the provider disabled reasoning.
 
 ---
 
-## What the AI Model Sees — and What It Never Sees
+## Privacy: What Your Model Provider Can Receive
 
-By default, the AI model receives your SAS code, the translated R code, column names and types, and — when outputs differ from references — a summary of the differences: which variables, how many cells, how large the gaps are. Not the data itself.
+Dataset reading, generated R execution and output comparison run on the machine
+where you run sas2r, including its local R subprocesses. When AI is enabled,
+translation, review and repair send prompts and tool results through ellmer to
+your configured provider endpoint. The normal workflow does not attach dataset
+files or TLF files to model requests, but **local data processing does not mean
+that no sensitive information can reach the model**.
 
-Two optional features can share small, capped extracts, and only if you turn them on:
+With the default `agent_evidence = "code_only"`, a request can contain:
 
-- The reviewer's bounded comparison report may quote a handful of example differences, including row numbers, key values, and the differing cell values (which can include subject identifiers when your key columns identify subjects).
-- Setting `agent_evidence = "bounded"` adds capped output summaries with short previews to repair evidence. The default, `agent_evidence = "code_only"`, shares neither.
+| Information | Examples |
+|---|---|
+| SAS source and comments | Program statements, macro definitions and calls, included source, attached comments, and literal values written in the source |
+| Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
+| Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
+| Execution diagnostics | Error messages, stack traces, capped stderr excerpts, failed component identifiers and source-derived checks, including expected/actual row counts or counts of mismatched BY groups |
+| Guidance and lookup results | Helper interfaces, translation rules, registered skills, and matching documentation from an enabled local documentation mirror |
 
-All data reading, program execution, and output comparison happen in your local R session. Before enabling any provider, confirm the endpoint you configure meets your organization's data residency requirements.
+**`code_only` omits explicit dataset-row and output previews; it is not an
+anonymization setting.** For example, a subject ID in a SAS filter, a name in a
+comment, or a patient value printed in an error can appear in a request. Paths
+can reveal usernames, study names or internal folder structure. Credential
+redaction in audit/error handling is not general removal of clinical identifiers
+from prompts, source code or execution logs.
+
+Setting `agent_evidence = "bounded"` permits capped candidate-output summaries
+and previews in execution diagnostics where available. These may contain
+row numbers, key values, cell values and subject identifiers. A cap limits the
+amount of information; it does not de-identify it.
+
+Reference comparison values, subject IDs, counts, difference hints and reports
+are excluded from translator, reviewer and fixer requests and tools, including
+project tool overrides. A focused source review can receive the affected output
+names and the fact that a mismatch occurred. It receives no reference answers
+to imitate. A dataset that the SAS legitimately reads retains its input role
+even if it is also configured as a reference; that does not make its source
+usage or execution diagnostics confidential to the local process.
+
+Only a source-grounded finding can turn a reference mismatch into a code repair.
+A correction can be retained despite an inconsistent reference; a failed
+required reference still reports `blocked`. These controls protect repair
+decisions and do not prove arbitrary SAS/R equivalence.
+
+Before using AI with confidential programs or clinical data:
+
+- Use an endpoint approved by your organization. Confirm its data residency,
+  retention, access and model-training terms for your account. sas2r does not
+  set those provider policies.
+- Keep `agent_evidence = "code_only"` unless sharing candidate previews is
+  approved. Review source, comments, paths, custom guidance and error-producing
+  code for sensitive content before a run.
+- For offline inspection, use `sas_preflight()` or the standalone comparison
+  functions. In `sas_translate()`, `usage_limits = list(max_calls = 0)` prevents
+  model requests, including automatic settings probes. `llm = NULL` alone can
+  still use the provider in `_sas2r.yml`; `execute = FALSE` disables execution,
+  not AI calls. Without model calls, unsupported translations and AI reviews
+  can remain incomplete.
+- Treat the local run folder as confidential too: scripts, reports, diagnostic
+  logs and saved outputs can contain sensitive information. The
+  `<out_dir>/.sas2r/llm_log.jsonl` and `usage.jsonl` files record model settings,
+  calls and usage metadata, not a complete transcript of everything sent. Review
+  local artifacts before sharing them.
+
+See the [output-evidence guide](docs/output-evidence.md#4-data--model-privacy-boundary)
+for local comparison and audit details. This section describes the R package;
+it does not describe the separate sas2r.ai website.
 
 ---
 

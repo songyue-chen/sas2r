@@ -296,7 +296,7 @@ process_program_component <- function(
     )
 
     review_key <- migration_hash(list(
-      code = rev$r_code, contract = rev$contract, config = state$config,
+      code = rev$r_code, contract = rev$contract, config = source_review_config(state$config),
       dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
       helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
         unname(cli::hash_sha256(state$runtime$helpers)) else NULL,
@@ -647,8 +647,8 @@ build_bundle_repair_packet <- function(
           status = t$status,
           checks = t$checks,
           differences = t$differences,
-          # Local paths, for rebuilding the bounded comparison report at
-          # repair time; they stay in local artifacts and never reach a model.
+          # Full comparison evidence remains local; the fixer receives only
+          # source-grounded review and non-reference execution/check evidence.
           candidate_path = t$candidate_path %||% NA_character_,
           reference_path = t$reference_path %||% NA_character_
         )
@@ -783,6 +783,7 @@ run_bundle_pipeline <- function(
   selected_assessment <- NULL
   selected_revisions <- NULL
   selected_histories <- NULL
+  selected_runtime <- NULL
   latest_assessment <- NULL
   latest_attempt <- NULL
   latest_diagnosis <- NULL
@@ -849,6 +850,17 @@ run_bundle_pipeline <- function(
     if (!is.null(assessment$evidence_histories)) {
       state$histories <- assessment$evidence_histories
     }
+    if (isTRUE(execute) && round < total_limit && !is.null(state$fixer_llm)) {
+      previous_histories <- state$histories
+      state <- review_bundle_mismatches(state, attempt_rec, assessment, round)
+      if (!identical(previous_histories, state$histories)) {
+        assessment <- assess_final_outputs(state$output_contracts %||% empty_output_contracts(),
+          attempt_rec, state$graph, state$histories,
+          state$comparison_rules %||% state$config$comparison_rules %||% list(),
+          target_results = assessment$targets)
+        state$histories <- assessment$evidence_histories
+      }
+    }
     latest_assessment <- assessment
     status <- assessment$status
     latest_status <- status
@@ -876,6 +888,7 @@ run_bundle_pipeline <- function(
       selected_assessment <- assessment
       selected_revisions <- state$selected_revisions
       selected_histories <- state$histories
+      selected_runtime <- state$runtime
       signal_bundle_event(
         "bundle_attempt_selected",
         attempt_id = attempt_rec$attempt_id,
@@ -883,22 +896,27 @@ run_bundle_pipeline <- function(
         status = status
       )
     } else if (inherits(cand_selection, "sas2r_regressive_selection")) {
-      is_regression <- TRUE
-      signal_bundle_event(
-        "bundle_early_stop",
-        attempt_id = attempt_rec$attempt_id,
-        round = round,
-        reason = "regressive_attempt"
-      )
-      if (is.null(selected_attempt) && file.exists(state$paths$selected)) {
+      state$diagnostics$selection_rejections[[attempt_rec$attempt_id]] <- conditionMessage(cand_selection)
+      # A selected attempt from this pipeline protects against regressive
+      # repairs. An older run's selection protects publication only: give the
+      # new run its bounded repair allowance before considering replacement.
+      is_regression <- !is.null(selected_attempt)
+      if (is_regression) {
+        signal_bundle_event(
+          "bundle_early_stop",
+          attempt_id = attempt_rec$attempt_id,
+          round = round,
+          reason = "regressive_attempt"
+        )
+      } else if (file.exists(state$paths$selected)) {
         previous <- jsonlite::read_json(state$paths$selected, simplifyVector = FALSE)
         signal_bundle_event("bundle_previous_selection_retained", round = round,
-          reason = paste0(previous$attempt_id, " at ", previous$attempt_dir))
+          reason = paste0(previous$attempt_id, " at ", previous$attempt_dir, "; ", conditionMessage(cand_selection)))
       }
     }
 
     # Record attempt in summary
-    target_count <- if (!is.null(assessment$targets)) length(assessment$targets) else 0L
+    target_count <- sum(vapply(assessment$targets, function(t) !identical(t$status, "unresolved_target"), logical(1)))
     attempts_summary[[length(attempts_summary) + 1L]] <- list(
       sequence = as.integer(attempt_seq),
       attempt_id = attempt_rec$attempt_id,
@@ -935,36 +953,63 @@ run_bundle_pipeline <- function(
     }
 
     diagnostic <- collect_bundle_diagnostics(state, attempt_rec)
+    diagnostic$non_translation_failures <- Filter(Negate(is.null), stats::setNames(
+      lapply(names(diagnostic$failures), function(cid)
+        non_translation_runtime_reason(state, cid, diagnostic$failures[[cid]])), names(diagnostic$failures)))
     diagnostic_history[[attempt_rec$attempt_id]] <- diagnostic
     queue <- bundle_repair_queue(state, attempt_rec, assessment, diagnostic,
                                  previous_disposition = latest_diagnosis)
     eligible <- names(queue)[vapply(names(queue), function(cid) {
-      (repair_counts[[cid]] %||% 0L) < component_limit && is.null(deferred[[cid]])
+      !isTRUE(queue[[cid]]$source_review_only) &&
+        (repair_counts[[cid]] %||% 0L) < component_limit && is.null(deferred[[cid]])
     }, logical(1))]
     if (!length(eligible)) {
-      stop_reason <- if (!length(queue)) "no_causal_evidence" else
+      stop_reason <- if (!length(queue) && length(diagnostic$non_translation_failures))
+        paste(unique(unlist(diagnostic$non_translation_failures)), collapse = "; ") else
+        if (!length(queue)) "no_causal_evidence" else
+        if (all(vapply(queue, function(x) isTRUE(x$source_review_only), logical(1)))) "no_source_grounded_repair" else
         if (length(deferred)) unname(deferred[[1L]]) else "bundle_component_repair_limits_reached"
       break
     }
     signal_bundle_event("bundle_repair_queue", round = round,
       reason = paste(eligible, collapse = ", "))
     changed <- FALSE
+    changed_components <- character()
     for (primary_cid in eligible) {
       if (round >= total_limit || !usage_budget_allows_future(state$usage_budget)) break
       # Any upstream repair makes this candidate's evidence stale. It will be
       # reconsidered after a fresh run rather than repaired for inherited errors.
-      if (length(intersect(dependency_closure(state$graph, primary_cid), names(queue))) > 0L) next
+      ancestors <- dependency_closure(state$graph, primary_cid)
+      if (length(intersect(ancestors, changed_components))) next
+      upstream_pending <- any(vapply(queue[intersect(ancestors, names(queue))],
+        function(x) !isTRUE(x$source_review_only), logical(1)))
+      packet <- queue[[primary_cid]]
+      if (upstream_pending && !isTRUE(packet$code_local)) next
+      if (upstream_pending) {
+        # Repair the independent static defect only; inherited output evidence
+        # cannot yet establish a downstream translation error.
+        packet$failed_targets <- list()
+        if (!is.null(packet$review)) packet$review$findings <- source_grounded_review_findings(packet$review)
+        packet$attempt <- attempt_rec
+        packet$attempt$condition <- NULL
+        packet$attempt$passed <- TRUE
+      }
       repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
-      outcome <- repair_bundle_component(state, queue[[primary_cid]], attempt_rec, round)
+      outcome <- repair_bundle_component(state, packet, attempt_rec, round)
       round <- round + 1L
       state <- outcome$state
       if (!isTRUE(outcome$applied)) {
+        for (cid in names(selected_histories)) {
+          if (identical(selected_histories[[cid]]$active_revision_id, state$histories[[cid]]$active_revision_id))
+            selected_histories[[cid]] <- state$histories[[cid]]
+        }
         deferred[[primary_cid]] <- outcome$reason
         signal_bundle_event("bundle_component_deferred", round = round,
           component_id = primary_cid, reason = outcome$reason)
         next
       }
       changed <- TRUE
+      changed_components <- c(changed_components, primary_cid)
       repairs[[length(repairs) + 1L]] <- outcome$repair
       latest_diagnosis <- outcome$repair$diagnosis
       # A shared helper change invalidates every queued component's evidence.
@@ -1025,7 +1070,7 @@ run_bundle_pipeline <- function(
     output_contracts = state$output_contracts,
     selected_revisions = selected_revisions %||% state$selected_revisions,
     histories = selected_histories %||% state$histories,
-    runtime = state$runtime,
+    runtime = selected_runtime %||% state$runtime,
     execute = isTRUE(execute),
     environment = state$environment,
     usage_budget = state$usage_budget,
@@ -1038,18 +1083,14 @@ run_bundle_pipeline <- function(
 
 # Evidence dimensions are compared individually: a clean review must not hide
 # a new crash, failed mechanical check, or lost semantic-check coverage.
-program_repair_regressions <- function(previous, candidate, review) {
+program_repair_regressions <- function(previous, candidate, review, execution = TRUE) {
   old <- previous$revision
   reasons <- character()
   if (isTRUE(old$checks$pass) && !isTRUE(candidate$checks$pass)) reasons <- c(reasons, "mechanical checks regressed")
-  if (isTRUE(old$smoke$passed) && !isTRUE(candidate$smoke$passed)) reasons <- c(reasons, "execution regressed")
+  if (isTRUE(execution) && isTRUE(old$smoke$passed) && !isTRUE(candidate$smoke$passed)) reasons <- c(reasons, "execution regressed")
   if (identical(previous$verdict, "reviewed_no_material_finding") &&
       !identical(review$verdict, "reviewed_no_material_finding")) reasons <- c(reasons, "review regressed")
-  passed_checks <- function(smoke) {
-    records <- unlist(smoke$population_checks, recursive = FALSE)
-    vapply(Filter(function(x) identical(x$status, "passed"), records),
-           function(x) paste(x$unit_id, paste(x$outputs, collapse = ","), sep = ":"), character(1))
-  }
-  if (length(setdiff(passed_checks(old$smoke), passed_checks(candidate$smoke)))) reasons <- c(reasons, "source population coverage regressed")
+  if (isTRUE(execution) && length(setdiff(passed_population_checks(old$smoke),
+      passed_population_checks(candidate$smoke)))) reasons <- c(reasons, "source population coverage regressed")
   reasons
 }

@@ -148,21 +148,21 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 
 ## 4. Data & Model Privacy Boundary
 
-`sas2r` enforces strict data containment to protect proprietary and clinical trial data:
+`sas2r` processes datasets locally and controls which evidence enters model requests. Source code, comments, paths and execution diagnostics can still contain confidential information; these controls are not automatic de-identification. See the [README privacy explanation](../README.md#privacy-what-your-model-provider-can-receive).
 
-- **Complete Datasets Stay Local**: Complete saved dataset objects remain entirely within the local R process.
-- **Default Model Evidence**: With `agent_evidence = "code_only"`, agents receive source/code context, metadata, and redacted difference digests: names, counts, and magnitudes, without mismatching cells.
-- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may contain capped examples with row numbers, subject identifiers, key values, and differing cell values. Setting `agent_evidence = "bounded"` adds output summaries with short previews to repair evidence. The default `code_only` policy sends neither. Reports are serialized and capped.
+- **Dataset Files Are Processed Locally**: Dataset reading and comparison happen in the local R process or its subprocesses. The normal translation workflow does not attach complete dataset or TLF files to model requests. Values embedded in code, logs or permitted previews may still reach the model.
+- **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
+- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. `code_only` omits these previews; source code and error messages may themselves contain data. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
 - **Data Residency Compliance**: Organizations must ensure configured model endpoints comply with their enterprise data residency and privacy obligations.
 
 ---
 
 ## 5. Audit Mode & Metering
 
-Nothing has to be taken on trust: the privacy boundary is inspectable after the fact:
+Model settings, usage and saved comparison evidence can be inspected locally; the audit logs are not complete prompt transcripts:
 
 - **Audit Mode**: The standalone comparison functions above read data and create reports without an LLM or model calls. In `sas_translate()`, `llm = NULL` can still use the provider from configuration; use `usage_limits = list(max_calls = 0)` to prevent provider requests.
-- **Caps & Truncation Flag**: Every diagnostic field carries a fixed cap. Whenever a cap omits detail, `truncated = TRUE` is set in the serialized report.
+- **Caps & Truncation Flag**: Comparison reports use fixed content caps. Whenever a cap omits detail, `truncated = TRUE` is set in the serialized report. These caps do not de-identify values in the retained examples.
 - **Metadata-Only Usage Ledger**: Model interactions append request records to `<out_dir>/.sas2r/usage.jsonl` recording token counts and spend without saving prompt bodies.
 - **Unknown Cost**: Reported known spend excludes requests without usable pricing information. Check unknown-cost calls and effective limits alongside the dollar total.
 

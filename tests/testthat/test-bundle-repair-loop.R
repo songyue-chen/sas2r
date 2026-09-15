@@ -128,7 +128,77 @@ test_that("zero bundle rounds performs one authoritative attempt with no fixer c
   expect_length(result$repairs, 0L)
 })
 
-test_that("regressive patch preserves prior selected attempt and stops", {
+previously_selected_bundle_fixture <- function(missing_output = FALSE, envir = parent.frame()) {
+  fx <- sequential_bundle_defects_fixture(envir)
+  prior_state <- fx$state
+  prior_state$selected_revisions$prog_a$r_code <- fx$fixed_r_code_a
+  prior_state$selected_revisions$prog_b$r_code <- if (missing_output) {
+    paste("make_output <- function() {", fx$fixed_r_code_b, "}", sep = "\n")
+  } else fx$fixed_r_code_b
+  prior <- run_bundle_pipeline(prior_state, max_bundle_repair_rounds = 0L)
+
+  # A real new invocation shares selection state, but has fresh run/attempt paths.
+  current <- new_migration_state(fx$project, out_dir = prior_state$paths$root,
+    config = prior_state$config, execute = TRUE)
+  current$selected_revisions <- fx$state$selected_revisions
+  current$output_contracts <- fx$state$output_contracts
+  current$fixer_llm <- fx$state$fixer_llm
+  current$reviewer_llm <- fx$state$reviewer_llm
+  fx$state <- current
+  fx$prior <- prior
+  fx
+}
+
+test_that("a prior run's execution success does not prevent repairs in a new run", {
+  fx <- previously_selected_bundle_fixture(missing_output = TRUE)
+  expect_true(fx$prior$attempt$passed)
+  expect_identical(fx$prior$status, "blocked")
+  prior_dir <- fx$prior$selected_attempt$attempt_dir
+  retained <- character()
+  events <- character()
+  result <- withCallingHandlers(
+    run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L),
+    sas2r_bundle_event = function(e) {
+      events <<- c(events, e$event)
+      if (identical(e$event, "bundle_fixer_invoked")) {
+        retained <<- c(retained, jsonlite::read_json(fx$state$paths$selected)$attempt_dir)
+      }
+    }
+  )
+
+  # Both new attempts initially lose execution. Keep the older selection while
+  # repairing each failure, then select only the complete, successful rerun.
+  expect_identical(retained, rep(prior_dir, 2L))
+  expect_false("bundle_early_stop" %in% events)
+  expect_true("bundle_previous_selection_retained" %in% events)
+  expect_identical(fx$get_fixer_calls(), 2L)
+  expect_identical(result$attempts$sequence, 1:3)
+  expect_identical(result$status, "migration_ready")
+  expect_identical(result$selected_attempt$attempt_dir, result$attempt$attempt_dir)
+  expect_identical(jsonlite::read_json(fx$state$paths$selected)$attempt_dir,
+    result$attempt$attempt_dir)
+  expect_false(identical(result$attempt$attempt_dir, prior_dir))
+  expect_true(file.exists(file.path(prior_dir, "adam", "out1.rds")))
+  expect_equal(readRDS(file.path(result$attempt$attempt_dir, "adam", "out2.rds")),
+    data.frame(USUBJID = c("01", "02"), TRT = c("A", "B"), DERIVED = 1))
+})
+
+test_that("an older selection stays intact when the new run exhausts its repair cap", {
+  fx <- previously_selected_bundle_fixture()
+  expect_identical(fx$prior$status, "migration_ready")
+  selection_before <- readLines(fx$state$paths$selected)
+  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
+
+  expect_identical(fx$get_fixer_calls(), 1L)
+  expect_identical(result$attempts$sequence, 1:2)
+  expect_identical(result$current_run_status, "blocked")
+  expect_identical(result$status_reason, "max_bundle_repair_rounds_reached")
+  expect_null(result$selected_attempt)
+  expect_identical(readLines(fx$state$paths$selected), selection_before)
+  expect_true(file.exists(file.path(fx$prior$attempt$attempt_dir, "adam", "out2.rds")))
+})
+
+test_that("an unsupported assertion does not authorize a regressive patch", {
   fx <- sequential_bundle_defects_fixture()
   # Start with prog_a working, prog_b working, but out2 fails an assertion
   fx$state$selected_revisions$prog_a$r_code <- fx$fixed_r_code_a
@@ -153,12 +223,12 @@ test_that("regressive patch preserves prior selected attempt and stops", {
     fx$state, max_bundle_repair_rounds = 2L, execute = TRUE
   )
 
-  # Out1 still passes, but losing prog_b execution is itself a regression.
-  expect_identical(result$attempts$sequence, 1:2)
-  # Attempt 1 should remain selected
+  expect_identical(result$attempts$sequence, 1L)
   expect_identical(result$selected_attempt$attempt_id, "bundle_attempt_001")
   expect_identical(result$selected_revisions$prog_a$r_code, fx$fixed_r_code_a)
   expect_identical(result$selected_revisions$prog_b$r_code, fx$fixed_r_code_b)
+  expect_length(fx$state$fixer_llm$requests(), 0L)
+
 })
 
 test_that("no-op identical patch stops bundle repair early", {
@@ -303,6 +373,8 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   )
 
   fixer_llm <- recording_fixer(function(context) {
+    if (!any(vapply(context$messages, function(m) identical(m$role, "tool"), logical(1))))
+      return(list(type = "tool", tool = "read_comparison_report", args = list(report_id = "report_requested")))
     valid_program_fix_response(
       code = paste("adsl <- lib_read('adam', 'adsl')",
                    "lib_write(adsl, 'adam', 'out1')", sep = "\n"),
@@ -313,7 +385,9 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   })
   state$fixer_llm <- fixer_llm
   state$reviewer_llm <- recording_reviewer(function(context) {
-    valid_program_review_response(verdict = "reviewed_no_material_finding")
+    text <- paste(vapply(context$messages, function(m) as.character(m$content), ""), collapse = "\n")
+    if (grepl("263.525423", text, fixed = TRUE)) material_review_response(
+      sas_evidence = "SET copies all source values unchanged", r_evidence = "AVAL[2] receives an extra addition") else valid_program_review_response()
   })
 
   res <- run_bundle_pipeline(state, max_bundle_repair_rounds = 1L, execute = TRUE)
@@ -324,9 +398,10 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
     vapply(rq$messages, function(m) as.character(m$content %||% ""), character(1))
   })), collapse = "\n")
 
-  # The redacted digest still reaches the fixer...
-  expect_match(all_text, "n_mismatch")
-  # ...but no raw cell value from either side does.
+  expect_no_match(all_text, "n_mismatch|rows_base|ROW_COUNT_DELTA|Output Differences")
+  expect_match(all_text, "unknown_tool")
+  expect_length(reqs, 2L)
+  # Neither initial prompts nor actual tool-result turns contain reference answers.
   expect_no_match(all_text, "736\\.2519")
   expect_no_match(all_text, "999\\.777")
 })

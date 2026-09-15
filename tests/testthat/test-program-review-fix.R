@@ -167,3 +167,38 @@ test_that("repair refreshes helper metadata without authorizing unknown calls", 
   expect_identical(fixed$contract$helper_use, "invented")
   expect_false(check_program_revision(fixed$r_path, fixed$contract)$pass)
 })
+test_that("fixer corrects one mechanically invalid answer with the exact error and budget", {
+  fx <- review_fix_fixture()
+  for (bad in c("tryCatch({ x <- 1", "library(dplyr)\nx <- 1")) {
+    purposes <- character()
+    budget <- new_usage_budget()
+    llm <- recording_fixer(function(req) {
+      purposes <<- c(purposes, req$purpose)
+      valid_program_fix_response(code = if (length(purposes) == 1L) bad else "x <- 1")
+    })
+    fixed <- fix_program_revision(fx$revision, smoke = fx$failed_smoke,
+      llm = llm, usage = budget, paths = fx$paths)
+    expect_identical(fixed$status, "ok")
+    expect_identical(purposes, c("program_fix", "mechanical_retry"))
+    expect_identical(budget$request_count, 2L)
+    prompt <- paste(vapply(llm$requests()[[2L]]$messages, `[[`, "", "content"), collapse = "\n")
+    expect_match(prompt, bad, fixed = TRUE)
+    expect_match(prompt, "parse_error|lint_error")
+    expect_match(prompt, "Smoke Execution Failure", fixed = TRUE)
+  }
+})
+
+test_that("persistent invalid repairs and a call ceiling bound mechanical correction", {
+  fx <- review_fix_fixture()
+  for (limit in c(1, 10)) {
+    budget <- new_usage_budget(mode = "soft", max_calls = limit)
+    llm <- recording_fixer(function(req) valid_program_fix_response(code = "x <- function( {"))
+    fixed <- fix_program_revision(fx$revision, smoke = fx$failed_smoke,
+      llm = llm, usage = budget, paths = fx$paths)
+    expect_identical(fixed$status, "check_failed")
+    expect_length(llm$requests(), min(limit, 2))
+    expect_equal(budget$request_count, min(limit, 2))
+    expect_match(paste(fixed$checks$errors, collapse = "\n"), "parse_error")
+    expect_identical(paste(readLines(fx$revision$r_path), collapse = "\n"), fx$revision$r_code)
+  }
+})

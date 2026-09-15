@@ -1,5 +1,25 @@
+# sas2r 0.4.3
+
+* Keep reference comparison answers out of translation and repair requests and tools. Unexplained differences receive one bounded source-focused review per unchanged component context; only source-grounded findings authorize code repair.
+* Reject source-review regressions before bundle repairs are applied, retain coherent shared-helper revisions, and compare individual source/non-reference checks before selecting freshly executed bundles. Correct source translations can be retained despite inconsistent references, whose required failures remain blocked.
+* Preserve focused-review history across reference-only configuration changes and resume, and report source evidence separately from unresolved reference differences.
+* Retain completed review evidence when an extra review is inconclusive, scope cross-run checks to unchanged sources, and route missing generated intermediates to their source-declared writers. Preserve all artifact errors and rejected revision identifiers, and reuse target observations after focused review.
+* Clarify the README privacy boundary: model requests can include source and generated code, comments, project paths, inferred schemas, tool results and execution diagnostics. The default omits dataset previews, but is not automatic de-identification; reference comparison answers stay outside translation, review and repair requests.
+
 # sas2r 0.4.2
 
+* New runs can use their bounded bundle repair allowance when an older run
+  remains selected. A worse attempt cannot replace that selection; regressions
+  against an attempt selected within the current pipeline still stop repair.
+* Bundle repair carries pending static findings forward and can fix a downstream
+  code defect after an upstream no-op, without treating unresolved comparisons
+  as passed. Rejected mechanical candidates retain their code and diagnostics.
+* Fixers get one budgeted correction request for parse/lint failures. Mechanical
+  checks catch executable SAS macro calls translated into definitions alone.
+* Shared agent guidance covers macro return values, scope, repeated calls and
+  source graphics behavior, with executable synthetic acceptance examples.
+* Reports distinguish unresolved output expressions from concrete missing files.
+  Filename matches alone cannot establish output-family completeness.
 * Runtime helper guidance now describes internal return structures, including
   `split_ds()` and library-registry helpers. Translator, reviewer, and fixer
   receive these details through the same packaged helper reference.

@@ -138,7 +138,8 @@ write_migration_report <- function(state) {
     } else {
       "unexecuted"
     }
-    population <- state$selected_revisions[[cid]]$smoke$population_checks[[cid]] %||% list()
+    population <- state$selected_attempt$population_checks[[cid]] %||%
+      state$selected_revisions[[cid]]$smoke$population_checks[[cid]] %||% list()
     population_status <- if (!length(population)) "unverified" else paste(
       vapply(population, function(x) paste0(x$status, " (", x$reason, ")"), character(1)), collapse = "; ")
     blockers <- paste(curr$blockers %||% character(), collapse = ", ")
@@ -151,7 +152,7 @@ write_migration_report <- function(state) {
       smoke_status = smoke_status,
       smoke_execution = state$selected_revisions[[cid]]$smoke,
       mechanical_checks = state$selected_revisions[[cid]]$checks,
-      source_population_checks = state$selected_revisions[[cid]]$smoke$population_checks,
+      source_population_checks = stats::setNames(list(population), cid),
       blockers = curr$blockers %||% character(),
       revisions = h$revisions %||% list()
     )
@@ -323,7 +324,8 @@ write_migration_report <- function(state) {
       t_req <- output_contracts$required[i]
       ass <- if (!is.null(output_assessments[[t_key]])) output_assessments[[t_key]] else NULL
       t_stat <- ass$status %||% "unverified"
-      t_rsn <- ass$reason %||% output_checks_reason(ass$checks)
+      t_rsn <- paste(unique(c(ass$reference_issue,
+        ass$reason %||% output_checks_reason(ass$checks))), collapse = "; ")
       target_rows[[length(target_rows) + 1L]] <- list(
         target = t_key,
         kind = t_kind,
@@ -343,7 +345,11 @@ write_migration_report <- function(state) {
       md_lines,
       "## Output Targets & Assessments",
       "",
-      migration_md_table(targets_df),
+      migration_md_table(targets_df[targets_df$status != "unresolved_target", , drop = FALSE]),
+      if (any(targets_df$status == "unresolved_target")) c(
+        "", "## Unresolved Output Expressions", "",
+        "Source expressions are not additional missing files. Concrete filenames and complete coverage remain unverified.",
+        "", migration_md_table(targets_df[targets_df$status == "unresolved_target", , drop = FALSE])),
       ""
     )
   }

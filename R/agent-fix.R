@@ -4,7 +4,6 @@
 #' @param review Optional program review record from `review_program_revision()`.
 #' @param smoke Optional smoke execution record.
 #' @param bundle Optional bundle execution record.
-#' @param outputs Optional output differences record or list.
 #' @param mode Mode of repair: "program" (single component) or "bundle" (cross-component).
 #' @param llm Optional `sas2r_llm` instance.
 #' @param usage Optional usage budget.
@@ -23,7 +22,6 @@ fix_program_revision <- function(
   review = NULL,
   smoke = NULL,
   bundle = NULL,
-  outputs = NULL,
   mode = c("program", "bundle"),
   llm = NULL,
   usage = NULL,
@@ -34,7 +32,6 @@ fix_program_revision <- function(
   project_dir = NULL,
   round = 1L,
   attempt_id = NULL,
-  report_registry = NULL,
   checks = NULL,
   ...
 ) {
@@ -53,14 +50,6 @@ fix_program_revision <- function(
   if (!is.null(bundle)) {
     bundle_id <- bundle$bundle_id %||% bundle$execution_id %||% bundle$id
     if (!is.null(bundle_id)) evidence_ids <- c(evidence_ids, as.character(bundle_id))
-  }
-  if (!is.null(outputs)) {
-    if (is.list(outputs) && !is.data.frame(outputs)) {
-      out_ids <- unlist(lapply(outputs, function(o) o$output_id %||% o$evidence_id %||% o$id))
-      evidence_ids <- c(evidence_ids, as.character(out_ids))
-    } else if (is.character(outputs)) {
-      evidence_ids <- c(evidence_ids, outputs)
-    }
   }
   extra_args <- list(...)
   if (!is.null(extra_args$evidence_ids)) {
@@ -132,24 +121,16 @@ fix_program_revision <- function(
   }
   if (!is.null(bundle)) {
     evidence_sections <- c(evidence_sections, sprintf(
-      "Bundle Execution Failure (ID: %s):\nFailing outputs: %s\n%s",
+      "Bundle Execution Evidence (ID: %s):\nFailing outputs: %s\n%s",
       bundle$bundle_id %||% bundle$execution_id %||% "unknown",
       paste(bundle$failing_outputs %||% character(), collapse = ", "),
       jsonlite::toJSON(bounded_agent_diagnostics(bundle), auto_unbox = TRUE, pretty = TRUE)
     ))
   }
-  if (!is.null(outputs)) {
-    evidence_sections <- c(evidence_sections, sprintf(
-      "Output Differences:\n%s",
-      if (is.character(outputs)) paste(outputs, collapse = "\n") else jsonlite::toJSON(outputs, auto_unbox = TRUE)
-    ))
-  }
   evidence_text <- paste(evidence_sections, collapse = "\n\n")
 
   # 4. Route skills from what actually failed: the component's PROCs and
-  # source-derived ordering flags, plus comparison reasons mapped from the
-  # difference evidence -- so the alignment and ordering skills reach the
-  # fixer exactly when a failed comparison shows their failure modes.
+  # source-derived ordering flags. Reference comparisons never route repairs.
   catalog <- agent_skill_catalog()
   comp_stmts <- component_statements(project, component_id)
   procs <- if (!is.null(comp_stmts)) unit_proc_names(comp_stmts) else character()
@@ -160,7 +141,7 @@ fix_program_revision <- function(
     flags = skill_flags_from_sas(sas_text),
     macros = character(0),
     semantic_rules = if (length(procs)) paste0("procs.", procs) else character(0),
-    comparison_reasons = comparison_reasons_from_outputs(outputs),
+    comparison_reasons = character(),
     functions = character(0)
   )
   routed <- route_agent_skills(routing_ctx, catalog = catalog)
@@ -200,15 +181,14 @@ fix_program_revision <- function(
   )
 
   # The fixer's prompt deliberately carries no context packet; these tools are
-  # its route to the unit's statements, schemas, configured macros, and the
-  # bounded comparison report -- so they get the real objects, not emptiness.
+  # its route to the unit's statements, schemas and configured macros.
   tools <- build_tools(spec, list(
+    agent_role = "fixer",
     project = project,
     unit_stmts = comp_stmts,
     schemas = tryCatch(infer_schemas(project), error = function(e) list()),
     config = config,
-    macro_index = project_macro_index(project, config),
-    report_registry = report_registry
+    macro_index = project_macro_index(project, config)
   ))
 
   agent_res <- run_agent(
@@ -230,6 +210,29 @@ fix_program_revision <- function(
   }
 
   fix_data <- agent_res$data
+  spend_usd <- agent_res$spend_usd %||% 0
+
+  # One correction opportunity for a mechanically broken answer, using the
+  # same checker as persisted revisions. This is an ordinary budgeted request.
+  candidate_path <- tempfile(fileext = ".R")
+  on.exit(unlink(candidate_path), add = TRUE)
+  writeLines(fix_data$r_code, candidate_path)
+  candidate_checks <- check_program_revision(candidate_path, contract = contract)
+  retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
+  if (length(retry_errors) && usage_budget_allows_future(usage_budget)) {
+    retry_res <- run_agent(
+      spec = spec, llm = llm, tools = tools,
+      user_content = paste("The proposed repair failed mechanical checks. Correct these errors while preserving the source behavior and addressing the original evidence:",
+        paste(retry_errors, collapse = "\n"), "Proposed R code:", fix_data$r_code,
+        sep = "\n\n"),
+      log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
+      prompt_vars = prompt_vars,
+      audit_context = utils::modifyList(audit_context, list(purpose = "mechanical_retry")),
+      usage_budget = usage_budget
+    )
+    spend_usd <- spend_usd + (retry_res$spend_usd %||% 0)
+    if (identical(retry_res$status, "ok") && !is.null(retry_res$data)) fix_data <- retry_res$data
+  }
 
   # 5. Check for forbidden mutations
   if (!is.null(fix_data$bundle_helper_patch)) {
@@ -319,7 +322,7 @@ fix_program_revision <- function(
       remaining_uncertainty = unlist(fix_data$remaining_uncertainty %||% character()),
       status = if (isTRUE(checks$pass)) "ok" else "check_failed",
       checks = checks,
-      spend_usd = agent_res$spend_usd %||% 0
+      spend_usd = spend_usd
     ),
     class = c("sas2r_program_revision", "list")
   )
