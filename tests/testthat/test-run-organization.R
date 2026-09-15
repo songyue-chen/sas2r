@@ -177,3 +177,22 @@ test_that("a selected attempt supplies matching code, identity, and saved output
   expect_false(file.exists(file.path(fx$attempt$work_dir, "deliver.rds")))
   expect_true(file.exists(file.path(fx$snapshot, "prepare.R")))
 })
+test_that("navigation separates unresolved expressions from concrete output files", {
+  fx <- organization_fixture()
+  state <- fx$state
+  state$output_contracts <- merge_output_overrides(empty_output_contracts(),
+    list(tlfs = c("summary-&panel..html", "summary-one.html")))
+  state$assessment <- assess_final_outputs(state$output_contracts,
+    list(attempt_dir = fx$root, completed = TRUE, passed = TRUE))
+  state$status <- state$assessment$status
+  write_migration_report(state)
+  html <- paste(readLines(state$paths$start_here), collapse = "\n")
+  saved <- strsplit(strsplit(html, "<h2>Saved outputs</h2>", fixed = TRUE)[[1L]][2L],
+                    "<h2>Unresolved output expressions</h2>", fixed = TRUE)[[1L]]
+  expect_match(saved[1L], "summary-one.html", fixed = TRUE)
+  expect_false(grepl("summary-&amp;panel", saved[1L], fixed = TRUE))
+  expect_match(saved[2L], "summary-&amp;panel..html", fixed = TRUE)
+  expect_match(saved[2L], "concrete outputs unknown", fixed = TRUE)
+  report <- read_json_record(state$paths$report_json)
+  expect_identical(report$output_assessments[["summary-&panel..html"]]$status, "unresolved_target")
+})

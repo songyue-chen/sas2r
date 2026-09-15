@@ -527,6 +527,7 @@ skill_flags_from_sas <- function(sas_text) {
   flags <- character()
   if (grepl("\\b(first|last)\\.", x)) flags <- c(flags, "by_group", "order_dependent")
   if (grepl("\\bretain\\b", x)) flags <- c(flags, "order_dependent")
+  if (grepl("%|\\b(symputx?|symget)\\s*\\(", x)) flags <- c(flags, "macro_execution")
   if (grepl("\\bproc\\s+sort\\b", x)) flags <- c(flags, "order_dependent")
   if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {
     flags <- c(flags, "statistical_defaults")

@@ -230,6 +230,29 @@ fix_program_revision <- function(
   }
 
   fix_data <- agent_res$data
+  spend_usd <- agent_res$spend_usd %||% 0
+
+  # One correction opportunity for a mechanically broken answer, using the
+  # same checker as persisted revisions. This is an ordinary budgeted request.
+  candidate_path <- tempfile(fileext = ".R")
+  on.exit(unlink(candidate_path), add = TRUE)
+  writeLines(fix_data$r_code, candidate_path)
+  candidate_checks <- check_program_revision(candidate_path, contract = contract)
+  retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
+  if (length(retry_errors) && usage_budget_allows_future(usage_budget)) {
+    retry_res <- run_agent(
+      spec = spec, llm = llm, tools = tools,
+      user_content = paste("The proposed repair failed mechanical checks. Correct these errors while preserving the source behavior and addressing the original evidence:",
+        paste(retry_errors, collapse = "\n"), "Proposed R code:", fix_data$r_code,
+        sep = "\n\n"),
+      log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
+      prompt_vars = prompt_vars,
+      audit_context = utils::modifyList(audit_context, list(purpose = "mechanical_retry")),
+      usage_budget = usage_budget
+    )
+    spend_usd <- spend_usd + (retry_res$spend_usd %||% 0)
+    if (identical(retry_res$status, "ok") && !is.null(retry_res$data)) fix_data <- retry_res$data
+  }
 
   # 5. Check for forbidden mutations
   if (!is.null(fix_data$bundle_helper_patch)) {
@@ -319,7 +342,7 @@ fix_program_revision <- function(
       remaining_uncertainty = unlist(fix_data$remaining_uncertainty %||% character()),
       status = if (isTRUE(checks$pass)) "ok" else "check_failed",
       checks = checks,
-      spend_usd = agent_res$spend_usd %||% 0
+      spend_usd = spend_usd
     ),
     class = c("sas2r_program_revision", "list")
   )

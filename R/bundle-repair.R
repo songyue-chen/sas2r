@@ -80,6 +80,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   fixed_rev <- tryCatch(
     fix_program_revision(
       revision = primary_rev,
+      review = packet$review,
+      checks = packet$checks,
       bundle = bundle_ev,
       outputs = outputs_ev,
       mode = "bundle",
@@ -102,6 +104,14 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {
     stop_reason <- "repair_failed"
     return(list(state = state, applied = FALSE, reason = stop_reason))
+  }
+
+  if (!isTRUE(fixed_rev$checks$pass)) {
+    state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
+      component_id = primary_cid, revision_id = fixed_rev$revision_id,
+      r_path = fixed_rev$r_path, errors = fixed_rev$checks$errors)))
+    return(list(state = state, applied = FALSE, reason = paste(
+      "repair_mechanical_checks_failed", paste(fixed_rev$checks$errors, collapse = "; "), sep = ": ")))
   }
 
   # Check for identical / no-op patch
@@ -293,6 +303,13 @@ collect_bundle_diagnostics <- function(state, attempt) {
 
 # Group findings by known failing component or the source-derived output writer.
 # An absent downstream output after a crash is not an independent defect.
+source_grounded_review_findings <- function(review) {
+  Filter(function(f) {
+    (f$severity %||% "") %in% c("material", "high") && nzchar(f$sas_evidence %||% "") &&
+      nzchar(f$r_evidence %||% "") && !length(f$unresolved_dependencies)
+  }, review$findings %||% list())
+}
+
 bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
                                 previous_disposition = NULL) {
   failures <- diagnostic$failures
@@ -325,7 +342,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   # After a crash, only targets whose writer actually completed can do so.
   for (key in names(assessment$targets)) {
     target <- assessment$targets[[key]]
-    if (isTRUE(target$passed)) next
+    if (isTRUE(target$passed) || identical(target$status, "unresolved_target")) next
     lineage <- target_lineage(key)
     if (length(intersect(lineage, names(failures)))) next
     subset <- assessment
@@ -351,6 +368,36 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
       packets[[cid]]$failed_targets <- c(packets[[cid]]$failed_targets, packet$failed_targets)
       packets[[cid]]$evidence_ids <- unique(c(packets[[cid]]$evidence_ids, packet$evidence_ids))
     }
+  }
+  # Static source/code findings remain actionable even when upstream output
+  # comparisons are unresolved. Use only the active revision's saved evidence.
+  for (cid in names(state$selected_revisions)) {
+    history <- state$histories[[cid]]
+    active <- current_component_evidence(history)
+    reviews <- Filter(function(ev) identical(ev$type, "review_completed"), active$events %||% list())
+    review <- if (length(reviews)) reviews[[length(reviews)]] else NULL
+    pending_review <- identical(component_review_verdict(history), "repair_required") &&
+      length(review$findings) > 0L
+    checks <- state$selected_revisions[[cid]]$checks
+    pending_checks <- !is.null(checks) && !isTRUE(checks$pass)
+    if (!pending_review && !pending_checks) next
+    if (is.null(packets[[cid]])) {
+      clean_attempt <- attempt
+      clean_attempt$condition <- NULL
+      clean_attempt$passed <- TRUE
+      subset <- assessment
+      subset$targets <- list()
+      packets[[cid]] <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
+      packets[[cid]]$primary_component_id <- cid
+      packets[[cid]]$attempt <- clean_attempt
+    }
+    packets[[cid]]$code_local <- pending_checks || (pending_review && length(source_grounded_review_findings(review)) > 0L)
+    if (pending_review) {
+      review$review_id <- review$basis_id %||% paste0("review:", cid, ":", active$revision_id)
+      packets[[cid]]$review <- review
+      packets[[cid]]$evidence_ids <- unique(c(packets[[cid]]$evidence_ids, active$basis_ids))
+    }
+    if (pending_checks) packets[[cid]]$checks <- checks
   }
   order <- state$schedule$component_id %||% names(state$selected_revisions)
   packets[intersect(order, names(packets))]

@@ -91,3 +91,53 @@ test_that("script inputs are not compared with unrelated helper formals", {
   expect_false(missing_macro$pass)
   expect_true(any(grepl("interface_error", missing_macro$errors)))
 })
+test_that("executable source macro calls cannot become only R definitions", {
+  path <- withr::local_tempfile(fileext = ".R")
+  definition <- "make_report <- function() invisible(NULL)"
+  source <- "%macro make_report(); %put Report; %mend; %make_report();"
+  writeLines(c(module_bootstrap(), definition), path)
+  contract <- list(sas_text = source)
+  check <- check_program_revision(path, contract)
+  expect_false(check$pass)
+  expect_match(paste(check$errors, collapse = "\n"), "missing_program_execution")
+  writeLines(c(module_bootstrap(), definition, "make_report()"), path)
+  expect_true(check_program_revision(path, contract)$pass)
+  # A conditional invocation is still executable; no unconditional call or
+  # output requirement is invented for a source program with conditional work.
+  writeLines(c(definition, "if (FALSE) make_report()"), path)
+  expect_true(check_program_revision(path, contract)$pass)
+  writeLines(definition, path)
+  for (sas in c("%macro make_report(); %put Report; %mend;",
+                "%* %make_report();; %let x='%make_report()';",
+                "%let x=%nrstr(%make_report()); %put &x;")) {
+    expect_true(check_program_revision(path, list(sas_text = sas))$pass)
+  }
+  standalone <- parse_macro_contract("make_report", "")
+  standalone$standalone <- TRUE
+  expect_true(check_program_revision(path, list(sas_text = source,
+    macro_contract = standalone))$pass)
+})
+test_that("lost source invocation is repaired before smoke and creates its declared dataset", {
+  root <- withr::local_tempdir()
+  writeLines("%macro make_result(); data work.result; value=42; run; %mend; %make_result();",
+    file.path(root, "report.sas"))
+  project <- sas_project(root)
+  state <- new_migration_state(project, file.path(root, "migration"))
+  definition <- "make_result <- function() lib_write(data.frame(value = 42), 'work', 'result')"
+  state$translator_llm <- mock_llm(list(good_translation(definition)))
+  state$reviewer_llm <- recording_reviewer(function(req) valid_program_review_response())
+  state$fixer_llm <- recording_fixer(function(req) {
+    prompt <- paste(vapply(req$messages, `[[`, "", "content"), collapse = "\n")
+    expect_match(prompt, "missing_program_execution", fixed = TRUE)
+    valid_program_fix_response(code = paste(definition, "make_result()", sep = "\n"))
+  })
+  state <- process_program_component(state, "report")
+  expect_identical(state$selected_revisions$report$status, "ok")
+  expect_true(state$selected_revisions$report$smoke$passed)
+  expect_length(state$fixer_llm$requests(), 1L)
+  state$output_contracts <- infer_output_contracts(project, overrides = list(datasets = "work.result"))
+  result <- run_bundle_pipeline(state)
+  expect_identical(result$status, "migration_ready")
+  actual <- readRDS(file.path(result$selected_attempt$attempt_dir, "work", "result.rds"))
+  expect_identical(actual$value, 42)
+})

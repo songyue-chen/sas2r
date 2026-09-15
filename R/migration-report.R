@@ -343,7 +343,11 @@ write_migration_report <- function(state) {
       md_lines,
       "## Output Targets & Assessments",
       "",
-      migration_md_table(targets_df),
+      migration_md_table(targets_df[targets_df$status != "unresolved_target", , drop = FALSE]),
+      if (any(targets_df$status == "unresolved_target")) c(
+        "", "## Unresolved Output Expressions", "",
+        "Source expressions are not additional missing files. Concrete filenames and complete coverage remain unverified.",
+        "", migration_md_table(targets_df[targets_df$status == "unresolved_target", , drop = FALSE])),
       ""
     )
   }

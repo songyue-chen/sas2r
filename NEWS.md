@@ -1,5 +1,14 @@
 # sas2r 0.4.2
 
+* Bundle repair carries pending static findings forward and can fix a downstream
+  code defect after an upstream no-op, without treating unresolved comparisons
+  as passed. Rejected mechanical candidates retain their code and diagnostics.
+* Fixers get one budgeted correction request for parse/lint failures. Mechanical
+  checks catch executable SAS macro calls translated into definitions alone.
+* Shared agent guidance covers macro return values, scope, repeated calls and
+  source graphics behavior, with executable synthetic acceptance examples.
+* Reports distinguish unresolved output expressions from concrete missing files.
+  Filename matches alone cannot establish output-family completeness.
 * Runtime helper guidance now describes internal return structures, including
   `split_ds()` and library-registry helpers. Translator, reviewer, and fixer
   receive these details through the same packaged helper reference.

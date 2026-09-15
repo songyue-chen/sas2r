@@ -320,6 +320,20 @@ its relevant dependencies change or a specifically awaited caller becomes
 available. Completed reviews are reused within a run when the code, dependency
 code, helper runtime and review configuration are unchanged.
 
+Each fixer invocation can make one additional, budgeted request to correct a
+parse or lint error in its proposed code. Persistent mechanical failures keep
+the previous selected revision and save the rejected candidate's diagnostics.
+An identical patch means no change was proposed; it does not clear the failure.
+Bundle repair can still address a separately documented downstream code defect
+after an upstream no-op. Downstream mismatches inherited from unresolved inputs
+wait for those inputs to be resolved.
+
+Unexpanded output expressions, such as `figure-&group..pdf`, appear separately
+from concrete output targets in the report and starting page. Finding matching
+files does not establish that the entire expected family was produced. An
+unresolved required expression prevents readiness; its filenames and coverage
+need source-grounded review.
+
 For debugging a failed bundle, use `sas_translate(..., keep_raw_attempts = TRUE)`
 to retain each component smoke execution's separate library folders and `run.R`
 replay script. The component's `smoke_execution` in `report.json` lists the
@@ -416,6 +430,14 @@ that has not been generated reports `caller_not_generated`; calls requiring
 prior setup, variables, loops or other enclosing context report
 `caller_context_required` and run as part of their containing program. A smoke
 pass for that program does not establish that every conditional macro ran.
+
+Programs that define and invoke internal macros must retain that invocation.
+A mechanical check catches definitions-only R when the source invokes a macro
+outside its definitions. Shared guidance also covers returned values, nested
+macro scopes and repeated calls, including intentional clearing or retention of
+state. Graphics guidance preserves source statistical definitions through the
+renderer, requested summary content, axis behavior and pagination settings;
+visual polish remains a human task.
 
 For explicit dataset cleanup, generated functions can use
 `lib_delete("work", c("scratch_a", "scratch_b"))`. This removes stored datasets;

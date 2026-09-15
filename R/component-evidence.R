@@ -291,6 +291,7 @@ record_completed_review <- function(
     rev$events <- c(rev$events, list(list(
       type = "review_completed",
       verdict = verdict,
+      basis_id = basis_id,
       findings = as.list(findings),
       created_at = created_at
     )))

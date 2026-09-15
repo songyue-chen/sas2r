@@ -134,6 +134,26 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
     }
   }
 
+  # A program can define macros AND run them. A definitions-only translation
+  # loses that execution; standalone macro libraries intentionally only define.
+  if (!inherits(parsed, "error") && !isTRUE(contract$macro_contract$standalone) &&
+      nzchar(contract$sas_text %||% "")) {
+    body <- smoke_program_expressions(code_text)
+    definitions_only <- length(body) > 0L && all(vapply(body, function(expr) {
+      is.call(expr) && length(expr) == 3L &&
+        as.character(expr[[1L]])[1L] %in% c("<-", "=") &&
+        is.name(expr[[2L]]) && is.call(expr[[3L]]) &&
+        identical(expr[[3L]][[1L]], as.name("function"))
+    }, logical(1)))
+    if (definitions_only) {
+      units <- sas_units(sas_statements(contract$sas_text))
+      calls <- extract_macro_calls(units[units$unit_type != "macro_def", , drop = FALSE])
+      if (nrow(calls)) errors <- c(errors, paste0(
+        "missing_program_execution: source invokes %", paste(unique(calls$name), collapse = ", %"),
+        " outside macro definitions, but R only defines functions. Preserve the source invocation and its arguments/control flow."))
+    }
+  }
+
   # 5. Source / bootstrap check
   if (any(grepl("sas2r_source_include\\(", code_lines))) {
     inc_calls <- grep("sas2r_source_include\\(", code_lines, value = TRUE)

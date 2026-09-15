@@ -185,3 +185,55 @@ test_that("repair limit configuration rejects non-count values before translatio
                  class = "sas2r_invalid_argument")
   }
 })
+test_that("an upstream no-op does not suppress an independently reviewed downstream defect", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE, value_errors = 2L)
+  reference <- file.path(fx$root, "different-source-reference.rds")
+  saveRDS(data.frame(id = 1:3, value = 100:102), reference)
+  fx$state$comparison_rules <- list(references = list(work.out1 = reference))
+  fx$state$histories$p02 <- record_completed_review(fx$state$histories$p02,
+    verdict = "repair_required", basis_id = "review:p02:source-addition",
+    findings = list(list(severity = "material", sas_evidence = "value = value + 1",
+      r_evidence = "value + 9 instead of + 1", affected_outputs = list("work.out2"))))
+  fx$state$fixer_llm <- recording_fixer(function(req) {
+    valid_program_fix_response(code = fx$fixed[[req$component_id]])
+  })
+  result <- run_bundle_pipeline(fx$state)
+  expect_identical(vapply(result$repairs, `[[`, "", "component_id"), "p02")
+  expect_identical(result$diagnostics$bundle_repair$deferred$p01, "identical_patch")
+  expect_false(result$assessment$targets$work.out1$passed)
+  expect_identical(result$status, "blocked")
+  prompt <- paste(vapply(fx$state$fixer_llm$requests()[[2L]]$messages, `[[`, "", "content"), collapse = "\n")
+  expect_match(prompt, "value + 9 instead of + 1", fixed = TRUE)
+  expect_match(prompt, "review:p02:source-addition", fixed = TRUE)
+  expect_false(grepl("different-source-reference", prompt, fixed = TRUE))
+  out <- readRDS(file.path(result$selected_attempt$attempt_dir, "work", "out2.rds"))
+  expect_equal(out$value, 12:14)
+})
+
+test_that("inherited mismatches are not sent downstream after an upstream no-op", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
+  reference <- file.path(fx$root, "other-reference.rds")
+  saveRDS(data.frame(id = 1:3, value = 100:102), reference)
+  fx$state$comparison_rules <- list(references = list(work.out1 = reference, work.out2 = reference))
+  result <- run_bundle_pipeline(fx$state)
+  expect_length(fx$state$fixer_llm$requests(), 1L)
+  expect_length(result$repairs, 0L)
+  expect_identical(result$status, "blocked")
+  expect_false(result$assessment$targets$work.out2$passed)
+})
+
+test_that("unfixed syntax never replaces executable bundle code or clears its review", {
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  fx$state$histories$p01 <- record_completed_review(fx$state$histories$p01,
+    verdict = "repair_required", findings = list(list(severity = "material",
+      sas_evidence = "source calculation", r_evidence = "incorrect result")))
+  fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(code = "tryCatch({"))
+  result <- run_bundle_pipeline(fx$state)
+  expect_length(fx$state$fixer_llm$requests(), 2L)
+  expect_identical(result$selected_revisions$p01$r_code, fx$fixed$p01)
+  expect_identical(component_review_verdict(result$histories$p01), "repair_required")
+  expect_match(result$status_reason, "repair_mechanical_checks_failed")
+  rejected <- result$diagnostics$rejected_repairs[[1L]]
+  expect_true(file.exists(rejected$r_path))
+  expect_match(paste(rejected$errors, collapse = "\n"), "parse_error")
+})

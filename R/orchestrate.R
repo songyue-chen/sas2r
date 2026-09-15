@@ -898,7 +898,7 @@ run_bundle_pipeline <- function(
     }
 
     # Record attempt in summary
-    target_count <- if (!is.null(assessment$targets)) length(assessment$targets) else 0L
+    target_count <- sum(vapply(assessment$targets, function(t) !identical(t$status, "unresolved_target"), logical(1)))
     attempts_summary[[length(attempts_summary) + 1L]] <- list(
       sequence = as.integer(attempt_seq),
       attempt_id = attempt_rec$attempt_id,
@@ -949,13 +949,27 @@ run_bundle_pipeline <- function(
     signal_bundle_event("bundle_repair_queue", round = round,
       reason = paste(eligible, collapse = ", "))
     changed <- FALSE
+    changed_components <- character()
     for (primary_cid in eligible) {
       if (round >= total_limit || !usage_budget_allows_future(state$usage_budget)) break
       # Any upstream repair makes this candidate's evidence stale. It will be
       # reconsidered after a fresh run rather than repaired for inherited errors.
-      if (length(intersect(dependency_closure(state$graph, primary_cid), names(queue))) > 0L) next
+      ancestors <- dependency_closure(state$graph, primary_cid)
+      if (length(intersect(ancestors, changed_components))) next
+      upstream_pending <- length(intersect(ancestors, names(queue))) > 0L
+      packet <- queue[[primary_cid]]
+      if (upstream_pending && !isTRUE(packet$code_local)) next
+      if (upstream_pending) {
+        # Repair the independent static defect only; inherited output evidence
+        # cannot yet establish a downstream translation error.
+        packet$failed_targets <- list()
+        if (!is.null(packet$review)) packet$review$findings <- source_grounded_review_findings(packet$review)
+        packet$attempt <- attempt_rec
+        packet$attempt$condition <- NULL
+        packet$attempt$passed <- TRUE
+      }
       repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
-      outcome <- repair_bundle_component(state, queue[[primary_cid]], attempt_rec, round)
+      outcome <- repair_bundle_component(state, packet, attempt_rec, round)
       round <- round + 1L
       state <- outcome$state
       if (!isTRUE(outcome$applied)) {
@@ -965,6 +979,7 @@ run_bundle_pipeline <- function(
         next
       }
       changed <- TRUE
+      changed_components <- c(changed_components, primary_cid)
       repairs[[length(repairs) + 1L]] <- outcome$repair
       latest_diagnosis <- outcome$repair$diagnosis
       # A shared helper change invalidates every queued component's evidence.
