@@ -198,7 +198,7 @@ test_that("an older selection stays intact when the new run exhausts its repair 
   expect_true(file.exists(file.path(fx$prior$attempt$attempt_dir, "adam", "out2.rds")))
 })
 
-test_that("regressive patch preserves prior selected attempt and stops", {
+test_that("an unsupported assertion does not authorize a regressive patch", {
   fx <- sequential_bundle_defects_fixture()
   # Start with prog_a working, prog_b working, but out2 fails an assertion
   fx$state$selected_revisions$prog_a$r_code <- fx$fixed_r_code_a
@@ -223,13 +223,12 @@ test_that("regressive patch preserves prior selected attempt and stops", {
     fx$state, max_bundle_repair_rounds = 2L, execute = TRUE
   )
 
-  # Out1 still passes, but losing prog_b execution is itself a regression.
-  expect_identical(result$attempts$sequence, 1:2)
-  # Attempt 1 should remain selected
+  expect_identical(result$attempts$sequence, 1L)
   expect_identical(result$selected_attempt$attempt_id, "bundle_attempt_001")
   expect_identical(result$selected_revisions$prog_a$r_code, fx$fixed_r_code_a)
   expect_identical(result$selected_revisions$prog_b$r_code, fx$fixed_r_code_b)
-  expect_identical(result$diagnostics$stop_reason, "regression_detected")
+  expect_length(fx$state$fixer_llm$requests(), 0L)
+
 })
 
 test_that("no-op identical patch stops bundle repair early", {
@@ -374,6 +373,8 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   )
 
   fixer_llm <- recording_fixer(function(context) {
+    if (!any(vapply(context$messages, function(m) identical(m$role, "tool"), logical(1))))
+      return(list(type = "tool", tool = "read_comparison_report", args = list(report_id = "report_requested")))
     valid_program_fix_response(
       code = paste("adsl <- lib_read('adam', 'adsl')",
                    "lib_write(adsl, 'adam', 'out1')", sep = "\n"),
@@ -384,7 +385,9 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   })
   state$fixer_llm <- fixer_llm
   state$reviewer_llm <- recording_reviewer(function(context) {
-    valid_program_review_response(verdict = "reviewed_no_material_finding")
+    text <- paste(vapply(context$messages, function(m) as.character(m$content), ""), collapse = "\n")
+    if (grepl("263.525423", text, fixed = TRUE)) material_review_response(
+      sas_evidence = "SET copies all source values unchanged", r_evidence = "AVAL[2] receives an extra addition") else valid_program_review_response()
   })
 
   res <- run_bundle_pipeline(state, max_bundle_repair_rounds = 1L, execute = TRUE)
@@ -395,9 +398,10 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
     vapply(rq$messages, function(m) as.character(m$content %||% ""), character(1))
   })), collapse = "\n")
 
-  # The redacted digest still reaches the fixer...
-  expect_match(all_text, "n_mismatch")
-  # ...but no raw cell value from either side does.
+  expect_no_match(all_text, "n_mismatch|rows_base|ROW_COUNT_DELTA|Output Differences")
+  expect_match(all_text, "unknown_tool")
+  expect_length(reqs, 2L)
+  # Neither initial prompts nor actual tool-result turns contain reference answers.
   expect_no_match(all_text, "736\\.2519")
   expect_no_match(all_text, "999\\.777")
 })

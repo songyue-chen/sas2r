@@ -175,9 +175,10 @@ llm:
 # ------------------------------------------------------------------------------
 # 8. Data & Model Privacy Boundary
 # ------------------------------------------------------------------------------
-# sas2r enforces a strict privacy boundary between local data and remote models:
-# - Only SAS source code, macro structures, and column name metadata are transmitted.
-# - sas2r NEVER transmits raw dataset cell values, row numbers, patient identifiers,
-#   or sensitive key values to external LLM providers.
-# - All dataset generation and comparison occur locally to satisfy enterprise
-#   data residency and governance requirements.
+# Models receive SAS/R code, input schema metadata, helper interfaces and errors.
+# Reference comparison reports and digests stay local, outside authoring tools.
+# agent_evidence = "bounded" permits capped candidate-output previews, which may
+# contain row numbers, key values, cell values and subject identifiers.
+# The default "code_only" omits previews; code and errors may still contain data.
+# Dataset generation and comparison run locally. Confirm your model endpoint
+# meets your organization's data residency and governance requirements.

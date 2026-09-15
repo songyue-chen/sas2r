@@ -311,11 +311,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
           diffs$mismatches <- comp_res$details
           diffs$cosmetic <- comp_res$cosmetic
           diffs$structure <- comp_res$structure
-          # The redacted digest is the only comparison artifact that may cross
-          # to an LLM (names, counts, magnitudes, pattern hints -- never cell
-          # values or row numbers). It is derived here, where the full
-          # comparison object exists; the repair loop forwards it in place of
-          # the raw mismatch details.
+          # Full differences and compact digests are local reporting artifacts.
+          # Neither serves as evidence for the code-writing agents.
           diffs$digest <- tryCatch(
             unclass(diff_digest(comp_res, label = t_key)),
             error = function(e) NULL
@@ -793,6 +790,12 @@ assess_final_outputs <- function(
       )
     }
     lineage_summaries[[t_key]] <- c_lineage
+    assessed_targets[[t_key]]$source_evidence <- stats::setNames(lapply(c_lineage$upstream_components,
+      function(cid) source_evidence_summary(updated_histories[[cid]], attempt$population_checks[[cid]])),
+      c_lineage$upstream_components)
+    if (isFALSE(tgt_res$checks$reference_comparison$passed)) {
+      assessed_targets[[t_key]]$reference_issue <- "reference mismatch; cause unresolved"
+    }
 
     if (isTRUE(tgt_res$required)) {
       all_lineage_cids <- unique(c(all_lineage_cids, c_lineage$upstream_components))

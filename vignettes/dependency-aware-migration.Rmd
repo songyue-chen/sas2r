@@ -205,10 +205,10 @@ separately from the comparison result.
 
 ## Model Privacy & Clinical Data Protection
 
-`sas2r` maintains a strict separation between remote language models and clinical study data:
+`sas2r` keeps reference comparison answers out of translation and repair agents:
 
-- **Transmission Boundary**: By default, prompts carry program logic, macro structures, column name metadata, and redacted comparison digests (variable names, mismatch counts, difference magnitudes, pattern hints — not the mismatching cells).
-- **Bounded Opt-In Surfaces**: The reviewer's bounded comparison report may quote a small, capped set of example differences — including row numbers, key values, and differing cell values (subject identifiers among them when key columns identify subjects) — and `agent_evidence = "bounded"` adds capped output metadata with short previews to repair evidence. The default `agent_evidence = "code_only"` sends neither.
+- **Transmission Boundary**: Prompts carry SAS and R code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports stay in local reports and the public comparison API. Project tool overrides cannot restore comparison access for these agents.
+- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` adds capped candidate-output summaries and previews to execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. The default `code_only` omits these previews; source code and error messages may themselves contain data.
 - **Data Residency**: All dataset reading, execution, and comparison run in the local R process; confirm your configured endpoint meets your organization's data residency obligations before enabling an LLM provider.
 
 ## Parity Disclaimer

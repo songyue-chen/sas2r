@@ -20,13 +20,13 @@
 - **Automated dataset QC.** If you provide reference SAS datasets (`.sas7bdat`, `.xpt`, or `.rds`), `sas2r` compares each generated R dataset against them: it lines up rows even when their order differs, understands duplicate key values, applies SAS missing-value and blank-padding rules, and checks numbers to configurable tolerances.
 - **Your source data is never touched.** Input libraries are opened read-only, and every run writes into its own separate working copy (copy-on-write), so a failed attempt can never contaminate your data or a previous good result.
 - **Standalone R programs you can take anywhere.** Export plain R scripts, `autoexec.R`, runtime files, and a dependency-ordered launcher with `sas_write()`. The exported guide lists required R packages and external input libraries; `sas2r` itself is not required to run the bundle. The runtime is documented and versioned: see `?sas2r_runtime` and `vignette("runtime-helpers")`.
-- **Repairs with evidence, not guesswork.** When a translated program errors or an output doesn't match its reference, an AI fixer receives a focused summary of what went wrong, patches the one program responsible, and the whole pipeline re-runs from scratch to prove the patch actually helped.
+- **Repairs grounded in the source.** Execution errors and findings supported by the SAS can trigger an AI repair. A reference mismatch alone triggers a bounded source review. Each accepted repair is tested in a fresh bundle run, with earlier evidence protected from regressions.
 
 ---
 
 ## How a Migration Runs: a Coordinated Multi-Agent Workflow
 
-`sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, bounded comparison evidence) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
+`sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, registered translation skills) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
 
 The workflow runs in two stages: first each program is translated and checked on its own, then the whole pipeline runs end to end and the outputs are judged together. Each stage has its own repair loop.
 
@@ -692,12 +692,11 @@ not establish that the provider disabled reasoning.
 
 ## What the AI Model Sees — and What It Never Sees
 
-By default, the AI model receives your SAS code, the translated R code, column names and types, and — when outputs differ from references — a summary of the differences: which variables, how many cells, how large the gaps are. Not the data itself.
+By default, agents receive SAS and R code, input column names and types, helper interfaces, and execution diagnostics. Reference comparison values, IDs, counts, difference hints and reports are kept out of code-writing requests and tools, including project tool overrides.
 
-Two optional features can share small, capped extracts, and only if you turn them on:
+An unexplained comparison mismatch can trigger one focused source review per unchanged component context. Only a source-grounded finding can turn that mismatch into a code repair. The package rejects repairs that lose established source-review, execution or non-reference check evidence. A correction can still be retained when it disagrees with an inconsistent reference; a failed required reference keeps the overall result `blocked` and is reported separately.
 
-- The reviewer's bounded comparison report may quote a handful of example differences, including row numbers, key values, and the differing cell values (which can include subject identifiers when your key columns identify subjects).
-- Setting `agent_evidence = "bounded"` adds capped output summaries with short previews to repair evidence. The default, `agent_evidence = "code_only"`, shares neither.
+Setting `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. The default `code_only` policy omits those previews; source code and error messages may themselves contain data. A dataset that the SAS legitimately reads remains an input even if it is also used as a reference. Complete comparisons remain available locally for human review. These controls enforce repair decisions; they do not prove arbitrary SAS/R equivalence.
 
 All data reading, program execution, and output comparison happen in your local R session. Before enabling any provider, confirm the endpoint you configure meets your organization's data residency requirements.
 

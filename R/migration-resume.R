@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 4L
+RESUME_CHECKPOINT_VERSION <- 5L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -25,6 +25,8 @@ migration_resume_fingerprint <- function(state) {
   roles <- c("translator", "reviewer", "fixer")
   skills <- agent_skill_catalog()
   llm <- state$translator_llm
+  source_outputs <- state$output_contracts
+  source_outputs$reference_path <- NULL
   migration_hash(list(
     version = RESUME_CHECKPOINT_VERSION,
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
@@ -33,8 +35,8 @@ migration_resume_fingerprint <- function(state) {
     graph = state$graph,
     inputs = state$input_manifest %||% input_hash_manifest(state$project),
     config = c(scan_config_fields(state$config),
-      state$config[c("comparison_rules", "dialect", "allowlist", "search_docs")]),
-    outputs = state$output_contracts,
+      state$config[c("dialect", "allowlist", "search_docs")]),
+    outputs = source_outputs,
     helper = paste(readLines(state$runtime$helpers, warn = FALSE), collapse = "\n"),
     workers = lapply(roles, worker_binding_hash, skills = skills,
                      project_dir = state$project$project_dir),

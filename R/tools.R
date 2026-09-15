@@ -274,6 +274,8 @@ TOOL_IMPLS <- list(
 build_tools <- function(spec, ctx) {
   out <- list()
   for (nm in names(spec$tools)) {
+    # Project overrides cannot reintroduce reference answers into authoring.
+    if (nm == "read_comparison_report" && (ctx$agent_role %||% spec$name %||% "") %in% c("translator", "fixer", "reviewer")) next
     if (nm == "search_docs") {
       if (isTRUE(ctx$config$search_docs$enabled) && !isFALSE(spec$tools$search_docs$enabled)) {
         if (exists("search_docs_impl", mode = "function")) {
