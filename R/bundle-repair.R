@@ -131,19 +131,25 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     paste("candidate review unavailable:", conditionMessage(e))
   })
   if (length(rejection)) {
+    rejected_revisions <- list()
     for (cid in affected) {
       h <- state$histories[[cid]]
       old <- retained$histories[[cid]]
       rejected_id <- h$active_revision_id
       if (identical(rejected_id, old$active_revision_id)) next
+      candidate <- state$selected_revisions[[cid]]
+      rejected_revisions[[cid]] <- list(evidence_revision_id = rejected_id,
+        artifact_revision_id = candidate$revision_id, r_path = candidate$r_path)
       h$active_revision_id <- old$active_revision_id
       idx <- match(h$active_revision_id, vapply(h$revisions, `[[`, "", "revision_id"))
       h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
-        type = "repair_rejected", candidate_revision_id = rejected_id, reasons = rejection)))
+        type = "repair_rejected", candidate_revision_id = rejected_id,
+        candidate_artifact_revision_id = candidate$revision_id, reasons = rejection)))
       retained$histories[[cid]] <- h
     }
     retained$diagnostics$rejected_repairs <- c(retained$diagnostics$rejected_repairs,
       list(list(component_id = primary_cid, revision_id = fixed_rev$revision_id,
+        revisions = rejected_revisions,
         r_path = fixed_rev$r_path, helper_path = if (has_helper_patch) hp_dest else NULL,
         errors = rejection)))
     signal_bundle_event("bundle_repair_rejected", component_id = primary_cid,
@@ -241,6 +247,13 @@ source_grounded_review_findings <- function(review) {
   }, review$findings %||% list())
 }
 
+combine_repair_checks <- function(previous, current) {
+  if (is.null(previous)) return(current)
+  if (is.null(current)) return(previous)
+  list(check_id = paste(unique(c(previous$check_id, current$check_id)), collapse = ", "),
+    pass = FALSE, errors = unique(c(previous$errors, current$errors)))
+}
+
 bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
                                 previous_disposition = NULL) {
   failures <- diagnostic$failures
@@ -251,8 +264,22 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   packets <- list()
   for (cid in names(failures)) {
     if (!is.null(non_translation_runtime_reason(state, cid, failures[[cid]]))) next
+    repair_cid <- cid
+    artifact_checks <- NULL
+    missing <- missing_source_dataset(state, cid, failures[[cid]])
+    writers <- if (!is.null(missing)) source_output_writers(state, missing) else character()
+    if (length(writers) == 1L && writers != cid &&
+        writers %in% dependency_closure(state$graph, cid)) {
+      # A reader's missing intermediate identifies a producer defect only when
+      # that producer completed. Preserve the actual reader error and log paths.
+      if (!writers %in% attempt$executed_component_ids) next
+      repair_cid <- writers
+      artifact_checks <- list(check_id = paste0("artifact:", missing), pass = FALSE,
+        errors = paste("Source-declared output", missing, "was not available after", writers,
+                       "completed; required by", cid))
+    }
     relevant <- names(assessment$targets)[vapply(names(assessment$targets), function(key) {
-      cid %in% target_lineage(key)
+      repair_cid %in% target_lineage(key)
     }, logical(1))]
     subset <- assessment
     subset$targets <- assessment$targets[relevant]
@@ -266,9 +293,12 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
       failed_attempt$stderr_path <- execution$stderr_path
       failed_attempt$execution_id <- execution$execution_id
     }
-    packets[[cid]] <- build_bundle_repair_packet(state, failed_attempt, subset, previous_disposition)
-    packets[[cid]]$primary_component_id <- cid
-    packets[[cid]]$attempt <- failed_attempt
+    packet <- build_bundle_repair_packet(state, failed_attempt, subset, previous_disposition)
+    packet$primary_component_id <- repair_cid
+    packet$attempt <- failed_attempt
+    packet$checks <- artifact_checks
+    if (is.null(packets[[repair_cid]])) packets[[repair_cid]] <- packet else
+      packets[[repair_cid]]$checks <- combine_repair_checks(packets[[repair_cid]]$checks, artifact_checks)
   }
   # After a complete run, every failed target can contribute a repair candidate.
   # After a crash, only targets whose writer actually completed can do so.
@@ -287,13 +317,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     clean_attempt$condition <- NULL
     clean_attempt$passed <- TRUE
     packet <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
-    graph <- state$graph
-    edges <- graph$edges
-    writers <- if (!is.null(edges) && nrow(edges)) {
-      from <- edges$from[edges$type %in% c("writes_dataset", "writes_output") &
-        edges$detail == target$target_key & edges$resolution == "resolved"]
-      unique(graph$nodes$component_id[match(from, graph$nodes$node_id)])
-    } else character()
+    writers <- source_output_writers(state, target$target_key)
     writers <- intersect(writers, names(state$selected_revisions))
     cid <- if (length(writers) == 1L) writers[[1L]] else packet$primary_component_id
     if (is.null(cid) || !cid %in% names(state$selected_revisions)) next
@@ -302,11 +326,11 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     packet$source_review_only <- !length(artifact_errors)
     if (length(artifact_errors)) packet$checks <- list(
       check_id = paste0("artifact:", key), pass = FALSE,
-      errors = vapply(artifact_errors, function(x) x$details, ""))
+      errors = vapply(artifact_errors, function(x) paste0(key, ": ", x$details), ""))
     packet$attempt <- clean_attempt
     if (is.null(packets[[cid]])) packets[[cid]] <- packet else {
       packets[[cid]]$source_review_only <- isTRUE(packets[[cid]]$source_review_only) && isTRUE(packet$source_review_only)
-      if (!is.null(packet$checks)) packets[[cid]]$checks <- packet$checks
+      packets[[cid]]$checks <- combine_repair_checks(packets[[cid]]$checks, packet$checks)
       packets[[cid]]$failed_targets <- c(packets[[cid]]$failed_targets, packet$failed_targets)
       packets[[cid]]$evidence_ids <- unique(c(packets[[cid]]$evidence_ids, packet$evidence_ids))
     }

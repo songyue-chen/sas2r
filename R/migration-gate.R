@@ -691,6 +691,8 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
 #' @param graph Dependency graph.
 #' @param evidence_histories Named list of component evidence histories.
 #' @param comparison_rules Optional comparison rules and tolerance configuration.
+#' @param target_results Existing target observations from this same immutable attempt,
+#'   when only source-review history has changed.
 #' @return Comprehensive assessment record.
 #' @noRd
 assess_final_outputs <- function(
@@ -698,7 +700,8 @@ assess_final_outputs <- function(
   attempt,
   graph = NULL,
   evidence_histories = list(),
-  comparison_rules = list()
+  comparison_rules = list(),
+  target_results = NULL
 ) {
   # Normalize contracts to a data frame or empty contracts
   contract_df <- if (inherits(contracts, "sas2r_output_contracts") || is.data.frame(contracts)) {
@@ -736,7 +739,7 @@ assess_final_outputs <- function(
       c_row <- contract_df[i, ]
       kind <- c_row$kind %||% "dataset"
 
-      res <- if (identical(kind, "tlf")) {
+      res <- target_results[[c_row$target_key]] %||% if (identical(kind, "tlf")) {
         assess_tlf_target(c_row, attempt, comparison_rules = comparison_rules)
       } else {
         assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules)

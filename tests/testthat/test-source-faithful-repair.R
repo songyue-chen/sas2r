@@ -211,7 +211,10 @@ test_that("unavailable focused review consumes its single opportunity", {
   once <- review_bundle_mismatches(fx$state, attempt, assessment, 0L)
   twice <- review_bundle_mismatches(once, attempt, assessment, 0L)
   expect_length(fx$state$reviewer_llm$requests(), 1L)
-  expect_identical(component_review_verdict(twice$histories$p01), "review_unavailable")
+  expect_identical(component_review_verdict(twice$histories$p01), "reviewed_no_material_finding")
+  events <- current_component_evidence(twice$histories$p01)$events
+  focused <- Filter(function(x) identical(x$type, "source_mismatch_review"), events)
+  expect_identical(focused[[1L]]$verdict, "review_unavailable")
 })
 
 test_that("pending smoke evidence does not reject a valid pre-execution candidate", {

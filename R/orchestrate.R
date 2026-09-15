@@ -856,7 +856,8 @@ run_bundle_pipeline <- function(
       if (!identical(previous_histories, state$histories)) {
         assessment <- assess_final_outputs(state$output_contracts %||% empty_output_contracts(),
           attempt_rec, state$graph, state$histories,
-          state$comparison_rules %||% state$config$comparison_rules %||% list())
+          state$comparison_rules %||% state$config$comparison_rules %||% list(),
+          target_results = assessment$targets)
         state$histories <- assessment$evidence_histories
       }
     }
@@ -910,7 +911,7 @@ run_bundle_pipeline <- function(
       } else if (file.exists(state$paths$selected)) {
         previous <- jsonlite::read_json(state$paths$selected, simplifyVector = FALSE)
         signal_bundle_event("bundle_previous_selection_retained", round = round,
-          reason = paste0(previous$attempt_id, " at ", previous$attempt_dir))
+          reason = paste0(previous$attempt_id, " at ", previous$attempt_dir, "; ", conditionMessage(cand_selection)))
       }
     }
 
@@ -963,7 +964,9 @@ run_bundle_pipeline <- function(
         (repair_counts[[cid]] %||% 0L) < component_limit && is.null(deferred[[cid]])
     }, logical(1))]
     if (!length(eligible)) {
-      stop_reason <- if (!length(queue)) "no_causal_evidence" else
+      stop_reason <- if (!length(queue) && length(diagnostic$non_translation_failures))
+        paste(unique(unlist(diagnostic$non_translation_failures)), collapse = "; ") else
+        if (!length(queue)) "no_causal_evidence" else
         if (all(vapply(queue, function(x) isTRUE(x$source_review_only), logical(1)))) "no_source_grounded_repair" else
         if (length(deferred)) unname(deferred[[1L]]) else "bundle_component_repair_limits_reached"
       break

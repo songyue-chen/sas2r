@@ -242,6 +242,8 @@ TOOL_IMPLS <- list(
       sas2r_skill_not_registered = function(e) list(error = "skill_not_registered", message = conditionMessage(e))
     )
   },
+  # Retain the report-only adapter and its serialization contract tests.
+  # Authoring roles cannot register it, even through project overrides.
   read_comparison_report = function(ctx) function(args) {
     report_id <- args$report_id %||% ""
     registry <- ctx$report_registry %||% ctx$comparison_reports %||% new.env(parent = emptyenv())

@@ -451,8 +451,11 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
                      class = "sas2r_regressive_selection")
     }
 
-    lost <- setdiff(passed_output_checks(prev_rec$assessment), passed_output_checks(assessment))
-    lost_population <- setdiff(passed_population_checks(prev_rec), passed_population_checks(candidate))
+    components <- unchanged_source_components(prev_rec$assessment$evidence_histories,
+                                               assessment$evidence_histories)
+    targets <- comparable_output_targets(prev_rec$assessment, assessment, components)
+    lost <- setdiff(passed_output_checks(prev_rec$assessment, targets), passed_output_checks(assessment, targets))
+    lost_population <- setdiff(passed_population_checks(prev_rec, components), passed_population_checks(candidate, components))
     if (length(lost) || length(lost_population)) {
       cli::cli_abort(paste("Candidate lost established non-reference checks:",
         paste(c(lost, lost_population), collapse = ", ")), class = "sas2r_regressive_selection")

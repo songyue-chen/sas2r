@@ -13,22 +13,36 @@ artifact_failure_checks <- function(target) {
   Filter(function(x) isFALSE(x$passed), checks[intersect(names(checks), allowed)])
 }
 
-non_translation_runtime_reason <- function(state, cid, condition) {
-  if (any(grepl("timeout", condition$class %||% character(), fixed = TRUE)))
-    return("execution_timeout; no translation defect established")
+source_output_writers <- function(state, key) {
+  edges <- state$graph$edges
+  from <- edges$from[edges$type %in% c("writes_dataset", "writes_output") &
+    edges$detail == key & edges$resolution == "resolved"]
+  unique(stats::na.omit(state$graph$nodes$component_id[match(from, state$graph$nodes$node_id)]))
+}
+
+missing_source_dataset <- function(state, cid, condition) {
   message <- condition$message %||% ""
   if (startsWith(message, "Dataset not found: ")) {
     dataset <- tolower(sub("\n.*", "", substring(message, nchar("Dataset not found: ") + 1L)))
     statements <- component_statements(state$project, cid)
     lineage <- state$project$lineage
     reads <- lineage$dataset[lineage$role == "reads" & lineage$unit_id %in% statements$unit_id]
-    if (dataset %in% tolower(reads)) return(paste("source_input_unavailable:", dataset))
+    if (dataset %in% tolower(reads)) return(dataset)
   }
   NULL
 }
 
-passed_output_checks <- function(assessment) {
-  unlist(lapply(names(assessment$targets), function(key) {
+non_translation_runtime_reason <- function(state, cid, condition) {
+  if (any(grepl("timeout", condition$class %||% character(), fixed = TRUE)))
+    return("execution_timeout; no translation defect established")
+  dataset <- missing_source_dataset(state, cid, condition)
+  if (!is.null(dataset) && !length(source_output_writers(state, dataset)))
+    return(paste("source_input_unavailable:", dataset))
+  NULL
+}
+
+passed_output_checks <- function(assessment, targets = names(assessment$targets)) {
+  unlist(lapply(targets, function(key) {
     target <- assessment$targets[[key]]
     if (!isTRUE(target$required)) return(character())
     checks <- non_reference_checks(target)
@@ -37,12 +51,34 @@ passed_output_checks <- function(assessment) {
   }), use.names = FALSE) %||% character()
 }
 
-passed_population_checks <- function(execution) {
+passed_population_checks <- function(execution, components = names(execution$population_checks)) {
   checks <- execution$population_checks %||% list()
-  unlist(lapply(names(checks), function(cid) {
+  unlist(lapply(intersect(components, names(checks)), function(cid) {
     vapply(Filter(function(x) identical(x$status, "passed"), checks[[cid]]),
-      function(x) paste(cid, x$unit_id, paste(x$outputs, collapse = ","), sep = ":"), "")
+      function(x) paste(cid, paste(x$outputs, collapse = ","), sep = ":"), "")
   }), use.names = FALSE) %||% character()
+}
+
+unchanged_source_components <- function(previous, candidate) {
+  common <- intersect(names(previous), names(candidate))
+  common[vapply(common, function(cid) {
+    old <- current_component_evidence(previous[[cid]])$binding$source_hash
+    new <- current_component_evidence(candidate[[cid]])$binding$source_hash
+    !is.null(old) && identical(old, new)
+  }, logical(1))]
+}
+
+# A target's old checks apply only while its source lineage is still the same.
+comparable_output_targets <- function(previous, candidate, components) {
+  common <- intersect(names(previous$targets), names(candidate$targets))
+  common[vapply(common, function(key) {
+    old <- previous$lineage_by_target[[key]]$upstream_components %||% character()
+    new <- candidate$lineage_by_target[[key]]$upstream_components %||% character()
+    # Lineage also lists dataset nodes, which do not own source-review records.
+    owners <- union(intersect(old, names(previous$evidence_histories)),
+                    intersect(new, names(candidate$evidence_histories)))
+    setequal(old, new) && all(owners %in% components)
+  }, logical(1))]
 }
 
 source_review_regressed <- function(previous, candidate) {
@@ -52,13 +88,10 @@ source_review_regressed <- function(previous, candidate) {
 
 source_history_regressions <- function(previous, candidate) {
   reasons <- character()
-  for (cid in names(previous)) {
+  for (cid in unchanged_source_components(previous, candidate)) {
     old <- current_component_evidence(previous[[cid]])
     new <- current_component_evidence(candidate[[cid]])
-    # Different source is a new translation task, not a candidate repair of it.
-    if (!is.null(old$binding$source_hash) && !is.null(new$binding$source_hash) &&
-        !identical(old$binding$source_hash, new$binding$source_hash)) next
-    if (!identical(old$binding, new$binding) &&
+    if (!identical(old$binding$binding_hash, new$binding$binding_hash) &&
         source_review_regressed(component_review_verdict(previous[[cid]]),
                                component_review_verdict(candidate[[cid]]))) {
       reasons <- c(reasons, paste(cid, "review regressed"))
@@ -123,16 +156,15 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
         list(verdict = "review_unavailable", reason = conditionMessage(e),
           history = record_review_unavailable(history, conditionMessage(e)))
       })
-    h <- review$history
+    # An extra review without an actionable finding is not evidence against a
+    # completed review of unchanged code. Keep its outcome as an observation.
+    actionable <- identical(review$verdict, "repair_required") &&
+      length(source_grounded_review_findings(review)) > 0L
+    h <- if (actionable) review$history else history
     idx <- match(h$active_revision_id, vapply(h$revisions, `[[`, "", "revision_id"))
-    # The exact unchanged binding still owns its prior runtime observations.
-    if (identical(review$verdict, "reviewed_no_material_finding") &&
-        !length(old$blockers) && !is.null(old$level)) {
-      h$revisions[[idx]]$level <- old$level
-    }
     h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
       type = "source_mismatch_review", context_key = key, target_keys = targets,
-      basis_id = review$review_id, verdict = review$verdict)))
+      basis_id = review$review_id, verdict = review$verdict, reason = review$reason)))
     state$histories[[cid]] <- h
     signal_bundle_event("bundle_source_review_completed", component_id = cid,
       attempt_id = attempt$attempt_id, reason = review$verdict)
