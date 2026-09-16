@@ -5,8 +5,8 @@ agent_guidance_policy <- function() {
     warn = FALSE), collapse = "\n")
 }
 
-agent_package_facts <- function() {
-  allowed <- eval(formals(lint_r_code)$allowlist)
+agent_package_facts <- function(allowlist = NULL) {
+  allowed <- normalize_package_allowlist(allowlist)
   versions <- vapply(allowed, function(pkg) tryCatch(
     as.character(utils::packageVersion(pkg)), error = function(e) "unknown"), character(1))
   list(r_version = as.character(getRversion()), allowed = allowed, versions = versions)
@@ -23,9 +23,10 @@ direct_component_dependencies <- function(graph, component_id) {
 
 build_agent_guidance <- function(project, component_id, contract = NULL,
                                  selected_revisions = list(), graph = project$graph,
-                                 body_limit = 6000L, packet_limit = 24000L) {
+                                 body_limit = 6000L, packet_limit = 24000L,
+                                 config = project$config %||% list()) {
   deps <- direct_component_dependencies(graph, component_id)
-  environment <- agent_package_facts()
+  environment <- agent_package_facts(config$allowlist)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
   bodies <- lapply(deps, function(cid) list(
     sas = component_source_text(graph, cid),

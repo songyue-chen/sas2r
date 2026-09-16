@@ -19,10 +19,12 @@ gate_parse <- function(code) {
 #' @param contract Behavioral contract list or object.
 #' @param registry Optional path to `autoexec.R` or registry object.
 #' @param helper_patch Optional candidate shared-helper patch; checked without execution.
+#' @param allowlist Configured package namespaces, or NULL for the default.
 #' @return A list with `pass` (logical), `errors` (character vector),
 #'   `warnings` (character vector), and `lint` (lint tibble).
 #' @noRd
-check_program_revision <- function(r_path, contract = NULL, registry = NULL, helper_patch = NULL) {
+check_program_revision <- function(r_path, contract = NULL, registry = NULL, helper_patch = NULL,
+                                   allowlist = NULL) {
   errors <- character()
   warnings <- character()
 
@@ -59,9 +61,9 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
     code_for_lint <- paste(vapply(non_boot, function(e) paste(deparse(e), collapse = "\n"), character(1)), collapse = "\n\n")
   }
 
-  lint_res <- lint_r_code(code_for_lint)
+  lint_res <- lint_r_code(code_for_lint, allowlist = allowlist)
   if (!is.null(helper_patch)) {
-    helper_lint <- lint_helper_patch(helper_patch$content %||% "")
+    helper_lint <- lint_helper_patch(helper_patch$content %||% "", allowlist = allowlist)
     if (nrow(helper_lint)) helper_lint$detail <- paste0(helper_patch$path %||% "candidate helpers", ": ", helper_lint$detail)
     lint_res <- rbind(lint_res, helper_lint)
   }
@@ -82,7 +84,8 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
 
   # 3. Helper name check
   if (!is.null(contract) && !is.null(contract$helper_use) && length(contract$helper_use) > 0L) {
-    helpers_used <- reconcile_helper_use(code_text, contract$helper_use, contract$dependency_functions)
+    helpers_used <- reconcile_helper_use(code_text, contract$helper_use, contract$dependency_functions,
+      allowlist = allowlist)
     invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions))
     if (length(invalid_helpers) > 0L) {
       errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", "),

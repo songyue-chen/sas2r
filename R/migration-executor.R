@@ -894,7 +894,7 @@ run_bundle_attempt <- function(
     execution_context = list(
       sources = lapply(state$selected_revisions, function(rev) rev$contract$binding$source_hash %||% rev$binding$source_hash),
       source_configuration = scan_config_fields(state$config),
-      environment = agent_package_facts(), locale = Sys.getlocale()),
+      environment = agent_package_facts(state$config$allowlist), locale = Sys.getlocale()),
     revision_manifest = lapply(state$selected_revisions, function(rev) list(
       revision_id = rev$revision_id, r_hash = rev$contract$binding$r_hash %||% rev$binding$r_hash,
       affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs)),

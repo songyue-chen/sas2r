@@ -427,7 +427,10 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   start_estimated <- usage_budget$estimated_amount
   start_unknown <- usage_budget$unknown_count
   messages <- list(
-    list(role = "system", content = paste(render_prompt(spec$prompt, prompt_vars), helper_reference(), agent_guidance_policy(), sep = "\n\n")),
+    list(role = "system", content = paste(c(render_prompt(spec$prompt, prompt_vars), helper_reference(),
+      if (spec$name %in% migration_agent_names() && spec$output_schema %in%
+          c("program_translation_v1", "program_review_v1", "program_fix_v1"))
+        agent_guidance_policy()), collapse = "\n\n")),
     list(role = "user", content = user_content))
   tool_calls <- 0L; retries <- 0L; transient_attempts <- 0L
   # Set once the tool allowance runs out and the model has been asked to answer

@@ -13,6 +13,47 @@ test_that("helper bookkeeping does not change valid R or permit invented calls",
   expect_false(any(lint_r_code('f <- function(callback, x) callback(x)')$level == "error"))
 })
 
+test_that("ordinary dynamic calls do not turn unrelated prose into missing helpers", {
+  code <- 'y <- data.frame(x = 1); do.call(rbind, list(y))'
+  path <- withr::local_tempfile(fileext = ".R")
+  writeLines(code, path)
+  declared <- c("local sas_missing helper", "dplyr::filter")
+  expect_length(reconcile_helper_use(code, declared), 0)
+  expect_true(check_program_revision(path,
+    new_behavioral_contract("example", helper_use = declared))$pass)
+  expect_identical(paste(readLines(path), collapse = "\n"), code)
+  # R permits nonsyntactic targets. Preserve actual symbol/literal references,
+  # including simple aliases, rather than assuming spaces imply prose.
+  for (use in c('get("local helper")(1)', 'do.call("local helper", list(1))',
+                '`local helper`(1)', 'target <- "local helper"; do.call(target, list(1))')) {
+    expect_identical(reconcile_helper_use(use, "local helper"), "local helper")
+  }
+  env <- new.env()
+  env[["local helper"]] <- identity
+  expect_identical(do.call("local helper", list(1), envir = env), 1)
+})
+
+test_that("configured namespaces share one policy for metadata, facts and lint", {
+  configured <- " base, dplyr, tidyr, haven, stats, utils, stringr, stringr "
+  expected <- c("base", "dplyr", "tidyr", "haven", "stats", "utils", "stringr")
+  expect_identical(normalize_package_allowlist(configured), expected)
+  expect_identical(normalize_package_allowlist(as.list(expected)), expected)
+  expect_identical(normalize_package_allowlist("stringr"), "stringr")
+  expect_identical(agent_package_facts(configured)$allowed, expected)
+  code <- 'out <- stringr::str_trim(" x ")'
+  path <- withr::local_tempfile(fileext = ".R")
+  writeLines(code, path)
+  contract <- new_behavioral_contract("example", helper_use = "stringr::str_trim")
+  checked <- check_program_revision(path, contract, allowlist = configured,
+    helper_patch = list(content = 'trim <- function(x) stringr::str_trim(x)'))
+  expect_true(checked$pass)
+  expect_false(any(checked$lint$kind == "disallowed_namespace"))
+  expect_length(reconcile_helper_use(code, contract$helper_use, allowlist = configured), 0)
+  default <- check_program_revision(path, contract)
+  expect_false(default$pass)
+  expect_true(any(default$lint$kind == "disallowed_namespace"))
+})
+
 test_that("macro text defaults are known without guessing expansion or omission", {
   contract <- parse_macro_contract("example", 'width=75px, text=two words, items=(1 2), expr=a+b, empty=, n=-2.5, dyn=&value, call=%sysfunc(today()), pct="100%"')
   expect_equal(contract$parameters$default_status,
@@ -102,18 +143,25 @@ test_that("all actual role requests receive the same source context without refe
   state$selected_revisions <- fx$revisions
   state$config$outputs$references <- list(answer = "FORBIDDEN_REFERENCE_PATH")
   state$config$comparison_rules <- list(target_count = "FORBIDDEN_TARGET_COUNT")
-  translator <- recording_reviewer(function(req) valid_program_translation_response("check()"))
+  state$config$allowlist <- "base, dplyr, tidyr, haven, stats, utils, stringr"
+  code <- 'check(); cleaned <- stringr::str_trim(" x ")'
+  translator <- recording_reviewer(function(req) valid_program_translation_response(code,
+    helper_use = list("stringr::str_trim")))
   rev <- generate_program_revision("main", state$project, state$baseline, state$graph,
     state$schedule, state$output_contracts, llm = translator, paths = state$paths,
     selected_revisions = fx$revisions, config = state$config)
   reviewer <- recording_reviewer(function(req) valid_program_review_response())
   review_program_revision(rev, list(project = state$project,
     selected_revisions = fx$revisions, config = state$config), reviewer, paths = state$paths)
-  fixer <- recording_fixer(function(req) valid_program_fix_response("check()"))
-  fix_program_revision(rev, checks = list(check_id = "synthetic", errors = "example"),
+  expect_true(rev$checks$pass)
+  expect_length(rev$contract$helper_use, 0)
+  fixer <- recording_fixer(function(req) valid_program_fix_response(code))
+  fixed <- fix_program_revision(rev, checks = list(check_id = "synthetic", errors = "example"),
     llm = fixer, paths = state$paths, project = state$project, config = state$config,
     selected_revisions = fx$revisions)
-  guidance <- build_agent_guidance(state$project, "main", rev$contract, fx$revisions)
+  expect_true(fixed$checks$pass)
+  expect_false(any(fixed$checks$lint$kind == "disallowed_namespace"))
+  guidance <- build_agent_guidance(state$project, "main", rev$contract, fx$revisions, config = state$config)
   for (llm in list(translator, reviewer, fixer)) {
     expect_gt(length(llm$requests()), 0)
     request <- llm$requests()[[1]]
@@ -122,10 +170,23 @@ test_that("all actual role requests receive the same source context without refe
     expect_match(messages, agent_guidance_policy(), fixed = TRUE)
     expect_match(messages, "check <- function() 1L", fixed = TRUE)
     expect_match(messages, "haven allowed by mechanical lint; installed version:", fixed = TRUE)
+    expect_match(messages, "stringr allowed by mechanical lint; installed version:", fixed = TRUE)
+    expect_identical(grepl("cite its current context_fact_id", messages, fixed = TRUE),
+      identical(llm, reviewer))
     expect_false(grepl("FORBIDDEN_REFERENCE_PATH|FORBIDDEN_TARGET_COUNT", messages))
     expect_false("read_comparison_report" %in% names(request$tools))
   }
   expect_false("get_macro_source" %in% names(reviewer$requests()[[1]]$tools))
+})
+
+test_that("unrelated agent tasks do not receive translation policy", {
+  spec <- load_agent_specs()$reviewer
+  spec$name <- "output_pairing"
+  llm <- recording_reviewer(function(req) valid_program_review_response())
+  result <- run_agent(spec, llm, list(), "unrelated task", log_dir = withr::local_tempdir())
+  expect_identical(result$status, "ok")
+  messages <- paste(vapply(llm$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  expect_false(grepl(agent_guidance_policy(), messages, fixed = TRUE))
 })
 
 test_that("scoped missing-context facts do not excuse unrelated source defects", {

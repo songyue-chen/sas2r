@@ -111,10 +111,18 @@ lib_call_misuse <- function(e, fname) {
   }, error = function(err) NULL)
 }
 
+# One package-list policy for prompts, facts, reconciliation and lint. An
+# explicit list replaces the default; accept YAML lists and comma-separated text.
+normalize_package_allowlist <- function(allowlist = NULL) {
+  if (is.null(allowlist)) return(c("base", "dplyr", "tidyr", "haven", "stats", "utils"))
+  packages <- trimws(unlist(strsplit(as.character(unlist(allowlist)), ",", fixed = TRUE)))
+  unique(packages[!is.na(packages) & nzchar(packages)])
+}
+
 lint_r_code <- function(code,
-                        allowlist = c("base", "dplyr", "tidyr", "haven",
-                                      "stats", "utils"),
+                        allowlist = NULL,
                         helpers = SAS2R_HELPER_NAMES) {
+  allowlist <- normalize_package_allowlist(allowlist)
   out <- list()
   add <- function(level, kind, detail) {
     out[[length(out) + 1L]] <<- tibble::tibble(
@@ -204,6 +212,7 @@ lint_r_code <- function(code,
   if (!length(out)) {
     tibble::tibble(level = character(), kind = character(), detail = character())
   } else {
+    # Rows describe unique diagnostics, not occurrence counts or locations.
     unique(do.call(rbind, out))
   }
 }
@@ -211,15 +220,15 @@ lint_r_code <- function(code,
 # A helper patch is executable model output. Only unchanged expressions from
 # the package-produced runtime retain trusted low-level implementation details.
 # Modified definitions are checked as a whole; a familiar name grants nothing.
-lint_helper_patch <- function(content) {
+lint_helper_patch <- function(content, allowlist = NULL) {
   parsed <- tryCatch(parse(text = content, keep.source = FALSE), error = function(e) NULL)
-  if (is.null(parsed)) return(lint_r_code(content))
+  if (is.null(parsed)) return(lint_r_code(content, allowlist = allowlist))
   template <- system.file("templates", "sas2r-helpers.R", package = "sas2r")
   trusted <- parse(file = template, keep.source = FALSE)
   changed <- Filter(function(expr) !any(vapply(as.list(trusted),
     function(stock) identical(expr, stock), logical(1))), as.list(parsed))
   results <- lapply(changed, function(expr) {
-    lint <- lint_r_code(paste(deparse(expr), collapse = "\n"))
+    lint <- lint_r_code(paste(deparse(expr), collapse = "\n"), allowlist = allowlist)
     if (nrow(lint)) {
       name <- if (is.call(expr) && length(expr) == 3L && is.name(expr[[1L]]) &&
         as.character(expr[[1L]]) %in% c("<-", "=") && is.name(expr[[2L]])) as.character(expr[[2L]]) else "top-level expression"

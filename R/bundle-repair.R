@@ -106,7 +106,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
         writeLines(c_rev$r_code, c_rev$r_path)
       }
       c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract,
-        helper_patch = c_rev$bundle_helper_patch)
+        helper_patch = c_rev$bundle_helper_patch, allowlist = state$config$allowlist)
       c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
       state$selected_revisions[[cid]] <- c_rev
       state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)

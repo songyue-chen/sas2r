@@ -179,8 +179,8 @@ fix_program_revision <- function(
       render_dependency_interfaces(project, component_id),
       "Resolved project functions (call by name; do not redefine):",
       paste(contract$dependency_functions %||% character(), collapse = ", "),
-      build_agent_guidance(project, component_id, contract, selected_revisions)$text, sep = "\n"),
-    allowlist = config$allowlist %||% "dplyr, tidyr, haven"
+      build_agent_guidance(project, component_id, contract, selected_revisions, config = config)$text, sep = "\n"),
+    allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", ")
   )
 
   # Existing role tools retain their scope; deterministic guidance adds no tools.
@@ -220,7 +220,7 @@ fix_program_revision <- function(
   on.exit(unlink(candidate_path), add = TRUE)
   writeLines(fix_data$r_code, candidate_path)
   candidate_checks <- check_program_revision(candidate_path, contract = contract,
-    helper_patch = fix_data$bundle_helper_patch)
+    helper_patch = fix_data$bundle_helper_patch, allowlist = config$allowlist)
   retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
   retry_record <- NULL
   if (length(retry_errors) && usage_budget_allows_future(usage_budget)) {
@@ -278,7 +278,8 @@ fix_program_revision <- function(
     binding = new_binding
   )
   new_contract$helper_use <- reconcile_helper_use(fix_data$r_code,
-    new_contract$helper_use, new_contract$dependency_functions, refresh = TRUE)
+    new_contract$helper_use, new_contract$dependency_functions, refresh = TRUE,
+    allowlist = config$allowlist)
   new_contract$binding <- new_binding
   new_contract$diagnosis <- fix_data$diagnosis
   if (isTRUE(new_contract$macro_contract$standalone)) {
@@ -309,7 +310,7 @@ fix_program_revision <- function(
   }
 
   checks <- check_program_revision(new_r_path, contract = new_contract,
-    helper_patch = fix_data$bundle_helper_patch)
+    helper_patch = fix_data$bundle_helper_patch, allowlist = config$allowlist)
 
   structure(
     list(
