@@ -9,9 +9,8 @@ Constraints, in order:
    Qualify package functions (e.g. dplyr::mutate) and use the base |> pipe.
 3. Missing-value semantics are SAS's: missing sorts low; comparisons on
    possibly-missing values must use is.na() guards or the chr_cmp()/%notin%
-   helpers. In SAS DATA steps, referenced or kept variables not present in input
-   tables default to uninitialized (missing/NA); in R, ensure uninitialized variables
-   exist (e.g. if (!'VAR' %in% names(df)) df$VAR <- NA) before dplyr operations.
+   helpers. Follow the shared policy for source-justified, typed, zero-row-safe
+   initialization; do not pre-create columns supplied by a later merge input.
    Data access only via lib_read()/lib_write(), each with exactly one call form:
    lib_read("lib", "member") and lib_write(df, "lib", "member") -- the data
    frame first, then the libref and the member as two separate strings.

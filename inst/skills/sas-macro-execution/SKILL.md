@@ -130,3 +130,21 @@ walk_current_words <- function(tokens) {
   visited
 }
 ```
+
+Numeric and scope review examples
+---------------------------------
+- Keep a tiny nonzero interval such as `1e-8` nonzero in arithmetic. Formatting
+  for display is not a reason to set it to zero. When source formatting feeds
+  arithmetic, preserve that conversion at its source stage; do not move it
+  after the calculation. General BEST parity remains unverified without a
+  supported, independently justified format contract.
+- A new ordinary scratch variable inside a macro is not automatically global.
+  Distinguish updating an already existing outer binding from creating a local
+  binding, and honor explicit `%LOCAL` shadowing and `%GLOBAL`. R `<<-` can
+  modify an enclosing local environment; it does not always mean global.
+- Keep a callable macro function separate from the value of a macro variable
+  with the same name. Repeated calls must still reach the function.
+- Give concrete SAS/R contradictions and small synthetic traces where useful.
+  Missing proof of every numeric-format edge case is uncertainty, not an
+  established mismatch; a visible wrong function or missing required effect
+  can be established by static source/code evidence alone.

@@ -34,6 +34,7 @@ fix_program_revision <- function(
   attempt_id = NULL,
   checks = NULL,
   selected_revisions = list(),
+  helper_code = runtime_helper_code(),
   ...
 ) {
   mode <- match.arg(mode)
@@ -170,7 +171,7 @@ fix_program_revision <- function(
     unit = sas_text,
     comments = comments_text,
     staged_r = r_code,
-    evidence = evidence_text,
+    evidence = paste(evidence_text, "Current complete shared helper definitions (edit a nested function by returning its complete outermost parent):", helper_code, sep = "\n\n"),
     skills = paste(rendered_skills,
       render_component_libraries(project, component_id),
       "Declared component interface (preserve names and defaults):",
@@ -219,8 +220,15 @@ fix_program_revision <- function(
   candidate_path <- tempfile(fileext = ".R")
   on.exit(unlink(candidate_path), add = TRUE)
   writeLines(fix_data$r_code, candidate_path)
+  assemble <- function(data) {
+    if (is.null(data$bundle_helper_patch)) return(list(code = helper_code, error = NULL))
+    tryCatch(list(code = assemble_helper_overlay(helper_code, data$bundle_helper_patch$content), error = NULL),
+      error = function(e) list(code = NULL, error = paste0("lint_error [helper_overlay]: ", conditionMessage(e))))
+  }
+  assembled <- assemble(fix_data)
   candidate_checks <- check_program_revision(candidate_path, contract = contract,
-    helper_patch = fix_data$bundle_helper_patch, allowlist = config$allowlist)
+    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist)
+  candidate_checks$errors <- c(candidate_checks$errors, assembled$error)
   retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
   retry_record <- NULL
   if (length(retry_errors) && usage_budget_allows_future(usage_budget)) {
@@ -242,6 +250,8 @@ fix_program_revision <- function(
     spend_usd <- spend_usd + (retry_res$spend_usd %||% 0)
     if (identical(retry_res$status, "ok") && !is.null(retry_res$data)) fix_data <- retry_res$data
   }
+
+  assembled <- assemble(fix_data)
 
   # 5. Check for forbidden mutations
   if (!is.null(fix_data$bundle_helper_patch)) {
@@ -268,7 +278,7 @@ fix_program_revision <- function(
   new_binding <- new_component_binding(
     source_hash = old_binding$source_hash %||% migration_hash(sas_text),
     r_hash = new_r_hash,
-    helper_hash = old_binding$helper_hash %||% migration_hash(""),
+    helper_hash = migration_hash(assembled$code %||% helper_code),
     prompt_skill_hash = old_binding$prompt_skill_hash %||% migration_hash("fixer"),
     dependency_closure_hash = old_binding$dependency_closure_hash %||% migration_hash("closure")
   )
@@ -300,7 +310,7 @@ fix_program_revision <- function(
     writeLines(fix_data$r_code, new_r_path)
     atomic_write_json(new_contract, new_contract_path)
     if (!is.null(fix_data$bundle_helper_patch)) {
-      hp_file <- file.path(new_rev_dir, fix_data$bundle_helper_patch$path)
+      hp_file <- file.path(new_rev_dir, "helper-overlay.R")
       dir.create(dirname(hp_file), recursive = TRUE, showWarnings = FALSE)
       writeLines(fix_data$bundle_helper_patch$content, hp_file)
     }
@@ -309,8 +319,15 @@ fix_program_revision <- function(
     writeLines(fix_data$r_code, new_r_path)
   }
 
+  helper_path <- NULL
+  if (!is.null(assembled$code)) {
+    helper_path <- if (is.null(paths)) tempfile(fileext = ".R") else file.path(new_rev_dir, "candidate-helpers.R")
+    writeLines(assembled$code, helper_path)
+  }
   checks <- check_program_revision(new_r_path, contract = new_contract,
-    helper_patch = fix_data$bundle_helper_patch, allowlist = config$allowlist)
+    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist)
+  checks$errors <- c(checks$errors, assembled$error)
+  checks$pass <- !length(checks$errors)
 
   structure(
     list(
@@ -328,6 +345,9 @@ fix_program_revision <- function(
       evidence_ids = unique(c(evidence_ids, unlist(fix_data$evidence_ids %||% character()))),
       patch_hash = patch_h,
       bundle_helper_patch = fix_data$bundle_helper_patch,
+      helper_code = assembled$code,
+      helper_path = helper_path,
+      helper_changed = !is.null(assembled$code) && !identical(helper_definitions(assembled$code), helper_definitions(helper_code)),
       mechanical_retry = retry_record,
       dependency_notices = dependency_symbol_notices(r_code, fix_data$r_code,
         contract$dependency_functions %||% character()),

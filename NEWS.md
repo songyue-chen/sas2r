@@ -1,5 +1,18 @@
 # sas2r 0.4.4
 
+* Assemble named helper edits over the retained runtime and use one candidate
+  snapshot for checks, review, execution and handoff. Nested edits retain their
+  complete parent function; rejected repairs preserve the retained runtime.
+* Investigate missing outputs with observed empty candidate inputs before
+  artifact-driven repair, preserving independent source-grounded repairs and
+  existing caps. Prioritize attributable execution blockers.
+* Pair SAS/R dependency context, record focused versus full review scope and
+  recover unavailable full reviews only through completed current full reviews.
+* Add registry-based `lib_members()`, source-specific merge/initialization and
+  required-effect guidance, advisory nonlocal-assignment notices and explicit
+  repair-candidate progress wording. Token summaries use canonical totals and
+  report cache/reasoning categories and unknown usage separately.
+
 * Preserve saved translations across installed-package version changes. Apply
   configured package allowlists consistently across worker context and checks,
   and avoid stale prose helper declarations blocking ordinary dynamic calls.

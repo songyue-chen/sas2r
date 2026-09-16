@@ -573,6 +573,11 @@ read_output_candidate <- function(candidate_id, inventory,
                                   limits = output_evidence_limits()) {
   resolved <- resolve_inventory_candidate(candidate_id, inventory)
   path <- confine_evidence_path(resolved$path, resolved$root)
+  read_evidence_dataset(path, resolved$format, limits)
+}
+
+# Fixed readers and the same resource limits for a known candidate path.
+read_evidence_dataset <- function(path, format, limits = output_evidence_limits()) {
   # Ahead of every reader below: haven::read_sas()/read_xpt() and readRDS() all
   # open the path, and opening a FIFO or device node never returns.
   if (!is_regular_evidence_file(path)) {
@@ -584,11 +589,11 @@ read_output_candidate <- function(candidate_id, inventory,
   }
   check_evidence_file_size(path, limits$max_file_bytes)
   value <- switch(
-    resolved$format,
+    format,
     sas7bdat = haven::read_sas(path),
     xpt = haven::read_xpt(path),
     rds = readRDS(path),
-    cli::cli_abort("unsupported evidence format {.val {resolved$format}}",
+    cli::cli_abort("unsupported evidence format {.val {format}}",
                    class = "sas2r_evidence_format_error")
   )
   if (!inherits(value, "data.frame")) {

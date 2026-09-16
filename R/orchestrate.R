@@ -197,6 +197,7 @@ process_program_component <- function(
       selected_revisions = state$selected_revisions,
       revision_id = "r1",
       config = state$config,
+      helper_code = runtime_helper_code(state$runtime),
       usage_budget = state$usage_budget
     )
     rev_id <- rev$revision_id %||% "r1"
@@ -263,7 +264,7 @@ process_program_component <- function(
     # Step A: Mechanical checks
     registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
     checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p,
-      helper_patch = rev$bundle_helper_patch, allowlist = state$config$allowlist)
+      helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist)
     checks$check_id <- paste0("check_", substr(migration_hash(list(
       component_id, rev_id, rev$r_code, checks)), 1L, 16L))
 
@@ -292,6 +293,7 @@ process_program_component <- function(
       contract = rev$contract,
       binding = rev$binding %||% rev$contract$binding,
       history = state$histories[[component_id]],
+      helper_code = runtime_helper_code(state$runtime),
       sas_source = component_source_text(state$graph, component_id),
       project = state$project,
       selected_revisions = state$selected_revisions,
@@ -301,7 +303,8 @@ process_program_component <- function(
     review_key <- migration_hash(list(
       code = rev$r_code, contract = rev$contract, config = source_review_config(state$config),
       guidance = build_agent_guidance(state$project, component_id, rev$contract,
-        state$selected_revisions, state$graph, config = state$config)$identity,
+        state$selected_revisions, state$graph, config = state$config,
+        priority_dependencies = review_context_dependencies(state$histories[[component_id]]))$identity,
       dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
       helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
         unname(cli::hash_sha256(state$runtime$helpers)) else NULL,
@@ -419,6 +422,16 @@ process_program_component <- function(
     # previous selection. Keep both histories, including unresolved findings.
     if (!is.null(prior_candidate)) {
       regressions <- program_repair_regressions(prior_candidate, rev, review)
+      if (!is.null(prior_candidate$retained_state) && !length(regressions)) {
+        consumer_check <- tryCatch(review_helper_consumers(state, prior_candidate$retained_state,
+          setdiff(names(state$selected_revisions), component_id), round),
+          error = function(e) {
+            if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+            list(state = state, reasons = conditionMessage(e))
+          })
+        state <- consumer_check$state
+        regressions <- consumer_check$reasons
+      }
       if (length(regressions)) {
         history <- state$histories[[component_id]]
         rejected <- history$active_revision_id
@@ -429,6 +442,14 @@ process_program_component <- function(
           mechanical_retry = rev$mechanical_retry, candidate_review = review$verdict,
           reasons = regressions
         )))
+        if (!is.null(prior_candidate$retained_state)) {
+          candidate_diagnostic <- list(component_id = component_id, r_path = rev$r_path,
+            helper_path = rev$helper_path, errors = regressions, histories = state$histories,
+            smoke = rev$smoke, candidate_review = review$verdict)
+          state <- prior_candidate$retained_state
+          state$repair_counts[[component_id]] <- round
+          state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(candidate_diagnostic))
+        }
         state$histories[[component_id]] <- history
         state$selected_revisions[[component_id]] <- prior_candidate$revision
         state$events <- c(state$events, paste0("repair_rejected:", rev_id))
@@ -482,6 +503,7 @@ process_program_component <- function(
         revision_id = next_rev_id,
         project = state$project,
         selected_revisions = state$selected_revisions,
+        helper_code = runtime_helper_code(state$runtime),
         config = state$config
       ),
       error = function(e) {
@@ -493,9 +515,15 @@ process_program_component <- function(
     if (is.null(fixed_rev) || identical(fixed_rev$status, "repair_failed")) {
       break
     }
-    if ((identical(fixed_rev$r_code, rev$r_code) &&
-         identical(fixed_rev$contract$helper_use, rev$contract$helper_use)) ||
-        identical(fixed_rev$patch_hash, rev$contract$patch_hash)) {
+    if (!isTRUE(fixed_rev$checks$pass)) {
+      state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
+        component_id = component_id, r_path = fixed_rev$r_path, helper_path = fixed_rev$helper_path,
+        errors = fixed_rev$checks$errors, mechanical_retry = fixed_rev$mechanical_retry)))
+      break
+    }
+    if (!isTRUE(fixed_rev$helper_changed) && ((identical(fixed_rev$r_code, rev$r_code) &&
+         identical(fixed_rev$contract$helper_use %||% character(), rev$contract$helper_use %||% character())) ||
+        identical(fixed_rev$patch_hash, rev$contract$patch_hash))) {
       break
     }
 
@@ -514,10 +542,15 @@ process_program_component <- function(
     fixed_rev$binding <- new_b
     if (!is.null(fixed_rev$contract)) fixed_rev$contract$binding <- new_b
 
+    retained_state <- state
     prior_candidate <- list(revision = rev, verdict = review$verdict,
       active_revision_id = state$histories[[component_id]]$active_revision_id)
     state$histories[[component_id]] <- activate_component_binding(state$histories[[component_id]], new_b)
     state$selected_revisions[[component_id]] <- fixed_rev
+    if (isTRUE(fixed_rev$helper_changed) && isTRUE(fixed_rev$checks$pass)) {
+      prior_candidate$retained_state <- retained_state
+      state <- stage_helper_candidate(state, fixed_rev)
+    }
     round <- next_round
   }
 
@@ -853,6 +886,13 @@ run_bundle_pipeline <- function(
       evidence_histories = state$histories,
       comparison_rules = state$comparison_rules %||% state$config$comparison_rules %||% list()
     )
+
+    missing_artifacts <- Filter(function(t) length(artifact_failure_checks(t)) > 0L, assessment$targets)
+    investigate_components <- unique(unlist(lapply(missing_artifacts, function(t)
+      source_output_writers(state, t$target_key)), use.names = FALSE))
+    attempt_rec$candidate_input_observations <- observe_candidate_inputs(state, attempt_rec,
+      components = investigate_components)
+    state$diagnostics$candidate_input_observations[[attempt_rec$attempt_id]] <- attempt_rec$candidate_input_observations
 
     if (!is.null(assessment$evidence_histories)) {
       state$histories <- assessment$evidence_histories

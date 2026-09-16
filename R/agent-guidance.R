@@ -24,7 +24,7 @@ direct_component_dependencies <- function(graph, component_id) {
 build_agent_guidance <- function(project, component_id, contract = NULL,
                                  selected_revisions = list(), graph = project$graph,
                                  body_limit = 6000L, packet_limit = 24000L,
-                                 config = project$config %||% list()) {
+                                 config = project$config %||% list(), priority_dependencies = character()) {
   deps <- direct_component_dependencies(graph, component_id)
   environment <- agent_package_facts(config$allowlist)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
@@ -34,6 +34,12 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     revision = selected_revisions[[cid]]$revision_id %||% "unavailable",
     symbol = selected_revisions[[cid]]$contract$macro_contract$name %||% sub("^macro__", "", cid)))
   names(bodies) <- deps
+  calls <- r_call_names(selected_revisions[[component_id]]$r_code %||% "")
+  called <- vapply(bodies, function(b) b$symbol %in% calls, logical(1))
+  cited <- deps %in% priority_dependencies | vapply(bodies, function(b)
+    b$symbol %in% priority_dependencies, logical(1))
+  deps <- deps[order(!cited, !called, seq_along(deps))]
+  bodies <- bodies[deps]
   scope <- migration_hash(list(component_id, macro, bodies, environment,
     policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
   facts <- list()
@@ -74,9 +80,17 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     body <- bodies[[cid]]
     pieces <- character()
     complete <- TRUE
+    need <- pmin(vapply(body[c("sas", "r")], nchar, integer(1)), body_limit)
+    allocation <- pmin(need, floor(remaining / 2L))
+    extra <- max(0L, remaining - sum(allocation))
+    for (language in c("sas", "r")) {
+      add <- min(extra, need[[language]] - allocation[[language]])
+      allocation[[language]] <- allocation[[language]] + add
+      extra <- extra - add
+    }
     for (language in c("sas", "r")) {
       original <- body[[language]]
-      size <- min(body_limit, remaining)
+      size <- allocation[[language]]
       status <- if (!nzchar(original)) "missing" else if (nchar(original) > size) "truncated" else "complete"
       if (language == "r") complete <- identical(status, "complete")
       pieces <- c(pieces, paste(language, status, "\n", substr(original, 1L, size)))
@@ -86,7 +100,11 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     text <- c(text, headers[[cid]], pieces)
   }
   if (length(deps) > length(included)) text <- c(text, "Additional direct dependencies omitted by packet limit; no behavior is implied.")
-  list(text = paste(text, collapse = "\n"), facts = facts, identity = scope)
+  identity <- migration_hash(list(scope, allocation_policy = "paired-v1", selected = included))
+  text <- sub(scope, identity, text, fixed = TRUE)
+  facts <- lapply(facts, function(f) { f$scope <- identity; f })
+  list(text = paste(text, collapse = "\n"), facts = facts, identity = identity,
+    selected_dependencies = included, allocation_policy = "paired-v1")
 }
 
 # A disappearance is an observation about source-code symbols, including aliases
@@ -146,4 +164,13 @@ actionable_review_findings <- function(review) {
 program_review_needs_repair <- function(review) {
   identical(review$verdict, "repair_required") &&
     (!length(review$findings) || length(actionable_review_findings(review)) > 0L)
+}
+
+# Only exact dependency identifiers requested by the last review; no free-text
+# resolver or inference from a model's prose.
+review_context_dependencies <- function(history) {
+  events <- current_component_evidence(history)$events %||% list()
+  reviews <- Filter(function(e) e$type %in% c("review_completed", "review_unavailable"), events)
+  if (!length(reviews)) return(character())
+  as.character(unlist(utils::tail(reviews, 1L)[[1L]]$unresolved_dependencies %||% character()))
 }

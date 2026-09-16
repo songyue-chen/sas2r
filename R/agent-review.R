@@ -352,7 +352,9 @@ review_program_revision <- function(
   lineage_txt <- if (length(lineage) > 0L) paste(lineage, collapse = ", ") else "(none)"
 
   guidance <- build_agent_guidance(context$project, component_id, contract,
-    context$selected_revisions %||% list(), config = context$config %||% context$project$config %||% list())
+    context$selected_revisions %||% list(), config = context$config %||% context$project$config %||% list(),
+    priority_dependencies = context$priority_dependencies %||% review_context_dependencies(history %||% context$history))
+  review_scope <- if (length(context$focus_outputs) && !isTRUE(context$full_review)) "focused" else "full"
   context_packet <- paste(c(
     "Component:", component_id,
     render_component_libraries(context$project, component_id),
@@ -399,6 +401,7 @@ review_program_revision <- function(
     revision_id = revision_id,
     round = round,
     attempt_id = attempt_id,
+    review_scope = review_scope,
     purpose = if (length(context$focus_outputs)) "source_mismatch_review" else "program_review"
   )
 
@@ -426,9 +429,11 @@ review_program_revision <- function(
     llm = llm,
     tools = tools,
     user_content = if (length(context$focus_outputs)) paste(
-      "Focused source review. A comparison mismatch was observed for source outputs:",
+      if (identical(review_scope, "full")) "Full component review with additional focus on source outputs:" else
+        "Focused source review. Investigate source outputs:",
       paste(context$focus_outputs, collapse = ", "),
-      "Trace their row selection, joins and derivations through the SAS and R.",
+      "Trace their row selection, joins, derivations and required effects through producer and consumer SAS and R code.",
+      if (identical(review_scope, "full")) "Complete the entire component review, including behavior outside this focus. A focused-only check cannot resolve an unavailable full review.",
       "Identify a concrete conflicting source/R operation, or report no established defect.",
       "The comparison may be inconsistent with the SAS. Do not infer desired values or change source rules."
     ) else "Review this SAS component and assembled R program.",
@@ -481,6 +486,13 @@ review_program_revision <- function(
     }
   }
 
+  if (!is.null(history_obj)) {
+    idx <- match(history_obj$active_revision_id, vapply(history_obj$revisions, `[[`, "", "revision_id"))
+    last <- length(history_obj$revisions[[idx]]$events)
+    history_obj$revisions[[idx]]$events[[last]]$unresolved_dependencies <- unresolved_deps
+    history_obj$revisions[[idx]]$events[[last]]$review_scope <- review_scope
+    history_obj$revisions[[idx]]$events[[last]]$context_identity <- guidance$identity
+  }
   review_record <- structure(
     list(
       review_id = review_id,
@@ -493,6 +505,7 @@ review_program_revision <- function(
       unresolved_dependencies = unresolved_deps,
       findings = findings,
       context_identity = guidance$identity,
+      review_scope = review_scope,
       status = if (identical(verdict, "review_unavailable")) "review_unavailable" else "ok",
       reason = if (identical(verdict, "review_unavailable")) reason else NULL,
       spend_usd = agent_res$spend_usd %||% 0,

@@ -85,7 +85,7 @@ test_that("a shared helper patch requires fresh evidence before another repair",
     if (id == "p01") {
       helper <- file.path(fx$state$paths$bundle_attempts, "bundle_attempt_001", "bundle", "sas2r-helpers.R")
       response$data$bundle_helper_patch <- list(path = "sas2r-helpers.R", reason = "Refresh helper definition",
-        content = paste(c(readLines(helper, warn = FALSE), "# Helper revision"), collapse = "\n"))
+        content = paste(c(readLines(helper, warn = FALSE), "repair_marker <- function() TRUE"), collapse = "\n"))
     }
     response
   })

@@ -86,7 +86,8 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
   if (!is.null(contract) && !is.null(contract$helper_use) && length(contract$helper_use) > 0L) {
     helpers_used <- reconcile_helper_use(code_text, contract$helper_use, contract$dependency_functions,
       allowlist = allowlist)
-    invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions))
+    custom_helpers <- tryCatch(names(helper_definitions(helper_patch$content %||% "")), error = function(e) character())
+    invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions, custom_helpers))
     if (length(invalid_helpers) > 0L) {
       errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", "),
         " (declared helper cannot be resolved; verify metadata and function availability)"))

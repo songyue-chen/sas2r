@@ -39,3 +39,11 @@ Context packet:
 {{context}}
 
 {{skills}}
+
+Check required effects across producer and consumer code. Removing an error or
+registering a specification no consumer reads is not implementation. Equivalent
+caller behavior can be valid when visible. Keep unsupported and unverified
+behavior explicit. Give a concrete source/R contradiction, with a small synthetic
+trace where useful, without treating lack of universal numeric-format proof as
+a demonstrated mismatch. A focused review covers only its requested scope;
+a full review with additional focus must still cover the entire component.

@@ -24,7 +24,7 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas_compress", "sas_substr", "sas_min", "sas_max",
                         "sas_length", "sas_put", "sas_sort", "sas_merge",
                         "sas_if_else", "sas2r_fold_names",
-                        "apply_format", "lib_read", "lib_write", "lib_delete", "lib_exists", "chr_cmp",
+                        "apply_format", "lib_read", "lib_write", "lib_delete", "lib_exists", "lib_members", "chr_cmp",
                         "sas2r_source_include", "sas2r_libname_assign",
                         "sas2r_libname_clear", "sas2r_lib_entry",
                         "sas2r_lib_member_path", "sas2r_lib_member_file", "sas2r_libref_stop",
@@ -160,6 +160,17 @@ lint_r_code <- function(code,
     if (direct_io && !memory_lines) {
       add("warn", "direct_io", paste0(fname,
         ": possible registry-bypassing I/O; advisory only, not evidence of a translation defect"))
+    }
+    global_env <- function(x) identical(x, quote(.GlobalEnv)) ||
+      identical(x, quote(globalenv())) || identical(x, quote(base::globalenv()))
+    global_target <- plain %in% c("<-", "=") && length(e) == 3L &&
+      is.call(e[[2L]]) && as.character(e[[2L]][[1L]])[1L] %in% c("$", "[[", "[") &&
+      global_env(e[[2L]][[2L]])
+    assign_call <- if (plain == "assign") tryCatch(match.call(base::assign, e), error = function(err) NULL) else NULL
+    assign_global <- !is.null(assign_call$envir) && global_env(assign_call$envir)
+    if (plain == "<<-" || global_target || assign_global) {
+      add("warn", "nonlocal_assignment", paste0(paste(deparse(e), collapse = " "),
+        ": changes an enclosing or global binding; check source scope (advisory only)"))
     }
     if (plain %in% BANNED_FUNCTIONS) {
       add("error", "banned_function", fname)

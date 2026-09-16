@@ -56,3 +56,16 @@ When evaluating differential evidence or comparing SAS and R output datasets, ro
   - **Content Equivalence**: The SAS and R datasets contain the exact same multiset of rows and column values.
   - **Order Equivalence**: The rows appear in the exact same sequence.
 - Diagnostic reporting must keep content findings and order findings separate to enable targeted fixes (e.g. adjusting `arrange()` vs. fixing data step logic).
+
+Missing columns around a merge
+-----------------------------
+A column supplied by the right input belongs there before the merge. For example,
+three event rows `id = c(1, 1, 2)` and two subject rows `id = c(1, 2)`,
+`base = c(10, 20)` merge with `sas_merge(events, subjects, by = "id", keep = "left")`
+to three rows carrying `base = c(10, 10, 20)`. Do not first create an all-missing
+`base` in `events`: that invents overlap and requests unsupported repeated-key
+update semantics. Preserve genuinely overlapping source columns; do not remove
+them to silence the helper. If the DATA step truly creates an uninitialized
+numeric variable, use `df$score <- rep(NA_real_, nrow(df))` at that source stage.
+This also works with zero rows. A required input column absent from incompatible
+data does not authorize guessed values or alternative filters.

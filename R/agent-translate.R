@@ -713,6 +713,7 @@ generate_program_revision <- function(
   config = list(),
   usage_budget = NULL,
   selected_revisions = list(),
+  helper_code = NULL,
   ...
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
@@ -886,8 +887,8 @@ generate_program_revision <- function(
   final_r_code_text <- paste(final_r_code_lines, collapse = "\n")
 
   helper_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "sas2r-helpers.R")
-  helper_h <- if (file.exists(helper_path)) {
-    migration_hash(readLines(helper_path, warn = FALSE))
+  helper_h <- if (!is.null(helper_code)) migration_hash(helper_code) else if (file.exists(helper_path)) {
+    migration_hash(paste(readLines(helper_path, warn = FALSE), collapse = "\n"))
   } else {
     baseline$runtime_hash %||% migration_hash("")
   }

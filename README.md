@@ -238,6 +238,23 @@ Input data is not copied: update `.sas2r_execution_root`, the registry in
 `autoexec.R`, and any explicit source LIBNAME
 paths if those inputs move. A manual rerun does not update the exported report.
 
+Shared helper repairs replace only the complete functions the fixer changes.
+Omitted functions remain available, including prior accepted helper edits.
+Checks, static review, smoke tests and the exported bundle use the same assembled
+helper runtime; rejected candidates leave the retained runtime intact.
+
+When a required output is absent and a recorded intermediate is empty, sas2r
+investigates the producer and consumer source/code before authorizing a repair
+for that issue. Empty data alone does not prove which script is wrong. The
+observation stays in local diagnostics; agents receive no rows, row counts or
+reference comparison answers. Independent source-grounded defects remain
+repairable. Execution blockers take priority within the existing limits.
+
+Dependency context gives SAS and R bodies paired space and marks truncation.
+A scheduled follow-up can recover an unavailable review by explicitly reviewing
+the full component with extra focus. A clean focused-only review does not replace
+a full review; the report shows both outcomes.
+
 Bundle repair defaults to **two fixer calls per component**, in addition to the
 immediate program-repair allowance. `max_bundle_repair_rounds = NULL` lets that
 bounded allowance scale with the number of components; supply a number to cap
@@ -445,9 +462,14 @@ visual polish remains a human task.
 
 For explicit dataset cleanup, generated functions can use
 `lib_delete("work", c("scratch_a", "scratch_b"))`. This removes stored datasets;
-garbage collection is not a substitute. Dataset-name ranges, prefix lists and
-`_ALL_` need expansion into explicit names. Deleting a member backed by a
-separate input directory remains unsupported, with input files preserved.
+garbage collection is not a substitute. `lib_members("work")` lists ordinary
+supported dataset names without reading rows, using the same lookup as
+`lib_exists()` and `lib_read()`. It can expand source-requested ordinary member
+lists, including `_ALL_` when the listing and deletion contracts cover that
+library. Deleting a member backed by a separate input directory remains
+unsupported, with input files preserved. Ranges, prefix lists, views and name
+literals still require supported source-specific handling. Member listing is a
+runtime helper, not an additional agent tool.
 Unresolved dynamic expressions remain explicit limitations; agents must not
 bypass them with `eval()`/`parse()` or silently drop meaningful operations.
 
@@ -748,6 +770,12 @@ not drive repairs or selection. Byte changes can reflect timestamps or a valid
 source correction. **Generated R is not a filesystem sandbox:** validation of
 model-written helper patches and direct-I/O notices do not prevent arbitrary
 local file reads. Full runtime filesystem isolation is not provided.
+
+Token summaries label known total input/output usage separately from cached,
+cache-creation and reasoning categories. Reasoning is already included in total
+output; unknown usage is reported rather than treated as a complete bill.
+Nonlocal-assignment notices flag explicit enclosing/global writes for source-scope
+review. They are advisory and do not trigger a fixer on their own.
 
 Only a source-grounded finding can turn a reference mismatch into a code repair.
 A correction can be retained despite an inconsistent reference; a failed

@@ -126,7 +126,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
   if (!isTRUE(attempt$passed) || is.null(state$reviewer_llm)) return(state)
   queue <- bundle_repair_queue(state, attempt, assessment, list(failures = list()))
   for (cid in names(queue)) {
-    if (!isTRUE(queue[[cid]]$source_review_only) ||
+    if ((!isTRUE(queue[[cid]]$source_review_only) && !isTRUE(queue[[cid]]$artifact_investigation)) ||
         !usage_budget_allows_future(state$usage_budget)) next
     ancestors <- dependency_closure(state$graph, cid)
     if (any(vapply(queue[intersect(ancestors, names(queue))],
@@ -134,11 +134,13 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     rev <- state$selected_revisions[[cid]]
     history <- state$histories[[cid]]
     old <- current_component_evidence(history)
-    if (identical(component_review_verdict(history), "repair_required")) next
+    if (identical(component_review_verdict(history), "repair_required") && !isTRUE(queue[[cid]]$artifact_investigation)) next
+    full_review <- identical(component_review_verdict(history), "review_unavailable")
     key <- migration_hash(list(
       code = rev$r_code, binding = old$binding,
       guidance = build_agent_guidance(state$project, cid, rev$contract,
-        state$selected_revisions, state$graph, config = state$config)$identity,
+        state$selected_revisions, state$graph, config = state$config,
+        priority_dependencies = review_context_dependencies(history))$identity,
       dependencies = lapply(state$selected_revisions[ancestors], revision_code),
       inputs = state$input_manifest %||% input_hash_manifest(state$project),
       config = source_review_config(state$config),
@@ -147,11 +149,12 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
         project_dir = state$project$project_dir)))
     events <- unlist(lapply(history$revisions, `[[`, "events"), recursive = FALSE)
     if (any(vapply(events, function(x) identical(x$type, "source_mismatch_review") &&
-        identical(x$context_key, key), logical(1)))) next
-    targets <- unique(vapply(queue[[cid]]$failed_targets, `[[`, "", "target_key"))
+        identical(x$context_key, key) && (!full_review || identical(x$review_scope, "full")), logical(1)))) next
+    targets <- unique(vapply(c(queue[[cid]]$failed_targets, queue[[cid]]$investigation_targets), `[[`, "", "target_key"))
     review <- tryCatch(review_program_revision(rev, context = list(
       sas_source = component_source_text(state$graph, cid), project = state$project,
-      config = state$config, selected_revisions = state$selected_revisions, focus_outputs = targets), llm = state$reviewer_llm,
+      config = state$config, selected_revisions = state$selected_revisions, focus_outputs = targets,
+      helper_code = runtime_helper_code(state$runtime), full_review = full_review), llm = state$reviewer_llm,
       usage = state$usage_budget, paths = state$paths, history = history,
       round = round, attempt_id = attempt$attempt_id), error = function(e) {
         if (inherits(e, "sas2r_llm_settings_error")) stop(e)
@@ -162,14 +165,55 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     # completed review of unchanged code. Keep its outcome as an observation.
     actionable <- identical(review$verdict, "repair_required") &&
       length(source_grounded_review_findings(review)) > 0L
-    h <- if (actionable) review$history else history
+    current_guidance <- build_agent_guidance(state$project, cid, rev$contract,
+      state$selected_revisions, state$graph, config = state$config,
+        priority_dependencies = review_context_dependencies(history))$identity
+    recovered <- full_review && identical(review$review_scope, "full") &&
+      identical(review$verdict, "reviewed_no_material_finding") &&
+      identical(review$binding_hash, old$binding$binding_hash) &&
+      identical(review$context_identity, current_guidance)
+    h <- if (actionable || recovered) review$history else history
     idx <- match(h$active_revision_id, vapply(h$revisions, `[[`, "", "revision_id"))
     h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
       type = "source_mismatch_review", context_key = key, target_keys = targets,
-      basis_id = review$review_id, verdict = review$verdict, reason = review$reason)))
+      basis_id = review$review_id, verdict = review$verdict, reason = review$reason,
+      review_scope = review$review_scope %||% "focused", adopted = isTRUE(actionable) || recovered)))
     state$histories[[cid]] <- h
     signal_bundle_event("bundle_source_review_completed", component_id = cid,
       attempt_id = attempt$attempt_id, reason = review$verdict)
   }
   state
+}
+
+# Local diagnostic only. Read only already inventoried, source-named generated
+# intermediates from this attempt. No input/reference fallback or directory scan.
+observe_candidate_inputs <- function(state, attempt, limits = output_evidence_limits(),
+                                     components = names(state$selected_revisions)) {
+  cache <- list()
+  observations <- list()
+  for (cid in intersect(components, names(state$selected_revisions))) {
+    statements <- component_statements(state$project, cid)
+    lineage <- state$project$lineage
+    reads <- unique(lineage$dataset[lineage$role == "reads" & lineage$unit_id %in% statements$unit_id])
+    reads <- reads[vapply(reads, function(key) length(source_output_writers(state, key)) > 0L, logical(1))]
+    for (key in reads) {
+      if (is.null(cache[[key]])) {
+        result <- list(dataset = key, status = "unknown", reason = "candidate evidence unavailable")
+        bits <- split_ds(key)
+        paths <- paste0(bits[["lib"]], "/", bits[["member"]], ".", OUTPUT_CANDIDATE_FORMATS)
+        rel <- intersect(paths, names(attempt$output_hashes))
+        if (length(rel) && length(cache) < limits$max_files_per_root) {
+          result <- tryCatch({
+            path <- confine_evidence_path(file.path(attempt$attempt_dir, rel[1L]), attempt$attempt_dir)
+            value <- read_evidence_dataset(path, tools::file_ext(path), limits)
+            list(dataset = key, candidate_path = path, nrow = nrow(value),
+              status = if (nrow(value) == 0L) "observed_empty_candidate_input" else "observed_nonempty_candidate_input")
+          }, error = function(e) list(dataset = key, status = "unknown", reason = conditionMessage(e)))
+        }
+        cache[[key]] <- result
+      }
+      observations[[cid]][[key]] <- cache[[key]]
+    }
+  }
+  observations
 }
