@@ -352,7 +352,7 @@ review_program_revision <- function(
   lineage_txt <- if (length(lineage) > 0L) paste(lineage, collapse = ", ") else "(none)"
 
   guidance <- build_agent_guidance(context$project, component_id, contract,
-    context$selected_revisions %||% list())
+    context$selected_revisions %||% list(), config = context$config %||% context$project$config %||% list())
   context_packet <- paste(c(
     "Component:", component_id,
     render_component_libraries(context$project, component_id),

@@ -1,5 +1,8 @@
 # sas2r 0.4.4
 
+* Preserve saved translations across installed-package version changes. Apply
+  configured package allowlists consistently across worker context and checks,
+  and avoid stale prose helper declarations blocking ordinary dynamic calls.
 * Reconcile helper declarations from parsed R without rewriting valid code;
   preserve raw declarations for audit. Ordinary trigger-free macro text defaults
   now share one source-owned interpretation across translation and review.

@@ -6,7 +6,8 @@ Constraints, in order:
 4. Never claim runtime or output verification.
 5. Resolve executable SAS, deterministic context/rules, and relevant tool evidence first. Comments are supporting evidence, not intent or authority, and never override code.
    Check the actual defaults and behavior of the chosen R operations, including calculations performed again inside plotting or formatting functions. A correct intermediate table or a familiar function name does not prove that the final output preserves the SAS calculation. Report unsupported statistical assumptions as findings; cosmetic layout refinement belongs to humans.
-6. Return ONLY JSON conforming to schema program_review_v1:
+6. Report one cause per finding, with SAS/R evidence. Distinguish translation_defect, missing_context, unsupported_capability and source_syntax_claim. When the sole obstacle is a missing dependency body or unresolved default, cite its current context_fact_id and use exactly the relevant R call or parameter symbol as r_evidence. Other findings need their own concrete conflicting operations; an unrelated fact cannot excuse them.
+7. Return ONLY JSON conforming to schema program_review_v1:
    {
      "verdict": "reviewed_no_material_finding" | "repair_required" | "review_unavailable",
      "static_runnability": "looks_runnable" | "known_blocker" | "material_issue" | "unknown",

@@ -148,7 +148,7 @@ translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
               schemas = infer_schemas(project), config = config,
               macro_index = macro_index, skill_catalog = catalog)
   vars <- list(dialect = config$dialect %||% "tidyverse",
-               allowlist = config$allowlist %||% "dplyr, tidyr, haven",
+               allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
                unit = format_sas_statements(ctxp$us$text),
                context = paste(ctxp$packet, render_macro_interface(macro_contract), sep = "\n"),
                comments = ctxp$comments,
@@ -444,7 +444,7 @@ build_translator_context <- function(
       "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
       "known call sites:", call_txt,
       build_agent_guidance(project, component_id, list(macro_contract = macro_contract),
-        selected_revisions, graph)$text
+        selected_revisions, graph, config = config)$text
     ),
     collapse = "\n"
   )
@@ -500,6 +500,7 @@ build_translator_context <- function(
 #' @param helper_hash Hash of runtime helpers.
 #' @param prompt_skill_hash Hash of prompt and skills used.
 #' @param macro_contract Parsed source macro contract, when available.
+#' @param allowlist Configured package namespaces, or NULL for the default.
 #' @return A behavioral contract list.
 #' @noRd
 build_behavioral_contract <- function(
@@ -514,7 +515,8 @@ build_behavioral_contract <- function(
   resolved_contracts = list(),
   helper_hash = NULL,
   prompt_skill_hash = NULL,
-  macro_contract = component_macro_contract(project, graph, component_id)
+  macro_contract = component_macro_contract(project, graph, component_id),
+  allowlist = project$config$allowlist
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   uids <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) comp_nodes$original_index[!is.na(comp_nodes$original_index)] else integer()
@@ -589,7 +591,7 @@ build_behavioral_contract <- function(
     dependency_functions <- unique(vapply(incoming, function(site) site$detail, character(1)))
   }
   helper_use <- reconcile_helper_use(r_code_text, tr_data$helper_use,
-                                    dependency_functions)
+                                    dependency_functions, allowlist = allowlist)
 
   resolved_deps <- if (!is.null(graph)) dependency_closure(graph, component_id) else character()
   suspected_deps <- unique(unlist(tr_data$suspected_dependencies %||% character()))
@@ -795,7 +797,7 @@ generate_program_revision <- function(
 
     prompt_vars <- list(
       dialect = config$dialect %||% "tidyverse",
-      allowlist = config$allowlist %||% "dplyr, tidyr, haven",
+      allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
       unit = ctx$sas_text,
       context = ctx$context_packet,
       comments = ctx$comments_text,
@@ -838,7 +840,7 @@ generate_program_revision <- function(
       tr_data <- agent_res$data
 
       parsed_chk <- tryCatch(parse(text = tr_data$r_code), error = function(e) e)
-      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(tr_data$r_code) else NULL
+      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(tr_data$r_code, allowlist = config$allowlist) else NULL
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
 
       if (inherits(parsed_chk, "error") || has_lint_err) {
@@ -902,7 +904,8 @@ generate_program_revision <- function(
     resolved_contracts = resolved_contracts,
     helper_hash = helper_h,
     prompt_skill_hash = prompt_skill_h,
-    macro_contract = macro_contract
+    macro_contract = macro_contract,
+    allowlist = config$allowlist
   )
 
   rev_dir <- file.path(paths$component_revisions, component_id, "revisions", revision_id)
@@ -915,7 +918,8 @@ generate_program_revision <- function(
   atomic_write_json(contract, contract_path)
 
   registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "autoexec.R")
-  checks <- check_program_revision(r_path, contract = contract, registry = registry_path)
+  checks <- check_program_revision(r_path, contract = contract, registry = registry_path,
+    allowlist = config$allowlist)
 
   list(
     component_id = component_id,

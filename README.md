@@ -735,6 +735,13 @@ Missing or truncated context is identified. This adds no agent tools, dataset
 access or memory. Missing-context and capability findings remain visible;
 labels alone do not cancel a proven execution or translation failure.
 
+The configured `allowlist` (a comma-separated string or YAML list) is used
+consistently in prompts, package facts, helper checks and lint. An explicit list
+replaces the default `base, dplyr, tidyr, haven, stats, utils`.
+Installed package versions are descriptive context: a package update alone does
+not discard saved translations on resume. Execution checks still run with the
+current environment.
+
 The translation report includes advisory dependency-symbol, direct-file-I/O and
 candidate-file byte-change notices. File-change notices are human-only and do
 not drive repairs or selection. Byte changes can reflect timestamps or a valid

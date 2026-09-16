@@ -138,7 +138,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     key <- migration_hash(list(
       code = rev$r_code, binding = old$binding,
       guidance = build_agent_guidance(state$project, cid, rev$contract,
-        state$selected_revisions, state$graph)$identity,
+        state$selected_revisions, state$graph, config = state$config)$identity,
       dependencies = lapply(state$selected_revisions[ancestors], revision_code),
       inputs = state$input_manifest %||% input_hash_manifest(state$project),
       config = source_review_config(state$config),

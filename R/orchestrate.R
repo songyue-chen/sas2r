@@ -263,7 +263,7 @@ process_program_component <- function(
     # Step A: Mechanical checks
     registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
     checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p,
-      helper_patch = rev$bundle_helper_patch)
+      helper_patch = rev$bundle_helper_patch, allowlist = state$config$allowlist)
     checks$check_id <- paste0("check_", substr(migration_hash(list(
       component_id, rev_id, rev$r_code, checks)), 1L, 16L))
 
@@ -301,7 +301,7 @@ process_program_component <- function(
     review_key <- migration_hash(list(
       code = rev$r_code, contract = rev$contract, config = source_review_config(state$config),
       guidance = build_agent_guidance(state$project, component_id, rev$contract,
-        state$selected_revisions, state$graph)$identity,
+        state$selected_revisions, state$graph, config = state$config)$identity,
       dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
       helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
         unname(cli::hash_sha256(state$runtime$helpers)) else NULL,

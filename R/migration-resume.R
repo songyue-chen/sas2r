@@ -29,7 +29,6 @@ migration_resume_fingerprint <- function(state) {
   source_outputs$reference_path <- NULL
   migration_hash(list(
     version = RESUME_CHECKPOINT_VERSION,
-    environment = agent_package_facts(),
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),

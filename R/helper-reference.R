@@ -107,13 +107,15 @@ r_call_names <- function(code) {
 }
 
 reconcile_helper_use <- function(code, declared = character(),
-                                 dependency_functions = character(), refresh = FALSE) {
+                                 dependency_functions = character(), refresh = FALSE, allowlist = NULL) {
   parsed <- tryCatch(parse(text = code), error = function(e) NULL)
   if (is.null(parsed)) return(unique(unlist(declared)))
   calls <- r_call_names(code)
   local_functions <- character()
+  literals <- character()
   dynamic_call <- FALSE
   walk <- function(e) {
+    if (is.character(e)) literals <<- c(literals, e)
     if (is.call(e)) {
       head <- e[[1L]]
       qualified <- is.call(head) && is.name(head[[1L]]) &&
@@ -134,10 +136,21 @@ reconcile_helper_use <- function(code, declared = character(),
   }
   walk(parsed)
   # This classifies declarations, not R lexical scope or runtime availability.
-  package_calls <- calls[grepl("^(base|stats|utils|dplyr|tidyr|haven)::", calls)]
+  package_calls <- unique(c(calls, unlist(declared)))
+  package_calls <- package_calls[grepl("::", package_calls, fixed = TRUE) &
+    sub("::.*$", "", package_calls) %in% normalize_package_allowlist(allowlist)]
   # A value-position reference may be an alias; dynamic dispatch cannot prove
   # a declaration stale. Retain that uncertainty instead of resolving R names.
-  referenced <- if (dynamic_call) unlist(declared) else all.names(parsed, unique = TRUE)
+  referenced <- all.names(parsed, unique = TRUE)
+  if (dynamic_call) {
+    # Unrelated prose is metadata, not evidence of a missing callable. Keep
+    # identifier-shaped declarations and all literal/symbol references: R also
+    # supports nonsyntactic names via backticks, get() and do.call(). This is
+    # not name resolution for arbitrarily computed dynamic targets.
+    declared <- unlist(declared)
+    callable <- grepl("^([A-Za-z.][A-Za-z0-9._]*::)?[A-Za-z.][A-Za-z0-9._]*$", declared)
+    referenced <- c(referenced, literals, declared[callable])
+  }
   unknown <- setdiff(intersect(unlist(declared), c(calls, referenced)),
     c(SAS2R_HELPER_NAMES, paste0("sas2r::", SAS2R_HELPER_NAMES),
       dependency_functions, local_functions, package_calls))
