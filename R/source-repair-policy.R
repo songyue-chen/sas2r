@@ -137,6 +137,8 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     if (identical(component_review_verdict(history), "repair_required")) next
     key <- migration_hash(list(
       code = rev$r_code, binding = old$binding,
+      guidance = build_agent_guidance(state$project, cid, rev$contract,
+        state$selected_revisions, state$graph)$identity,
       dependencies = lapply(state$selected_revisions[ancestors], revision_code),
       inputs = state$input_manifest %||% input_hash_manifest(state$project),
       config = source_review_config(state$config),
@@ -149,7 +151,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     targets <- unique(vapply(queue[[cid]]$failed_targets, `[[`, "", "target_key"))
     review <- tryCatch(review_program_revision(rev, context = list(
       sas_source = component_source_text(state$graph, cid), project = state$project,
-      config = state$config, focus_outputs = targets), llm = state$reviewer_llm,
+      config = state$config, selected_revisions = state$selected_revisions, focus_outputs = targets), llm = state$reviewer_llm,
       usage = state$usage_budget, paths = state$paths, history = history,
       round = round, attempt_id = attempt$attempt_id), error = function(e) {
         if (inherits(e, "sas2r_llm_settings_error")) stop(e)

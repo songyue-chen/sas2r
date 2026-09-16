@@ -9,7 +9,6 @@
 Translates SAS programs and projects to R using dependency-aware orchestration, program smoke execution, and final-output evidence. Deterministic and offline by default; optional agent review and repair send bounded excerpts to a configured 'ellmer' provider only when one is supplied.
 }
 \author{
-\strong{Maintainer}: Songyue Chen \email{chuckknow@gmail.com}
-
+Songyue Chen
 }
 \keyword{internal}

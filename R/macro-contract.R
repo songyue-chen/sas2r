@@ -132,7 +132,9 @@ normalize_macro_default <- function(source) {
   if (is_simple_sas_quoted_literal(source)) {
     return(known_macro_default(decode_simple_sas_quoted_literal(source), "character"))
   }
-  if (grepl("^[A-Za-z_][A-Za-z0-9_]*$", source)) {
+  # Parameter splitting already establishes balanced code punctuation. Do not
+  # evaluate expression-looking macro text, or guess comment/quoting semantics.
+  if (!grepl("[&%\"';]|/\\*|\\*/", source)) {
     return(known_macro_default(source, "character"))
   }
   unresolved_macro_default(source)
@@ -246,7 +248,7 @@ render_macro_interface <- function(contract) {
     if (length(unresolved)) c(
       "Unresolved defaults (bare arguments in the header are placeholders, not a claimed SAS default):",
       paste0(parameters$name[unresolved], ": ", parameters$sas_default[unresolved]),
-      "Do not invent literal defaults; keep these expressions unresolved and report their required context."
+      "Do not invent literal defaults; report the required source context. Bare formals are placeholders, not a requirement: handle omission with source-grounded logic (for example missing()), or keep the limitation explicit. NULL or blank alone does not resolve a dynamic SAS default."
     )
   ), collapse = "\n")
 }

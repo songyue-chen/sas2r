@@ -1,3 +1,23 @@
+# sas2r 0.4.4
+
+* Reconcile helper declarations from parsed R without rewriting valid code;
+  preserve raw declarations for audit. Ordinary trigger-free macro text defaults
+  now share one source-owned interpretation across translation and review.
+* Give translator, reviewer and fixer shared source guidance, bounded selected
+  direct-dependency code and observed package facts. Add optional review finding
+  categories with narrow, scoped missing-context handling; independent execution
+  failures retain repair paths and all existing budgets remain unchanged.
+* Check model-written helper patches before execution/selection, with unchanged
+  packaged runtime expressions exempted. The same mechanical correction allowance
+  covers both program and helper errors. Changed low-level helpers may need human repair.
+* Add registry-aware `lib_exists()`, distinct from reading or counting rows. Extend
+  existing rules for distinct nonmissing counts, macro quoting, changing loop
+  inputs, dependency delegation and numeric-format limitations.
+* Reports retain retry provenance and add advisory dependency-symbol, direct-I/O
+  and comparable candidate-file byte-change observations. These observations do
+  not prove equivalence; output-change summaries stay out of model requests.
+  Generated R is not a filesystem sandbox.
+
 # sas2r 0.4.3
 
 * Keep reference comparison answers out of translation and repair requests and tools. Unexplained differences receive one bounded source-focused review per unchanged component context; only source-grounded findings authorize code repair.

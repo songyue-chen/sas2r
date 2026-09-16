@@ -13,6 +13,8 @@ Constraints, in order:
      "unresolved_dependencies": ["..."],
      "findings": [
        {
+         "category": "translation_defect" | "missing_context" | "unsupported_capability" | "source_syntax_claim",
+         "context_fact_id": "current package fact ID when applicable, otherwise empty",
          "severity": "material" | "high" | "medium" | "low",
          "sas_evidence": "...",
          "r_evidence": "...",

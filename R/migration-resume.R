@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 5L
+RESUME_CHECKPOINT_VERSION <- 6L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -29,6 +29,7 @@ migration_resume_fingerprint <- function(state) {
   source_outputs$reference_path <- NULL
   migration_hash(list(
     version = RESUME_CHECKPOINT_VERSION,
+    environment = agent_package_facts(),
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),

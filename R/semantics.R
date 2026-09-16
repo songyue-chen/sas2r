@@ -1,5 +1,8 @@
 .semantic_registry_env <- new.env(parent = emptyenv())
 
+# Public adapters with a different call shape from the SAS expression function.
+SEMANTIC_MANUAL_ADAPTERS <- c(functions.exist = "lib_exists")
+
 semantic_registry_abort <- function(message) {
   cli::cli_abort(message, class = "sas2r_semantic_registry_error")
 }
@@ -34,6 +37,9 @@ semantic_executable_rule_ids <- function() {
     procs
   ))
   ids <- c(
+    # EXIST is available through the two-argument registry adapter, not a
+    # one-for-one DATA-step function mapping in functions.yml.
+    names(SEMANTIC_MANUAL_ADAPTERS),
     paste0("functions.", names(functions)),
     paste0("operators.", names(operators)),
     paste0("procs.", proc_names)
@@ -283,12 +289,14 @@ semantic_coverage <- function(rulebook, registry = load_semantic_registry()) {
     rulebook$procs
   ))
   required <- c(
+    names(SEMANTIC_MANUAL_ADAPTERS),
     paste0("functions.", names(rulebook$functions)),
     paste0("operators.", names(rulebook$operators)),
     paste0("procs.", proc_names)
   )
   required <- unique(required)
   targets <- c(
+    SEMANTIC_MANUAL_ADAPTERS,
     stats::setNames(
       unname(rulebook$functions), paste0("functions.", names(rulebook$functions))
     ),

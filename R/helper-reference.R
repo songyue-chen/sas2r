@@ -90,9 +90,10 @@ r_call_names <- function(code) {
     if (is.call(e)) {
       head <- e[[1L]]
       if (is.name(head)) calls <<- c(calls, as.character(head))
-      else if (is.call(head) && identical(head[[1L]], as.name("::")) &&
-               identical(head[[2L]], as.name("sas2r"))) {
-        calls <<- c(calls, as.character(head[[3L]]))
+      else if (is.call(head) && is.name(head[[1L]]) &&
+               as.character(head[[1L]]) %in% c("::", ":::")) {
+        calls <<- c(calls, paste0(head[[2L]], "::", head[[3L]]))
+        if (identical(head[[2L]], as.name("sas2r"))) calls <<- c(calls, as.character(head[[3L]]))
       }
     }
     if (is.call(e) || is.expression(e) || is.pairlist(e)) {
@@ -107,10 +108,38 @@ r_call_names <- function(code) {
 
 reconcile_helper_use <- function(code, declared = character(),
                                  dependency_functions = character(), refresh = FALSE) {
+  parsed <- tryCatch(parse(text = code), error = function(e) NULL)
+  if (is.null(parsed)) return(unique(unlist(declared)))
   calls <- r_call_names(code)
-  unknown <- setdiff(unlist(declared), c(SAS2R_HELPER_NAMES, dependency_functions))
-  # Repairs cannot retain claims about helpers no longer called by their code.
-  # Still-used unknown helpers remain errors, rather than being authorized.
-  if (isTRUE(refresh)) unknown <- intersect(unknown, calls)
+  local_functions <- character()
+  dynamic_call <- FALSE
+  walk <- function(e) {
+    if (is.call(e)) {
+      head <- e[[1L]]
+      qualified <- is.call(head) && is.name(head[[1L]]) &&
+        as.character(head[[1L]]) %in% c("::", ":::")
+      if ((!is.name(head) && !qualified) ||
+          (is.name(head) && as.character(head) %in% c("get", "do.call", "match.fun"))) {
+        dynamic_call <<- TRUE
+      }
+    }
+    if (is.call(e) && length(e) == 3L && is.name(e[[1L]]) &&
+        as.character(e[[1L]]) %in% c("<-", "=") && is.name(e[[2L]]) &&
+        is.call(e[[3L]]) && identical(e[[3L]][[1L]], as.name("function"))) {
+      local_functions <<- c(local_functions, as.character(e[[2L]]))
+    }
+    if (is.call(e) || is.expression(e) || is.pairlist(e)) for (i in seq_along(e)) {
+      if (!identical(e[[i]], quote(expr = ))) walk(e[[i]])
+    }
+  }
+  walk(parsed)
+  # This classifies declarations, not R lexical scope or runtime availability.
+  package_calls <- calls[grepl("^(base|stats|utils|dplyr|tidyr|haven)::", calls)]
+  # A value-position reference may be an alias; dynamic dispatch cannot prove
+  # a declaration stale. Retain that uncertainty instead of resolving R names.
+  referenced <- if (dynamic_call) unlist(declared) else all.names(parsed, unique = TRUE)
+  unknown <- setdiff(intersect(unlist(declared), c(calls, referenced)),
+    c(SAS2R_HELPER_NAMES, paste0("sas2r::", SAS2R_HELPER_NAMES),
+      dependency_functions, local_functions, package_calls))
   unique(c(intersect(calls, SAS2R_HELPER_NAMES), unknown))
 }

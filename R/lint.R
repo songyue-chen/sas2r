@@ -24,10 +24,10 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas_compress", "sas_substr", "sas_min", "sas_max",
                         "sas_length", "sas_put", "sas_sort", "sas_merge",
                         "sas_if_else", "sas2r_fold_names",
-                        "apply_format", "lib_read", "lib_write", "lib_delete", "chr_cmp",
+                        "apply_format", "lib_read", "lib_write", "lib_delete", "lib_exists", "chr_cmp",
                         "sas2r_source_include", "sas2r_libname_assign",
                         "sas2r_libname_clear", "sas2r_lib_entry",
-                        "sas2r_lib_member_path", "sas2r_libref_stop",
+                        "sas2r_lib_member_path", "sas2r_lib_member_file", "sas2r_libref_stop",
                         "$.sas2r_dataset", "[[.sas2r_dataset", "split_ds",
                         "sas_display", "sas2r_registry_env",
                         "sas2r_resolve_registry", "sas2r_assignment_path")
@@ -144,6 +144,15 @@ lint_r_code <- function(code,
       ""
     }
     plain <- sub("^.*::", "", fname)
+    direct_io <- plain %in% c("readRDS", "readLines", "read.csv", "read.csv2",
+      "read.table", "read.delim", "read.delim2", "scan", "load", "file",
+      "file.exists", "list.files", "dir") || startsWith(fname, "haven::read_")
+    memory_lines <- plain == "readLines" && length(e) >= 2L && is.call(e[[2L]]) &&
+      identical(e[[2L]][[1L]], as.name("textConnection"))
+    if (direct_io && !memory_lines) {
+      add("warn", "direct_io", paste0(fname,
+        ": possible registry-bypassing I/O; advisory only, not evidence of a translation defect"))
+    }
     if (plain %in% BANNED_FUNCTIONS) {
       add("error", "banned_function", fname)
     }
@@ -195,6 +204,29 @@ lint_r_code <- function(code,
   if (!length(out)) {
     tibble::tibble(level = character(), kind = character(), detail = character())
   } else {
-    do.call(rbind, out)
+    unique(do.call(rbind, out))
   }
+}
+
+# A helper patch is executable model output. Only unchanged expressions from
+# the package-produced runtime retain trusted low-level implementation details.
+# Modified definitions are checked as a whole; a familiar name grants nothing.
+lint_helper_patch <- function(content) {
+  parsed <- tryCatch(parse(text = content, keep.source = FALSE), error = function(e) NULL)
+  if (is.null(parsed)) return(lint_r_code(content))
+  template <- system.file("templates", "sas2r-helpers.R", package = "sas2r")
+  trusted <- parse(file = template, keep.source = FALSE)
+  changed <- Filter(function(expr) !any(vapply(as.list(trusted),
+    function(stock) identical(expr, stock), logical(1))), as.list(parsed))
+  results <- lapply(changed, function(expr) {
+    lint <- lint_r_code(paste(deparse(expr), collapse = "\n"))
+    if (nrow(lint)) {
+      name <- if (is.call(expr) && length(expr) == 3L && is.name(expr[[1L]]) &&
+        as.character(expr[[1L]]) %in% c("<-", "=") && is.name(expr[[2L]])) as.character(expr[[2L]]) else "top-level expression"
+      lint$detail <- paste0("helper ", name, ": ", lint$detail)
+    }
+    lint
+  })
+  if (!length(results)) return(lint_r_code(""))
+  unique(do.call(rbind, results))
 }

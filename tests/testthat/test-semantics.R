@@ -9,6 +9,7 @@ test_that("every executable rule has a semantic disposition", {
   expect_setequal(
     cov$required,
     c(
+      "functions.exist",
       paste0("functions.", names(rb$functions)),
       paste0("operators.", names(rb$operators)),
       paste0("procs.", c("sort", "format", "sql", "means", "freq"))

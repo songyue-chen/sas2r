@@ -202,7 +202,10 @@ test_that("check_program_revision verifies parse, lint, helpers, and interfaces"
     component_id = "calc",
     helper_use = "completely_fictitious_helper_xyz"
   )
-  chk_helper <- check_program_revision(good_r, bad_helper_contract)
+  expect_true(check_program_revision(good_r, bad_helper_contract)$pass)
+  unknown_r <- file.path(temp_dir, "unknown.R")
+  writeLines("calc <- function(a, b) completely_fictitious_helper_xyz(a, b)", unknown_r)
+  chk_helper <- check_program_revision(unknown_r, bad_helper_contract)
   expect_false(chk_helper$pass)
   expect_true(any(grepl("unknown_helper", chk_helper$errors)))
 

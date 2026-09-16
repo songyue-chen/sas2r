@@ -61,6 +61,9 @@ test_that("check_program_revision validates parameter contracts and helper names
     parameters = list(list(name = "a"), list(name = "b")),
     helper_use = list("nonexistent_helper_fn")
   )
+  # A stale declaration is normalized; a real unresolved call still fails.
+  expect_true(check_program_revision(r_file, contract = cntr_bad_helper)$pass)
+  writeLines("my_calc <- function(a, b) nonexistent_helper_fn(a, b)", r_file)
   res_bad_h <- check_program_revision(r_file, contract = cntr_bad_helper)
   expect_false(res_bad_h$pass)
   expect_match(res_bad_h$errors[1], "unknown_helper")
