@@ -351,6 +351,8 @@ review_program_revision <- function(
   lineage <- context$output_lineage %||% contract$affected_outputs %||% character()
   lineage_txt <- if (length(lineage) > 0L) paste(lineage, collapse = ", ") else "(none)"
 
+  guidance <- build_agent_guidance(context$project, component_id, contract,
+    context$selected_revisions %||% list())
   context_packet <- paste(c(
     "Component:", component_id,
     render_component_libraries(context$project, component_id),
@@ -361,6 +363,8 @@ review_program_revision <- function(
     "Helper guarantees:", helpers_txt,
     "Unresolved graph facts:", unres_txt,
     "Output lineage:", lineage_txt,
+    guidance$text,
+    revision$dependency_notices,
     if (!is.null(context$helper_code)) c("Candidate shared R helpers:", context$helper_code)
   ), collapse = "\n")
 
@@ -445,7 +449,7 @@ review_program_revision <- function(
     verdict <- data$verdict %||% "reviewed_no_material_finding"
     static_runnability <- data$static_runnability %||% "looks_runnable"
     unresolved_deps <- unique(as.character(unlist(data$unresolved_dependencies %||% character())))
-    findings <- data$findings %||% list()
+    findings <- classify_review_findings(data$findings %||% list(), guidance, r_code, contract)
     if (identical(verdict, "review_unavailable")) {
       reason <- if (length(unresolved_deps)) {
         paste("Unresolved review dependencies:", paste(unresolved_deps, collapse = ", "))
@@ -488,6 +492,7 @@ review_program_revision <- function(
       static_runnability = static_runnability,
       unresolved_dependencies = unresolved_deps,
       findings = findings,
+      context_identity = guidance$identity,
       status = if (identical(verdict, "review_unavailable")) "review_unavailable" else "ok",
       reason = if (identical(verdict, "review_unavailable")) reason else NULL,
       spend_usd = agent_res$spend_usd %||% 0,

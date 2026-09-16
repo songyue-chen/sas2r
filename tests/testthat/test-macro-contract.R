@@ -40,7 +40,7 @@ test_that("macro contract splitting respects scan masks and nested arguments", {
     "%str(one,two)", "%sysfunc(cats(a,b))", "'x,y'", "\"100%\"", "1.1", "&runtime", "a+b", "\"%upcase(label)\"", ""
   ))
   expect_identical(contract$parameters$default_status,
-                   c("unresolved", "unresolved", "known", "known", "known", "unresolved", "unresolved", "unresolved", "known"))
+                   c("unresolved", "unresolved", "known", "known", "known", "unresolved", "known", "unresolved", "known"))
   expect_true(all(startsWith(
     contract$parameters$default_key[contract$parameters$default_status == "unresolved"],
     "unresolved:"
@@ -52,7 +52,7 @@ test_that("macro contract splitting respects scan masks and nested arguments", {
   expect_null(contract$parameters$r_default[[1]])
   expect_null(contract$parameters$r_default[[2]])
   expect_null(contract$parameters$r_default[[6]])
-  expect_null(contract$parameters$r_default[[7]])
+  expect_identical(contract$parameters$r_default[[7]], "a+b")
   expect_null(contract$parameters$r_default[[8]])
 })
 

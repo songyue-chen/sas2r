@@ -152,6 +152,8 @@ write_migration_report <- function(state) {
       smoke_status = smoke_status,
       smoke_execution = state$selected_revisions[[cid]]$smoke,
       mechanical_checks = state$selected_revisions[[cid]]$checks,
+      mechanical_retry = state$selected_revisions[[cid]]$mechanical_retry,
+      dependency_notices = state$selected_revisions[[cid]]$dependency_notices,
       source_population_checks = stats::setNames(list(population), cid),
       blockers = curr$blockers %||% character(),
       revisions = h$revisions %||% list()
@@ -207,6 +209,8 @@ write_migration_report <- function(state) {
     latest_diagnosis = state$diagnostics$latest_diagnosis %||% NULL
   ))
 
+  observations <- repair_report_observations(state, paths)
+
   # 1. Construct JSON report payload
   report_payload <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
@@ -239,6 +243,7 @@ write_migration_report <- function(state) {
     component_evidence = component_evidence_list,
     attempts = attempts_data,
     repair_history = repair_history,
+    repair_observations = observations,
     input_hashes = input_hashes,
     usage = usage_summary,
     environment = state$environment,
@@ -280,6 +285,26 @@ write_migration_report <- function(state) {
     migration_md_table(comp_df),
     ""
   )
+
+  md_lines <- c(md_lines, "## Repair observations (human review only)", "",
+    "Output inventories compare file bytes only, not dataset values or correctness. Unmatched execution contexts are not comparable. These observations do not drive agent repairs or candidate selection.", "")
+  for (observation in observations$output_changes) {
+    md_lines <- c(md_lines, paste0("- `", observation$attempt_id, "`: ", observation$status,
+      " - ", observation$reason))
+    for (change in observation$changes) md_lines <- c(md_lines,
+      paste0("  - `", change$path, "`: ", change$status, "; output mapping: ",
+        change$target_key %||% "unknown", "; declared affected: ", change$declared_affected))
+  }
+  for (cid in names(observations$code_notices)) {
+    notice <- observations$code_notices[[cid]]
+    details <- c(notice$direct_io, notice$dependency_symbols)
+    if (!is.null(notice$mechanical_retry)) details <- c(details, paste(
+      "Mechanical retry recorded; dynamic parse/eval involved:", isTRUE(notice$mechanical_retry$dynamic_code),
+      "; candidate:", notice$revision_id, "; selected review verdict:", component_review_verdict(histories[[cid]])))
+    if (length(details)) md_lines <- c(md_lines, "", paste0("- `", cid, "` (`", notice$revision_id, "`):"),
+      paste0("  - ", details))
+  }
+  md_lines <- c(md_lines, "", "Direct-I/O notices identify possible registry bypasses, not proven misuse. Generated R is not a filesystem sandbox; these notices do not prevent reads of guessed local paths.", "")
 
   smoke_records <- Filter(function(x) !is.null(x$record_path),
     lapply(state$selected_revisions, function(rev) rev$smoke))

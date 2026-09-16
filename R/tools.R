@@ -166,7 +166,9 @@ TOOL_IMPLS <- list(
       )
     }
     requested_functions <- args$functions %||% args$name %||% character()
-    fns <- intersect(unique(tolower(requested_functions)), names(rb$functions))
+    semantic_functions <- sub("^functions\\.", "", grep("^functions\\.",
+      names(registry$rules), value = TRUE))
+    fns <- intersect(unique(tolower(requested_functions)), union(names(rb$functions), semantic_functions))
     requested_operators <- args$operators
     ops <- if (is.null(requested_operators)) {
       names(rb$operators)
@@ -176,7 +178,7 @@ TOOL_IMPLS <- list(
     requested_procs <- args$procs %||% character()
     procs <- intersect(unique(tolower(requested_procs)), names(rb$procs))
     function_semantics <- stats::setNames(lapply(
-      fns, function(name) make_entry("functions", name, rb$functions[[name]])
+      fns, function(name) make_entry("functions", name, rb$functions[name])
     ), fns)
     operator_semantics <- stats::setNames(lapply(
       ops, function(name) make_entry("operators", name, rb$operators[[name]])
@@ -187,7 +189,7 @@ TOOL_IMPLS <- list(
       }
     ), procs)
     list(
-      functions = as.list(rb$functions[fns]),
+      functions = as.list(rb$functions[intersect(fns, names(rb$functions))]),
       operators = as.list(rb$operators[ops]),
       procs = stats::setNames(lapply(
         procs, function(name) {

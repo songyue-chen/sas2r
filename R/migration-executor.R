@@ -891,6 +891,13 @@ run_bundle_attempt <- function(
     input_hashes_before = before_hashes,
     input_hashes_after = after_hashes,
     output_hashes = output_hashes,
+    execution_context = list(
+      sources = lapply(state$selected_revisions, function(rev) rev$contract$binding$source_hash %||% rev$binding$source_hash),
+      source_configuration = scan_config_fields(state$config),
+      environment = agent_package_facts(), locale = Sys.getlocale()),
+    revision_manifest = lapply(state$selected_revisions, function(rev) list(
+      revision_id = rev$revision_id, r_hash = rev$contract$binding$r_hash %||% rev$binding$r_hash,
+      affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs)),
     run_binding = state$binding %||% state$run_binding %||% list()
   )
 

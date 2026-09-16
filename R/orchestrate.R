@@ -194,6 +194,7 @@ process_program_component <- function(
       llm = state$translator_llm,
       paths = state$paths,
       resolved_contracts = lapply(state$selected_revisions, function(revision) revision$contract),
+      selected_revisions = state$selected_revisions,
       revision_id = "r1",
       config = state$config,
       usage_budget = state$usage_budget
@@ -261,7 +262,8 @@ process_program_component <- function(
 
     # Step A: Mechanical checks
     registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
-    checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p)
+    checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p,
+      helper_patch = rev$bundle_helper_patch)
     checks$check_id <- paste0("check_", substr(migration_hash(list(
       component_id, rev_id, rev$r_code, checks)), 1L, 16L))
 
@@ -292,11 +294,14 @@ process_program_component <- function(
       history = state$histories[[component_id]],
       sas_source = component_source_text(state$graph, component_id),
       project = state$project,
+      selected_revisions = state$selected_revisions,
       config = state$config %||% list()
     )
 
     review_key <- migration_hash(list(
       code = rev$r_code, contract = rev$contract, config = source_review_config(state$config),
+      guidance = build_agent_guidance(state$project, component_id, rev$contract,
+        state$selected_revisions, state$graph)$identity,
       dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
       helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
         unname(cli::hash_sha256(state$runtime$helpers)) else NULL,
@@ -311,7 +316,7 @@ process_program_component <- function(
     review <- if (!isTRUE(checks$pass)) {
       list(verdict = "review_unavailable", reason = "mechanical_checks_failed; repair before semantic review")
     } else if (reuse_review) cached$review else if (resumed_review)
-      list(verdict = cached_verdict) else review_program_revision(
+      component_review_record(state$histories[[component_id]]) else review_program_revision(
       revision = rev,
       context = ctx,
       llm = state$reviewer_llm,
@@ -421,6 +426,7 @@ process_program_component <- function(
         idx <- match(history$active_revision_id, vapply(history$revisions, `[[`, character(1), "revision_id"))
         history$revisions[[idx]]$events <- c(history$revisions[[idx]]$events, list(list(
           type = "repair_rejected", candidate_revision_id = rejected,
+          mechanical_retry = rev$mechanical_retry, candidate_review = review$verdict,
           reasons = regressions
         )))
         state$histories[[component_id]] <- history
@@ -437,7 +443,7 @@ process_program_component <- function(
     if (!is.null(smoke_res$blocked_by)) break
 
     # Step D: Check if repair is required
-    has_review_issue <- identical(review$verdict, "repair_required")
+    has_review_issue <- program_review_needs_repair(review)
     has_smoke_failure <- !is.null(smoke_res) && !isTRUE(smoke_res$passed) && !isTRUE(smoke_res$deferred)
     needs_repair <- (has_review_issue || has_smoke_failure || !isTRUE(checks$pass))
 
@@ -475,6 +481,7 @@ process_program_component <- function(
         round = next_round,
         revision_id = next_rev_id,
         project = state$project,
+        selected_revisions = state$selected_revisions,
         config = state$config
       ),
       error = function(e) {

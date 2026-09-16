@@ -97,12 +97,13 @@ test_that("all three agents receive complete helper contracts without tool calls
 test_that("helper metadata distinguishes resolved macros from unknown helpers", {
   code <- 'f <- function(x) { upstream(x); sas_sum(x, 1) }'
   expect_setequal(reconcile_helper_use(code, c("upstream", "sas_sum"), "upstream"), "sas_sum")
-  expect_setequal(reconcile_helper_use(code, "invented", "upstream"), c("sas_sum", "invented"))
+  expect_setequal(reconcile_helper_use(code, "invented", "upstream"), "sas_sum")
   path <- withr::local_tempfile(fileext = ".R")
   writeLines(code, path)
   contract <- new_behavioral_contract("f", helper_use = "upstream", dependency_functions = "upstream")
   expect_true(check_program_revision(path, contract)$pass)
   contract$helper_use <- "invented"
+  writeLines(paste(code, "invented(1)"), path)
   expect_true(any(grepl("unknown_helper: invented", check_program_revision(path, contract)$errors)))
   expect_equal(reconcile_helper_use('x <- "sas_sum(x)" # lib_read()', "sas_sum"), character())
 })

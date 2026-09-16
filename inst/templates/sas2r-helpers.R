@@ -372,6 +372,29 @@ sas2r_lib_member_path <- function(dir, member, ext) {
   file.path(dir, paste0(member, ext))
 }
 
+sas2r_lib_member_file <- function(reg, member) {
+  sas2r_lib_member_path("", member, "")
+  dirs <- unique(c(if (!is.null(reg$write_path)) reg$write_path else reg$path,
+                   if (!is.null(reg$read_path)) reg$read_path else reg$path))
+  for (dir in dirs[!is.na(dirs) & nzchar(dirs)]) {
+    for (type in c("rds", "sas7bdat", "xpt")) {
+      path <- sas2r_lib_member_path(dir, member, paste0(".", type))
+      if (file.exists(path) && !dir.exists(path)) return(list(type = type, path = path))
+    }
+  }
+  NULL
+}
+
+lib_exists <- function(libref, member) {
+  if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
+      is.na(libref) || !nzchar(libref) || grepl(".", libref, fixed = TRUE) ||
+      missing(member) || !is.character(member) || length(member) != 1L ||
+      is.na(member) || !nzchar(member)) {
+    stop('Use lib_exists("lib", "member") with two separate strings.', call. = FALSE)
+  }
+  !is.null(sas2r_lib_member_file(sas2r_lib_entry(libref), member))
+}
+
 sas2r_fold_names <- function(df) {
   names(df) <- tolower(names(df))
   df
@@ -426,16 +449,7 @@ lib_read <- function(libref, member, ...) {
   reg <- sas2r_lib_entry(libref)
   w_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
   r_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
-  find_file <- function(dir) {
-    if (is.null(dir) || is.na(dir) || !nzchar(dir)) return(NULL)
-    f <- function(ext) sas2r_lib_member_path(dir, member, ext)
-    if (file.exists(f(".rds"))) list(type = "rds", path = f(".rds"))
-    else if (file.exists(f(".sas7bdat"))) list(type = "sas7bdat", path = f(".sas7bdat"))
-    else if (file.exists(f(".xpt"))) list(type = "xpt", path = f(".xpt"))
-    else NULL
-  }
-  target <- find_file(w_dir)
-  if (is.null(target)) target <- find_file(r_dir)
+  target <- sas2r_lib_member_file(reg, member)
   if (is.null(target)) {
     dirs <- unique(c(w_dir, r_dir))
     dirs <- dirs[!is.na(dirs) & nzchar(dirs)]

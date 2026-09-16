@@ -34,6 +34,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       usage = state$usage_budget,
       paths = state$paths,
       project = state$project,
+      selected_revisions = state$selected_revisions,
       config = state$config,
       round = round + 1L,
       attempt_id = attempt_rec$attempt_id,
@@ -53,7 +54,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   if (!isTRUE(fixed_rev$checks$pass)) {
     state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
       component_id = primary_cid, revision_id = fixed_rev$revision_id,
-      r_path = fixed_rev$r_path, errors = fixed_rev$checks$errors)))
+      r_path = fixed_rev$r_path, mechanical_retry = fixed_rev$mechanical_retry,
+      candidate_review = "unreviewed", errors = fixed_rev$checks$errors)))
     return(list(state = state, applied = FALSE, reason = paste(
       "repair_mechanical_checks_failed", paste(fixed_rev$checks$errors, collapse = "; "), sep = ": ")))
   }
@@ -103,7 +105,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
         c_rev$r_path <- file.path(dirname(fixed_rev$r_path), paste0(cid, ".R"))
         writeLines(c_rev$r_code, c_rev$r_path)
       }
-      c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract)
+      c_rev$checks <- check_program_revision(c_rev$r_path, contract = c_rev$contract,
+        helper_patch = c_rev$bundle_helper_patch)
       c_rev$status <- if (isTRUE(c_rev$checks$pass)) "ok" else "check_failed"
       state$selected_revisions[[cid]] <- c_rev
       state$histories[[cid]] <- record_program_checks(state$histories[[cid]], c_rev$checks)
@@ -112,6 +115,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
         review <- review_program_revision(c_rev, context = list(
           component_id = cid, contract = c_rev$contract,
           sas_source = component_source_text(state$graph, cid), project = state$project,
+          selected_revisions = state$selected_revisions,
           config = state$config, helper_code = if (has_helper_patch) hp$content else NULL),
           llm = state$reviewer_llm, usage = state$usage_budget, paths = state$paths,
           round = round + 1L, history = state$histories[[cid]])
@@ -139,7 +143,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       if (identical(rejected_id, old$active_revision_id)) next
       candidate <- state$selected_revisions[[cid]]
       rejected_revisions[[cid]] <- list(evidence_revision_id = rejected_id,
-        artifact_revision_id = candidate$revision_id, r_path = candidate$r_path)
+        artifact_revision_id = candidate$revision_id, r_path = candidate$r_path,
+        mechanical_retry = candidate$mechanical_retry, candidate_review = component_review_verdict(h))
       h$active_revision_id <- old$active_revision_id
       idx <- match(h$active_revision_id, vapply(h$revisions, `[[`, "", "revision_id"))
       h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
@@ -167,6 +172,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     summary = fixed_rev$summary,
     patch_hash = fixed_rev$patch_hash,
     helper_patch = fixed_rev$bundle_helper_patch,
+    mechanical_retry = fixed_rev$mechanical_retry,
+    candidate_review = component_review_verdict(state$histories[[primary_cid]]),
     changed_interfaces = fixed_rev$changed_interfaces,
     affected_outputs = fixed_rev$affected_outputs,
     spend_usd = fixed_rev$spend_usd %||% 0
@@ -244,7 +251,7 @@ source_grounded_review_findings <- function(review) {
   Filter(function(f) {
     (f$severity %||% "") %in% c("material", "high") && nzchar(f$sas_evidence %||% "") &&
       nzchar(f$r_evidence %||% "") && !length(f$unresolved_dependencies)
-  }, review$findings %||% list())
+  }, actionable_review_findings(review))
 }
 
 combine_repair_checks <- function(previous, current) {

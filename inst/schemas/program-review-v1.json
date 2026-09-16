@@ -69,6 +69,18 @@
               "type": "string"
             },
             "uniqueItems": true
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "translation_defect",
+              "missing_context",
+              "unsupported_capability",
+              "source_syntax_claim"
+            ]
+          },
+          "context_fact_id": {
+            "type": "string"
           }
         },
         "required": [

@@ -783,10 +783,15 @@ record_program_smoke <- function(history, result) {
 }
 
 # Derive review status from the active revision's authoritative event history.
-component_review_verdict <- function(history) {
+component_review_record <- function(history) {
   events <- current_component_evidence(history)$events %||% list()
   reviews <- Filter(function(ev) ev$type %in% c("review_completed", "review_unavailable"), events)
-  if (!length(reviews)) return("review_unavailable")
+  if (!length(reviews)) return(list(verdict = "review_unavailable"))
   last <- reviews[[length(reviews)]]
-  last$verdict %||% "review_unavailable"
+  list(verdict = last$verdict %||% "review_unavailable", findings = last$findings,
+    review_id = last$basis_id)
+}
+
+component_review_verdict <- function(history) {
+  component_review_record(history)$verdict
 }

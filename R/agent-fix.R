@@ -33,6 +33,7 @@ fix_program_revision <- function(
   round = 1L,
   attempt_id = NULL,
   checks = NULL,
+  selected_revisions = list(),
   ...
 ) {
   mode <- match.arg(mode)
@@ -88,6 +89,7 @@ fix_program_revision <- function(
   # 3. Format evidence description
   evidence_sections <- character()
   if (!is.null(review)) {
+    review$findings <- actionable_review_findings(review)
     f_text <- if (length(review$findings) > 0L) {
       paste(vapply(review$findings, function(f) {
         sprintf("- [%s] SAS: %s | R: %s | outputs: %s",
@@ -176,12 +178,12 @@ fix_program_revision <- function(
       "Upstream macro interfaces (loaded by autoexec.R):",
       render_dependency_interfaces(project, component_id),
       "Resolved project functions (call by name; do not redefine):",
-      paste(contract$dependency_functions %||% character(), collapse = ", "), sep = "\n"),
+      paste(contract$dependency_functions %||% character(), collapse = ", "),
+      build_agent_guidance(project, component_id, contract, selected_revisions)$text, sep = "\n"),
     allowlist = config$allowlist %||% "dplyr, tidyr, haven"
   )
 
-  # The fixer's prompt deliberately carries no context packet; these tools are
-  # its route to the unit's statements, schemas and configured macros.
+  # Existing role tools retain their scope; deterministic guidance adds no tools.
   tools <- build_tools(spec, list(
     agent_role = "fixer",
     project = project,
@@ -217,13 +219,20 @@ fix_program_revision <- function(
   candidate_path <- tempfile(fileext = ".R")
   on.exit(unlink(candidate_path), add = TRUE)
   writeLines(fix_data$r_code, candidate_path)
-  candidate_checks <- check_program_revision(candidate_path, contract = contract)
+  candidate_checks <- check_program_revision(candidate_path, contract = contract,
+    helper_patch = fix_data$bundle_helper_patch)
   retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
+  retry_record <- NULL
   if (length(retry_errors) && usage_budget_allows_future(usage_budget)) {
+    retry_record <- list(errors = retry_errors, dynamic_code = any(grepl(
+      "banned_function.*(parse|eval)", retry_errors)), prior_revision_id = prior_revision_id)
     retry_res <- run_agent(
       spec = spec, llm = llm, tools = tools,
       user_content = paste("The proposed repair failed mechanical checks. Correct these errors while preserving the source behavior and addressing the original evidence:",
-        paste(retry_errors, collapse = "\n"), "Proposed R code:", fix_data$r_code,
+        paste(retry_errors, collapse = "\n"),
+        "Use supported operations and the helper contracts. Do not replace banned parse/eval with a handwritten general interpreter. A banned implementation is not proof the source feature is impossible; report remaining unsupported behavior explicitly.",
+        "Proposed R code:", fix_data$r_code,
+        if (!is.null(fix_data$bundle_helper_patch)) paste("Proposed helper patch:", fix_data$bundle_helper_patch$content),
         sep = "\n\n"),
       log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
       prompt_vars = prompt_vars,
@@ -299,7 +308,8 @@ fix_program_revision <- function(
     writeLines(fix_data$r_code, new_r_path)
   }
 
-  checks <- check_program_revision(new_r_path, contract = new_contract)
+  checks <- check_program_revision(new_r_path, contract = new_contract,
+    helper_patch = fix_data$bundle_helper_patch)
 
   structure(
     list(
@@ -317,6 +327,9 @@ fix_program_revision <- function(
       evidence_ids = unique(c(evidence_ids, unlist(fix_data$evidence_ids %||% character()))),
       patch_hash = patch_h,
       bundle_helper_patch = fix_data$bundle_helper_patch,
+      mechanical_retry = retry_record,
+      dependency_notices = dependency_symbol_notices(r_code, fix_data$r_code,
+        contract$dependency_functions %||% character()),
       changed_interfaces = unlist(fix_data$changed_interfaces %||% character()),
       affected_outputs = unlist(fix_data$affected_outputs %||% character()),
       remaining_uncertainty = unlist(fix_data$remaining_uncertainty %||% character()),

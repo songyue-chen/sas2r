@@ -18,6 +18,20 @@ rules:
         version: "R devel manual"
     edge_cases: [locale, non_ascii, missing_character]
 
+  functions.exist:
+    classification: adapter_required
+    sas_default: "EXIST checks library-member presence; DATA is the default member type."
+    r_default: "Reading a file or checking its row count tests a different property."
+    strategy: lib_exists
+    implementation_status: implemented_unverified
+    risk: medium
+    scope: "Registry data members only: lib_exists(libref, member) shares lib_read lookup, including write-before-read and rds/sas7bdat/xpt precedence. Empty or unreadable files are present; absent members are false. Unknown libraries and invalid arguments are errors. Views, catalogs, generations and _LAST_ are unsupported. No direct DATA-step function mapping is claimed."
+    sources:
+      - url: https://support.sas.com/documentation/cdl/en/lefunctionsref/63354/HTML/default/p1thpm9d6f5itan1c37zh8uz273z.htm
+        accessed: 2026-09-15
+        version: "SAS 9.3"
+    edge_cases: [absent_member, empty_member, unreadable_member, unknown_library, storage_precedence]
+
   functions.lowcase:
     classification: adapter_required
     sas_default: "Lowercases using the active SAS locale and character semantics."
@@ -390,7 +404,7 @@ rules:
     strategy: emit_proc_sql
     implementation_status: implemented_unverified
     risk: high
-    scope: "The explicitly partial PROC SQL subset accepted by emit_proc_sql."
+    scope: "The explicitly partial PROC SQL subset accepted by emit_proc_sql. COUNT(DISTINCT x) excludes missing values; for numeric x use length(unique(x[!is.na(x)])). Exclude SAS blank character missing values too. An empty input has count zero. Preserve selected dependency calls and their return convention; length(unique(x)) incorrectly counts NA. Do not create a general dynamic WHERE interpreter or ignore an unsupported filter."
     sources: *proc_sources
     edge_cases: [missing_vs_null, remerge, duplicate_columns, ordering]
 

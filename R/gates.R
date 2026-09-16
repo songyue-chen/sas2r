@@ -18,10 +18,11 @@ gate_parse <- function(code) {
 #' @param r_path Path to the generated R program file.
 #' @param contract Behavioral contract list or object.
 #' @param registry Optional path to `autoexec.R` or registry object.
+#' @param helper_patch Optional candidate shared-helper patch; checked without execution.
 #' @return A list with `pass` (logical), `errors` (character vector),
 #'   `warnings` (character vector), and `lint` (lint tibble).
 #' @noRd
-check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
+check_program_revision <- function(r_path, contract = NULL, registry = NULL, helper_patch = NULL) {
   errors <- character()
   warnings <- character()
 
@@ -59,6 +60,11 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
   }
 
   lint_res <- lint_r_code(code_for_lint)
+  if (!is.null(helper_patch)) {
+    helper_lint <- lint_helper_patch(helper_patch$content %||% "")
+    if (nrow(helper_lint)) helper_lint$detail <- paste0(helper_patch$path %||% "candidate helpers", ": ", helper_lint$detail)
+    lint_res <- rbind(lint_res, helper_lint)
+  }
   if (is.data.frame(lint_res) && nrow(lint_res) > 0L) {
     lint_errors <- lint_res[lint_res$level == "error", , drop = FALSE]
     if (nrow(lint_errors) > 0L) {
@@ -76,10 +82,11 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL) {
 
   # 3. Helper name check
   if (!is.null(contract) && !is.null(contract$helper_use) && length(contract$helper_use) > 0L) {
-    helpers_used <- unlist(contract$helper_use)
+    helpers_used <- reconcile_helper_use(code_text, contract$helper_use, contract$dependency_functions)
     invalid_helpers <- setdiff(helpers_used, c(SAS2R_HELPER_NAMES, contract$dependency_functions))
     if (length(invalid_helpers) > 0L) {
-      errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", ")))
+      errors <- c(errors, paste0("unknown_helper: ", paste(invalid_helpers, collapse = ", "),
+        " (declared helper cannot be resolved; verify metadata and function availability)"))
     }
   }
 

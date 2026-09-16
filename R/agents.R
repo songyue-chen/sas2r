@@ -171,7 +171,8 @@ worker_binding_hash <- function(role, skills = list(), project_dir = NULL, promp
   s_hash <- worker_skill_hash(skills)
   migration_hash(list(
     prompt_hash = p_hash,
-    skill_hash = s_hash
+    skill_hash = s_hash,
+    guidance_policy = agent_guidance_policy()
   ))
 }
 

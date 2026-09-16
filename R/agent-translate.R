@@ -334,7 +334,8 @@ build_translator_context <- function(
   outputs = NULL,
   resolved_contracts = list(),
   config = list(),
-  macro_contract = component_macro_contract(project, graph, component_id)
+  macro_contract = component_macro_contract(project, graph, component_id),
+  selected_revisions = list()
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   src_files <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
@@ -441,7 +442,9 @@ build_translator_context <- function(
       "Source-owned macro interface:", render_macro_interface(macro_contract),
       "resolved upstream contracts:", upstream_txt,
       "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
-      "known call sites:", call_txt
+      "known call sites:", call_txt,
+      build_agent_guidance(project, component_id, list(macro_contract = macro_contract),
+        selected_revisions, graph)$text
     ),
     collapse = "\n"
   )
@@ -652,7 +655,7 @@ build_behavioral_contract <- function(
     dependency_closure_hash = closure_h
   )
 
-  new_behavioral_contract(
+  result <- new_behavioral_contract(
     component_id = component_id,
     sas_text = sas_text,
     parameters = params,
@@ -673,6 +676,8 @@ build_behavioral_contract <- function(
       if (is.null(tr_data)) "macro_deferred" else c("llm_authored", "macro_semantics_unverified")
     } else character()
   )
+  result$helper_use_declared <- unlist(tr_data$helper_use %||% character())
+  result
 }
 
 #' Generate a single program revision and behavioral contract
@@ -705,6 +710,7 @@ generate_program_revision <- function(
   revision_id = "r1",
   config = list(),
   usage_budget = NULL,
+  selected_revisions = list(),
   ...
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
@@ -749,6 +755,7 @@ generate_program_revision <- function(
   # run_agent() status, so a run whose LLM calls all failed cannot read like a
   # successful deterministic run.
   agent_status <- NA_character_
+  retry_record <- NULL
   macro_contract <- component_macro_contract(project, graph, component_id)
 
   if (needs_agent) {
@@ -764,7 +771,8 @@ generate_program_revision <- function(
       outputs = outputs,
       resolved_contracts = resolved_contracts,
       config = config,
-      macro_contract = macro_contract
+      macro_contract = macro_contract,
+      selected_revisions = selected_revisions
     )
     prompt_skill_h <- ctx$prompt_skill_hash
 
@@ -837,6 +845,8 @@ generate_program_revision <- function(
         err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(
           sprintf("%s: %s", lint_chk$kind[lint_chk$level == "error"],
                   lint_chk$detail[lint_chk$level == "error"]), collapse = "; ")
+        retry_record <- list(errors = err_msg, dynamic_code = grepl("banned_function.*(parse|eval)", err_msg),
+          prior_revision_id = revision_id)
         retry_res <- run_agent(
           spec = spec,
           llm = llm,
@@ -845,6 +855,7 @@ generate_program_revision <- function(
             "Previous code failed mechanical checks:", err_msg,
             "Correct the code below and return the complete translation JSON.",
             "Do not call library() or require(); qualify package functions (for example dplyr::mutate) and use the base |> pipe.",
+            "Use supported operations; do not replace banned parse/eval with a handwritten general interpreter. Keep unsupported behavior explicit without dropping required source logic.",
             "Previous R code:", tr_data$r_code, sep = "\n"),
           log_dir = paths$logs %||% file.path(paths$root, ".sas2r"),
           prompt_vars = prompt_vars,
@@ -916,7 +927,8 @@ generate_program_revision <- function(
     status = if (isTRUE(checks$pass)) "ok" else "check_failed",
     checks = checks,
     r_code = final_r_code_text,
-    agent_status = agent_status
+    agent_status = agent_status,
+    mechanical_retry = retry_record
   )
 }
 

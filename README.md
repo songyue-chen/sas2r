@@ -707,7 +707,7 @@ With the default `agent_evidence = "code_only"`, a request can contain:
 | Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
 | Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
 | Execution diagnostics | Error messages, stack traces, capped stderr excerpts, failed component identifiers and source-derived checks, including expected/actual row counts or counts of mismatched BY groups |
-| Guidance and lookup results | Helper interfaces, translation rules, registered skills, and matching documentation from an enabled local documentation mirror |
+| Guidance and lookup results | Helper interfaces and limits, observed installed-package versions, translation rules, registered skills, and matching documentation from an enabled local documentation mirror |
 
 **`code_only` omits explicit dataset-row and output previews; it is not an
 anonymization setting.** For example, a subject ID in a SAS filter, a name in a
@@ -728,6 +728,19 @@ names and the fact that a mismatch occurred. It receives no reference answers
 to imitate. A dataset that the SAS legitimately reads retains its input role
 even if it is also configured as a reference; that does not make its source
 usage or execution diagnostics confidential to the local process.
+
+Each role receives the same source policy and bounded selected direct-dependency
+SAS/R bodies (up to 6,000 characters per body and 24,000 characters per packet).
+Missing or truncated context is identified. This adds no agent tools, dataset
+access or memory. Missing-context and capability findings remain visible;
+labels alone do not cancel a proven execution or translation failure.
+
+The translation report includes advisory dependency-symbol, direct-file-I/O and
+candidate-file byte-change notices. File-change notices are human-only and do
+not drive repairs or selection. Byte changes can reflect timestamps or a valid
+source correction. **Generated R is not a filesystem sandbox:** validation of
+model-written helper patches and direct-I/O notices do not prevent arbitrary
+local file reads. Full runtime filesystem isolation is not provided.
 
 Only a source-grounded finding can turn a reference mismatch into a code repair.
 A correction can be retained despite an inconsistent reference; a failed
