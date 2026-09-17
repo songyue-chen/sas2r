@@ -31,6 +31,9 @@ Generated R code:
 Evidence:
 {{evidence}}
 
+Repair focus:
+{{phase}}
+
 {{skills}}
 
 Shared helper repairs: bundle_helper_patch$content is an overlay of complete named top-level function definitions using name <- function(...) or name = function(...). Return only changed/new functions; omitted definitions are preserved from the current runtime. For a nested function, return its complete outermost parent, including sibling functions and enclosing variables. Use the supplied full current helper code; if a parent body is unavailable, defer the edit rather than invent it. No duplicate definitions, top-level execution or non-function bindings. The package assembles the complete candidate for checks, review and execution.

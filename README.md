@@ -255,6 +255,32 @@ A scheduled follow-up can recover an unavailable review by explicitly reviewing
 the full component with extra focus. A clean focused-only review does not replace
 a full review; the report shows both outcomes.
 
+Component review checks whether the R preserves the SAS calculations, filters,
+merges and side effects. Bundle repair adds an integration focus: how selected
+callers and callees exchange values, which inputs are available, execution order,
+and required output content. Changed code still receives a full semantic review.
+Within the existing context limit, bundle requests include selected downstream
+caller/consumer source and R code as well as upstream dependencies.
+The reviewer remains static and read-only; runtime diagnostics come from the
+executor. Completed reviews are reused only for the same source, code, helpers,
+dependencies, policy, model settings, scope and supplied diagnostic context.
+Changed installed-dependency facts can refresh that review without regenerating
+the saved translation; changing only budgets or connection timeouts does not.
+
+Harmless representation differences, such as unobserved trailing padding or
+figure spacing, need not be reproduced. Source-visible truncation, special
+missing-value behavior, statistics, meaningful labels and report sections still
+matter. File existence alone does not prove a complete report. Simple, uniquely
+bound source `KEEP`/`DROP` declarations can explain excluded columns; ambiguous
+syntax remains unknown. These facts cannot authorize invented values or changed
+source rules, and reference comparison settings stay outside authoring context.
+
+The starting page, manifest and translation report distinguish all recorded
+bundle attempts from execution of the current revision and selection. A prior
+attempt is credited to the current code only when its recorded source, code,
+helper and preceding-component context match. Older records lacking that
+information remain visible without certifying the current scripts.
+
 Bundle repair defaults to **two fixer calls per component**, in addition to the
 immediate program-repair allowance. `max_bundle_repair_rounds = NULL` lets that
 bounded allowance scale with the number of components; supply a number to cap

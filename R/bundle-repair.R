@@ -79,7 +79,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   if (has_helper_patch) state <- stage_helper_candidate(state, fixed_rev)
   hp_dest <- fixed_rev$helper_path
   rejection <- tryCatch({
-    refreshed <- review_helper_consumers(state, retained, affected, round + 1L)
+    refreshed <- review_helper_consumers(state, retained, affected, round + 1L,
+      phase = "bundle", execution = bundle_ev)
     state <- refreshed$state
     refreshed$reasons
   }, error = function(e) {

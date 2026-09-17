@@ -82,10 +82,10 @@ test_that("public resume uses actual saved revisions and makes no repeated provi
   expect_equal(readRDS(file.path(changed_input$outputs_dir, "datasets", "work", "out.rds"))$x, 12)
 })
 
-test_that("installed package version changes alone do not regenerate paid translations", {
+test_that("changed dependency facts refresh review without regenerating translations", {
   fx <- review_public_fixture()
   out <- file.path(fx$root, "migration")
-  adapter <- counted_review_llm(list(good_translation(review_public_code), good_review()))
+  adapter <- counted_review_llm(list(good_translation(review_public_code), good_review(), good_review()))
   first <- sas_translate(fx$source, config = fx$config, out_dir = out, llm = adapter$llm)
   expect_identical(adapter$calls$n, 2L)
   actual_facts <- agent_package_facts
@@ -96,7 +96,8 @@ test_that("installed package version changes alone do not regenerate paid transl
   })
   again <- sas_translate(fx$source, config = fx$config, out_dir = out,
     llm = adapter$llm, resume = TRUE)
-  expect_identical(adapter$calls$n, 2L)
+  expect_identical(adapter$calls$n, 3L)
+  expect_identical(adapter$calls$requests[[3]]$schema_name, "program_review_v1")
   expect_identical(sas_code(again), sas_code(first))
   expect_identical(again$diagnostics$resumed_components, "program")
   expect_null(again$diagnostics$resume_invalidated)

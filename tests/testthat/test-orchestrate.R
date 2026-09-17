@@ -137,9 +137,9 @@ test_that("smoke attempts retain separate outputs and a reproducible partial rec
   expect_false(record$reference_compared)
   expect_identical(record$raw_output_retention, "keep_raw_attempts")
   expect_true(file.exists(record$replay_script))
-  expect_identical(record$code_hashes$calc, unname(cli::hash_sha256(
+  expect_identical(record$code_hashes$calc, unname(cli::hash_file_sha256(
     file.path(first$attempt_dir, "programs", "calc.R"))))
   callr::r(function(path) source(path), args = list(path = first$replay_script))
   expect_equal(readRDS(first$output_files[["out.rds"]])$x, 1)
-  expect_identical(first$output_hashes[["out.rds"]], unname(cli::hash_sha256(first$output_files[["out.rds"]])))
+  expect_identical(first$output_hashes[["out.rds"]], unname(cli::hash_file_sha256(first$output_files[["out.rds"]])))
 })

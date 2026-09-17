@@ -1,3 +1,18 @@
+# sas2r (development)
+
+* Share a source-visible semantic policy across translation, review and repair;
+  distinguish harmless representation differences from lost calculations,
+  statistics, labels or other required effects.
+* Give bundle repair and subsequent full review an explicit integration focus
+  using existing bounded executor diagnostics. Reuse completed reviews through
+  the evidence history only when their complete request context matches.
+* Supply conservative source-only column exclusions for simple, uniquely bound
+  KEEP/DROP writers. Unsupported syntax remains unknown and does not suppress
+  independent consumer defects or authorize reference-driven changes.
+* Hash smoke code and outputs by file contents. Report every recorded bundle
+  attempt separately from matching current-revision execution and selection,
+  including failed attempts and earlier snapshots.
+
 # sas2r 0.4.4
 
 * Assemble named helper edits over the retained runtime and use one candidate

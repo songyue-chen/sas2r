@@ -62,12 +62,16 @@ stage_helper_candidate <- function(state, revision) {
   state
 }
 
-review_helper_consumers <- function(state, retained, components, round) {
+review_helper_consumers <- function(state, retained, components, round,
+                                    phase = "program", execution = NULL) {
   reasons <- character()
   for (cid in components) {
     rev <- state$selected_revisions[[cid]]
     rev$binding <- rev$binding %||% rev$contract$binding
-    state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], rev$binding)
+    if (!identical(current_component_evidence(state$histories[[cid]])$binding$binding_hash,
+                   rev$binding$binding_hash)) {
+      state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], rev$binding)
+    }
     rev$checks <- check_program_revision(rev$r_path, contract = rev$contract,
       helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist)
     rev$status <- if (isTRUE(rev$checks$pass)) "ok" else "check_failed"
@@ -79,7 +83,8 @@ review_helper_consumers <- function(state, retained, components, round) {
         component_id = cid, contract = rev$contract,
         sas_source = component_source_text(state$graph, cid), project = state$project,
         selected_revisions = state$selected_revisions, config = state$config,
-        helper_code = runtime_helper_code(state$runtime)), llm = state$reviewer_llm,
+        helper_code = runtime_helper_code(state$runtime), phase = phase,
+        execution = execution), llm = state$reviewer_llm,
         usage = state$usage_budget, paths = state$paths, round = round,
         history = state$histories[[cid]]), error = function(e) {
           if (inherits(e, "sas2r_llm_settings_error")) stop(e)

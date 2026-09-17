@@ -22,9 +22,6 @@ write_run_navigation <- function(state, report) {
   order_path <- file.path(paths$bundle, "run-order.json")
   order <- if (file.exists(order_path)) read_json_record(order_path) else list()
   components <- list()
-  executed <- state$selected_attempt$executed_component_ids %||% character()
-  record <- if (!is.null(state$selected_attempt$attempt_dir)) read_attempt_record(state$selected_attempt$attempt_dir) else NULL
-  failed_id <- record$condition$component_id
   sources <- if (!is.null(state$graph$nodes)) unique(state$graph$nodes[["source_file"]]) else character()
   sources <- as.character(sources)
   sources <- sources[!is.na(sources) & file.exists(sources)]
@@ -57,9 +54,9 @@ write_run_navigation <- function(state, report) {
       generated = generated, mechanical_checks = evidence$mechanical_checks,
       review = evidence$review_status %||% "not reviewed",
       execution = paste0("smoke: ", evidence$smoke_status %||% "unexecuted", "; bundle: ",
-        if (id %in% executed) "passed" else if (identical(id, failed_id)) "failed" else
-          if (length(failed_id) && id %in% record$execution_order) paste("not reached after", failed_id) else "unexecuted"),
+        report$bundle_execution[[id]]$summary %||% "unexecuted"),
       execution_details = evidence$smoke_execution,
+      bundle_execution = report$bundle_execution[[id]],
       output_targets = targets, blockers = evidence$blockers %||% list(),
       next_action = if (!generated) paste("Not generated.", report$status_reason %||% "See diagnostics.") else
         if (length(evidence$blockers)) "Resolve the reported blockers and rerun affected dependencies." else
@@ -112,7 +109,7 @@ write_run_navigation <- function(state, report) {
       run_html_escape(if (length(comparison)) paste(comparison, collapse = "; ") else "No direct comparison recorded"),
       "</td><td>", run_html_escape(component$next_action), "<details><summary>Diagnostics</summary><pre>",
       run_html_escape(jsonlite::toJSON(list(blockers = component$blockers,
-        checks = checks, execution = component$execution_details), auto_unbox = TRUE, pretty = TRUE, null = "null", force = TRUE)),
+        checks = checks, execution = component$execution_details, bundle = component$bundle_execution), auto_unbox = TRUE, pretty = TRUE, null = "null", force = TRUE)),
       "</pre></details></td></tr>")
   }, character(1))
   output_rows <- vapply(seq_len(nrow(state$output_contracts %||% empty_output_contracts())), function(i) {

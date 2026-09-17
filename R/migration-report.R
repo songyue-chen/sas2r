@@ -211,6 +211,7 @@ write_migration_report <- function(state) {
   ))
 
   observations <- repair_report_observations(state, paths)
+  bundle_execution <- bundle_execution_report(state)
 
   # 1. Construct JSON report payload
   report_payload <- list(
@@ -242,6 +243,7 @@ write_migration_report <- function(state) {
     coverage = coverage,
     output_assessments = output_assessments,
     component_evidence = component_evidence_list,
+    bundle_execution = bundle_execution,
     attempts = attempts_data,
     repair_history = repair_history,
     repair_observations = observations,
@@ -287,7 +289,21 @@ write_migration_report <- function(state) {
     ""
   )
 
-  md_lines <- c(md_lines, "## Repair observations (human review only)", "",
+  md_lines <- c(md_lines, "## Bundle execution attempts", "",
+    "Attempted execution is separate from selection and semantic verification. Current-revision execution requires matching recorded source, R code, helpers and preceding components. Old records without that information remain unverified for the current bundle.", "")
+  for (cid in names(bundle_execution)) {
+    md_lines <- c(md_lines, paste0("- `", cid, "`: ", bundle_execution[[cid]]$summary))
+    for (attempt in bundle_execution[[cid]]$attempts) {
+      record_path <- normalizePath(attempt$record_path, winslash = "/", mustWork = FALSE)
+      prefix <- paste0(normalizePath(paths$run_root, winslash = "/", mustWork = FALSE), "/")
+      if (startsWith(record_path, prefix)) record_path <- paste0("../", substring(record_path, nchar(prefix) + 1L))
+      md_lines <- c(md_lines, paste0("  - `", attempt$attempt_id, "`: ", attempt$status,
+        "; matches current revision: ", attempt$matches_current_revision,
+        "; [execution record](<", record_path, ">)",
+        if (!is.null(attempt$condition$message)) paste0("; ", attempt$condition$message)))
+    }
+  }
+  md_lines <- c(md_lines, "", "## Repair observations (human review only)", "",
     "Output inventories compare file bytes only, not dataset values or correctness. Unmatched execution contexts are not comparable. These observations do not drive agent repairs or candidate selection.", "")
   for (observation in observations$output_changes) {
     md_lines <- c(md_lines, paste0("- `", observation$attempt_id, "`: ", observation$status,

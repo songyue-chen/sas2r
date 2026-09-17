@@ -210,7 +210,7 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
     plan$call_site %||% character()
   ), replay)
   plan$input_hashes <- state$input_manifest %||% input_hash_manifest(state$project)
-  plan$code_hashes <- stats::setNames(lapply(files, function(f) unname(cli::hash_sha256(f))), ids)
+  plan$code_hashes <- stats::setNames(lapply(files, function(f) unname(cli::hash_file_sha256(f))), ids)
   plan$replay_script <- replay
   plan$raw_output_retention <- if (isTRUE(state$keep_raw_attempts)) "keep_raw_attempts" else "prune_unselected"
   plan$record_dir <- file.path(attempt_dir, "logs")
@@ -469,7 +469,7 @@ run_program_smoke <- function(
     for (f in files[!dir.exists(files)]) {
       relative <- substring(f, nchar(output_dirs[[libref]]) + 2L)
       key <- if (identical(libref, "work")) relative else paste(libref, relative, sep = "/")
-      output_hashes[[key]] <- unname(cli::hash_sha256(f))
+      output_hashes[[key]] <- unname(cli::hash_file_sha256(f))
       output_files[[key]] <- normalizePath(f, winslash = "/", mustWork = TRUE)
     }
   }
@@ -740,6 +740,11 @@ run_bundle_attempt <- function(
 
   before_hashes <- input_hash_manifest(state$project %||% state)
   bundle_dir <- snapshot_selected_bundle(state, attempt)
+  attempt$helper_hash <- unname(cli::hash_file_sha256(file.path(bundle_dir, "sas2r-helpers.R")))
+  attempt$revision_manifest <- lapply(state$selected_revisions, function(rev) list(
+    revision_id = rev$revision_id, r_hash = migration_hash(revision_code(rev)),
+    source_hash = rev$contract$binding$source_hash %||% rev$binding$source_hash,
+    affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs))
   plan <- build_bundle_execution_plan(state$graph)
   exec_order <- plan$execution_order
   failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE),
@@ -895,9 +900,6 @@ run_bundle_attempt <- function(
       sources = lapply(state$selected_revisions, function(rev) rev$contract$binding$source_hash %||% rev$binding$source_hash),
       source_configuration = scan_config_fields(state$config),
       environment = agent_package_facts(state$config$allowlist), locale = Sys.getlocale()),
-    revision_manifest = lapply(state$selected_revisions, function(rev) list(
-      revision_id = rev$revision_id, r_hash = rev$contract$binding$r_hash %||% rev$binding$r_hash,
-      affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs)),
     run_binding = state$binding %||% state$run_binding %||% list()
   )
 
