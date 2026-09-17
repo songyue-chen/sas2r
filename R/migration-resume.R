@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 7L
+RESUME_CHECKPOINT_VERSION <- 8L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -70,6 +70,7 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   if (!intact) return(invalidate("generated revisions are missing, changed, or incomplete"))
   state$selected_revisions <- revisions
   state$histories <- checkpoint$histories
+  state$repair_counts <- checkpoint$repair_counts
   writeLines(checkpoint$helper_code, state$runtime$helpers)
   state$resumed_components <- names(revisions)
   state$diagnostics <- checkpoint$diagnostics
@@ -84,7 +85,11 @@ write_migration_checkpoint <- function(state, fingerprint) {
     fingerprint = fingerprint,
     selected_revisions = state$selected_revisions,
     histories = state$histories,
-    helper_code = paste(readLines(file.path(state$bundle_dir, "runtime", "sas2r-helpers.R"), warn = FALSE), collapse = "\n"),
+    # Finalization may prune the original smoke staging directory. Before that
+    # point use the working runtime; afterward use the materialized selection.
+    helper_code = runtime_helper_code(if (!is.null(state$bundle_dir))
+      list(helpers = file.path(state$bundle_dir, "runtime", "sas2r-helpers.R")) else state$runtime),
+    repair_counts = state$repair_counts,
     diagnostics = state$diagnostics
   )
   atomic_write_file(function(path) saveRDS(checkpoint, path),

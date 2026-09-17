@@ -281,6 +281,7 @@ review_translation_unit <- function(unit_id, project, transpilation, specs, llm,
 #' @param project_dir Optional project directory.
 #' @param round Integer review iteration round (default 0L).
 #' @param attempt_id Optional attempt identifier.
+#' @param reuse_only Return a matching saved review or NULL, without calling an agent.
 #' @param ... Additional arguments.
 #' @return A `sas2r_program_review` record list.
 #' @noRd
@@ -295,6 +296,7 @@ review_program_revision <- function(
   project_dir = NULL,
   round = 0L,
   attempt_id = NULL,
+  reuse_only = FALSE,
   ...
 ) {
   component_id <- revision$component_id %||% context$component_id %||% "unknown"
@@ -457,6 +459,7 @@ review_program_revision <- function(
     cached$spend_usd <- 0
     return(cached)
   }
+  if (isTRUE(reuse_only)) return(NULL)
   if (length(events) && identical(events[[1L]]$type, "review_completed") &&
       is.null(events[[1L]]$review_key)) {
     signal_immediate_coordinator_event("review_refresh", component_id, revision_id,

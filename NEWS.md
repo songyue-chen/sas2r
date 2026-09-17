@@ -1,5 +1,14 @@
 # sas2r 0.4.5
 
+* Consolidate semantic reviews of earlier unchanged components into a review-only
+  checkpoint before bundle execution. Shared-helper repairs check earlier
+  consumers locally and reject execution regressions without repeated model
+  reviews. Keep initial and actual-repair reviews, current-context evidence,
+  source-grounded bundle repairs, and existing repair limits.
+* Reuse passing/deferred smoke results only for an unchanged execution context.
+  Save component and final-review progress with repair counts so interrupted
+  work can resume without repeating completed reviews or resetting allowances.
+  Older checkpoint formats regenerate with an explicit explanation.
 * Share a source-visible semantic policy across translation, review and repair;
   distinguish harmless representation differences from lost calculations,
   statistics, labels or other required effects.

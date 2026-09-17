@@ -363,26 +363,36 @@ test_that("unavailable full review cannot recover from focused-only or stale evi
   }
 })
 
-test_that("an immediate shared-helper regression restores all retained consumers", {
+test_that("silent shared-helper regressions are reviewed at the final checkpoint", {
   fx <- repair_workflow_fixture(n = 2L, failures = 1L)
   fx$state <- stage_workflow_revision(fx$state, 'p02',
     sub('x$value + 1', 'shift(x$value)', fx$fixed$p02, fixed = TRUE), 'reviewed_no_material_finding')
   old_path <- fx$state$runtime$helpers
   writeLines(assemble_helper_overlay(runtime_helper_code(fx$state$runtime), 'shift <- function(x) x + 1'), old_path)
   old <- readLines(old_path)
+  fx$state <- process_program_component(fx$state, 'p02')
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
     if (req$component_id == 'p02') material_review_response(
-      sas_evidence = 'value=value+1', r_evidence = 'shift(x) now adds 99') else valid_program_review_response()
+      sas_evidence = 'value=value+1', r_evidence = 'shift(x) now adds 99',
+      affected_outputs = 'work.out2') else valid_program_review_response()
   })
   fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(code = fx$fixed$p01,
     bundle_helper_patch = list(path = 'sas2r-helpers.R', content = 'shift <- function(x) x + 99', reason = 'incorrect candidate')))
   result <- process_program_component(fx$state, 'p01')
-  expect_identical(result$runtime$helpers, old_path)
   expect_identical(readLines(old_path), old)
-  expect_identical(result$selected_revisions$p02, fx$state$selected_revisions$p02)
-  expect_identical(component_review_verdict(result$histories$p02), 'reviewed_no_material_finding')
-  expect_length(result$diagnostics$rejected_repairs, 1)
-  expect_true(file.exists(result$diagnostics$rejected_repairs[[1]]$helper_path))
+  expect_true(result$selected_revisions$p02$smoke$passed)
+  expect_false(identical(component_review_verdict(result$histories$p02), 'reviewed_no_material_finding'))
+  expect_length(fx$state$reviewer_llm$requests(), 2L) # current component only
+  result <- finalize_component_reviews(result)
+  expect_identical(component_review_verdict(result$histories$p02), 'repair_required')
+  expect_length(result$diagnostics$rejected_repairs, 0L)
+  expect_length(fx$state$fixer_llm$requests(), 1L) # checkpoint never repairs
+  bundle <- run_bundle_pipeline(result, max_bundle_repair_rounds = 0L)
+  expect_true(bundle$attempt$passed)
+  expect_false(bundle$status %in% c('migration_ready', 'validated'))
+  queue <- bundle_repair_queue(result, bundle$attempt, bundle$assessment, list(failures = list()))
+  expect_true('p02' %in% names(queue))
+  expect_true(queue$p02$code_local)
 })
 
 test_that("live totals equal resumed totals without adding reasoning twice", {
