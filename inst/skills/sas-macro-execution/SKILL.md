@@ -62,6 +62,27 @@ call. Check that consumers see each intended value, that caller settings reach
 the callee, and that accumulated state survives. Use this as a scope example,
 not as a universal translation of all SAS assignments.
 
+For a selected dependency documented to return a named count and blank label,
+keep that shape explicit. This example also keeps a same-named caller value
+separate from the callable function; it does not implement a macro symbol table.
+
+```r
+make_summary <- function(values) {
+  list(count = c(total = length(values)), label = "", optional = NULL)
+}
+use_summary <- function(values) {
+  make_summary_value <- "outer value"
+  result <- make_summary(values)
+  list(count = result$count[["total"]], label = result$label,
+       has_optional_field = "optional" %in% names(result),
+       outer_value = make_summary_value)
+}
+```
+
+An absent field is different from a present blank field or a present NULL field.
+Do not flatten this result into a guessed universal representation. This return
+convention is justified only when both selected implementations use it.
+
 Reference: [SAS macro variable scopes](https://support.sas.com/documentation/cdl/en/mcrolref/62978/HTML/default/p1b76sxg9dbcyrn1l5age5j5nvgw.htm).
 
 ## Quoting, defaults and changing loop inputs
@@ -86,6 +107,14 @@ changes this source behavior. Explain a proposed reversal with a concrete trace.
 
 Call the selected project function when the SAS delegates to that macro.
 Preserve its actual return representation; do not guess Boolean versus 0/1.
+Check the selected producer and caller together: a named scalar, a vector and
+a named list have different interfaces. Extract the agreed field explicitly;
+`unlist()` can change compound names and remove NULL fields. Blank text (`""`),
+an absent binding and a missing argument are separate states. Canonicalize
+identifier names consistently at both ends without changing their data values.
+Do not invent an alias or a second global macro store to hide a mismatch.
+Keep local shadowing, updates to existing outer values and explicit globals
+distinct; never overwrite a callable function with a same-named macro value.
 For numeric `x = c(NA, 1, 1)`, PROC SQL COUNT(DISTINCT x) is 1, not 2; empty input
 has count 0. A caller that replaces a counting dependency with `length(unique(x))`
 introduces a missing-value error. Character missing blanks also need exclusion.

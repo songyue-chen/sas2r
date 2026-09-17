@@ -571,7 +571,7 @@ known_domains:
     strategy: deferred_missing_value_model
     implementation_status: deferred
     risk: high
-    scope: "Language-wide missing-value semantics not fully represented by the current helper layer."
+    scope: "Ordinary R NA is an acceptable representation when source meaning is preserved. Preserve special-missing distinctions when source sorting, grouping or comparisons observe them; a blanket collapse is not equivalent. Missing universal parity is uncertainty, not itself a concrete defect."
     sources: *comparison_sources
     edge_cases: [special_missing, ordering, arithmetic, grouping]
 
@@ -582,7 +582,7 @@ known_domains:
     strategy: deferred_character_metadata_model
     implementation_status: deferred
     risk: high
-    scope: "Language-wide character storage and comparison semantics."
+    scope: "Storage padding alone need not match when unobserved. Source-visible truncation, declared-length operations, concatenation, comparison and fixed-width exports still require equivalent behavior. Cite the affected operation rather than treating every variable-length R string as a defect."
     sources: *function_sources
     edge_cases: [blank_padding, truncation, assignment_length, comparison]
 

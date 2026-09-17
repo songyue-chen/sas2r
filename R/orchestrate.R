@@ -300,26 +300,9 @@ process_program_component <- function(
       config = state$config %||% list()
     )
 
-    review_key <- migration_hash(list(
-      code = rev$r_code, contract = rev$contract, config = source_review_config(state$config),
-      guidance = build_agent_guidance(state$project, component_id, rev$contract,
-        state$selected_revisions, state$graph, config = state$config,
-        priority_dependencies = review_context_dependencies(state$histories[[component_id]]))$identity,
-      dependencies = lapply(state$selected_revisions[dependency_closure(state$graph, component_id)], revision_code),
-      helper = if (!is.null(state$runtime$helpers) && file.exists(state$runtime$helpers))
-        unname(cli::hash_sha256(state$runtime$helpers)) else NULL,
-      reviewer = state$reviewer_llm[c("provider", "model", "model_parameters")]
-    ))
-    cached <- state$review_cache[[component_id]]
-    cached_verdict <- component_review_verdict(state$histories[[component_id]])
-    reuse_review <- isTRUE(checks$pass) && identical(cached$key, review_key) &&
-      cached$review$verdict %in% c("reviewed_no_material_finding", "repair_required")
-    resumed_review <- isTRUE(checks$pass) && is.null(cached) && component_id %in% state$resumed_components &&
-      cached_verdict %in% c("reviewed_no_material_finding", "repair_required")
     review <- if (!isTRUE(checks$pass)) {
       list(verdict = "review_unavailable", reason = "mechanical_checks_failed; repair before semantic review")
-    } else if (reuse_review) cached$review else if (resumed_review)
-      component_review_record(state$histories[[component_id]]) else review_program_revision(
+    } else review_program_revision(
       revision = rev,
       context = ctx,
       llm = state$reviewer_llm,
@@ -332,12 +315,6 @@ process_program_component <- function(
     if (!is.null(review$history)) {
       state$histories[[component_id]] <- review$history
     }
-    cached_record <- review
-    cached_record$history <- NULL
-    if (isTRUE(checks$pass)) {
-      state$review_cache[[component_id]] <- list(key = review_key, review = cached_record)
-    }
-
     if (identical(review$verdict, "review_unavailable")) {
       state$events <- c(state$events, paste0("review_unavailable:", rev_id))
     } else {
@@ -345,7 +322,7 @@ process_program_component <- function(
     }
     signal_immediate_coordinator_event(
       if (identical(review$verdict, "review_unavailable")) "review_unavailable"
-      else if (reuse_review || resumed_review) "review_reused" else "program_reviewed",
+      else if (isTRUE(review$reused)) "review_reused" else "program_reviewed",
       component_id, rev_id, reason = review$reason %||% review$verdict
     )
 

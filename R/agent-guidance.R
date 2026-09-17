@@ -5,6 +5,22 @@ agent_guidance_policy <- function() {
     warn = FALSE), collapse = "\n")
 }
 
+# Phase changes the investigation's emphasis, never the semantic standard or
+# the reviewer's read-only role. Only the executor supplies runtime evidence.
+agent_phase_guidance <- function(phase = "program") {
+  if (identical(phase, "bundle")) {
+    paste("Bundle integration focus. Trace the reported failure through the selected caller/callee or producer/consumer:",
+      "argument and return shapes, names, lookup, state lifetime, execution order, intermediates and required artifact content.",
+      "Use only the supplied bounded executor diagnostics and source/code facts; do not execute or open runtime data.",
+      "A changed candidate still requires full semantic review unless this request explicitly says focused review.",
+      "An input mismatch or source-required failure is not permission to change source rules.")
+  } else {
+    paste("Component translation focus. Check source calculations, filters, merges, return values and side effects.",
+      "Identify the causal defect in this component; affected outputs may include downstream consumers, even for return-only macros.",
+      "Preserve source-visible effects while accepting harmless SAS/R representation differences under the shared policy.")
+  }
+}
+
 agent_package_facts <- function(allowlist = NULL) {
   allowed <- normalize_package_allowlist(allowlist)
   versions <- vapply(allowed, function(pkg) tryCatch(
@@ -12,21 +28,29 @@ agent_package_facts <- function(allowlist = NULL) {
   list(r_version = as.character(getRversion()), allowed = allowed, versions = versions)
 }
 
-direct_component_dependencies <- function(graph, component_id) {
+direct_component_dependencies <- function(graph, component_id, downstream = FALSE) {
   if (is.null(graph$nodes) || is.null(graph$edges)) return(character())
   nodes <- graph$nodes
   eligible <- nodes[!nodes$type %in% c("external_input", "final_output", "unresolved_dependency"), ]
-  incoming <- graph$edges[graph$edges$to %in% eligible$node_id[eligible$component_id == component_id], ]
-  result <- eligible$component_id[match(incoming$from, eligible$node_id)]
+  from <- if (downstream) "to" else "from"
+  to <- if (downstream) "from" else "to"
+  incoming <- graph$edges[graph$edges[[to]] %in% eligible$node_id[eligible$component_id == component_id], ]
+  result <- eligible$component_id[match(incoming[[from]], eligible$node_id)]
   sort(setdiff(unique(result[!is.na(result)]), component_id), method = "radix")
 }
 
 build_agent_guidance <- function(project, component_id, contract = NULL,
                                  selected_revisions = list(), graph = project$graph,
                                  body_limit = 6000L, packet_limit = 24000L,
-                                 config = project$config %||% list(), priority_dependencies = character()) {
+                                 config = project$config %||% list(), priority_dependencies = character(),
+                                 include_consumers = FALSE) {
   deps <- direct_component_dependencies(graph, component_id)
+  consumers <- if (isTRUE(include_consumers)) direct_component_dependencies(graph, component_id, downstream = TRUE) else character()
+  deps <- unique(c(deps, consumers))
   environment <- agent_package_facts(config$allowlist)
+  projections <- source_projection_context(project, component_id)
+  while (length(projections) && nchar(paste(render_source_projections(projections), collapse = "\n")) >
+      min(6000L, floor(packet_limit / 3L))) projections <- utils::head(projections, -1L)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
   bodies <- lapply(deps, function(cid) list(
     sas = component_source_text(graph, cid),
@@ -40,7 +64,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     b$symbol %in% priority_dependencies, logical(1))
   deps <- deps[order(!cited, !called, seq_along(deps))]
   bodies <- bodies[deps]
-  scope <- migration_hash(list(component_id, macro, bodies, environment,
+  scope <- migration_hash(list(component_id, macro, bodies, environment, projections, consumers,
     policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
   facts <- list()
   add_fact <- function(kind, subject, value) {
@@ -53,7 +77,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     "Package facts observed in the local execution environment (installation is not semantic support):",
     paste("R:", environment$r_version),
     paste(names(environment$versions), "allowed by mechanical lint; installed version:", environment$versions),
-    "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.")
+    "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.",
+    render_source_projections(projections))
   params <- macro$parameters
   if (!is.null(params) && nrow(params)) for (i in utils::head(seq_len(nrow(params)), 32L)) {
     if (!identical(params$default_status[i], "unresolved")) next
@@ -67,7 +92,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     body <- bodies[[cid]]
     id <- add_fact("dependency_body", body$symbol, "missing_or_truncated")
     paste(id, "dependency_body", body$symbol, "component", cid,
-      "selected revision", body$revision)
+      "selected revision", body$revision,
+      if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency")
   }, character(1))
   label_budget <- max(0L, packet_limit - nchar(paste(text, collapse = "\n")) - 150L)
   included <- deps[cumsum(nchar(headers) + 80L) <= label_budget]

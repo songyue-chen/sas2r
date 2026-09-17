@@ -347,13 +347,16 @@ test_that("a parse/eval implementation can still receive a simple supported corr
 
 test_that("resumed completed reviews retain cause-specific repair decisions", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
-  fx$state$histories$p01 <- record_completed_review(fx$state$histories$p01,
-    verdict = "repair_required", findings = list(list(category = "source_syntax_claim",
-      repair_disposition = "source_syntax_claim_only", sas_evidence = "unsupported syntax allegation", r_evidence = "x")))
+  fx$state$reviewer_llm <- recording_reviewer(function(req) {
+    response <- material_review_response(sas_evidence = "unsupported syntax allegation", r_evidence = "x")
+    response$data$findings[[1]]$category <- "source_syntax_claim"
+    response
+  })
+  fx$state <- process_program_component(fx$state, "p01", execute = FALSE)
   fx$state$resumed_components <- "p01"
   state <- process_program_component(fx$state, "p01", execute = FALSE)
   expect_length(fx$state$fixer_llm$requests(), 0)
-  expect_length(fx$state$reviewer_llm$requests(), 0)
+  expect_length(fx$state$reviewer_llm$requests(), 1)
   expect_identical(component_review_verdict(state$histories$p01), "repair_required")
 })
 

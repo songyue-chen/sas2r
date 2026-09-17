@@ -107,8 +107,16 @@ source_history_regressions <- function(previous, candidate) {
 # are still hashed independently, including files also used as references.
 source_review_config <- function(config) {
   config$comparison_rules <- NULL
-  if (is.list(config$outputs)) config$outputs$references <- NULL
-  config
+  # Actual reviewer/model settings are keyed separately. Request transport and
+  # spending limits do not change the source facts supplied to a reviewer.
+  config$llm <- NULL
+  config$budget <- NULL
+  config$usage_limits <- NULL
+  if (is.list(config$outputs)) {
+    config$outputs$references <- NULL
+    if (!length(config$outputs)) config$outputs <- NULL
+  }
+  if (length(config)) config else list()
 }
 
 source_evidence_summary <- function(history, population) {
@@ -136,25 +144,30 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     old <- current_component_evidence(history)
     if (identical(component_review_verdict(history), "repair_required") && !isTRUE(queue[[cid]]$artifact_investigation)) next
     full_review <- identical(component_review_verdict(history), "review_unavailable")
+    targets <- sort(unique(vapply(c(queue[[cid]]$failed_targets, queue[[cid]]$investigation_targets), `[[`, "", "target_key")))
     key <- migration_hash(list(
       code = rev$r_code, binding = old$binding,
       guidance = build_agent_guidance(state$project, cid, rev$contract,
         state$selected_revisions, state$graph, config = state$config,
+        include_consumers = TRUE,
         priority_dependencies = review_context_dependencies(history))$identity,
       dependencies = lapply(state$selected_revisions[ancestors], revision_code),
       inputs = state$input_manifest %||% input_hash_manifest(state$project),
       config = source_review_config(state$config),
-      reviewer = state$reviewer_llm[c("provider", "model", "model_parameters")],
+      phase = "bundle", focus = targets, scope = if (full_review) "full" else "focused",
+      helper = runtime_helper_code(state$runtime),
+      helper_reference = helper_reference(), rulebook = load_rulebook(),
+      reviewer = state$reviewer_llm[c("provider", "model", "model_parameters", "endpoint", "api_version")],
       worker = worker_binding_hash("reviewer", skills = agent_skill_catalog(),
-        project_dir = state$project$project_dir)))
+        project_dir = state$project$project_dir, schema = "program_review_v1")))
     events <- unlist(lapply(history$revisions, `[[`, "events"), recursive = FALSE)
     if (any(vapply(events, function(x) identical(x$type, "source_mismatch_review") &&
         identical(x$context_key, key) && (!full_review || identical(x$review_scope, "full")), logical(1)))) next
-    targets <- unique(vapply(c(queue[[cid]]$failed_targets, queue[[cid]]$investigation_targets), `[[`, "", "target_key"))
     review <- tryCatch(review_program_revision(rev, context = list(
       sas_source = component_source_text(state$graph, cid), project = state$project,
       config = state$config, selected_revisions = state$selected_revisions, focus_outputs = targets,
-      helper_code = runtime_helper_code(state$runtime), full_review = full_review), llm = state$reviewer_llm,
+      helper_code = runtime_helper_code(state$runtime), full_review = full_review,
+      phase = "bundle", source_input_identity = state$input_manifest %||% input_hash_manifest(state$project)), llm = state$reviewer_llm,
       usage = state$usage_budget, paths = state$paths, history = history,
       round = round, attempt_id = attempt$attempt_id), error = function(e) {
         if (inherits(e, "sas2r_llm_settings_error")) stop(e)
@@ -167,6 +180,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
       length(source_grounded_review_findings(review)) > 0L
     current_guidance <- build_agent_guidance(state$project, cid, rev$contract,
       state$selected_revisions, state$graph, config = state$config,
+        include_consumers = TRUE,
         priority_dependencies = review_context_dependencies(history))$identity
     recovered <- full_review && identical(review$review_scope, "full") &&
       identical(review$verdict, "reviewed_no_material_finding") &&

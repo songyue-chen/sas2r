@@ -353,8 +353,17 @@ review_program_revision <- function(
 
   guidance <- build_agent_guidance(context$project, component_id, contract,
     context$selected_revisions %||% list(), config = context$config %||% context$project$config %||% list(),
-    priority_dependencies = context$priority_dependencies %||% review_context_dependencies(history %||% context$history))
+    include_consumers = identical(context$phase, "bundle"),
+    priority_dependencies = unique(c(context$execution$failed_component_id %||% context$execution$condition$component_id,
+      context$priority_dependencies %||% review_context_dependencies(history %||% context$history))))
   review_scope <- if (length(context$focus_outputs) && !isTRUE(context$full_review)) "focused" else "full"
+  phase <- context$phase %||% "program"
+  diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution) else NULL
+  if (!is.null(diagnostics)) {
+    # Static review uses observations, not their per-attempt storage locations.
+    # Retain the original records and fixer diagnostics for navigation/debugging.
+    diagnostics[c("execution_id", "stdout_path", "stderr_path")] <- NULL
+  }
   context_packet <- paste(c(
     "Component:", component_id,
     render_component_libraries(context$project, component_id),
@@ -367,6 +376,8 @@ review_program_revision <- function(
     "Output lineage:", lineage_txt,
     guidance$text,
     revision$dependency_notices,
+    if (!is.null(diagnostics)) c("Bounded executor observations (not reviewer execution):",
+      jsonlite::toJSON(diagnostics, auto_unbox = TRUE, null = "null")),
     if (!is.null(context$helper_code)) c("Candidate shared R helpers:", context$helper_code)
   ), collapse = "\n")
 
@@ -402,16 +413,55 @@ review_program_revision <- function(
     round = round,
     attempt_id = attempt_id,
     review_scope = review_scope,
+    phase = phase,
     purpose = if (length(context$focus_outputs)) "source_mismatch_review" else "program_review"
   )
 
   prompt_vars <- list(
+    phase = agent_phase_guidance(phase),
     unit = sas_text,
     comments = comments_text,
     staged_r = r_code,
     context = context_packet,
     skills = rendered_skills
   )
+
+  # Completed reviews live in the existing evidence history. All entry paths
+  # (component, helper consumers, bundle) use the same exact-context identity.
+  # Never restore an old history snapshot when reusing a review.
+  history_obj <- history %||% context$history %||% revision$history %||% NULL
+  review_key <- migration_hash(list(
+    prompt = prompt_vars, scope = review_scope, phase = phase,
+    focus = sort(unique(context$focus_outputs %||% character())), binding = binding,
+    contract = contract, config = source_review_config(context$config %||% list()),
+    dependencies = lapply((context$selected_revisions %||% list())[
+      dependency_closure(context$project$graph, component_id)], function(x)
+        list(code = revision_code(x), binding = x$binding %||% x$contract$binding)),
+    inputs = context$source_input_identity,
+    helper_reference = helper_reference(), rulebook = load_rulebook(),
+    worker = worker_binding_hash("reviewer", catalog,
+      project_dir = project_dir %||% context$project$project_dir, schema = "program_review_v1"),
+    reviewer = llm[c("provider", "model", "model_parameters", "endpoint", "api_version")]
+  ))
+  events <- current_component_evidence(history_obj)$events %||% list()
+  # A later review may add evidence or fail to complete. Never reach back past
+  # it for an older clean verdict, even if the old request key matches again.
+  events <- utils::tail(Filter(function(e) e$type %in%
+    c("review_completed", "review_unavailable"), events), 1L)
+  reusable <- Filter(function(e) identical(e$review_key, review_key) &&
+    e$review_record$verdict %in% c("reviewed_no_material_finding", "repair_required"), events)
+  if (length(reusable)) {
+    cached <- reusable[[length(reusable)]]$review_record
+    cached$history <- history_obj
+    cached$reused <- TRUE
+    cached$spend_usd <- 0
+    return(cached)
+  }
+  if (length(events) && identical(events[[1L]]$type, "review_completed") &&
+      is.null(events[[1L]]$review_key)) {
+    signal_immediate_coordinator_event("review_refresh", component_id, revision_id,
+      reason = "saved review predates request identity; refreshing")
+  }
 
   # The reviewer's tools answer from the project, not from an empty context:
   # query_project_graph needs the lineage, and read_skill/search_skills keep
@@ -472,7 +522,6 @@ review_program_revision <- function(
 
   review_id <- paste0("revw_", substr(migration_hash(list(component_id, revision_id, verdict, Sys.time(), stats::runif(1))), 1L, 16L))
 
-  history_obj <- history %||% context$history %||% revision$history %||% NULL
   if (!is.null(history_obj)) {
     if (identical(verdict, "review_unavailable")) {
       history_obj <- record_review_unavailable(history_obj, reason = reason)
@@ -506,6 +555,8 @@ review_program_revision <- function(
       findings = findings,
       context_identity = guidance$identity,
       review_scope = review_scope,
+      phase = phase,
+      review_key = review_key,
       status = if (identical(verdict, "review_unavailable")) "review_unavailable" else "ok",
       reason = if (identical(verdict, "review_unavailable")) reason else NULL,
       spend_usd = agent_res$spend_usd %||% 0,
@@ -514,6 +565,14 @@ review_program_revision <- function(
     ),
     class = c("sas2r_program_review", "list")
   )
+
+  if (!is.null(history_obj) && !identical(verdict, "review_unavailable")) {
+    saved <- review_record
+    saved$history <- NULL
+    history_obj$revisions[[idx]]$events[[last]]$review_key <- review_key
+    history_obj$revisions[[idx]]$events[[last]]$review_record <- saved
+    review_record$history <- history_obj
+  }
 
   if (!is.null(paths)) {
     rev_dir <- file.path(paths$component_revisions %||% paths$root, component_id, "reviews")

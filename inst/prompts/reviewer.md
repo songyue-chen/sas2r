@@ -35,6 +35,9 @@ Comment evidence (fallback only):
 Generated R code:
 {{staged_r}}
 
+Review focus:
+{{phase}}
+
 Context packet:
 {{context}}
 
