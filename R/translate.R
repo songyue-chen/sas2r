@@ -179,6 +179,7 @@ sas_translate <- function(
 
   # Resume exact revision records only when all relevant inputs still match.
   resume_fingerprint <- migration_resume_fingerprint(state)
+  state$resume_fingerprint <- resume_fingerprint
   if (isTRUE(resume)) state <- restore_migration_checkpoint(state, resume_fingerprint)
 
   # 9./10. Program pipeline (baseline translation, mechanical checks, review,

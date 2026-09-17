@@ -427,14 +427,36 @@ Resolve source/reference mismatches before using them to drive translation
 repairs. See the [comparison guide](docs/output-evidence.md) for saved-output
 checks and ambiguous alignment.
 
+### When scripts are reviewed
+
+Each new script receives a semantic review, and an actual repair receives another
+review. When shared helpers or dependencies change later, earlier unchanged
+scripts receive local mechanical checks and smoke tests. Their semantic reviews
+wait until component translation finishes, immediately before bundle execution.
+That final pass reuses complete reviews whose full context still matches and
+reviews the remaining scripts once. It collects findings without making repairs
+during the pass; source-supported findings go to the existing bundle repair queue.
+
+A smoke pass means the tested code ran, not that every calculation matches SAS.
+Earlier scripts remain provisional until their review is current. Unresolved
+findings or unavailable reviews still prevent acceptance, even if the bundle
+runs successfully and no reference datasets are configured. Subsequent bundle
+repairs still require review and fresh execution, and existing repair limits apply.
+
 ### Resume and limit provider calls
 
 Repeat the same `sas_translate()` call with `resume = TRUE` to reuse saved
 translation revisions and completed reviews when sources, inputs, QC requirements,
 model settings, runtime, and worker prompts still match. Transport timeouts, retry
-limits, and run budget changes alone do not invalidate completed revisions. Changed or missing artifacts regenerate;
-smoke execution and full output checks rerun in fresh attempts. An unavailable
-review is retried.
+limits, and run budget changes alone do not invalidate completed revisions.
+Progress is saved after each completed component and each final-checkpoint review.
+Interrupted final reviews resume using the saved review history. Component and
+bundle fixer-call counts are retained, including an invocation interrupted before
+its answer was saved; resume does not reset those repair allowances. Changed or
+missing artifacts regenerate. Within an unchanged smoke context, passing or
+deferred results can be reused; changed code, helpers, input identity or callable
+paths require new checks. Full bundle output checks use fresh attempts. An
+unavailable review is retried within the usage budget.
 
 Upgrades can cause new provider calls. When a checkpoint remains compatible,
 changed reviewer facts (such as helper documentation, rulebook content or
@@ -446,6 +468,9 @@ can invalidate the checkpoint itself and regenerate translations as well. A
 version-number change alone does not require regeneration.
 Version 0.4.5 changes the shared agent policy, so checkpoints created with an
 earlier policy regenerate translations under the current resume rules.
+The component-review checkpoint also changes the saved checkpoint format;
+checkpoints from before that change regenerate rather than guessing missing
+repair counts. Progress reports the reason when a checkpoint cannot be reused.
 
 Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
 `usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are

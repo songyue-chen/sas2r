@@ -325,6 +325,10 @@ format_sas2r_progress <- function(progress) {
         review_unavailable = paste0("review unavailable", progress_reason(progress$reason)),
         review_reused = "saved review reused",
         review_refresh = paste0("review refresh", progress_reason(progress$reason)),
+        review_pending = paste0("semantic review pending", progress_reason(progress$reason)),
+        helper_consumer_checks = "shared helpers changed: local checks for earlier components",
+        component_review_checkpoint_started = "final component review started",
+        component_review_checkpoint_completed = paste0("final component review completed", progress_reason(progress$reason)),
         program_fixed = "repair candidate generated",
         component_revisited = "revisited",
         gsub("_", " ", event, fixed = TRUE)

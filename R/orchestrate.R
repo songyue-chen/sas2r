@@ -261,147 +261,20 @@ process_program_component <- function(
     rev <- state$selected_revisions[[component_id]]
     rev_id <- rev$revision_id %||% paste0("r", round + 1L)
 
-    # Step A: Mechanical checks
-    registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
-    checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p,
-      helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist)
-    checks$check_id <- paste0("check_", substr(migration_hash(list(
-      component_id, rev_id, rev$r_code, checks)), 1L, 16L))
-
-    if (isTRUE(checks$pass)) {
-      state$events <- c(state$events, paste0("mechanical_pass:", rev_id))
-      signal_immediate_coordinator_event("mechanical_pass", component_id, rev_id)
-      rev$status <- "ok"
-    } else {
-      state$events <- c(state$events, paste0("mechanical_fail:", rev_id))
-      signal_immediate_coordinator_event("mechanical_fail", component_id, rev_id,
-                                         reason = paste(checks$errors, collapse = "; "))
-      rev$status <- "check_failed"
-    }
-    rev$checks <- checks
-    state$selected_revisions[[component_id]] <- rev
-    state$histories[[component_id]] <- record_program_checks(
-      state$histories[[component_id]], checks
-    )
-
-    # Step B: Independent review
-    ctx <- list(
-      component_id = component_id,
-      revision_id = rev_id,
-      r_code = rev$r_code,
-      r_path = rev$r_path,
-      contract = rev$contract,
-      binding = rev$binding %||% rev$contract$binding,
-      history = state$histories[[component_id]],
-      helper_code = runtime_helper_code(state$runtime),
-      sas_source = component_source_text(state$graph, component_id),
-      project = state$project,
-      selected_revisions = state$selected_revisions,
-      config = state$config %||% list()
-    )
-
-    review <- if (!isTRUE(checks$pass)) {
-      list(verdict = "review_unavailable", reason = "mechanical_checks_failed; repair before semantic review")
-    } else review_program_revision(
-      revision = rev,
-      context = ctx,
-      llm = state$reviewer_llm,
-      usage = state$usage_budget,
-      paths = state$paths,
-      round = round,
-      history = state$histories[[component_id]]
-    )
-
-    if (!is.null(review$history)) {
-      state$histories[[component_id]] <- review$history
-    }
-    if (identical(review$verdict, "review_unavailable")) {
-      state$events <- c(state$events, paste0("review_unavailable:", rev_id))
-    } else {
-      state$events <- c(state$events, paste0("reviewed:", rev_id))
-    }
-    signal_immediate_coordinator_event(
-      if (identical(review$verdict, "review_unavailable")) "review_unavailable"
-      else if (isTRUE(review$reused)) "review_reused" else "program_reviewed",
-      component_id, rev_id, reason = review$reason %||% review$verdict
-    )
-
-    # Step C: Meaningful smoke / defer
-    smoke_res <- NULL
-    if (!isTRUE(checks$pass)) {
-      smoke_res <- list(passed = FALSE, deferred = TRUE, reason = "mechanical_checks_failed")
-      state$histories[[component_id]] <- record_runtime_deferred(
-        state$histories[[component_id]], reason = smoke_res$reason)
-      state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
-      signal_program_smoke_event("program_smoke_deferred", component_id, reason = smoke_res$reason)
-    } else if (!isTRUE(execute)) {
-      state$histories[[component_id]] <- record_runtime_deferred(
-        state$histories[[component_id]],
-        reason = "execute_disabled"
-      )
-      state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
-      smoke_res <- list(passed = FALSE, deferred = TRUE, reason = "execute_disabled")
-    } else {
-      plan <- build_program_smoke_plan(
-        graph = state$graph,
-        component_id = component_id,
-        selected_revisions = state$selected_revisions,
-        execute = TRUE
-      )
-
-      plan$population_specs <- source_population_specs(
-        state$project, c(plan$dependency_prefix, component_id))
-      if (identical(plan$status, "deferred")) {
-        state$histories[[component_id]] <- record_runtime_deferred(
-          state$histories[[component_id]],
-          reason = plan$reason
-        )
-        state$events <- c(state$events, paste0("smoke_deferred:", rev_id))
-        smoke_res <- list(passed = FALSE, deferred = TRUE, reason = plan$reason, waiting_on = plan$waiting_on)
-      } else if (identical(plan$status, "runnable")) {
-        attempt_dir <- if (!is.null(state[["attempt"]]) && !is.null(state[["attempt"]]$attempt_dir)) {
-          state[["attempt"]]$attempt_dir
-        } else if (!is.null(state$paths) && !is.null(state$paths$smoke_tests)) {
-          file.path(state$paths$smoke_tests, "smoke_attempt_001")
-        } else {
-          tempdir()
-        }
-
-        prepared <- prepare_program_smoke(state, plan, attempt_dir)
-        smoke_res <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)
-        state$histories[[component_id]] <- record_program_smoke(
-          state$histories[[component_id]], smoke_res
-        )
-
-        if (isTRUE(smoke_res$passed)) {
-          state$events <- c(state$events, paste0("smoke_passed:", rev_id))
-          # Promote evidence level if review completed cleanly
-          curr_ev <- current_component_evidence(state$histories[[component_id]])
-          if (!is.null(curr_ev) && identical(curr_ev$level, "reviewed_only") && length(curr_ev$blockers) == 0L) {
-            coverage_id <- paste0("call:", component_id)
-            state$histories[[component_id]] <- promote_component_evidence(
-              state$histories[[component_id]],
-              target_level = "runtime_verified",
-              coverage = coverage_id,
-              basis_id = smoke_res$execution_id
-            )
-          }
-        } else {
-          event <- if (!is.null(smoke_res$blocked_by)) "smoke_blocked:" else "smoke_failed:"
-          state$events <- c(state$events, paste0(event, rev_id))
-        }
-      }
-    }
-
-    rev$smoke <- smoke_res
-    state$selected_revisions[[component_id]] <- rev
+    state <- check_component_revision(state, component_id)
+    reviewed <- review_component_revision(state, component_id, round)
+    state <- smoke_component_revision(reviewed$state, component_id, execute)
+    rev <- state$selected_revisions[[component_id]]
+    checks <- rev$checks
+    review <- reviewed$review
+    smoke_res <- rev$smoke
     # Candidates are checked, reviewed, and executed before replacing the
     # previous selection. Keep both histories, including unresolved findings.
     if (!is.null(prior_candidate)) {
       regressions <- program_repair_regressions(prior_candidate, rev, review)
       if (!is.null(prior_candidate$retained_state) && !length(regressions)) {
-        consumer_check <- tryCatch(review_helper_consumers(state, prior_candidate$retained_state,
-          setdiff(names(state$selected_revisions), component_id), round),
+        consumer_check <- tryCatch(check_helper_consumers(state, prior_candidate$retained_state,
+          setdiff(names(state$selected_revisions), component_id), execute),
           error = function(e) {
             if (inherits(e, "sas2r_llm_settings_error")) stop(e)
             list(state = state, reasons = conditionMessage(e))
@@ -464,6 +337,7 @@ process_program_component <- function(
     # Step E: Invoke Fixer with combined evidence
     next_round <- round + 1L
     state$repair_counts[[component_id]] <- next_round
+    if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
     next_rev_id <- paste0("r", next_round + 1L)
 
     fixed_rev <- tryCatch(
@@ -516,6 +390,14 @@ process_program_component <- function(
       prompt_skill_hash = rev$binding$prompt_skill_hash %||% migration_hash("fixer"),
       dependency_closure_hash = rev$binding$dependency_closure_hash %||% migration_hash("closure")
     )
+    # Keep closure identity current before reviewing the new code. Otherwise a
+    # resume-only runtime revisit would invalidate this review a second time.
+    hashes <- vapply(state$selected_revisions, function(x) migration_hash(revision_code(x)), "")
+    hashes[[component_id]] <- migration_hash(fixed_rev$r_code)
+    closure <- dependency_closure_hashes(state$graph, hashes, new_b$helper_hash,
+      new_b$prompt_skill_hash)[[component_id]]
+    new_b <- new_component_binding(new_b$source_hash, new_b$r_hash, new_b$helper_hash,
+      new_b$prompt_skill_hash, closure)
     fixed_rev$binding <- new_b
     if (!is.null(fixed_rev$contract)) fixed_rev$contract$binding <- new_b
 
@@ -564,6 +446,10 @@ run_program_pipeline <- function(
   cids <- if (nrow(schedule) > 0L) schedule$component_id else names(state$selected_revisions) %||% character()
 
   revisit_queue <- cids
+  # Only context-triggered visits of already processed, unchanged components
+  # skip agents. A first visit or an actual component edit still gets review.
+  processed <- lapply(state$selected_revisions[state$resumed_components %||% character()],
+    component_content_identity)
   revisit_count <- stats::setNames(rep(0L, length(cids)), cids)
   max_revisits_per_comp <- 3L
 
@@ -578,12 +464,14 @@ run_program_pipeline <- function(
 
     old_cid_hash <- state$selected_revisions[[cid]]$binding$binding_hash %||% ""
 
-    state <- process_program_component(
-      state = state,
-      component_id = cid,
-      execute = execute,
-      max_program_repair_rounds = max_program_repair_rounds
-    )
+    content <- component_content_identity(state$selected_revisions[[cid]])
+    if (!is.null(content) && identical(processed[[cid]], content)) {
+      state <- revisit_component_runtime(state, cid, execute)
+    } else {
+      state <- process_program_component(state, cid, execute, max_program_repair_rounds)
+    }
+    processed[[cid]] <- component_content_identity(state$selected_revisions[[cid]])
+    if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
 
     new_cid_hash <- state$selected_revisions[[cid]]$binding$binding_hash %||% ""
 
@@ -619,6 +507,7 @@ run_program_pipeline <- function(
     state$active_revision <- state$selected_revisions[[length(state$selected_revisions)]]$revision_id
   }
 
+  state <- finalize_component_reviews(state)
   structure(state, class = c("sas2r_program_pipeline_result", "sas2r_migration_state", "list"))
 }
 
@@ -789,10 +678,10 @@ run_bundle_pipeline <- function(
   explicit_limit <- bundle_repair_limit(max_bundle_repair_rounds,
     "max_bundle_repair_rounds", allow_null = TRUE)
   total_limit <- explicit_limit %||% (as.double(component_limit) * length(state$selected_revisions))
-  repair_counts <- list()
+  repair_counts <- state$diagnostics$bundle_repair$repair_counts %||% list()
   deferred <- list()
   diagnostic_history <- list()
-  round <- 0L
+  round <- as.integer(sum(unlist(repair_counts)))
   attempt_seq <- 1L
   attempts_summary <- list()
   repairs <- list()
@@ -1019,9 +908,12 @@ run_bundle_pipeline <- function(
         packet$attempt$passed <- TRUE
       }
       repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
+      state$diagnostics$bundle_repair$repair_counts <- repair_counts
+      if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
       outcome <- repair_bundle_component(state, packet, attempt_rec, round)
       round <- round + 1L
       state <- outcome$state
+      if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
       if (!isTRUE(outcome$applied)) {
         for (cid in names(selected_histories)) {
           if (identical(selected_histories[[cid]]$active_revision_id, state$histories[[cid]]$active_revision_id))
@@ -1099,6 +991,8 @@ run_bundle_pipeline <- function(
     environment = state$environment,
     usage_budget = state$usage_budget,
     config = state$config,
+    repair_counts = state$repair_counts,
+    resume_fingerprint = state$resume_fingerprint,
     events = state$events
   )
 
