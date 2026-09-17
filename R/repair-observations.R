@@ -56,6 +56,7 @@ repair_report_observations <- function(state, paths) {
   notices <- lapply(state$selected_revisions, function(rev) list(
     revision_id = rev$revision_id,
     direct_io = rev$checks$warnings[grepl("direct_io", rev$checks$warnings)],
+    nonlocal_assignment = rev$checks$warnings[grepl("nonlocal_assignment", rev$checks$warnings)],
     dependency_symbols = rev$dependency_notices %||% character(),
     mechanical_retry = rev$mechanical_retry))
   list(output_changes = changes, code_notices = notices)

@@ -32,12 +32,18 @@ later dataset's value wins, columns follow statement order, and rows follow
 SAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key
 columns, are refused: those cases require SAS observation-by-observation
 semantics that this join-based helper does not implement.
+Do not pre-create missing columns on one input when the other input supplies
+them: that invents an overlap. Preserve genuine overlapping source columns;
+their unsupported repeated-key semantics must not be silently dropped.
 }
 \examples{
 a <- data.frame(id = c(1, 2), x = c("a", "b"))
 b <- data.frame(id = c(2, 3), y = c("B", "C"))
 sas_merge(a, b, by = "id", keep = "full")
 sas_merge(a, b, by = "id", keep = "both")
+events <- data.frame(id = c(1, 1, 2), event = c("a", "b", "c"))
+subjects <- data.frame(id = c(1, 2), base = c(10, 20))
+sas_merge(events, subjects, by = "id", keep = "left") # three events remain
 }
 \seealso{
 Other runtime helpers: 
@@ -45,6 +51,7 @@ Other runtime helpers:
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
 \code{\link{lib_exists}()},
+\code{\link{lib_members}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},

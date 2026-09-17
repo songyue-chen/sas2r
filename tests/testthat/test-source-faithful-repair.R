@@ -88,7 +88,7 @@ test_that("helper rejection retains files, all consumers and inactive review evi
   old_text <- readLines(old_path, warn = FALSE)
   fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(
     code = fx$fixed$p01, bundle_helper_patch = list(path = "sas2r-helpers.R",
-      content = paste(c(old_text, "# wrong shared behavior"), collapse = "\n"), reason = "repair helper")))
+      content = paste(c(old_text, "repair_marker <- function() TRUE"), collapse = "\n"), reason = "repair helper")))
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
     if (req$component_id == "p02") material_review_response(
       sas_evidence = "value = value + 1", r_evidence = "shared helper changes source behavior")
@@ -129,7 +129,7 @@ test_that("a review error after a helper write leaves the retained runtime intac
   old_text <- readLines(old_path, warn = FALSE)
   fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(
     code = fx$fixed$p01, bundle_helper_patch = list(path = "sas2r-helpers.R",
-      content = paste(c(old_text, "# proposed helper change"), collapse = "\n"), reason = "repair helper")))
+      content = paste(c(old_text, "repair_marker <- function() TRUE"), collapse = "\n"), reason = "repair helper")))
   local_mocked_bindings(review_program_revision = function(...) stop("review service unavailable"))
   result <- run_bundle_pipeline(fx$state)
   expect_identical(readLines(old_path, warn = FALSE), old_text)

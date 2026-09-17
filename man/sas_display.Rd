@@ -26,6 +26,7 @@ Other runtime helpers:
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
 \code{\link{lib_exists}()},
+\code{\link{lib_members}()},
 \code{\link{lib_read}()},
 \code{\link{sas2r_fold_names}()},
 \code{\link{sas2r_libname_assign}()},

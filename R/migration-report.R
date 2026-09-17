@@ -149,6 +149,7 @@ write_migration_report <- function(state) {
       component_id = cid,
       evidence_level = level,
       review_status = rev_status,
+      review_observations = Filter(function(e) identical(e$type, "source_mismatch_review"), curr$events %||% list()),
       smoke_status = smoke_status,
       smoke_execution = state$selected_revisions[[cid]]$smoke,
       mechanical_checks = state$selected_revisions[[cid]]$checks,
@@ -297,7 +298,7 @@ write_migration_report <- function(state) {
   }
   for (cid in names(observations$code_notices)) {
     notice <- observations$code_notices[[cid]]
-    details <- c(notice$direct_io, notice$dependency_symbols)
+    details <- c(notice$direct_io, notice$nonlocal_assignment, notice$dependency_symbols)
     if (!is.null(notice$mechanical_retry)) details <- c(details, paste(
       "Mechanical retry recorded; dynamic parse/eval involved:", isTRUE(notice$mechanical_retry$dynamic_code),
       "; candidate:", notice$revision_id, "; selected review verdict:", component_review_verdict(histories[[cid]])))
@@ -305,6 +306,16 @@ write_migration_report <- function(state) {
       paste0("  - ", details))
   }
   md_lines <- c(md_lines, "", "Direct-I/O notices identify possible registry bypasses, not proven misuse. Generated R is not a filesystem sandbox; these notices do not prevent reads of guessed local paths.", "")
+
+  md_lines <- c(md_lines, "", "### Follow-up source reviews", "")
+  for (cid in names(histories)) {
+    events <- current_component_evidence(histories[[cid]])$events %||% list()
+    followups <- Filter(function(e) identical(e$type, "source_mismatch_review"), events)
+    for (e in followups) md_lines <- c(md_lines, paste0("- `", cid, "`: ",
+      e$review_scope %||% "focused", " review: ", e$verdict,
+      "; adopted as active review: ", isTRUE(e$adopted),
+      "; active review: ", component_review_verdict(histories[[cid]])))
+  }
 
   smoke_records <- Filter(function(x) !is.null(x$record_path),
     lapply(state$selected_revisions, function(rev) rev$smoke))
@@ -460,8 +471,8 @@ write_migration_report <- function(state) {
     "",
     migration_usage_lines(usage_summary),
     paste0("- **Total LLM Calls:** ", usage_summary$calls),
-    paste0("- **Total Input Tokens:** ", usage_summary$input_tokens),
-    paste0("- **Total Output Tokens:** ", usage_summary$output_tokens),
+    paste0("- **Known Total Input Tokens:** ", usage_summary$input_tokens),
+    paste0("- **Known Total Output Tokens:** ", usage_summary$output_tokens),
     paste0("- **Total Spend USD:** $", sprintf("%.4f", usage_summary$known_amount)),
     ""
   )

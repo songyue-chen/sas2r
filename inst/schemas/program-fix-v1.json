@@ -58,7 +58,8 @@
               "minLength": 1
             },
             "content": {
-              "type": "string"
+              "type": "string",
+              "description": "Overlay of complete named top-level function definitions applied to the retained runtime. Omitted functions are preserved. Nested edits replace their complete outermost parent. No top-level execution, duplicate names or non-function assignments."
             },
             "reason": {
               "type": "string",

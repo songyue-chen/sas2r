@@ -36,14 +36,28 @@ migration_coverage <- function(targets = list(), histories = list()) {
 
 migration_usage_summary <- function(budget) {
   limits <- usage_limit_names()
+  completed <- last_usage_records_by_id(budget$records %||% list(), "request_completed")
+  unknown <- function(field) sum(vapply(completed, function(r)
+    is.na(nonnegative_number_or_na(r[[field]])), logical(1)))
+  reported_tokens <- function(field) {
+    values <- vapply(completed, function(r) nonnegative_number_or_na(r[[field]]), numeric(1))
+    if (length(values) && all(is.na(values))) NA_real_ else budget[[field]] %||% NA_real_
+  }
   list(
     known_amount = budget$known_amount %||% 0,
     billed_amount = budget$billed_amount %||% 0,
     estimated_amount = budget$estimated_amount %||% 0,
     unknown_cost_calls = budget$unknown_count %||% 0L,
     calls = budget$request_count %||% budget$calls %||% 0L,
-    input_tokens = budget$input_tokens %||% 0L,
-    output_tokens = budget$output_tokens %||% 0L,
+    input_tokens = reported_tokens("total_input_tokens"),
+    output_tokens = reported_tokens("total_output_tokens"),
+    input_token_category = reported_tokens("input_tokens"),
+    output_token_category = reported_tokens("output_tokens"),
+    cached_input_tokens = reported_tokens("cached_input_tokens"),
+    cache_write_tokens = reported_tokens("cache_write_tokens"),
+    reasoning_tokens = reported_tokens("reasoning_tokens"),
+    unknown_input_token_calls = unknown("total_input_tokens"),
+    unknown_output_token_calls = unknown("total_output_tokens"),
     pricing_source = budget$pricing_source %||% "unavailable",
     elapsed_seconds = if (is.null(budget$start_time)) NA_real_ else
       as.numeric(difftime(budget$end_time %||% Sys.time(), budget$start_time, units = "secs")),
@@ -69,6 +83,10 @@ migration_coverage_lines <- function(coverage) {
 migration_usage_lines <- function(usage) {
   c(sprintf("Elapsed: %.1f seconds. Provider calls: %d. Known spend: $%.4f (billed $%.4f; estimated $%.4f; unknown cost calls: %d).",
             usage$elapsed_seconds, usage$calls, usage$known_amount, usage$billed_amount, usage$estimated_amount, usage$unknown_cost_calls),
+    sprintf("Known token totals: input %s; output %s (includes reasoning %s). Cached input %s; cache creation %s. Unknown input usage calls: %s; unknown output usage calls: %s.",
+      usage$input_tokens, usage$output_tokens, usage$reasoning_tokens,
+      usage$cached_input_tokens, usage$cache_write_tokens,
+      usage$unknown_input_token_calls, usage$unknown_output_token_calls),
     paste0("Effective limits (", usage$mode, "): ", paste(names(usage$limits), unlist(usage$limits), sep = "=", collapse = ", ")))
 }
 

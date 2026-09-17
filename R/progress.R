@@ -324,7 +324,7 @@ format_sas2r_progress <- function(progress) {
         repair_rejected = paste0("repair rejected; retained prior revision", progress_reason(progress$reason)),
         review_unavailable = paste0("review unavailable", progress_reason(progress$reason)),
         review_reused = "saved review reused",
-        program_fixed = "repaired",
+        program_fixed = "repair candidate generated",
         component_revisited = "revisited",
         gsub("_", " ", event, fixed = TRUE)
       )

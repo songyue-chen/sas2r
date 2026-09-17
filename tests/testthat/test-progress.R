@@ -223,7 +223,7 @@ test_that("coordinator events say what happened instead of counting to 1/1", {
     "  coordinator  demo (r1): mechanical checks passed",
     "  coordinator  demo (r1): review completed",
     "  coordinator  demo (r1): agent degraded -- tool_calling_unavailable",
-    "  coordinator  demo (r2): repaired",
+    "  coordinator  demo (r2): repair candidate generated",
     "  coordinator  demo: revisited"
   ))
   expect_false(any(grepl("1/1", lines, fixed = TRUE)))

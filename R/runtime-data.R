@@ -308,6 +308,59 @@ lib_exists <- function(libref, member) {
   !is.null(sas2r_lib_member_file(sas2r_lib_entry(libref), member))
 }
 
+#' List ordinary dataset members in a configured library
+#'
+#' Lists names without reading dataset rows. Uses the same member resolver and
+#' write/read precedence as [lib_exists()] and [lib_read()]. Duplicate storage
+#' formats yield one name. Names and extensions must be resolvable on the local
+#' filesystem; case is preserved. Unsupported views, name literals and ranges
+#' are not expanded. An unknown library or inaccessible configured directory is
+#' an error, distinct from an empty library. A not-yet-created write directory
+#' is empty; a missing separate read directory remains a configuration error.
+#'
+#' Listing does not authorize deletion of protected inputs: [lib_delete()]
+#' retains its separate-input restriction. This is a runtime helper, not an
+#' agent tool or permission to send library contents to a model.
+#' @param libref A single registered library name, without a member or path.
+#' @return A sorted character vector of ordinary resolvable member names.
+#' @family runtime helpers
+#' @examples
+#' local({
+#'   folder <- tempfile()
+#'   dir.create(folder)
+#'   .sas2r_registry <- list(work = list(path = folder))
+#'   lib_write(data.frame(id = 1), "work", "scratch")
+#'   members <- lib_members("work")
+#'   lib_delete("work", members)
+#'   unlink(folder, recursive = TRUE)
+#' })
+#' @export
+lib_members <- function(libref) {
+  if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
+      is.na(libref) || !grepl("^[A-Za-z_][A-Za-z0-9_]*$", libref)) {
+    stop('Use lib_members("lib") with one registered library name.', call. = FALSE)
+  }
+  reg <- sas2r_lib_entry(libref)
+  write_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
+  read_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
+  dirs <- unique(c(write_dir, read_dir))
+  if (!length(dirs) || anyNA(dirs) || any(!nzchar(dirs))) {
+    stop("No directory configured for libref: ", libref, call. = FALSE)
+  }
+  names <- character()
+  for (dir in dirs) {
+    if (!dir.exists(dir)) {
+      if (identical(dir, write_dir) && !file.exists(dir)) next
+      stop("Library directory is unavailable: ", dir, call. = FALSE)
+    }
+    if (file.access(dir, 4L) != 0L) stop("Library directory is unreadable: ", dir, call. = FALSE)
+    files <- list.files(dir, pattern = "\\.(rds|sas7bdat|xpt)$", full.names = TRUE, ignore.case = TRUE)
+    names <- c(names, sub("\\.[^.]+$", "", basename(files[!dir.exists(files)])))
+  }
+  names <- sort(unique(names[grepl("^[A-Za-z_][A-Za-z0-9_]*$", names)]), method = "radix")
+  names[vapply(names, function(member) !is.null(sas2r_lib_member_file(reg, member)), logical(1))]
+}
+
 #' Fold column names to lower case
 #'
 #' SAS resolves variable names case-insensitively; R does not. Deterministic

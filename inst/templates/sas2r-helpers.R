@@ -395,6 +395,32 @@ lib_exists <- function(libref, member) {
   !is.null(sas2r_lib_member_file(sas2r_lib_entry(libref), member))
 }
 
+lib_members <- function(libref) {
+  if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
+      is.na(libref) || !grepl("^[A-Za-z_][A-Za-z0-9_]*$", libref)) {
+    stop('Use lib_members("lib") with one registered library name.', call. = FALSE)
+  }
+  reg <- sas2r_lib_entry(libref)
+  write_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
+  read_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
+  dirs <- unique(c(write_dir, read_dir))
+  if (!length(dirs) || anyNA(dirs) || any(!nzchar(dirs))) {
+    stop("No directory configured for libref: ", libref, call. = FALSE)
+  }
+  names <- character()
+  for (dir in dirs) {
+    if (!dir.exists(dir)) {
+      if (identical(dir, write_dir) && !file.exists(dir)) next
+      stop("Library directory is unavailable: ", dir, call. = FALSE)
+    }
+    if (file.access(dir, 4L) != 0L) stop("Library directory is unreadable: ", dir, call. = FALSE)
+    files <- list.files(dir, pattern = "\\.(rds|sas7bdat|xpt)$", full.names = TRUE, ignore.case = TRUE)
+    names <- c(names, sub("\\.[^.]+$", "", basename(files[!dir.exists(files)])))
+  }
+  names <- sort(unique(names[grepl("^[A-Za-z_][A-Za-z0-9_]*$", names)]), method = "radix")
+  names[vapply(names, function(member) !is.null(sas2r_lib_member_file(reg, member)), logical(1))]
+}
+
 sas2r_fold_names <- function(df) {
   names(df) <- tolower(names(df))
   df

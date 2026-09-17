@@ -46,6 +46,9 @@ sas_sort <- function(df, by, descending = character(), ...) {
 #' SAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key
 #' columns, are refused: those cases require SAS observation-by-observation
 #' semantics that this join-based helper does not implement.
+#' Do not pre-create missing columns on one input when the other input supplies
+#' them: that invents an overlap. Preserve genuine overlapping source columns;
+#' their unsupported repeated-key semantics must not be silently dropped.
 #'
 #' @param a,b Data frames, in statement order.
 #' @param by Character vector of BY variables.
@@ -58,6 +61,9 @@ sas_sort <- function(df, by, descending = character(), ...) {
 #' b <- data.frame(id = c(2, 3), y = c("B", "C"))
 #' sas_merge(a, b, by = "id", keep = "full")
 #' sas_merge(a, b, by = "id", keep = "both")
+#' events <- data.frame(id = c(1, 1, 2), event = c("a", "b", "c"))
+#' subjects <- data.frame(id = c(1, 2), base = c(10, 20))
+#' sas_merge(events, subjects, by = "id", keep = "left") # three events remain
 #' @export
 sas_merge <- function(a, b, by,
                       keep = c("both", "left", "right", "left_only",

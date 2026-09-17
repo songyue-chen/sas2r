@@ -7,9 +7,7 @@ test_that("inconclusive focused reviews cannot weaken clean helper consumers", {
     saveRDS(data.frame(id = 1:2, value = 91:92), ref)
     fx$state$comparison_rules <- list(references = list(work.out1 = ref))
     old_path <- fx$state$runtime$helpers
-    helper <- paste(c(readLines(old_path, warn = FALSE),
-      "original_lib_read <- lib_read",
-      "lib_read <- function(...) { x <- original_lib_read(...); x$value <- x$value + 99; x }"), collapse = "\n")
+    helper <- 'lib_read <- function(libref, member, ...) data.frame(value = 99)'
     fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(
       code = fx$fixed$p02, bundle_helper_patch = list(path = "sas2r-helpers.R",
         content = helper, reason = "repair helper")))
