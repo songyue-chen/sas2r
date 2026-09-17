@@ -1,14 +1,21 @@
-# sas2r (development)
+# sas2r 0.4.5
 
 * Share a source-visible semantic policy across translation, review and repair;
   distinguish harmless representation differences from lost calculations,
   statistics, labels or other required effects.
 * Give bundle repair and subsequent full review an explicit integration focus
   using existing bounded executor diagnostics. Reuse completed reviews through
-  the evidence history only when their complete request context matches.
+  the evidence history only when their complete request context matches;
+  per-attempt log locations and execution IDs do not force another review.
+* Explain when a saved review predates request identities and needs refreshing.
+  Document upgrade costs: review-only context changes refresh compatible saved
+  reviews; shared worker policy, prompt or runtime changes can regenerate
+  translations through existing checkpoint invalidation.
 * Supply conservative source-only column exclusions for simple, uniquely bound
   KEEP/DROP writers. Unsupported syntax remains unknown and does not suppress
-  independent consumer defects or authorize reference-driven changes.
+  independent consumer defects or authorize reference-driven changes. Literal
+  macro setup outside the writer and unrelated input-library declarations do
+  not suppress these facts; indirect writers and output rebinding remain unknown.
 * Hash smoke code and outputs by file contents. Report every recorded bundle
   attempt separately from matching current-revision execution and selection,
   including failed attempts and earlier snapshots.

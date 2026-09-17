@@ -144,6 +144,19 @@ Older runs without a checkpoint regenerate. Smoke and full output checks always
 rerun in fresh attempts. The usage ledger remains cumulative across resumed runs;
 elapsed time describes this invocation. A previously unavailable review is retried.
 
+For a compatible checkpoint, completed reviews additionally require the same
+review request context. Changed helper documentation, rulebook content or
+installed dependency facts can therefore trigger a fresh review of retained
+translations. Reviews saved without a request identity are refreshed with an
+explicit progress reason. Attempt log locations and execution IDs are excluded
+from the static reviewer packet; their observed errors and log content still
+participate in review identity. Full paths remain in local execution records.
+
+Shared worker prompts, skills, policy and runtime helper code also participate
+in the checkpoint identity. Changes to them can regenerate translations, not
+just reviews. Version 0.4.5 includes a shared policy change. A package version
+number alone does not invalidate a checkpoint.
+
 ## Moving a deliverable
 
 `result$outputs_dir` contains all generated files from the selected execution,

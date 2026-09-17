@@ -57,6 +57,59 @@ test_that("same-path helper edits and changed dependencies invalidate reuse", {
   expect_length(again$reviewer_llm$requests(), 3)
 })
 
+test_that("identical executor observations reuse review across fresh attempt locations", {
+  fx <- repair_workflow_fixture(n = 1L, failures = 1L)
+  first <- run_bundle_attempt(fx$state, sequence = 1L)
+  second <- run_bundle_attempt(fx$state, sequence = 2L)
+  expect_false(identical(first$stderr_path, second$stderr_path))
+  context <- list(project = fx$state$project, config = fx$state$config,
+    phase = "bundle", execution = first, selected_revisions = fx$state$selected_revisions)
+  reviewer <- fx$state$reviewer_llm
+  rev <- fx$state$selected_revisions$p01
+  reviewed <- review_program_revision(rev, context, reviewer, history = fx$state$histories$p01)
+  context$execution <- second
+  again <- review_program_revision(rev, context, reviewer, history = reviewed$history)
+  expect_true(again$reused)
+  expect_length(reviewer$requests(), 1L)
+  prompt <- paste(vapply(reviewer$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  expect_match(prompt, "translation fault p01", fixed = TRUE)
+  expect_false(grepl(first$stderr_path, prompt, fixed = TRUE))
+  expect_false(grepl(first$stdout_path, prompt, fixed = TRUE))
+  # Full execution records retain useful locations for people and the fixer.
+  expect_true(file.exists(read_attempt_record(first$attempt_dir)$stderr_path))
+  for (change in list(list(condition = list(message = "different error")),
+                     list(exit_status = 2L))) {
+    context$execution <- utils::modifyList(second, change)
+    expect_false(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
+  }
+  context$execution <- second
+  cat("\nnew executor observation\n", file = second$stderr_path, append = TRUE)
+  expect_false(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
+})
+
+test_that("saved reviews without request identity explain the fresh review", {
+  fx <- review_fix_fixture()
+  # This is the old checkpoint event shape, produced by the public evidence helper.
+  history <- record_completed_review(fx$context$history)
+  reviewer <- recording_reviewer(function(req) valid_program_review_response())
+  events <- list()
+  reviewed <- withCallingHandlers(
+    review_program_revision(fx$revision, fx$context, reviewer, history = history),
+    sas2r_progress = function(e) events[[length(events) + 1L]] <<- e)
+  refresh <- Filter(function(e) identical(e$event, "review_refresh"), events)
+  expect_length(refresh, 1L)
+  expect_match(paste(unlist(lapply(refresh, format_sas2r_progress)), collapse = "\n"),
+    "saved review predates request identity; refreshing", fixed = TRUE)
+  expect_length(reviewer$requests(), 1L)
+  events <- list()
+  again <- withCallingHandlers(
+    review_program_revision(fx$revision, fx$context, reviewer, history = reviewed$history),
+    sas2r_progress = function(e) events[[length(events) + 1L]] <<- e)
+  expect_true(again$reused)
+  expect_length(events, 0L)
+  expect_length(reviewer$requests(), 1L)
+})
+
 test_that("bundle fix and full review receive integration focus without reference answers", {
   fx <- repair_workflow_fixture(n = 1L, failures = 1L)
   fx$state$config$outputs <- list(references = list(out = "SECRET_REFERENCE_FILE"))
@@ -148,6 +201,42 @@ test_that("ambiguous projections remain unknown as whole syntax classes", {
   }
   p <- projection_fixture("data unknown.slice; set raw.input; keep id; run;")
   expect_null(source_output_projection(p, "unknown.slice"))
+})
+
+test_that("unrelated literal setup does not hide plain source projections", {
+  writer <- "data work.slice; set raw.input; keep id value; run;"
+  setup <- c("libname raw '/data/raw';", "libname raw clear;",
+    "%let title=Summary;", "%put NOTE: done;", "%global title;",
+    "%local title;", "%symdel title;", "/* 100% complete */")
+  for (text in setup) {
+    p <- projection_fixture(paste(text, writer))
+    expect_identical(source_output_projection(p, "work.slice")$columns,
+      c("id", "value"), info = text)
+  }
+  p <- projection_fixture(writer, paste("%put NOTE: consumer;",
+    "data work.final; set work.slice; run;"))
+  expect_identical(source_output_projection(p, "work.slice")$columns, c("id", "value"))
+})
+
+test_that("possible indirect writers and output rebinding remain unknown", {
+  writer <- "data work.slice; set raw.input; keep id value; run;"
+  uncertainty <- c("%include 'more.sas';", "%mymacro;",
+    "%let value=%mymacro;", "%let target=work.slice; data &target; value=1; run;",
+    "libname raw \"&path\";", "libname work '/tmp/other';", "libname _all_ clear;",
+    "%if 1 %then %do; data work.other; x=1; run; %end;",
+    "%macro write_other; data work.other; x=1; run; %mend;")
+  for (text in uncertainty) {
+    p <- projection_fixture(paste(writer, text))
+    expect_null(source_output_projection(p, "work.slice"), info = text)
+  }
+  p <- projection_fixture(paste("%let selected=id value;",
+    "data work.slice; set raw.input; keep &selected; run;"))
+  expect_null(source_output_projection(p, "work.slice"))
+  p <- projection_fixture(paste("libname out '/tmp/one';",
+    "data out.slice; set raw.input; keep id value; run;", "libname out '/tmp/two';"))
+  expect_null(source_output_projection(p, "out.slice"))
+  p <- projection_fixture(writer, "%let target=work.slice; data &target; value=1; run;")
+  expect_null(source_output_projection(p, "work.slice"))
 })
 
 test_that("execution reporting retains failures and does not credit a later revision", {

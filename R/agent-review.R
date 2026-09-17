@@ -359,6 +359,11 @@ review_program_revision <- function(
   review_scope <- if (length(context$focus_outputs) && !isTRUE(context$full_review)) "focused" else "full"
   phase <- context$phase %||% "program"
   diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution) else NULL
+  if (!is.null(diagnostics)) {
+    # Static review uses observations, not their per-attempt storage locations.
+    # Retain the original records and fixer diagnostics for navigation/debugging.
+    diagnostics[c("execution_id", "stdout_path", "stderr_path")] <- NULL
+  }
   context_packet <- paste(c(
     "Component:", component_id,
     render_component_libraries(context$project, component_id),
@@ -451,6 +456,11 @@ review_program_revision <- function(
     cached$reused <- TRUE
     cached$spend_usd <- 0
     return(cached)
+  }
+  if (length(events) && identical(events[[1L]]$type, "review_completed") &&
+      is.null(events[[1L]]$review_key)) {
+    signal_immediate_coordinator_event("review_refresh", component_id, revision_id,
+      reason = "saved review predates request identity; refreshing")
   }
 
   # The reviewer's tools answer from the project, not from an empty context:

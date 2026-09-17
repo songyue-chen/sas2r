@@ -7,18 +7,30 @@ source_output_projection <- function(project, dataset) {
   if (is.null(stmts) || is.null(lineage) || is.null(graph)) return(NULL)
   dataset <- tolower(dataset)
   code <- stmts[stmts$type == "code", ]
-  # A macro/include/rebinding can introduce another writer outside this subset.
-  text <- paste(code$text, collapse = "\n")
-  if (any(code$first_token %in% c("libname", "rename")) ||
-      grepl("[%&]", mask_strings(text, keep_double = TRUE))) return(NULL)
   writers <- unique(lineage$unit_id[lineage$role == "creates" & lineage$dataset == dataset])
   if (length(writers) != 1L) return(NULL)
   unit <- code[code$unit_id == writers, ]
   if (!nrow(unit) || !all(unit$unit_type == "data_step")) return(NULL)
+  # Literal macro setup outside the writer cannot generate another DATA step.
+  # Still reject expansion anywhere: e.g. DATA &target could overwrite this
+  # output without appearing under its literal name in the lineage.
+  text <- vapply(code$text, mask_strings, "", keep_double = TRUE)
+  setup <- code$first_token %in% c("%let", "%put", "%global", "%local", "%symdel") &
+    code$unit_id != writers
+  text[setup] <- sub("^\\s*%(let|put|global|local|symdel)\\b", "", text[setup],
+    ignore.case = TRUE, perl = TRUE)
+  if (any(code$first_token == "rename") || any(grepl("[%&]", text))) return(NULL)
   edges <- graph$edges
   writes <- edges[edges$type == "writes_dataset" & edges$detail == dataset, ]
   if (nrow(writes) != 1L || !identical(writes$resolution, "resolved")) return(NULL)
   lib <- split_ds(dataset)[["lib"]]
+  # Reuse the library parser; only unrelated input-library declarations are
+  # harmless here. Output assignments/clears and unsupported forms stay unknown.
+  libraries <- extract_librefs(code)
+  written_libs <- vapply(lineage$dataset[lineage$role == "creates"],
+    function(x) split_ds(x)[["lib"]], "")
+  if (nrow(libraries) != sum(code$first_token == "libname") ||
+      any(libraries$libref %in% c(lib, "_all_", written_libs))) return(NULL)
   binding <- lineage[lineage$unit_id == writers & lineage$role == "creates", ]
   if (lib != "work" && (!"binding_status" %in% names(binding) ||
       any(is.na(binding$binding_status) | binding$binding_status != "resolved"))) return(NULL)

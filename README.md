@@ -436,6 +436,17 @@ limits, and run budget changes alone do not invalidate completed revisions. Chan
 smoke execution and full output checks rerun in fresh attempts. An unavailable
 review is retried.
 
+Upgrades can cause new provider calls. When a checkpoint remains compatible,
+changed reviewer facts (such as helper documentation, rulebook content or
+installed dependency versions) refresh reviews while retaining translations.
+Saved reviews from before request identities were recorded also receive a fresh
+review; progress explains this with `saved review predates request identity;
+refreshing`. Changes to shared worker prompts, skills, policy or runtime helpers
+can invalidate the checkpoint itself and regenerate translations as well. A
+version-number change alone does not require regeneration.
+Version 0.4.5 changes the shared agent policy, so checkpoints created with an
+earlier policy regenerate translations under the current resume rules.
+
 Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
 `usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are
 reported explicitly; the usage ledger is cumulative across resumed runs.

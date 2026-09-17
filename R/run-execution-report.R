@@ -13,7 +13,7 @@ bundle_execution_report <- function(state) {
       status <- if (isTRUE(record$deferred)) "deferred" else
         if (cid %in% record$executed_component_ids) "passed" else
         if (identical(cid, failed)) "failed" else
-        if (length(failed) && cid %in% record$execution_order) paste("not reached after", failed) else "unexecuted"
+        if (length(failed) > 0L && cid %in% record$execution_order) paste("not reached after", failed) else "unexecuted"
       # Include the preceding programs too: a changed earlier program can
       # change the shared state seen by this component, even without a graph edge.
       position <- match(cid, record$execution_order)
