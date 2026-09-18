@@ -1,5 +1,7 @@
 # sas2r (development version)
 
+* Write each manifest component's dependencies as a JSON array, including empty
+  and single-dependency cases, so graph consumers use one consistent field type.
 * Add opt-in dependency-aware parallel component translation and final reviews
   through `migration.max_parallel_translations` or
   `sas_translate(max_parallel_translations = ...)`, default 1. The setting counts

@@ -102,6 +102,9 @@ After focused review, lineage and status are refreshed from the same attempt's s
 ### Copy-on-Write Attempt Isolation
 
 Each run has a timestamp-first folder directly in the output directory. Attempts are isolated beneath `<run_id>/diagnostics/bundle_attempts/`; revisions, smoke executions, and logs have separate diagnostics folders. Open `START_HERE.html` for navigation. The selected editable code lives in `bundle/`, saved contract-declared deliverables in `outputs/`, and reports in `report/`. Missing code and partial results remain explicit. Manual runs write beneath `bundle/output/` without changing automated evidence. The shared `.sas2r/` folder retains resume state and a copy of the latest report.
+In `manifest.json`, every component's `dependencies` field is a JSON array,
+including `[]` for no dependencies and `["provider_id"]` for a single dependency.
+
 - Source inputs are never mutated (protected by copy-on-write library registries).
 - Attempt outputs, logs, and `record.json` are captured atomically.
 - Deterministic selection ensures newer attempts are selected only if they improve upon or maintain previous pass criteria without regressions.

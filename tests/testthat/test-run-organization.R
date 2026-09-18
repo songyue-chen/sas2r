@@ -108,6 +108,25 @@ test_that("partial navigation reports missing code and escapes local names and e
   expect_true(all(file.exists(file.path(state$paths$run_root, utils::URLdecode(links)))))
 })
 
+test_that("manifest dependencies are arrays for zero, one and multiple providers", {
+  root <- withr::local_tempdir()
+  writeLines("data work.seed_a; value=1; run;", file.path(root, "seed_a.sas"))
+  writeLines("data work.seed_b; value=2; run;", file.path(root, "seed_b.sas"))
+  writeLines("data work.one; set work.seed_a; run;", file.path(root, "one.sas"))
+  writeLines("data work.two; set work.seed_a work.seed_b; run;", file.path(root, "two.sas"))
+  state <- new_migration_state(sas_project(root), withr::local_tempdir())
+  write_migration_report(state)
+
+  # Disable reader simplification so a JSON string cannot masquerade as an array.
+  manifest <- jsonlite::read_json(state$paths$manifest, simplifyVector = FALSE)
+  dependencies <- lapply(manifest$components, `[[`, "dependencies")
+  expect_identical(dependencies$seed_a, list())
+  expect_identical(dependencies$seed_b, list())
+  expect_identical(dependencies$one, list("seed_a"))
+  expect_true(is.list(dependencies$two))
+  expect_setequal(unlist(dependencies$two), c("seed_a", "seed_b"))
+})
+
 test_that("handled preflight failure leaves a blocked page and keeps its original error", {
   root <- withr::local_tempdir()
   writeLines("%unavailable_macro();", file.path(root, "program.sas"))
