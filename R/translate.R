@@ -16,6 +16,7 @@
 #'
 #' @param path Path to a SAS file or directory containing SAS files, or a `sas2r_project`.
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
+#'   Relative paths resolve from the calling working directory before workers start.
 #' @param config Optional configuration list, YAML path, or `sas2r_config` object.
 #'   With a reused project, a plain list replaces only its supplied top-level
 #'   fields; omitted fields inherit, and explicit `NULL` resets a field. A YAML

@@ -143,6 +143,9 @@ migration_paths <- function(out_dir, run_id = NULL) {
 #' @noRd
 init_migration_paths <- function(out_dir, run_id = NULL) {
   paths <- migration_paths(out_dir, run_id = run_id)
+  # Workers use the source directory as their working directory. Resolve the
+  # output root in the caller before deriving any paths shared across processes.
+  paths <- migration_paths(config_anchor_paths(paths$root, getwd()), run_id = run_id)
   dir.create(paths$root, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
   dir.create(paths$staging, recursive = TRUE, showWarnings = FALSE)

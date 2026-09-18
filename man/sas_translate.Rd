@@ -29,7 +29,8 @@ sas_translate(
 \arguments{
 \item{path}{Path to a SAS file or directory containing SAS files, or a \code{sas2r_project}.}
 
-\item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.}
+\item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
+Relative paths resolve from the calling working directory before workers start.}
 
 \item{config}{Optional configuration list, YAML path, or \code{sas2r_config} object.
 With a reused project, a plain list replaces only its supplied top-level

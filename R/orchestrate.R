@@ -39,8 +39,7 @@ new_migration_state <- function(
   budget <- usage_budget %||% new_usage_budget(
     ledger_path = file.path(migration_paths(out_dir)$state, "usage.jsonl")
   )
-  paths <- migration_paths(out_dir, run_id = budget$run_id)
-  init_migration_paths(out_dir, run_id = budget$run_id)
+  paths <- init_migration_paths(out_dir, run_id = budget$run_id)
 
   baseline <- sas_transpile(p, paths$staging)
   plan <- plan %||% translation_plan(p, p$config$outputs)

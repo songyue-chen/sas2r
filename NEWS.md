@@ -1,5 +1,8 @@
 # sas2r 0.4.6
 
+* Resolve the migration output root before launching workers so relative paths
+  refer to the same files in the coordinator and source-directory workers.
+  Prevent a startup stall while workers wait for their first progress reply.
 * Write each manifest component's dependencies as a JSON array, including empty
   and single-dependency cases, so graph consumers use one consistent field type.
 * Add opt-in dependency-aware parallel component translation and final reviews
