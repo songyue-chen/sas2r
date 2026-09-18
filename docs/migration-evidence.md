@@ -134,16 +134,27 @@ includes peak process count, sampled process memory and coordinator admission
 latency. These are run
 observations, not CPU allocation or provider capacity guarantees. A custom
 adapter without process reconstruction support, or a shipped adapter configured
-with `llm.max_tries` above 1, falls back to one workflow and reports why.
+with `llm.max_tries` above 1 or ellmer older than 0.5.0, falls back to one
+workflow and reports why.
 
 Each process job keeps `job.json`, `stdout.log` and `stderr.log` under
 `<run_id>/diagnostics/workers/<job_id>/`. The job record identifies its component
 and phase. `completed` means the process returned; `accepted` means the coordinator
 merged its result. Neither means the component or bundle passed all quality
 gates. Component histories, final reviews and bundle output assessments remain
-the acceptance evidence.
+the acceptance evidence. Selected revisions remain in these durable diagnostic
+folders; each manifest component's `revision_id` and `revision_path` map to the
+original revision file. Its `code` field points to the editable user bundle.
 
-When a reported dependency cannot be reconciled with the known graph, the
+If a worker crashes, the coordinator stops new dispatch, drains active sibling
+jobs, checkpoints their completed drafts or reviews with their actual stage,
+and then reports the failure with log paths. It does not promote a saved draft
+to passed quality checks. An explicit user interruption still cancels the run.
+
+Only standalone identifiers, dataset names (`lib.member`) and macro names
+(`%macro`) are interpreted as dependency findings. Descriptive sentences stay
+in the translation contract for review. When an identifier cannot be reconciled
+with the known graph, the
 coordinator defers that component and its known descendants. Independent work
 continues, while `diagnostics.dependency_findings` and
 `diagnostics.parallel_deferred` identify the affected branch. The bundle remains
@@ -188,6 +199,22 @@ Configure non-dollar ceilings using, for example,
 `usage_limits = list(max_calls = 10, max_request_bytes = 100000)`.
 `usage_limits = list(max_calls = 0)` prevents all provider requests.
 The accepted names are documented in `?sas_translate`; misspellings fail.
+
+For shipped adapters on ellmer 0.5.0+, `max_calls` counts each admitted request:
+initial gathering, every tool-result continuation, and structured or JSON
+finalization. For example, two tool batches followed by a gathered answer and
+finalization use four calls within one agent invocation. This applies with one
+or several workflows. ellmer 0.4.2 uses the native serial tool loop with legacy
+phase-level admission, so that example uses two admissions; parallel execution
+falls back to one workflow. Review ceilings configured for the older counting
+unit when upgrading. With `max_tries > 1`, connector-internal HTTP retries are
+not separately admitted; parallel mode requires `max_tries: 1`. Agent-level
+retries remain individually admitted. Custom adapters retain their own request
+boundary.
+
+The usage ledger records request IDs and their `invocation_id` for grouping;
+`llm_log.jsonl` keeps the existing gathering/finalization entries rather than
+adding a runner entry or user prompt for every tool batch.
 
 `resume = TRUE` uses `.sas2r/resume.rds` to reuse exact selected revision records
 and completed reviews when source, input data, configuration, runtime, and worker

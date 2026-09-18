@@ -63,13 +63,18 @@ resolve_parallel_execution <- function(state, requested) {
     cfg <- attr(llm, "parallel_config", exact = TRUE)
     !is.null(cfg) && cfg$max_tries > 1L
   }, logical(1)))
-  effective <- if (supported && !hidden_retries) requested else 1L
+  missing_callbacks <- any(vapply(state[roles], function(llm)
+    isTRUE(attr(llm, "is_ellmer", exact = TRUE)), logical(1))) && !ellmer_has_request_callbacks()
+  effective <- if (supported && !hidden_retries && !missing_callbacks) requested else 1L
   reason <- if (requested <= 1L) NULL else if (!supported) "adapter_has_no_process_factory" else
-    if (hidden_retries) "transport_retries_require_single_worker" else NULL
+    if (hidden_retries) "transport_retries_require_single_worker" else
+      if (missing_callbacks) "ellmer_request_callbacks_unavailable" else NULL
   if (identical(reason, "adapter_has_no_process_factory")) cli::cli_inform(
     "Parallel translation uses one worker: the custom adapter cannot be reconstructed in a fresh process.")
   if (identical(reason, "transport_retries_require_single_worker")) cli::cli_inform(
     "Parallel translation uses one worker: llm.max_tries must be 1 for individually metered parallel requests; the existing agent retry policy remains available.")
+  if (identical(reason, "ellmer_request_callbacks_unavailable")) cli::cli_inform(
+    "Parallel translation uses one workflow: install ellmer 0.5.0 or newer for native per-request accounting.")
   list(requested = requested, effective = effective,
     backend = if (effective > 1L) "callr" else "sequential", reason = reason,
     local_execution_slots = 1L, repair_slots = 1L, cpu_allocation = "unknown")
@@ -210,6 +215,7 @@ parallel_new_pool <- function(state) {
   pool <- new.env(parent = emptyenv())
   pool$state <- state
   pool$jobs <- list()
+  pool$failures <- list()
   pool$sequence <- 0L
   pool$id <- new_request_id()
   pool$peak_workers <- 0L
@@ -354,9 +360,11 @@ parallel_poll <- function(pool) {
       parallel_abandon_job(pool, job)
       parallel_job_record(job, "failed", conditionMessage(result))
       pool$jobs[[id]] <- NULL
-      cli::cli_abort(c("Parallel worker failed for {job$component_id} ({job$kind}).",
-        "i" = "Worker logs: {.path {job$dir}}"), parent = result,
-        class = "sas2r_parallel_worker_error")
+      pool$failures[[id]] <- list(component_id = job$component_id, phase = job$kind,
+        job_id = id, reason = conditionMessage(result),
+        stdout = file.path(job$dir, "stdout.log"), stderr = file.path(job$dir, "stderr.log"))
+      pool$state$component_stage[[job$component_id]] <- "interrupted"
+      next
     }
     pool$rpc_ms <- c(pool$rpc_ms, result$rpc_ms)
     parallel_job_record(job, "completed")
@@ -365,6 +373,17 @@ parallel_poll <- function(pool) {
     pool$jobs[[id]] <- NULL
   }
   completed
+}
+
+parallel_abort_failure <- function(pool) {
+  if (!length(pool$failures)) return(invisible(NULL))
+  pool$state$diagnostics$worker_failures <- c(
+    pool$state$diagnostics$worker_failures, pool$failures)
+  parallel_save_checkpoint(pool)
+  failure <- pool$failures[[1L]]
+  cli::cli_abort(c("Parallel worker failed for {failure$component_id} ({failure$phase}); completed sibling work was checkpointed.",
+    "i" = "Worker logs: {.path {dirname(failure$stderr)}}"),
+    class = "sas2r_parallel_worker_error")
 }
 
 parallel_apply_result <- function(state, result) {

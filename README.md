@@ -492,17 +492,18 @@ then evaluate two; more may help
 while waiting for a remote model, but use the run's observed worker/memory/admission
 metrics and your workbench limits to decide. A custom adapter that cannot be rebuilt
 in a child process uses one worker and reports why. For the shipped ellmer adapters,
-parallel mode requires `llm.max_tries: 1` (the default); the existing bounded agent
-retry policy still applies.
+parallel mode requires **ellmer 0.5.0 or newer** and `llm.max_tries: 1` (the
+default); older ellmer installations visibly use one workflow. The existing
+bounded agent retry policy still applies. With ellmer 0.5.0+, `max_calls` counts each request
+within a tool conversation, plus finalization, in both modes. See the
+[usage-counting details](docs/migration-evidence.md#coverage-limits-and-reuse)
+before reusing a limit tuned to older ellmer.
 
 Unresolved dependency findings defer the affected branch while independent work
 continues. The run does not claim a successful full bundle for a deferred branch.
 Automatic graph correction/reassignment is a separate planned change. Offline
 parity checks do not establish unchanged live-model quality or a particular speedup;
 parallel execution remains opt-in until the paired live comparison is completed.
-Gemini and DeepSeek also need the tool-continuation work described in the
-[provider guide](docs/llm-providers.md#recommended-starting-settings) before their
-recommended evaluation profiles can be used for study migrations on this branch.
 See the [migration evidence guide](docs/migration-evidence.md#parallel-coordination-and-evidence)
 for requested/effective concurrency, process logs and interrupted-work accounting.
 
@@ -625,9 +626,9 @@ and translation quality. Choose a model available to your account and test it on
 representative programs, including difficult macros and dependency chains.
 Higher-capability frontier models remain an option when source-based review or
 output checks identify errors that the first model cannot resolve.
-On this development branch, Gemini and DeepSeek first require the remaining
-[tool-continuation work](docs/llm-providers.md#recommended-starting-settings);
-these profiles are evaluation targets, not confirmed end-to-end configurations.
+Offline transport tests preserve DeepSeek reasoning content and Gemini thought
+signatures through tool use and finalization. Study-level quality and speed still
+require validation on your programs.
 
 Use the same review, repair and output checks with every model. A fast response,
 a successful connection, or executable R code alone does not establish a correct

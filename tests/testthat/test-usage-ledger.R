@@ -1162,6 +1162,8 @@ test_that("usage provenance redacts complete quoted values without trailing loss
 })
 
 test_that("the outgoing request carries no audit context and no redactor closure", {
+  # This transport stub has no Chat request hooks; exercise legacy metering.
+  local_mocked_bindings(ellmer_has_request_callbacks = function() FALSE)
   # Built the way ellmer_llm() builds it: the shipped adapter always ends in
   # with_usage_managed_request(), so the managed branch -- not the plain one --
   # is the path every production request takes. A plain new_llm() here let the
@@ -1206,6 +1208,7 @@ test_that("the outgoing request carries no audit context and no redactor closure
 })
 
 test_that("the managed adapter still meters every capability-retry attempt", {
+  local_mocked_bindings(ellmer_has_request_callbacks = function() FALSE)
   # The callback moved off the request, so prove the metering it carries did
   # not move off with it: a downgraded retry must still reserve and reconcile.
   capabilities <- llm_capabilities(

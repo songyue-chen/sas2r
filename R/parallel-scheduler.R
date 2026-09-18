@@ -27,11 +27,11 @@ parallel_save_checkpoint <- function(pool) {
 
 parallel_dependency_findings <- function(state, cid) {
   contract <- state$selected_revisions[[cid]]$contract
-  events <- current_component_evidence(state$histories[[cid]])$events %||% list()
-  reviews <- Filter(function(event) event$type %in% c("review_completed", "review_unavailable"), events)
-  latest <- if (length(reviews)) utils::tail(reviews, 1L)[[1L]] else list()
-  reported <- unique(c(contract$suspected_dependencies, contract$discovered_dependencies,
-    latest$unresolved_dependencies))
+  reported <- unique(trimws(c(contract$suspected_dependencies, contract$discovered_dependencies)))
+  # These schema fields also contain prose assumptions. Only plain identifiers,
+  # lib.member names and %macro names can request dependency reconciliation.
+  # Preserve other observations in the contract and existing semantic reviews.
+  reported <- reported[grepl("^(%?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$", reported)]
   # A confirmation of an existing provider is not a graph correction. Anything
   # else needs source-based reconciliation; no guessed independence/order.
   graph <- state$graph
@@ -134,6 +134,20 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
         parallel_save_checkpoint(pool)
       }
     }
+    if (length(pool$failures)) {
+      # Drain admitted sibling work without dispatching more calls. A running
+      # settlement owns the shared selection until it returns; only then save
+      # other completed drafts as drafts, not as settled/accepted evidence.
+      if (length(pool$jobs)) {
+        Sys.sleep(0.025)
+        next
+      }
+      for (cid in names(drafts)) {
+        pool$state <- parallel_apply_result(pool$state, drafts[[cid]])
+        pool$state$component_stage[[cid]] <- "draft"
+      }
+      parallel_abort_failure(pool)
+    }
     # Keep a repair's snapshot stable until its entire transaction has settled.
     # Other workers can finish calls, but their drafts remain private meanwhile.
     if (is.null(settle) && length(drafts)) {
@@ -190,7 +204,7 @@ finalize_parallel_component_reviews <- function(state, pool = parallel_new_pool(
   frozen <- state
   pool$state <- state
   while (length(pending) || length(pool$jobs)) {
-    while (length(pending) && length(pool$jobs) < state$parallel$effective) {
+    while (!length(pool$failures) && length(pending) && length(pool$jobs) < state$parallel$effective) {
       cid <- pending[1L]
       pending <- pending[-1L]
       parallel_start_job(pool, frozen, cid, "review", FALSE, 0L)
@@ -203,6 +217,7 @@ finalize_parallel_component_reviews <- function(state, pool = parallel_new_pool(
         completed <- completed + 1L
       parallel_save_checkpoint(pool)
     }
+    if (!length(pool$jobs)) parallel_abort_failure(pool)
     if (length(pool$jobs)) Sys.sleep(0.025)
   }
   signal_immediate_coordinator_event("component_review_checkpoint_completed", "all components",

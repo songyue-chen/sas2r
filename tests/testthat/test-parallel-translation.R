@@ -37,6 +37,12 @@ test_that("1, 2, 3 and 4 slots preserve source-defined outputs and shared accoun
     expect_true(all(vapply(result$histories, component_review_verdict, "") == "reviewed_no_material_finding"))
     expect_identical(result$usage_budget$request_count, 8L)
     expect_equal(result$usage_budget$known_amount, 0.08)
+    write_migration_report(result)
+    manifest <- read_json_record(result$paths$manifest)
+    for (cid in fx$ids) {
+      expect_identical(manifest$components[[cid]]$revision_path, result$selected_revisions[[cid]]$r_path)
+      expect_true(file.exists(manifest$components[[cid]]$revision_path))
+    }
     calls <- lapply(list.files(markers, full.names = TRUE), readRDS)
     expect_length(calls, 8L)
     overlaps <- vapply(calls, function(call) sum(vapply(calls, function(other)
@@ -152,12 +158,63 @@ test_that("an interrupted worker retains admitted usage and useful failure diagn
   expect_identical(state$usage_budget$request_count, 1L)
   job$process$kill_tree()
   job$process$wait(2000)
-  expect_error(parallel_poll(pool), class = "sas2r_parallel_worker_error")
+  expect_length(parallel_poll(pool), 0L)
+  expect_error(parallel_abort_failure(pool), class = "sas2r_parallel_worker_error")
   expect_identical(state$usage_budget$request_count, 1L)
   expect_identical(state$usage_budget$unknown_count, 1L)
   expect_length(state$usage_budget$reservations, 1L)
   expect_true(state$usage_budget$reservations[[1L]]$abandoned)
   expect_true(file.exists(file.path(job$dir, "stderr.log")))
+})
+
+test_that("a crashed reviewer drains and checkpoints its paid sibling before aborting", {
+  fx <- repair_workflow_fixture(n = 3L, failures = integer())
+  state <- fx$state
+  for (cid in fx$ids) state <- check_component_revision(state, cid)
+  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()),
+    delay = c(p01 = 0.8, p02 = 1.6, p03 = 0), crash_component = "p01")
+  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
+  state$parallel <- resolve_parallel_execution(state, 2L)
+  state$resume_fingerprint <- migration_resume_fingerprint(state)
+  expect_error(finalize_parallel_component_reviews(state), class = "sas2r_parallel_worker_error")
+  saved <- readRDS(file.path(state$paths$state, "resume.rds"))
+  expect_identical(component_review_verdict(saved$histories$p02), "reviewed_no_material_finding")
+  expect_identical(saved$histories$p03, state$histories$p03)
+  expect_identical(state$usage_budget$request_count, 2L)
+  expect_identical(state$usage_budget$unknown_count, 1L)
+  expect_identical(saved$component_stage$p01, "interrupted")
+  expect_identical(saved$diagnostics$worker_failures[[1L]]$component_id, "p01")
+})
+
+test_that("a crashed translator preserves completed sibling drafts for resume", {
+  fx <- repair_workflow_fixture(n = 3L, failures = integer())
+  state <- fx$state
+  state$selected_revisions <- state$histories <- list()
+  state$baseline$manifest$tier <- "stub"
+  state$baseline$manifest$reason <- "agent_translation_required"
+  responses <- stats::setNames(lapply(fx$fixed, valid_program_translation_response), paste0("translator:", fx$ids))
+  responses$reviewer <- valid_program_review_response()
+  llm <- parallel_test_llm(responses,
+    delay = c(p01 = 0.8, p02 = 1.6, p03 = 0), crash_component = "p01")
+  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
+  state$parallel <- resolve_parallel_execution(state, 2L)
+  state$resume_fingerprint <- migration_resume_fingerprint(state)
+  expect_error(run_program_pipeline(state, execute = FALSE), class = "sas2r_parallel_worker_error")
+  saved <- readRDS(file.path(state$paths$state, "resume.rds"))
+  expect_identical(saved$component_stage$p02, "draft")
+  expect_true(file.exists(saved$selected_revisions$p02$r_path))
+  expect_null(saved$selected_revisions$p03)
+  expect_identical(state$usage_budget$request_count, 3L) # crashed call plus sibling translation/review
+  expect_identical(state$usage_budget$unknown_count, 1L)
+  # The retained draft must settle on resume; it is not accepted QC evidence.
+  llm <- parallel_test_llm(responses, delay = 0)
+  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
+  resumed <- restore_migration_checkpoint(state, state$resume_fingerprint)
+  before <- resumed$usage_budget$request_count
+  result <- run_program_pipeline(resumed, execute = FALSE)
+  expect_identical(result$component_stage$p02, "settled")
+  expect_true(all(vapply(result$histories, component_review_verdict, "") == "reviewed_no_material_finding"))
+  expect_identical(result$usage_budget$request_count - before, 4L) # two translations/reviews; sibling evidence reused
 })
 
 test_that("helper repair rollback preserves other selected programs with parallel drafts", {
@@ -184,7 +241,7 @@ test_that("helper repair rollback preserves other selected programs with paralle
 test_that("dependency uncertainty defers its branch while independent work settles", {
   fx <- repair_workflow_fixture(n = 3L, failures = integer())
   state <- fx$state
-  state$selected_revisions$p01$contract$suspected_dependencies <- "unknown producer of work.missing"
+  state$selected_revisions$p01$contract$suspected_dependencies <- "work.missing"
   llm <- parallel_test_llm(list(reviewer = valid_program_review_response()))
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 3L)
@@ -193,7 +250,7 @@ test_that("dependency uncertainty defers its branch while independent work settl
   expect_identical(result$status, "blocked")
   expect_identical(result$component_stage$p02, "settled")
   expect_identical(result$component_stage$p03, "settled")
-  expect_match(result$diagnostics$dependency_findings$p01$findings, "unknown producer")
+  expect_identical(result$diagnostics$dependency_findings$p01$findings, "work.missing")
 })
 
 test_that("abandoned strict reservations remain unknown and held after resume", {
@@ -224,6 +281,28 @@ test_that("source-resolved dataset and component names are confirmations, not ne
   state$selected_revisions$p02$contract$discovered_dependencies <- c("work.out1", "p01")
   expect_length(parallel_dependency_findings(state, "p01"), 0L)
   expect_length(parallel_dependency_findings(state, "p02"), 0L)
+})
+
+test_that("dependency prose remains an observation and does not defer independent work", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer())
+  observations <- c(
+    "sdtm.dm must carry studyid, usubjid, subjid, siteid, age, sex, race, ethnic, arm",
+    "sdtm.ex must carry studyid, usubjid, exstdtc, exendtc.",
+    "sdtm.ds must carry studyid, usubjid, dscat, dsdecod, dsstdtc.",
+    "sdtm.vs column set (STUDYID/USUBJID/VSTESTCD/VSTEST/VSSTRESN/VSSTRESU/VISIT/VISITNUM)",
+    "adam.adsl produced by the upstream derive_adsl component")
+  state <- fx$state
+  state$selected_revisions$p01$contract$suspected_dependencies <- observations
+  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()))
+  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
+  state$parallel <- resolve_parallel_execution(state, 2L)
+  result <- run_program_pipeline(state, execute = FALSE)
+  expect_length(result$diagnostics$parallel_deferred, 0L)
+  expect_identical(result$component_stage$p01, "settled")
+  expect_identical(result$component_stage$p02, "settled")
+  expect_identical(result$selected_revisions$p01$contract$suspected_dependencies, observations)
+  state$selected_revisions$p01$contract$discovered_dependencies <- c("missing_program", "%missing_macro")
+  expect_identical(parallel_dependency_findings(state, "p01"), c("missing_program", "%missing_macro"))
 })
 
 test_that("a join waits for both producers and retains complete source-defined values", {

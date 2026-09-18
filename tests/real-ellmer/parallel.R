@@ -1,5 +1,5 @@
 # Installed-package, real-adapter process contract. All HTTP traffic is loopback.
-local({
+run_parallel_contract <- function() {
   library(sas2r)
   source("tests/testthat/helper-agents.R", local = TRUE)
   for (name in c("ellmer_llm", "translation_setup", "new_migration_state", "resolve_parallel_execution",
@@ -29,6 +29,12 @@ local({
     config = setup$config, execute = FALSE, plan = setup$plan)
   state$output_contracts <- setup$plan$contracts
   state$parallel <- resolve_parallel_execution(state, 2L)
+  if (!sas2r:::ellmer_has_request_callbacks()) {
+    stopifnot(state$parallel$effective == 1L,
+      identical(state$parallel$reason, "ellmer_request_callbacks_unavailable"))
+    cat("Older ellmer retains serial native tools; parallel mode reports its missing request callbacks.\n")
+    return(invisible(NULL))
+  }
   for (cid in state$schedule$component_id) {
     state <- initialize_program_component(state, cid)
     state <- check_component_revision(state, cid)
@@ -82,4 +88,5 @@ local({
     length(wire) == learned_again$usage_budget$request_count)
   cat("Workers reported unsupported optional settings; later workers reused that knowledge without another rejected request.\n")
 
-})
+}
+run_parallel_contract()

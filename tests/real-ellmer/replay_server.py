@@ -54,7 +54,7 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
-    if contains_key(body, "static_runnability"):
+    if contains_key(body, "static_runnability") or "schema program_review_v1" in json.dumps(body):
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
@@ -147,10 +147,15 @@ class ReplayHandler(BaseHTTPRequestHandler):
         else:
             response_kind = "structured"
 
+        native_deepseek = "native-deepseek" in body.get("model", "")
+        if native_deepseek and has_tools:
+            completed = sum(m.get("role") == "tool" for m in body.get("messages", []))
+            response_kind = "tool" if completed < 2 else "gathered"
+
         if is_anthropic_messages:
             response = self.anthropic_messages_response(body)
         elif is_gemini_generate:
-            response = self.gemini_generate_content_response(body)
+            response = self.gemini_generate_content_response(body, "native-gemini" in self.path)
         elif is_chat_completions:
             response = self.chat_completions_response(body, response_kind)
         else:
@@ -168,6 +173,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def chat_completions_response(body, response_kind):
+        native = "native-deepseek" in body.get("model", "")
+        batch = 1 + sum(m.get("role") == "tool" for m in body.get("messages", []))
         if response_kind == "tool":
             message = {
                 "role": "assistant",
@@ -195,6 +202,10 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "content": json.dumps(structured_payload(body), separators=(",", ":")),
             }
             finish_reason = "stop"
+        if native:
+            message["reasoning_content"] = f"native reasoning batch {batch}"
+            if response_kind == "tool":
+                message["tool_calls"][0]["id"] = f"native_{batch}"
         return {
             "id": "chatcmpl-sas2r-offline",
             "object": "chat.completion",
@@ -282,15 +293,29 @@ class ReplayHandler(BaseHTTPRequestHandler):
         }
 
     @staticmethod
-    def gemini_generate_content_response(_body):
+    def gemini_generate_content_response(body, native=False):
         """One native Gemini generateContent reply."""
+        parts = [{"text": json.dumps(TRANSLATION, separators=(",", ":"))}]
+        if native:
+            completed = sum("functionResponse" in part for turn in body.get("contents", [])
+                            for part in turn.get("parts", []))
+            if body.get("tools") and completed < 2:
+                parts = [{"functionCall": {
+                    "name": "lookup",
+                    "args": {"name": "round"}},
+                    "thoughtSignature": f"c2lnbmF0dXJl{completed + 1}"}]
+                # The declaration identifies the real workflow's tool name.
+                if contains_pair(body["tools"], "name", "lookup_rulebook"):
+                    parts[0]["functionCall"]["name"] = "lookup_rulebook"
+            elif body.get("tools"):
+                parts = [{"text": "gathered context", "thoughtSignature": "Z2F0aGVyZWQ="}]
+            else:
+                parts = [{"text": json.dumps(structured_payload(body), separators=(",", ":"))}]
         return {
             "candidates": [{
                 "content": {
                     "role": "model",
-                    "parts": [{
-                        "text": json.dumps(TRANSLATION, separators=(",", ":")),
-                    }],
+                    "parts": parts,
                 },
                 "finishReason": "STOP",
                 "index": 0,

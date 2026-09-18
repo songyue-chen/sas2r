@@ -3,7 +3,9 @@
 `sas2r` provides a closed registry of twelve native LLM providers powered by the `ellmer` package. All LLM calls route through named public `ellmer` constructor functions. `sas2r` does not implement direct provider HTTP APIs and does not support a generic `openai_compatible` provider route in this release.
 
 AI translation requires **ellmer 0.4.2 or newer**; **ellmer 0.5.0 is recommended
-for new installations**. Both versions pass the offline compatibility tests.
+for new installations and required for parallel translation**. Older ellmer
+installations visibly use one workflow. Both versions have offline compatibility
+tests; their request-counting units differ as described below.
 Install or update it with `install.packages("ellmer")`, then restart R.
 References to 0.4.2 below describe the minimum supported connector baseline,
 not a requirement to install that exact version. Startup verification checks
@@ -98,13 +100,19 @@ there is no universal safe provider concurrency number. This setting counts whol
 translation workflows, not translator/reviewer/fixer roles. Local execution and
 repair remain serial. No CPU-count clamp is applied.
 
-The current development branch still needs to preserve and validate
-provider-specific reasoning history during multi-step tool conversations for
-Gemini and DeepSeek. This affects tool continuations even at concurrency 1.
-The Flash profiles above are evaluation targets; they do not establish working
-end-to-end provider support on this branch. Complete that transport work and
-validate tool continuations before using these profiles for study migrations.
-Startup parameter verification alone does not test this path.
+The adapter retains native conversation history, including DeepSeek reasoning
+content and Gemini thought signatures, through tool gathering and finalization.
+Offline replay tests cover multiple tool batches and concurrent workers on
+ellmer 0.5.0; ellmer 0.4.2 retains its serial native loop. These tests establish
+transport behavior, not study-level translation quality or live speedup.
+
+On ellmer 0.5.0+, `usage_limits.max_calls` counts each request admitted within a
+tool conversation and each finalization request, in either mode. This can reach
+an old call ceiling sooner than ellmer 0.4.2, which retains legacy phase-level
+metering in serial mode. Use `max_tries: 1` for individually accounted requests;
+connector-internal retries with a larger value are not separate admissions.
+The existing agent retry policy remains separately metered. See the
+[usage evidence guide](migration-evidence.md#coverage-limits-and-reuse).
 
 The `frontier` tier name in agent routing can map to a Flash model. It is a
 configuration label, not an instruction to buy a particular model class.

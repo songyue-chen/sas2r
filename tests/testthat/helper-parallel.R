@@ -1,11 +1,12 @@
 # Explicit fresh-process factory: no captured test harness or parent budget.
-parallel_test_llm <- function(responses, delay = 0.1, marker_dir = NULL) {
-  env <- list2env(list(responses = responses, delay = delay, marker_dir = marker_dir),
+parallel_test_llm <- function(responses, delay = 0.1, marker_dir = NULL, crash_component = NULL) {
+  env <- list2env(list(responses = responses, delay = delay, marker_dir = marker_dir, crash_component = crash_component),
     parent = asNamespace("sas2r"))
   factory <- function() {
     new_llm(function(request, audit_context = list()) {
       started <- as.numeric(Sys.time())
-      Sys.sleep(delay)
+      Sys.sleep(if (length(delay) > 1L) delay[[audit_context$component_id]] else delay)
+      if (identical(audit_context$component_id, crash_component)) quit(save = "no", status = 7L)
       role <- audit_context$agent %||% audit_context$purpose
       key <- paste(role, audit_context$component_id, sep = ":")
       response <- responses[[key]] %||% responses[[role]] %||% responses[[1L]]

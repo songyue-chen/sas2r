@@ -16,13 +16,20 @@
   stages and parallel diagnostics.
 * Coordinate worker request/tool admissions and accounting in the parent process;
   give workers complete isolated role conversations and assignment-specific files.
-  Return native tool batches to the runner before another metered HTTP request.
-  Custom adapters without a process factory, and ellmer configurations with hidden
-  transport retries (`max_tries > 1`), report a one-worker fallback.
+  Retain native tool loops and provider history, including DeepSeek reasoning
+  and Gemini thought signatures. On ellmer 0.5.0+, admit every tool continuation
+  through public request hooks and explicitly admit structured finalization.
+  `max_calls` therefore counts requests within conversations in both modes.
+  Custom adapters without a process factory, ellmer older than 0.5.0, and
+  configurations with internal transport retries (`max_tries > 1`) report a
+  one-workflow fallback. Older ellmer keeps legacy serial phase-level metering.
 * Persist component phases and revisit allowances in version-9 checkpoints;
   import compatible version-8 revisions without resetting known repair limits.
   Retain interrupted requests as unknown, including any held strict reservation.
-* Defer unresolved dependency branches while independent components continue.
+* Drain and checkpoint active siblings after a worker crash before reporting
+  failure. Map selected diagnostic revision paths in each manifest component.
+* Treat descriptive dependency notes as observations; defer only unresolved
+  identifier findings and their affected branches while independent work continues.
   Automatic source-confirmed graph correction remains the separately planned
   dependency-tool change. Keep parallel mode opt-in pending paired live validation.
 

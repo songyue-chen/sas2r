@@ -441,6 +441,9 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   tier <- spec$tier %||% "frontier"
   required_settings <- required_model_settings(spec, llm)
   ensure_llm_settings(llm, required_settings, tier, log_dir, usage_budget)
+  previous_conversation <- .ellmer_invocation$current
+  .ellmer_invocation$current <- new.env(parent = emptyenv())
+  on.exit(.ellmer_invocation$current <- previous_conversation, add = TRUE)
   capabilities <- llm_capabilities_for(llm, tier = tier)
   has_tools <- length(tools) > 0L
   tool_state <- new_agent_tool_state(spec$tool_call_limit, usage_budget)
@@ -724,12 +727,6 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
             null = "null", force = TRUE
           )
         )))
-      }
-      if (isTRUE(resp$data$continue_gathering) && tool_state$count < tool_state$limit) {
-        messages <- c(messages, list(list(role = "user", content = paste(
-          "Continue using the retained tool results.", agent_tool_allowance_message(tool_state)))))
-        parent_request_id <- request$request_id
-        next
       }
       messages <- c(messages, list(list(
         role = "user",
