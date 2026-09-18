@@ -28,56 +28,37 @@
 
 `sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, registered translation skills) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
 
-The workflow runs in two stages: first each program is translated and checked on its own, then the whole pipeline runs end to end and the outputs are judged together. Each stage has its own repair loop.
+The workflow first translates and checks each program or called macro, then runs
+the whole pipeline and assesses its outputs. A deterministic coordinator assigns
+dependency-ready work, records results, and enforces shared budgets. With
+[parallel translation](#parallel-translation-opt-in) enabled, independent drafts
+and their initial reviews can overlap in separate R processes. The default is
+one translation workflow at a time.
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│                     Your SAS programs                      │
-│         (.sas files, macros, %include scripts)             │
-└─────────────────────────────┬──────────────────────────────┘
-                              ▼
-   STAGE 1 — one program at a time, in dependency order
-┌────────────────────────────────────────────────────────────┐
-│  Rule-based translation                                    │
-│  Reliable patterns become R directly; anything uncertain   │
-│  is marked and handed to the AI translator — never guessed │
-└─────────────────────────────┬──────────────────────────────┘
-                              ▼
-┌────────────────────────────────────────────────────────────┐
-│  Independent AI review + trial run of the program          │
-│  The reviewer reads the R against your SAS; the program    │
-│  is also executed on its own to catch runtime errors       │
-└──────────┬─────────────────────────────────┬───────────────┘
-           │ problem found                   │ program is sound
-           ▼                                 │
-┌─────────────────────────┐                  │
-│  AI fixer patches the   │── re-reviewed ──►│
-│  program (the immediate │    and re-run    │
-│  repair loop)           │                  │
-└─────────────────────────┘                  ▼
-   STAGE 2 — the whole pipeline together
-┌────────────────────────────────────────────────────────────┐
-│  Full pipeline run in an isolated working copy             │
-│  Every program executes in order against real data         │
-└─────────────────────────────┬──────────────────────────────┘
-                              ▼
-┌────────────────────────────────────────────────────────────┐
-│  Output check                                              │
-│  Each required dataset and TLF is compared against the     │
-│  reference files you configured                            │
-└──────────┬─────────────────────────────────┬───────────────┘
-           │ error or mismatch               │ everything passes
-           ▼                                 │
-┌─────────────────────────┐                  │
-│  AI fixer patches the   │                  │
-│  ONE responsible program│── fresh full ───►│
-│  (the bundle repair     │    re-run        │
-│  loop)                  │                  ▼
-└─────────────────────────┘   ┌─────────────────────────────┐
-                              │  Final R bundle + report     │
-                              │  with one of four statuses   │
-                              └─────────────────────────────┘
+```mermaid
+flowchart TD
+    source["SAS programs, macros and includes"] --> coordinator["Dependency graph and deterministic coordinator"]
+    coordinator --> draft["Ready components: translate, check and independently review<br/>Up to max_parallel_translations workflows"]
+    draft --> settle["One component at a time: smoke test, repair if needed,<br/>re-review and check affected consumers"]
+    settle -->|"Release ready downstream work"| coordinator
+    settle -->|"Component processing complete"| review["Final review checkpoint against a fixed code/helper selection<br/>Reuse current reviews; missing reviews may overlap"]
+    review --> bundle["Whole bundle: dependency-ordered execution in a fresh working copy"]
+    bundle --> outputs["Required output checks and configured dataset comparisons"]
+    outputs -->|"Execution error or source-supported finding"| repair["Bounded repair of the responsible component and review"]
+    outputs -->|"Reference mismatch alone"| investigate["Bounded source review"]
+    investigate -->|"Translation defect found"| repair
+    repair -->|"Fresh full run"| bundle
+    outputs --> report["Selected bundle, evidence and status report"]
+    investigate -->|"No supported repair"| report
 ```
+
+During component processing, only one smoke/repair transaction changes shared
+code at a time. Other drafts can finish privately while that transaction runs.
+Before bundle execution, final reviews use the same fixed code/helper selection;
+that pass collects findings without repairing code. The full bundle stage stays
+serial. If dependencies cannot be resolved, parallel translation defers the
+affected branch, continues independent work, and reports the blocked bundle.
+Completing a draft or a review call alone does not establish translation quality.
 
 A new attempt replaces the selected one only if it preserves or improves the
 existing pass criteria. If a new run initially performs worse than an older run,
@@ -447,12 +428,15 @@ repairs still require review and fresh execution, and existing repair limits app
 
 Repeat the same `sas_translate()` call with `resume = TRUE` to reuse saved
 translation revisions and completed reviews when sources, inputs, QC requirements,
-model settings, runtime, and worker prompts still match. Transport timeouts, retry
-limits, and run budget changes alone do not invalidate completed revisions.
-Progress is saved after each completed component and each final-checkpoint review.
+model settings, runtime, and role prompts still match. Transport timeouts, retry
+limits, run budgets, and `max_parallel_translations` changes alone do not invalidate
+completed revisions. In parallel mode, saved progress distinguishes a draft from
+a component that has completed immediate checks and repair. Progress is also
+saved after each final-checkpoint review.
 Interrupted final reviews resume using the saved review history. Component and
 bundle fixer-call counts are retained, including an invocation interrupted before
-its answer was saved; resume does not reset those repair allowances. Changed or
+its answer was saved; resume does not reset those repair allowances or recorded
+component revisit counts. Changed or
 missing artifacts regenerate. Within an unchanged smoke context, passing or
 deferred results can be reused; changed code, helpers, input identity or callable
 paths require new checks. Full bundle output checks use fresh attempts. An
@@ -468,9 +452,10 @@ can invalidate the checkpoint itself and regenerate translations as well. A
 version-number change alone does not require regeneration.
 Version 0.4.5 changes the shared agent policy, so checkpoints created with an
 earlier policy regenerate translations under the current resume rules.
-The component-review checkpoint also changes the saved checkpoint format;
-checkpoints from before that change regenerate rather than guessing missing
-repair counts. Progress reports the reason when a checkpoint cannot be reused.
+The parallel checkpoint format can import compatible version-8 checkpoints while
+preserving repair counts. Unrecorded historical revisit counts remain unknown;
+resume does not grant a new automatic revisit allowance. Other incompatible
+checkpoints regenerate. Progress reports the reason when a checkpoint cannot be reused.
 
 Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
 `usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are
@@ -479,6 +464,47 @@ See `?sas_translate` and the [migration evidence guide](docs/migration-evidence.
 for the complete limits and reuse contract.
 
 ---
+
+## Parallel translation (opt-in)
+
+Set the maximum number of concurrent translation workflows in `_sas2r.yml`:
+
+```yaml
+migration:
+  max_parallel_translations: 2
+```
+
+Or override it for one run with `sas_translate("study", max_parallel_translations = 2)`.
+The default is **1**. One slot covers a SAS program or called macro through
+translation, review and any necessary repair. The setting counts component
+workflows, not translator, reviewer and fixer roles separately. Each process uses
+the existing role context builders, tools, model settings and quality checks,
+with a snapshot of the selected dependencies when its task starts. Completed
+findings are merged by the coordinator; agents do not share a live conversation.
+Independent programs can translate and review at the same time; consumers wait
+for their providers to finish immediate processing.
+Execution, complete repair transactions and the final bundle stage stay serial.
+All workflows share the same request, tool and spending limits; increasing
+concurrency does not multiply those budgets or repair allowances.
+
+These are workflow slots, not dedicated CPU cores. Establish a baseline at one,
+then evaluate two; more may help
+while waiting for a remote model, but use the run's observed worker/memory/admission
+metrics and your workbench limits to decide. A custom adapter that cannot be rebuilt
+in a child process uses one worker and reports why. For the shipped ellmer adapters,
+parallel mode requires `llm.max_tries: 1` (the default); the existing bounded agent
+retry policy still applies.
+
+Unresolved dependency findings defer the affected branch while independent work
+continues. The run does not claim a successful full bundle for a deferred branch.
+Automatic graph correction/reassignment is a separate planned change. Offline
+parity checks do not establish unchanged live-model quality or a particular speedup;
+parallel execution remains opt-in until the paired live comparison is completed.
+Gemini and DeepSeek also need the tool-continuation work described in the
+[provider guide](docs/llm-providers.md#recommended-starting-settings) before their
+recommended evaluation profiles can be used for study migrations on this branch.
+See the [migration evidence guide](docs/migration-evidence.md#parallel-coordination-and-evidence)
+for requested/effective concurrency, process logs and interrupted-work accounting.
 
 ## Called macros in separate folders
 
@@ -586,23 +612,34 @@ the required macro definitions for such programs.
 
 ## Connecting an AI Model
 
-`sas2r`'s AI connection is built on [ellmer](https://ellmer.tidyverse.org), the tidyverse package that speaks to every major AI provider. `sas2r` never talks to a provider directly — every call goes through ellmer's official connectors — so in principle, any provider ellmer supports is within reach of this design. From that family, this release validates and ships **twelve providers**, each checked when your configuration loads: a typo in a provider name or setting stops the run immediately instead of failing halfway through. As ellmer's connector family grows, further providers can join the validated list once they have been exercised with the migration workflow.
+`sas2r` connects through [ellmer](https://ellmer.tidyverse.org)'s named public
+connectors. Its registry recognizes twelve provider IDs and checks their
+configuration fields when loading YAML. Registry checks, connection probes and
+end-to-end translation are separate levels of evidence; see the
+[provider guide](docs/llm-providers.md#what-the-acceptance-levels-mean) for connector
+coverage and availability restrictions.
 
-Full live migrations have been run end to end with these models:
+**Start by evaluating a Flash model:** Gemini `gemini-3.8-flash` or DeepSeek
+`deepseek-flash`. They are practical first candidates for balancing speed, cost
+and translation quality. Choose a model available to your account and test it on
+representative programs, including difficult macros and dependency chains.
+Higher-capability frontier models remain an option when source-based review or
+output checks identify errors that the first model cannot resolve.
+On this development branch, Gemini and DeepSeek first require the remaining
+[tool-continuation work](docs/llm-providers.md#recommended-starting-settings);
+these profiles are evaluation targets, not confirmed end-to-end configurations.
 
-| Provider | Model used in live runs |
-|---|---|
-| `anthropic` | `claude-sonnet-4-6` |
-| `openai` | `gpt-5.6-terra` |
-| `gemini` | `gemini-3.7-flash` |
-| `deepseek` | `deepseek-v4-pro` |
+Use the same review, repair and output checks with every model. A fast response,
+a successful connection, or executable R code alone does not establish a correct
+translation. Compare complete values and required metadata against the supplied
+SAS logic and compatible references before scaling up.
 
-Model names change often. `sas_llm_models()` lists what your account can actually use, and `sas_llm_probe()` confirms your sign-in works before you start a long run.
-
-For new DeepSeek Flash configurations, use `deepseek-flash`. As of September 12,
-2026, it serves DeepSeek-V4.1-Flash; `deepseek-v4-flash` remains a temporary alias.
-`deepseek-v4-pro` is still available and is the model recorded in the earlier
-live runs above. See [DeepSeek's current model documentation](https://api-docs.deepseek.com/quick_start/pricing/).
+These are starting recommendations, not a model ranking or a promise of equal
+quality. Google describes [Gemini Flash](https://ai.google.dev/gemini-api/docs/latest-model)
+as suitable for coding and agent workflows; DeepSeek documents its
+[current Flash model](https://api-docs.deepseek.com/updates/). Pin and record the
+chosen model/settings for comparisons. `sas_llm_models()` checks account
+availability; `sas_llm_probe()` checks the connection and explicit settings.
 
 ### Every available setting, in one example
 
@@ -651,10 +688,23 @@ installed connector and selected model.
 Keep the rest of your study configuration unchanged. The full template is
 [inst/examples/_sas2r.example.yml](inst/examples/_sas2r.example.yml).
 
-`max_output_tokens: 32768` is an initial allowance, not a quality guarantee or a
-whole-run budget. Reasoning can consume part of it. Increase it for long programs
-within the model's supported output limit. Omitting it uses connector/provider
-defaults, which can be smaller than the model's maximum.
+Use an explicit, provider-appropriate output allowance: **65,536 for the Gemini
+Flash profile, 131,072 for DeepSeek Flash, and 32,768 for the OpenAI/Claude
+profiles below**. These are starting ceilings, not amounts that must be consumed
+or a whole-run budget. Reasoning can use part of the allowance. Increase it only
+within the selected model/connector limit when output is incomplete; a larger
+ceiling can increase cost and elapsed time. Leave temperature and top-p unset.
+
+Start with `migration.max_parallel_translations: 1` for every provider, then
+compare with `2` after a representative run passes the same checks and your
+endpoint has quota available. Consider `3` or `4` only after measuring memory,
+provider throttling and end-to-end time. Keep `llm.max_tries: 1` for individually
+metered parallel requests. See the [provider settings and tuning guide](docs/llm-providers.md#recommended-starting-settings)
+for timeout, token-budget and connector details.
+
+The agent tier named `frontier` is a routing label: it can point to a Flash model.
+It does not require an expensive model or select a separate translator/reviewer
+worker count.
 
 At startup, `sas_translate()` probes explicitly configured model settings before
 agent work. Unknown reasoning support is checked with an invalid level followed
@@ -668,6 +718,40 @@ Checks share the run's budget and appear as `settings` / `probe` entries in
 adapter session for the exact endpoint, model, connector version and settings.
 `sas_preflight()` remains offline. The probe verifies request compatibility;
 it does not establish SAS-to-R correctness or measure the model's reasoning.
+
+**Google Gemini Flash — recommended first evaluation; `GEMINI_API_KEY` or `GOOGLE_API_KEY`**
+
+```yaml
+llm:
+  provider: gemini
+  auth_mode: api_key
+  model: gemini-3.8-flash
+  reasoning_effort: high
+  max_output_tokens: 65536
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+  timeout_seconds: 900
+  max_tries: 1
+```
+
+**DeepSeek Flash — recommended first evaluation; `DEEPSEEK_API_KEY`**
+
+```yaml
+llm:
+  provider: deepseek
+  auth_mode: api_key
+  model: deepseek-flash              # or deepseek-v4-pro
+  # DeepSeek currently defaults to thinking enabled, high effort.
+  # ellmer 0.4.2 does not forward reasoning_effort on this route.
+  max_output_tokens: 131072
+  capabilities:
+    structured_output: fallback
+    tool_calling: native
+    reasoning_effort: unsupported    # connector limitation; thinking is not disabled
+  timeout_seconds: 1800
+  max_tries: 1
+```
 
 **OpenAI — `OPENAI_API_KEY`**
 
@@ -698,40 +782,6 @@ llm:
     structured_output: fallback
     tool_calling: native
   cache: 1h
-  timeout_seconds: 900
-  max_tries: 1
-```
-
-**Google Gemini — `GEMINI_API_KEY` or `GOOGLE_API_KEY`**
-
-```yaml
-llm:
-  provider: gemini
-  auth_mode: api_key
-  model: gemini-3.8-flash
-  reasoning_effort: high
-  max_output_tokens: 32768
-  capabilities:
-    structured_output: fallback
-    tool_calling: native
-  timeout_seconds: 900
-  max_tries: 1
-```
-
-**DeepSeek — `DEEPSEEK_API_KEY`**
-
-```yaml
-llm:
-  provider: deepseek
-  auth_mode: api_key
-  model: deepseek-flash              # or deepseek-v4-pro
-  # DeepSeek currently defaults to thinking enabled, high effort.
-  # ellmer 0.4.2 does not forward reasoning_effort on this route.
-  max_output_tokens: 32768
-  capabilities:
-    structured_output: fallback
-    tool_calling: native
-    reasoning_effort: unsupported    # connector limitation; thinking is not disabled
   timeout_seconds: 900
   max_tries: 1
 ```

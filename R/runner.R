@@ -725,6 +725,12 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
           )
         )))
       }
+      if (isTRUE(resp$data$continue_gathering) && tool_state$count < tool_state$limit) {
+        messages <- c(messages, list(list(role = "user", content = paste(
+          "Continue using the retained tool results.", agent_tool_allowance_message(tool_state)))))
+        parent_request_id <- request$request_id
+        next
+      }
       messages <- c(messages, list(list(
         role = "user",
         content = AGENT_FINALIZE_MESSAGE

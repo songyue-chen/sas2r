@@ -394,6 +394,9 @@ record_capability_rejection <- function(capabilities, parameter) {
     get(key, envir = .llm_rejected_capabilities, inherits = FALSE)
   } else character()
   assign(key, unique(c(rejected, parameter)), envir = .llm_rejected_capabilities)
+  if (!is.null(.parallel_worker$client)) {
+    parallel_rpc("capability_rejection", list(key = key, parameter = parameter))
+  }
   invisible(NULL)
 }
 

@@ -17,3 +17,5 @@
 ^AGENTS\.md$
 ^tools$
 ^cran-comments\.md$
+^test_project_phuse$
+^\.claude$

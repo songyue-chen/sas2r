@@ -1056,8 +1056,17 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
       stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
-    # Update descriptions for the next native turn without altering the
-    # lookup's JSON result schema or adding unpaired messages to its history.
+    # Return after this assistant's tool batch, before ellmer starts another
+    # HTTP request. The runner retains the full conversation and obtains a new
+    # central reservation for the continuation, including in one-worker mode.
+    messages <- c(ellmer_conversation_messages(chat), seen)
+    answered <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
+      function(m) m$tool_call_id %||% "", "")
+    pending <- Filter(function(m) identical(m$role, "assistant") &&
+      !is.null(m$tool_call) && !m$tool_call$id %in% answered, messages)
+    if (!length(pending)) stop(structure(list(message = "Tool batch completed", call = NULL),
+      class = c("sas2r_tools_yielded", "sas2r_tools_closed", "error", "condition")))
+    # Update descriptions for remaining tools in this already-admitted batch.
     chat$set_tools(lapply(tools, function(tool) {
       tool$description <- paste(tool$description, agent_tool_allowance_message(state))
       ellmer_tool_contract(tool)
@@ -1082,8 +1091,9 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
                                           message = AGENT_TOOL_LIMIT_MESSAGE))
       )
     }
-    structure(AGENT_TOOL_LIMIT_MESSAGE,
-              conversation = interleave_tool_messages(messages))
+    structure(if (inherits(error, "sas2r_tools_yielded")) "Tool batch completed" else AGENT_TOOL_LIMIT_MESSAGE,
+              conversation = interleave_tool_messages(messages),
+              continue_gathering = inherits(error, "sas2r_tools_yielded"))
   })
 }
 
@@ -1127,6 +1137,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     )
   } else {
     value <- ellmer_gather_tools(chat, prompt, request$tools)
+    continue_gathering <- isTRUE(attr(value, "continue_gathering", exact = TRUE))
     gathered_conversation <- attr(value, "conversation", exact = TRUE)
     if (!is.null(gathered_conversation)) value <- as.character(value)
     if (is.null(gathered_conversation)) value <- ellmer_last_text(chat, fallback = value)
@@ -1141,7 +1152,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
       }
     } else if (identical(request$phase, "gathering")) {
       list(
-        type = "final", data = list(gathered = value),
+        type = "final", data = list(gathered = value, continue_gathering = continue_gathering),
         conversation = gathered_conversation %||% ellmer_conversation_messages(chat)
       )
     } else value
@@ -1242,6 +1253,7 @@ ellmer_llm <- function(cfg) {
     timeout_seconds = cfg$timeout_seconds,
     transport_max_tries = cfg$max_tries
   ))
+  attr(adapter, "parallel_config") <- cfg
   attr(adapter, "is_ellmer") <- TRUE
   adapter <- with_usage_managed_request(adapter)
   attr(adapter, "auth_context") <- llm_selector_identity(cfg)
@@ -1886,6 +1898,10 @@ llm_log <- function(entry, dir = ".sas2r", redactor = redact_llm_secrets) {
                    class = "sas2r_llm_redaction_error")
   }
   entry <- redactor(entry)
+  if (!is.null(.parallel_worker$client)) {
+    parallel_rpc("log", list(entry = entry, dir = dir))
+    return(invisible(entry))
+  }
   cat(jsonlite::toJSON(entry, auto_unbox = TRUE, null = "null", na = "null"),
       "\n", file = file.path(dir, "llm_log.jsonl"), append = TRUE, sep = "")
   invisible(entry)

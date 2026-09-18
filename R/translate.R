@@ -47,9 +47,15 @@
 #' @param recursive Logical; whether to scan subdirectories recursively. Defaults to FALSE.
 #' @param resume Logical; reuse saved translation revisions and completed reviews
 #'   when source, input data, configuration, helpers, and worker prompts still
-#'   match. Execution and output checks always run again in a fresh attempt.
-#'   Missing or edited revision files trigger regeneration. Older planning versions
-#'   also regenerate; resume explains why before new provider calls. Defaults to FALSE.
+#'   match. Full-bundle execution and output checks use fresh attempts; passing
+#'   or deferred smoke results can be reused when their full context matches.
+#'   Changing only the parallel translation limit does not invalidate reuse.
+#'   Missing or edited revision files trigger regeneration. Compatible version-8
+#'   checkpoints are imported; other incompatible checkpoints regenerate with an
+#'   explanation before new provider calls. Defaults to FALSE.
+#' @param max_parallel_translations Maximum concurrent SAS program or macro translation workflows. Overrides
+#'   `migration.max_parallel_translations` in `_sas2r.yml`; defaults to 1. Model waiting can
+#'   overlap on fewer CPUs. Local execution and repair remain serial.
 #' @param keep_raw_attempts Logical; retain raw outputs from unselected attempts,
 #'   including isolated component smoke outputs and their replay scripts. These
 #'   are partial debugging artifacts, not validated final outputs. Defaults to FALSE.
@@ -109,8 +115,10 @@ sas_translate <- function(
   recursive = FALSE,
   resume = FALSE,
   keep_raw_attempts = FALSE,
-  max_bundle_repairs_per_component = 2L
+  max_bundle_repairs_per_component = 2L,
+  max_parallel_translations = NULL
 ) {
+  if (!is.null(max_parallel_translations)) max_parallel_translations <- normalize_max_parallel_translations(max_parallel_translations)
   max_bundle_repair_rounds <- bundle_repair_limit(max_bundle_repair_rounds,
     "max_bundle_repair_rounds", allow_null = TRUE)
   max_bundle_repairs_per_component <- bundle_repair_limit(max_bundle_repairs_per_component,
@@ -129,6 +137,7 @@ sas_translate <- function(
   stage <- "preflight"
   tryCatch({
   setup <- translation_setup(path, config, outputs, recursive, cache = TRUE)
+  translation_limit <- normalize_max_parallel_translations(max_parallel_translations %||% setup$config$migration$max_parallel_translations)
   paths <- init_migration_paths(out_dir, budget$run_id)
   state$project <- setup$project
   state$graph <- setup$plan$graph
@@ -174,6 +183,8 @@ sas_translate <- function(
   # Adopt the state's run-scoped paths for code, execution evidence, and reports.
   paths <- state$paths
   state$output_contracts <- output_contracts
+  state$parallel <- resolve_parallel_execution(state, translation_limit)
+  state$diagnostics$parallel <- state$parallel
   state$agent_evidence <- agent_evidence
   state$keep_raw_attempts <- isTRUE(keep_raw_attempts)
 
@@ -201,7 +212,7 @@ sas_translate <- function(
       max_program_repair_rounds = as.integer(max_program_repair_rounds),
       execute = isTRUE(execute)
     )
-    run_bundle_pipeline(
+    if (length(prog_state$diagnostics$parallel_deferred)) prog_state else run_bundle_pipeline(
       state = prog_state,
       max_bundle_repair_rounds = max_bundle_repair_rounds,
       max_bundle_repairs_per_component = max_bundle_repairs_per_component,
@@ -229,7 +240,9 @@ sas_translate <- function(
     has_check_failure <- any(vapply(state$selected_revisions, function(r) {
       identical(r$status, "check_failed")
     }, logical(1)))
-    if (has_check_failure) {
+    if (length(state$diagnostics$parallel_deferred)) {
+      state$status <- "blocked"
+    } else if (has_check_failure) {
       state$status <- "blocked"
       state$status_reason <- "Mechanical check failed for one or more components"
     } else {

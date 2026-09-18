@@ -29,7 +29,7 @@ test_that("sas_translate returns one complete observable migration result", {
     "max_program_repair_rounds", "max_bundle_repair_rounds", "outputs",
     "agent_evidence", "llm", "budget_usd", "budget_mode",
     "pricing_source", "pricing_rates", "usage_limits", "recursive",
-    "resume", "keep_raw_attempts", "max_bundle_repairs_per_component"
+    "resume", "keep_raw_attempts", "max_bundle_repairs_per_component", "max_parallel_translations"
   ))
   result <- sas_translate(
     migration_demo_file(), out_dir = withr::local_tempdir(),

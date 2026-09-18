@@ -54,6 +54,8 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
+    if contains_key(body, "static_runnability"):
+        return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
     if contains_key(body, "side_effects"):
@@ -109,6 +111,16 @@ class ReplayHandler(BaseHTTPRequestHandler):
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": body}) + "\n")
 
+        if body.get("model") == "offline-parallel-rejection-model" and "temperature" in body:
+            payload = json.dumps({"error": {"message": "Unsupported parameter: temperature"}}).encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
         if contains_pair(body, "effort", "sas2r-invalid-effort") or contains_pair(
             body, "reasoning_effort", "sas2r-invalid-effort"
         ):
@@ -120,7 +132,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
 
-        if body.get("model") == "offline-timeout-model":
+        if body.get("model") in ("offline-timeout-model", "offline-parallel-model"):
             time.sleep(0.15)
 
         has_tools = bool(body.get("tools"))
@@ -164,7 +176,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                     "id": "real_auto_1",
                     "type": "function",
                     "function": {
-                        "name": "lookup",
+                        "name": "lookup_rulebook" if body.get("model", "").startswith("offline-parallel-") else "lookup",
                         "arguments": json.dumps({"name": "round"}),
                     },
                 }],
@@ -211,7 +223,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "type": "function_call",
                 "status": "completed",
                 "call_id": "real_auto_1",
-                "name": "lookup",
+                "name": "lookup_rulebook" if body.get("model", "").startswith("offline-parallel-") else "lookup",
                 "arguments": json.dumps({"name": "round"}),
             }]
             if body.get("model") == "offline-batch-model":

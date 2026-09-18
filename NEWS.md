@@ -1,3 +1,29 @@
+# sas2r (development version)
+
+* Add opt-in dependency-aware parallel component translation and final reviews
+  through `migration.max_parallel_translations` or
+  `sas_translate(max_parallel_translations = ...)`, default 1. The setting counts
+  whole program-or-macro workflows, including review and repair.
+  Preserve one local execution/repair lane and the existing serial bundle gates.
+* Recommend evaluating Gemini Flash or DeepSeek Flash first, with frontier
+  models available as alternatives. Document provider-specific output allowances,
+  timeouts, connector settings and gradual concurrency increases; keep all quality
+  checks in place. The example configuration starts with Gemini Flash and one
+  concurrent translation. Update the README workflow diagram, migration vignette,
+  preflight and evidence guides for coordinator ownership, final reviews, resume
+  stages and parallel diagnostics.
+* Coordinate worker request/tool admissions and accounting in the parent process;
+  give workers complete isolated role conversations and assignment-specific files.
+  Return native tool batches to the runner before another metered HTTP request.
+  Custom adapters without a process factory, and ellmer configurations with hidden
+  transport retries (`max_tries > 1`), report a one-worker fallback.
+* Persist component phases and revisit allowances in version-9 checkpoints;
+  import compatible version-8 revisions without resetting known repair limits.
+  Retain interrupted requests as unknown, including any held strict reservation.
+* Defer unresolved dependency branches while independent components continue.
+  Automatic source-confirmed graph correction remains the separately planned
+  dependency-tool change. Keep parallel mode opt-in pending paired live validation.
+
 # sas2r 0.4.5
 
 * Consolidate semantic reviews of earlier unchanged components into a review-only

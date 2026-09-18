@@ -27,12 +27,20 @@ knitr::opts_chunk$set(
 
 A complete migration workflow follows six coordinated phases:
 
-1. **Dependency Analysis**: Discovers module dependencies, macro definitions, and data references to construct a Directed Acyclic Graph (DAG) and topological execution schedule.
-2. **Deterministic Baseline Transpilation**: Parses SAS statements into robust base R / tidyverse idioms with format catalog compilation (`_sas2r_formats.R`) and runtime helper bindings (`sas2r-helpers.R`).
-3. **Immediate Component Repair**: Translates and checks program units, verifies syntax, and asks a separate reviewer to evaluate the candidate against the original SAS source.
-4. **Subprocess Attempt Execution**: Executes the complete generated R bundle inside an isolated subprocess using copy-on-write library registries.
-5. **Output Verification Gate**: Evaluates generated candidate datasets and Table/Listing/Figure (TLF) outputs against structural assertions and optional SAS reference datasets (`.xpt`, `.sas7bdat`, `.rds`).
-6. **Authoritative Reporting**: Produces machine-readable (`report/report.json`) and human-readable (`report/translation.md`) audit documentation.
+1. **Dependency analysis and scheduling**: Discovers module dependencies, macro definitions and data references. A deterministic coordinator assigns dependency-ready programs and called macros; cycles and unresolved dependencies remain findings.
+2. **Translation and initial review**: Builds a deterministic baseline, hands unsupported source to the configured translator, checks the candidate and obtains independent review. Independent components can overlap in separate R processes when parallel mode is enabled.
+3. **Immediate checks and repair**: Runs smoke execution and bounded source-grounded repairs one component at a time, including re-review and checks of affected consumers. Dependents wait until their providers finish this processing.
+4. **Final review checkpoint**: Holds the selected code and helpers fixed, reuses reviews whose context still matches, and reviews remaining components. These reviews can overlap but do not repair code during the pass.
+5. **Bundle execution and output checks**: Runs the complete generated bundle in dependency order inside an isolated subprocess using copy-on-write library registries. It checks required datasets and TLFs, compares configured dataset references, and runs bounded source-grounded repair followed by fresh execution. This phase remains serial.
+6. **Authoritative reporting**: Produces machine-readable (`report/report.json`) and human-readable (`report/translation.md`) evidence, including unavailable checks and unresolved findings.
+
+The coordinator owns selected revisions, checkpoints and the shared usage budget.
+Each process uses the existing translator, reviewer and fixer context builders,
+tools and settings with a snapshot of the selected dependencies. Processes report
+results to the coordinator; they do not share a live conversation. In parallel
+mode, an unresolved dependency finding defers its component and known descendants
+while independent work continues. The affected bundle remains blocked. Automatic
+dependency correction and reassignment are a separate planned extension.
 
 ## Configuring a Clinical Study Migration (`_sas2r.yml`)
 
@@ -71,10 +79,34 @@ outputs:
       numeric_tolerance: 1e-6
 
 llm:
-  provider: anthropic           # or openai, gemini, deepseek
-  model: claude-sonnet-4-6
+  provider: gemini              # or deepseek, openai, anthropic
+  model: gemini-3.8-flash
   reasoning_effort: high
+  max_output_tokens: 65536
+  timeout_seconds: 900
+  max_tries: 1
+  capabilities:
+    tool_calling: native
+    structured_output: fallback
+
+migration:
+  max_parallel_translations: 1
 ```
+
+`max_parallel_translations` counts concurrent program or macro workflows, including
+their reviews and repairs. It does not allocate one slot per agent role or per
+CPU. Establish a baseline at 1, then evaluate 2 against the same source, inputs
+and quality checks. Higher values depend on provider capacity and local memory;
+local execution and repair remain serial. The `sas_translate()` argument of the
+same name overrides configuration for one run. Parallel mode is opt-in while
+live quality and performance validation remains outstanding.
+
+Gemini Flash and DeepSeek Flash are suggested starting points for evaluation;
+stronger frontier models remain available. Choose using source review and output
+evidence for the actual study. See the [provider settings guide](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)
+for provider-specific output limits, timeouts and capabilities.
+On the development branch, Gemini/DeepSeek tool-continuation support still needs
+transport work and validation before these profiles are used for study migrations.
 
 ## Inspect the setup offline
 
@@ -147,9 +179,13 @@ describes the original selected execution and is not refreshed by a manual rerun
 
 Repeat the same migration call with `resume = TRUE` to reuse saved revisions and
 completed reviews when source, inputs, configuration, runtime, and prompts still
-match. Missing or changed artifacts regenerate, unavailable reviews are retried,
-and smoke execution and full output checks rerun in fresh attempts. The usage
-ledger remains cumulative across resumed runs. Set, for example,
+match. Changing only the parallel translation limit does not invalidate reuse.
+Missing or changed artifacts regenerate and unavailable reviews are retried.
+Passing or deferred smoke results can be reused when their full context matches;
+full-bundle execution and output checks use fresh attempts. Parallel checkpoints
+distinguish drafts from components that have completed immediate processing, and
+save final reviews individually. Repair and recorded revisit counts survive
+resume. The usage ledger remains cumulative across resumed runs. Set, for example,
 `usage_limits = list(max_calls = 20)` to cap provider requests; unknown-cost calls
 must not be read as zero spend.
 
@@ -160,7 +196,7 @@ Each translation attempt resolves to one of four authoritative statuses:
 - **`validated`**: Execution, required output checks, and lineage requirements pass, with a passing reference comparison for at least one required target. Other outputs can remain unreferenced.
 - **`migration_ready`**: Execution, required output checks, and lineage requirements pass without passing reference evidence for a required target.
 - **`needs_review`**: Execution was deferred (`execute = FALSE`), or required review/lineage evidence is incomplete or blocked. Programs may still have executed successfully.
-- **`blocked`**: Bundle execution failed or required output checks failed, including missing/unreadable datasets and reference mismatches. Dependency cycles also prevent execution.
+- **`blocked`**: Bundle execution failed or required output checks failed, including missing/unreadable datasets and reference mismatches. Dependency cycles and deferred dependency branches also prevent execution.
 
 Inspect coverage as well as status. The reports separate produced,
 reference-compared, passed, and reference-passed outputs and list
@@ -209,7 +245,7 @@ separately from the comparison result.
 
 - **Transmission Boundary**: Prompts carry SAS and R code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports stay in local reports and the public comparison API. Project tool overrides cannot restore comparison access for these agents.
 - **Bounded Candidate Evidence**: `agent_evidence = "bounded"` adds capped candidate-output summaries and previews to execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. The default `code_only` omits these previews; source code and error messages may themselves contain data.
-- **Data Residency**: All dataset reading, execution, and comparison run in the local R process; confirm your configured endpoint meets your organization's data residency obligations before enabling an LLM provider.
+- **Data Residency**: All dataset reading, execution, and comparison run in local R processes on your infrastructure; confirm your configured endpoint meets your organization's data residency obligations before enabling an LLM provider.
 
 ## Parity Disclaimer
 

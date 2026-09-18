@@ -86,12 +86,18 @@ environment:
 # NOTE: github (GitHub Models) was retired upstream on 2026-07-30 and needs
 # ellmer < 0.5.0; on newer ellmer sas2r refuses it before building a request.
 #
-# Recommended translation profiles. Keep exactly one llm block active.
+# Evaluate Gemini Flash or DeepSeek Flash first; use frontier models when needed.
+# Keep the same source-based review and output checks with every model.
+# These are starting profiles, not a guarantee of translation quality.
+# Development branch: Gemini/DeepSeek tool-continuation history still needs
+# transport work and validation before study use; see docs/llm-providers.md.
+# Keep exactly one llm block active.
 # High reasoning is explicit where ellmer 0.4.2 maps it. DeepSeek uses its
 # documented server default; requesting explicit effort stops on this connector.
 # max_output_tokens is a per-response allowance for reasoning plus the answer
-# where the provider counts both. 32768 is a starting point, not a guarantee
-# against truncation; increase within the selected model's supported limit.
+# where the provider counts both. Use 65536 for this Gemini profile, 131072 for
+# DeepSeek, or 32768 for OpenAI/Claude; adjust within the model/connector limit.
+# Larger ceilings can increase cost and time; they do not guarantee completion.
 # Startup verifies explicit settings and sets their effective capabilities.
 # Unsupported, ignored, or unverified settings stop the run before agent work.
 # Probe calls share the run budget; sas_preflight() stays offline.
@@ -99,22 +105,49 @@ environment:
 # Cloud/local providers and connector limitations: docs/llm-providers.md.
 # timeout_seconds bounds each HTTP transfer attempt, not inactivity: receiving
 # output does not reset it. The package default is 300 seconds; these profiles
-# allow 900 seconds for reasoning and tool use.
+# allow 900 seconds (1800 for DeepSeek) for reasoning and tool use.
 # max_tries defaults to 1. Larger values add transport attempts beneath sas2r's
 # own retries and can multiply elapsed time and ambiguous spend.
 #
-# Active example: OpenAI (OPENAI_API_KEY)
+# Active example: Gemini Flash — first evaluation (GEMINI_API_KEY or GOOGLE_API_KEY)
 llm:
-  provider: openai
+  provider: gemini
   auth_mode: api_key
-  model: gpt-5.6-terra
+  model: gemini-3.8-flash
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 65536
   capabilities:
-    structured_output: native
+    structured_output: fallback
     tool_calling: native
   timeout_seconds: 900
   max_tries: 1
+
+# Alternative: DeepSeek Flash — first evaluation (DEEPSEEK_API_KEY)
+# llm:
+#   provider: deepseek
+#   auth_mode: api_key
+#   model: deepseek-flash              # or deepseek-v4-pro
+#   # Server thinking remains enabled; ellmer 0.4.2 does not forward effort here.
+#   max_output_tokens: 131072
+#   capabilities:
+#     structured_output: fallback
+#     tool_calling: native
+#     reasoning_effort: unsupported    # connector limitation, not thinking disabled
+#   timeout_seconds: 1800
+#   max_tries: 1
+
+# Alternative: OpenAI (OPENAI_API_KEY)
+# llm:
+#   provider: openai
+#   auth_mode: api_key
+#   model: gpt-5.6-terra
+#   reasoning_effort: high
+#   max_output_tokens: 32768
+#   capabilities:
+#     structured_output: native
+#     tool_calling: native
+#   timeout_seconds: 900
+#   max_tries: 1
 
 # Alternative: Anthropic (ANTHROPIC_API_KEY)
 # llm:
@@ -130,34 +163,6 @@ llm:
 #   timeout_seconds: 900
 #   max_tries: 1
 
-# Alternative: Google Gemini (GEMINI_API_KEY or GOOGLE_API_KEY)
-# llm:
-#   provider: gemini
-#   auth_mode: api_key
-#   model: gemini-3.8-flash
-#   reasoning_effort: high
-#   max_output_tokens: 32768
-#   capabilities:
-#     structured_output: fallback
-#     tool_calling: native
-#   timeout_seconds: 900
-#   max_tries: 1
-
-# Alternative: DeepSeek (DEEPSEEK_API_KEY)
-# llm:
-#   provider: deepseek
-#   auth_mode: api_key
-#   model: deepseek-flash              # or deepseek-v4-pro
-#   # DeepSeek currently defaults to thinking enabled, high effort.
-#   # ellmer 0.4.2 does not forward reasoning_effort on this route.
-#   max_output_tokens: 32768
-#   capabilities:
-#     structured_output: fallback
-#     tool_calling: native
-#     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-#   timeout_seconds: 900
-#   max_tries: 1
-
 # ------------------------------------------------------------------------------
 # 7. Usage Budget & Policy (Optional)
 # ------------------------------------------------------------------------------
@@ -165,15 +170,24 @@ llm:
 # budget:
 #   mode: observe                       # observe | soft | strict
 #   max_calls: 50
-#   max_output_tokens: 128000           # keep well clear of the model's own maximum;
-#                                       # a low ceiling truncates reasoning models
+#   max_output_tokens: 131072           # per-request admission ceiling; must be
+#                                       # >= llm.max_output_tokens when both are set
 #   max_usd: 5.00
 #   max_retries: 2                      # sas2r-level; see llm.max_tries
 #   max_tool_calls: 500
 #   max_wall_time: 7200                 # denies new calls after this time; does not interrupt an in-flight request
 
 # ------------------------------------------------------------------------------
-# 8. Data & Model Privacy Boundary
+# 8. Concurrent Translation Workflows
+# ------------------------------------------------------------------------------
+# Counts whole program-or-macro workflows, including their review and repair.
+# Start at 1; compare with 2 after checking outputs, quota and memory.
+# Local execution and repair stay serial. This is not a CPU or agent-role count.
+migration:
+  max_parallel_translations: 1
+
+# ------------------------------------------------------------------------------
+# 9. Data & Model Privacy Boundary
 # ------------------------------------------------------------------------------
 # Models receive SAS/R code, input schema metadata, helper interfaces and errors.
 # Reference comparison reports and digests stay local, outside authoring tools.

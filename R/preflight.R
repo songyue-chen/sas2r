@@ -16,7 +16,7 @@
 #'   `called_macros` lists reachable search-path macro definitions and their
 #'   standalone R and interface-test paths.
 #'   Also includes `status`, `configured_libraries`, `schedule`, explanatory `notes`,
-#'   and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
+#'   `max_parallel_translations`, and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
 #'   `ready_for_translation` means no known missing inputs or unresolved scan
 #'   findings; it does not mean execution or reference validation has passed.
 #' @examples
@@ -30,7 +30,7 @@
 sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                           budget_usd = Inf, budget_mode = "stop",
                           pricing_source = "catalog", pricing_rates = NULL,
-                          usage_limits = NULL, recursive = FALSE) {
+                          usage_limits = NULL, recursive = FALSE, max_parallel_translations = NULL) {
   root <- if (is.null(out_dir)) "<temporary output root>" else migration_paths(out_dir)$root
   if (!is.null(out_dir)) root <- config_anchor_paths(root, getwd())
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
@@ -70,6 +70,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     unsupported = unsupported, findings = findings, outputs = contracts,
     schedule = plan$schedule, project = project, destinations = destinations,
     budget = as.list(budget)[limits], model_calls = 0L,
+    max_parallel_translations = normalize_max_parallel_translations(max_parallel_translations %||% cfg$migration$max_parallel_translations),
     next_actions = c(
       if (any(inputs$status == "missing")) "Supply missing input members or correct their library paths; inspect $inputs$searched_paths.",
       if (any(inputs$status == "backward_dependency")) "Move the producer before its read in the same source file; an existing output does not establish correct execution order.",
@@ -151,6 +152,7 @@ print.sas2r_preflight <- function(x, ...) {
   for (action in x$next_actions) cli::cli_text("{action}")
   cli::cli_text("Output root: {x$destinations$root}")
   cli::cli_text("Budget: {x$budget$mode}; max_usd={x$budget$max_usd}; max_calls={x$budget$max_calls}")
+  cli::cli_text("Concurrent translation limit: {x$max_parallel_translations}; local execution and repair remain serial.")
   cli::cli_text("Static inspection only; inspect $libraries, $outputs, $budget for full details.")
   invisible(x)
 }

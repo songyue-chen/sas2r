@@ -297,6 +297,7 @@ review_program_revision <- function(
   round = 0L,
   attempt_id = NULL,
   reuse_only = FALSE,
+  identity_only = FALSE,
   ...
 ) {
   component_id <- revision$component_id %||% context$component_id %||% "unknown"
@@ -445,6 +446,7 @@ review_program_revision <- function(
       project_dir = project_dir %||% context$project$project_dir, schema = "program_review_v1"),
     reviewer = llm[c("provider", "model", "model_parameters", "endpoint", "api_version")]
   ))
+  if (isTRUE(identity_only)) return(review_key)
   events <- current_component_evidence(history_obj)$events %||% list()
   # A later review may add evidence or fail to complete. Never reach back past
   # it for an older clean verdict, even if the old request key matches again.

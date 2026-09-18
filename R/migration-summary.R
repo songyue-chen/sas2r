@@ -108,6 +108,7 @@ migration_environment <- function(state) {
     versions = list(sas2r = loaded_version("sas2r"), ellmer = loaded_version("ellmer"),
                     R = as.character(getRversion())),
     execution_root = state$project$project_dir,
+    parallel = state$parallel %||% list(requested = 1L, effective = 1L),
     agents = agents,
     repairs = list(immediate_per_component = state$max_program_repair_rounds,
                    bundle_per_component = state$max_bundle_repairs_per_component,
@@ -122,6 +123,8 @@ migration_environment_lines <- function(info) {
   c(paste("Loaded versions:", paste(names(info$versions), unlist(info$versions),
                                     sep = "=", collapse = ", ")),
     paste0("Execution root: ", info$execution_root),
+    if (!is.null(info$parallel)) sprintf("Translation workers: %d requested, %d effective; local execution and repair: 1 at a time.",
+      info$parallel$requested, info$parallel$effective),
     vapply(names(info$agents), function(role) {
       agent <- info$agents[[role]]
       paste0(role, ": ", agent$tool_call_limit, " tool calls per invocation",

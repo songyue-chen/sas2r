@@ -678,6 +678,8 @@ build_behavioral_contract <- function(
       if (is.null(tr_data)) "macro_deferred" else c("llm_authored", "macro_semantics_unverified")
     } else character()
   )
+  discoveries <- unique(as.character(unlist(tr_data$discovered_dependencies %||% character())))
+  if (length(discoveries)) result$discovered_dependencies <- discoveries
   result$helper_use_declared <- unlist(tr_data$helper_use %||% character())
   result
 }
@@ -929,6 +931,7 @@ generate_program_revision <- function(
     r_path = r_path,
     contract_path = contract_path,
     contract = contract,
+    binding = contract$binding,
     status = if (isTRUE(checks$pass)) "ok" else "check_failed",
     checks = checks,
     r_code = final_r_code_text,

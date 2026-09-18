@@ -49,18 +49,100 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 
 ## 2. Configuration Examples (`_sas2r.yml`)
 
-Use a reasoning model for translation, review, and repair. The four direct-provider
-examples below match the [recommended README profiles](../README.md#recommended-_sas2ryml-profiles).
-Copy one complete `llm:` block. Startup verifies explicit effort and token
-ceilings; manual `supported` flags are no longer required. An initial
-`max_output_tokens: 32768` leaves space for reasoning and the final response;
-increase it for long programs within the chosen model's supported limit.
-Leaving it unset uses connector/provider defaults, not necessarily the model's
-maximum. No temperature or top-p override is needed for these profiles.
+**Evaluate Gemini Flash or DeepSeek Flash first**, retaining reasoning and all
+translation/review/repair checks. Frontier models remain available for programs
+where the first model leaves material source-based findings. This is a practical
+starting strategy, not a guarantee that any model is sufficient for every study.
+The four direct-provider examples match the [README profiles](../README.md#recommended-_sas2ryml-profiles).
+Copy one complete `llm:` block; the model must be available to your account.
 
-The cloud/local examples also identify reasoning limitations. Their model or
-deployment names are examples; select a model available to your account. These
-are connector contracts checked with ellmer 0.4.2, not live translation results.
+### Recommended starting settings
+
+These are suggested YAML profiles, not automatic provider-specific package
+defaults. Settings/model documentation checked **September 18, 2026**. Startup
+verifies explicit parameters against the installed connector and selected model.
+
+| Provider / model | Reasoning | `llm.max_output_tokens` | `llm.timeout_seconds` | Structured output |
+| --- | --- | ---: | ---: | --- |
+| Gemini / `gemini-3.8-flash` | `high` | 65536 | 900 | `fallback` |
+| DeepSeek / `deepseek-flash` | Keep server thinking default; omit explicit effort on the documented ellmer route | 131072 | 1800 | `fallback` |
+| OpenAI / `gpt-5.6-terra` | `high` | 32768 | 900 | `native` |
+| Anthropic / `claude-sonnet-4-6` | `high` with adaptive thinking | 32768 | 900 | `fallback`; `cache: 1h` |
+
+Use `tool_calling: native` and `max_tries: 1` with all four profiles. Leave
+`temperature` and `top_p` unset. Output ceilings include reasoning where the
+provider counts it; they are not fixed consumption targets. Longer allowances
+may cost more and take longer. The package's unset timeout default remains 300
+seconds; the profiles give reasoning requests more time. A timeout is per HTTP
+attempt, not an inactivity timer or a whole-translation deadline.
+
+For Vertex with the same Gemini model, start from the Gemini settings and supply
+your project/location. Posit's Claude route can use the Claude settings. For
+Azure, Bedrock, Databricks and Snowflake, use the actual deployment's supported
+output limit and default reasoning; do not copy an explicit effort setting that
+the connector cannot forward. Start Ollama at one concurrent translation and
+choose a reasoning/tool-capable model that fits local memory. GitHub Models is
+retired and is not recommended for new configurations.
+
+For **every provider**, establish a checked baseline at:
+
+```yaml
+migration:
+  max_parallel_translations: 1
+```
+
+Then evaluate `2` concurrent program-or-macro workflows on the same inputs and
+settings. Raise to `3` or `4` only when quality checks, endpoint quotas and memory
+permit. Provider limits can depend on model, account, region and deployment;
+there is no universal safe provider concurrency number. This setting counts whole
+translation workflows, not translator/reviewer/fixer roles. Local execution and
+repair remain serial. No CPU-count clamp is applied.
+
+The current development branch still needs to preserve and validate
+provider-specific reasoning history during multi-step tool conversations for
+Gemini and DeepSeek. This affects tool continuations even at concurrency 1.
+The Flash profiles above are evaluation targets; they do not establish working
+end-to-end provider support on this branch. Complete that transport work and
+validate tool continuations before using these profiles for study migrations.
+Startup parameter verification alone does not test this path.
+
+The `frontier` tier name in agent routing can map to a Flash model. It is a
+configuration label, not an instruction to buy a particular model class.
+
+### Adjust settings according to the result
+
+- **Incomplete output:** inspect the finish reason and effective output allowance.
+  Increase a too-small allowance within the model limit; also check context size.
+  A summary covering multiple tool turns is not the size of one response. Do not
+  accept partial code or lower reasoning automatically to obtain a completion.
+- **Timeout:** allow more time for an otherwise valid long request, and check
+  endpoint latency. Increasing retries can multiply both elapsed time and spend.
+- **Rate limit / overload:** reduce concurrent translations and check the
+  endpoint's request/token quotas. More parallel work can make throttling worse.
+- **Unsupported/ignored settings:** follow the connector-specific profile and
+  startup verification. A capability flag does not make a connector forward a
+  parameter it cannot carry. Do not disable verification to force a request.
+- **Tool/history errors:** confirm the installed connector can preserve the
+  provider's required multi-turn state. Increasing timeout or tokens cannot fix
+  a protocol mismatch. A tool-free connection probe does not verify this path.
+- **Completed but incorrect output:** inspect source-based review findings and
+  complete output values/metadata; consider a stronger model with the same checks.
+  A stronger model does not replace a missing input or unsupported runtime feature.
+
+`llm.max_output_tokens` sets the requested per-response allowance.
+`budget.max_output_tokens` is an admission ceiling for that request; when both
+are set, keep the budget ceiling at least as large as the requested allowance.
+Use run-level call, tool, time and dollar limits separately. An unknown monetary
+cost is not zero cost or proof that a dollar ceiling can be enforced.
+
+Sources: [Gemini model/settings](https://ai.google.dev/gemini-api/docs/latest-model),
+[Gemini quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
+[DeepSeek request parameters](https://api-docs.deepseek.com/api/create-chat-completion/),
+[DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
+[OpenAI Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), and
+[Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost).
+Provider facts describe API capabilities; the exact ceilings/timeouts above are
+sas2r starting recommendations, subject to connector and account verification.
 
 Never commit literal API keys, tokens, or private secrets into `_sas2r.yml`. Always supply secrets via shell environment variables. Every configuration should specify an explicit `model` or `tiers` definition rather than relying on changing library defaults.
 
@@ -172,12 +254,12 @@ llm:
   model: deepseek-flash              # or deepseek-v4-pro
   # DeepSeek currently defaults to thinking enabled, high effort.
   # ellmer 0.4.2 does not forward reasoning_effort on this route.
-  max_output_tokens: 32768
+  max_output_tokens: 131072
   capabilities:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-  timeout_seconds: 900
+  timeout_seconds: 1800
   max_tries: 1
 ```
 
@@ -229,7 +311,7 @@ llm:
   auth_mode: api_key
   model: gemini-3.8-flash
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 65536
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -247,7 +329,7 @@ llm:
   location: us-central1
   model: gemini-3.8-flash
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 65536
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -362,9 +444,8 @@ budget:
   max_retries: 2                        # sas2r-level retries (see note below)
   max_tool_calls: 500                   # total tool executions across the run
   max_wall_time: 7200                   # seconds, whole run
-  max_output_tokens: 128000             # keep well clear of the model's own
-                                        # maximum; a low ceiling truncates
-                                        # reasoning models mid-answer
+  max_output_tokens: 131072             # per-request admission ceiling; must be
+                                        # >= llm.max_output_tokens when both are set
   max_request_bytes: 1048576
   max_request_chars: 500000
   max_input_tokens: 128000
@@ -372,15 +453,16 @@ budget:
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
 
-> **`max_usd` binds only when the provider reports cost.** Where pricing is
-> unavailable, every record carries `cost_status: unknown`, cumulative spend
-> stays `0`, and the dollar ceiling never trips. `sas2r` warns when this
-> happens. Bound such runs with the non-dollar ceilings above.
+> **Dollar enforcement requires known cost or usable pricing.** Unknown cost
+> cannot be treated as zero or used to certify a dollar limit. Strict mode needs
+> a usable rate card for upfront reservations; use non-dollar call, tool and time
+> ceilings as well when pricing is unavailable.
 
-> **Two retry layers exist.** `budget: max_retries:` counts sas2r-level retries
-> only. Beneath it, ellmer retries each HTTP request `ellmer_max_tries` times
-> (default 3), which the ledger does not see -- so a run can issue three times
-> the requests it appears to. Set `llm: max_tries:` to bound that layer.
+> **Two retry layers exist.** `budget.max_retries` counts sas2r-level retries.
+> `llm.max_tries` controls transport attempts inside ellmer. sas2r defaults that
+> setting to **1**; keep it at 1 for parallel translation so hidden transport
+> retries do not bypass per-attempt coordination. Configuring a larger value
+> retains that policy and visibly falls back to one translation at a time.
 
 ### Cost Provenance
 `sas2r` records cost under five provenance states: `billed_amount`, `contract_estimate`, `catalog_estimate`, `incomplete_estimate`, or `unknown`. `sas2r` owns no built-in fallback price table; unknown pricing remains `unknown` and is never estimated from arbitrary hard-coded rates.
@@ -536,4 +618,4 @@ unbounded.
 
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
 - **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. `code_only` omits these previews. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
-- **Data Residency**: All dataset reading, writing, and execution take place in the local R process on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
+- **Data Residency**: All dataset reading, writing, and execution take place in local R processes on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
