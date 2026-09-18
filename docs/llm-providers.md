@@ -111,6 +111,8 @@ tool conversation and each finalization request, in either mode. This can reach
 an old call ceiling sooner than ellmer 0.4.2, which retains legacy phase-level
 metering in serial mode. Use `max_tries: 1` for individually accounted requests;
 connector-internal retries with a larger value are not separate admissions.
+If both `max_parallel_translations` and `max_tries` exceed 1, preflight and
+translation stop before provider calls with instructions to set either value to 1.
 The existing agent retry policy remains separately metered. See the
 [usage evidence guide](migration-evidence.md#coverage-limits-and-reuse).
 
@@ -601,6 +603,8 @@ to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults t
 frontier model answering through a chain of tool calls can exceed the timeout
 and fail mid-stream with `sas2r_llm_timeout`. Increasing `max_tries` adds
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
+Values above 1 require `migration.max_parallel_translations: 1`; incompatible
+effective settings raise a startup configuration error.
 
 ```yaml
 llm:

@@ -22,9 +22,11 @@
   `max_calls` therefore counts requests within conversations in both modes.
   Existing `max_calls` values may need raising after upgrade to allow the same
   amount of translation work; review the intended budget before increasing them.
-  Custom adapters without a process factory, ellmer older than 0.5.0, and
-  configurations with internal transport retries (`max_tries > 1`) report a
-  one-workflow fallback. Older ellmer keeps legacy serial phase-level metering.
+  Custom adapters without a process factory and ellmer older than 0.5.0 report a
+  one-workflow fallback. Preflight and translation reject configurations where
+  both `max_parallel_translations` and `max_tries` exceed 1, before provider calls,
+  with instructions to set either value to 1. Explicit argument overrides are
+  honored. Older ellmer keeps legacy serial phase-level metering.
   Worker accounting messages carry precomputed size measurements instead of
   native reasoning history; full history remains in the worker conversation.
 * Persist component phases and revisit allowances in version-9 checkpoints;

@@ -64,21 +64,18 @@ parallel_adapter_recipe <- function(llm) {
 
 resolve_parallel_execution <- function(state, requested) {
   roles <- c("translator_llm", "reviewer_llm", "fixer_llm")
-  supported <- all(vapply(state[roles], function(llm) !is.null(parallel_adapter_recipe(llm)), logical(1)))
-  hidden_retries <- any(vapply(state[roles], function(llm) {
+  for (llm in state[roles]) {
     cfg <- attr(llm, "parallel_config", exact = TRUE)
-    !is.null(cfg) && cfg$max_tries > 1L
-  }, logical(1)))
+    validate_parallel_retry_settings(requested, cfg$max_tries)
+  }
+  supported <- all(vapply(state[roles], function(llm) !is.null(parallel_adapter_recipe(llm)), logical(1)))
   missing_callbacks <- any(vapply(state[roles], function(llm)
     isTRUE(attr(llm, "is_ellmer", exact = TRUE)), logical(1))) && !ellmer_has_request_callbacks()
-  effective <- if (supported && !hidden_retries && !missing_callbacks) requested else 1L
+  effective <- if (supported && !missing_callbacks) requested else 1L
   reason <- if (requested <= 1L) NULL else if (!supported) "adapter_has_no_process_factory" else
-    if (hidden_retries) "transport_retries_require_single_worker" else
       if (missing_callbacks) "ellmer_request_callbacks_unavailable" else NULL
   if (identical(reason, "adapter_has_no_process_factory")) cli::cli_inform(
     "Parallel translation uses one worker: the custom adapter cannot be reconstructed in a fresh process.")
-  if (identical(reason, "transport_retries_require_single_worker")) cli::cli_inform(
-    "Parallel translation uses one worker: llm.max_tries must be 1 for individually metered parallel requests; the existing agent retry policy remains available.")
   if (identical(reason, "ellmer_request_callbacks_unavailable")) cli::cli_inform(
     "Parallel translation uses one workflow: install ellmer 0.5.0 or newer for native per-request accounting.")
   list(requested = requested, effective = effective,

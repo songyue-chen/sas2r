@@ -47,8 +47,14 @@ translation_config <- function(path, config) {
   cfg
 }
 
-translation_setup <- function(path, config, outputs, recursive, cache = FALSE) {
+translation_setup <- function(path, config, outputs, recursive, cache = FALSE,
+                              max_parallel_translations = NULL, llm = NULL) {
   cfg <- translation_config(path, config)
+  translation_limit <- normalize_max_parallel_translations(max_parallel_translations %||% cfg$migration$max_parallel_translations)
+  # An explicit adapter replaces the YAML LLM settings. Validate its actual
+  # transport settings, before source scanning, cache writes or provider setup.
+  llm_config <- if (is.null(llm)) cfg$llm else attr(llm, "parallel_config", exact = TRUE)
+  validate_parallel_retry_settings(translation_limit, llm_config$max_tries)
   overrides <- if (is.null(outputs)) cfg$outputs else validate_output_overrides(outputs)
   if (!is.null(outputs) && is.list(overrides) && length(overrides$references)) {
     overrides$references <- lapply(overrides$references, config_anchor_paths, base = getwd())
@@ -66,7 +72,7 @@ translation_setup <- function(path, config, outputs, recursive, cache = FALSE) {
   project$output_contracts <- plan$contracts
   project$graph <- plan$graph
   project$schedule <- plan$schedule
-  list(config = cfg, project = project, plan = plan)
+  list(config = cfg, project = project, plan = plan, max_parallel_translations = translation_limit)
 }
 
 usage_limit_names <- function() grep("^max_", names(formals(new_usage_budget)), value = TRUE)

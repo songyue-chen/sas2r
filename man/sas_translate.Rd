@@ -89,7 +89,9 @@ across the run. Defaults to 2L; separate from immediate program repairs.}
 
 \item{max_parallel_translations}{Maximum concurrent SAS program or macro translation workflows. Overrides
 \code{migration.max_parallel_translations} in \verb{_sas2r.yml}; defaults to 1. Model waiting can
-overlap on fewer CPUs. Local execution and repair remain serial.}
+overlap on fewer CPUs. Local execution and repair remain serial.
+Values above 1 cannot be combined with \code{llm.max_tries} above 1; preflight
+and translation stop with a configuration error before provider calls.}
 }
 \value{
 An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \verb{$out_dir},

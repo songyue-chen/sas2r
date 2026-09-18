@@ -493,7 +493,11 @@ while waiting for a remote model, but use the run's observed worker/memory/admis
 metrics and your workbench limits to decide. A custom adapter that cannot be rebuilt
 in a child process uses one worker and reports why. For the shipped ellmer adapters,
 parallel mode requires **ellmer 0.5.0 or newer** and `llm.max_tries: 1` (the
-default); older ellmer installations visibly use one workflow. The existing
+default); older ellmer installations visibly use one workflow. If both
+`max_parallel_translations` and `llm.max_tries` exceed 1, preflight and translation
+stop before provider calls and explain which setting to change. Set `llm.max_tries`
+to 1 for parallel translation, or `max_parallel_translations` to 1 for provider-level
+retries. Function argument overrides are applied before this check. The existing
 bounded agent retry policy still applies. With ellmer 0.5.0+, `max_calls` counts each request
 within a tool conversation, plus finalization, in both modes. See the
 [usage-counting details](docs/migration-evidence.md#coverage-limits-and-reuse)

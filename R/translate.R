@@ -56,6 +56,8 @@
 #' @param max_parallel_translations Maximum concurrent SAS program or macro translation workflows. Overrides
 #'   `migration.max_parallel_translations` in `_sas2r.yml`; defaults to 1. Model waiting can
 #'   overlap on fewer CPUs. Local execution and repair remain serial.
+#'   Values above 1 cannot be combined with `llm.max_tries` above 1; preflight
+#'   and translation stop with a configuration error before provider calls.
 #' @param keep_raw_attempts Logical; retain raw outputs from unselected attempts,
 #'   including isolated component smoke outputs and their replay scripts. These
 #'   are partial debugging artifacts, not validated final outputs. Defaults to FALSE.
@@ -136,8 +138,9 @@ sas_translate <- function(
   state <- list(paths = paths, usage_budget = budget, execute = isTRUE(execute))
   stage <- "preflight"
   tryCatch({
-  setup <- translation_setup(path, config, outputs, recursive, cache = TRUE)
-  translation_limit <- normalize_max_parallel_translations(max_parallel_translations %||% setup$config$migration$max_parallel_translations)
+  setup <- translation_setup(path, config, outputs, recursive, cache = TRUE,
+                             max_parallel_translations = max_parallel_translations, llm = llm)
+  translation_limit <- setup$max_parallel_translations
   paths <- init_migration_paths(out_dir, budget$run_id)
   state$project <- setup$project
   state$graph <- setup$plan$graph

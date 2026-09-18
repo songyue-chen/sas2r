@@ -335,6 +335,21 @@ normalize_max_parallel_translations <- function(value = NULL) {
   as.integer(value)
 }
 
+validate_parallel_retry_settings <- function(max_parallel_translations, max_tries) {
+  if (max_parallel_translations <= 1L || is.null(max_tries) || max_tries <= 1L) return(invisible(NULL))
+  cli::cli_abort(c(
+    "Cannot start translation with these settings:",
+    " " = "migration.max_parallel_translations: {max_parallel_translations}",
+    " " = "llm.max_tries: {max_tries}",
+    "i" = "Parallel translation currently requires llm.max_tries: 1 so every provider request can be individually accounted for.",
+    "i" = "Choose one:",
+    "*" = "Keep parallel translation: set llm.max_tries to 1.",
+    "*" = "Keep provider-level retries: set migration.max_parallel_translations to 1.",
+    "i" = "Update _sas2r.yml or the supplied function arguments, then run again.",
+    "i" = "No translation was started. No settings were changed."
+  ), class = c("sas2r_parallel_config_error", "sas2r_config_error"))
+}
+
 normalize_migration_config <- function(config) {
   config <- config %||% list()
   if (!is.list(config)) cli::cli_abort("migration must be a mapping", class = "sas2r_config_error")

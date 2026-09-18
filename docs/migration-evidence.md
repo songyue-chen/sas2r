@@ -133,9 +133,12 @@ the backend and any fallback reason. For a parallel run, its `observed` field
 includes peak process count, sampled process memory and coordinator admission
 latency. These are run
 observations, not CPU allocation or provider capacity guarantees. A custom
-adapter without process reconstruction support, or a shipped adapter configured
-with `llm.max_tries` above 1 or ellmer older than 0.5.0, falls back to one
-workflow and reports why.
+adapter without process reconstruction support, or ellmer older than 0.5.0,
+falls back to one workflow and reports why. Requesting parallel translation with
+`llm.max_tries` above 1 instead stops preflight and translation before provider
+calls. The error shows both effective settings and asks you to set either
+`llm.max_tries` or `migration.max_parallel_translations` to 1. Settings are not
+changed automatically; function argument overrides are honored.
 
 Each process job keeps `job.json`, `stdout.log` and `stderr.log` under
 `<run_id>/diagnostics/workers/<job_id>/`. The job record identifies its component

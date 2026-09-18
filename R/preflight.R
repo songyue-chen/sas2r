@@ -35,7 +35,8 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   if (!is.null(out_dir)) root <- config_anchor_paths(root, getwd())
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits)
-  setup <- translation_setup(path, config, outputs, recursive)
+  setup <- translation_setup(path, config, outputs, recursive,
+                             max_parallel_translations = max_parallel_translations)
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan
@@ -70,7 +71,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     unsupported = unsupported, findings = findings, outputs = contracts,
     schedule = plan$schedule, project = project, destinations = destinations,
     budget = as.list(budget)[limits], model_calls = 0L,
-    max_parallel_translations = normalize_max_parallel_translations(max_parallel_translations %||% cfg$migration$max_parallel_translations),
+    max_parallel_translations = setup$max_parallel_translations,
     next_actions = c(
       if (any(inputs$status == "missing")) "Supply missing input members or correct their library paths; inspect $inputs$searched_paths.",
       if (any(inputs$status == "backward_dependency")) "Move the producer before its read in the same source file; an existing output does not establish correct execution order.",
