@@ -63,6 +63,52 @@ budget_request_fixture <- function(text = "ping", max_output_tokens = 1000L,
   )
 }
 
+test_that("worker admission omits native history without weakening size or spending limits", {
+  request <- budget_request_fixture()
+  marker <- "private_reasoning_marker"
+  request$native_history <- list(list(choices = list(list(message = list(
+    role = "assistant", reasoning_content = paste(marker, "\u63a8\u7406", strrep("x", 300)),
+    content = "gathered context"
+  )))))
+  original <- request
+  expected_metrics <- request_text_metrics(request)
+  expect_gt(expected_metrics$bytes, expected_metrics$chars)
+  outbound <- NULL
+  local_mocked_bindings(parallel_rpc = function(operation, args, allow_error = FALSE) {
+    # Capture the actual message passed to the RDS writer boundary.
+    outbound <<- unserialize(serialize(args, NULL))
+    list(value = NULL, increments = list())
+  })
+  parallel_budget_rpc(new_usage_budget(), "reserve_usage_request", list(request = request))
+  compact <- outbound$request
+  expect_identical(request, original) # the provider conversation is untouched
+  expect_null(compact$native_history)
+  expect_length(grepRaw(marker, serialize(outbound, NULL), fixed = TRUE, all = TRUE), 0L)
+  expect_identical(request_text_metrics(compact), expected_metrics)
+
+  context <- list(provider = "mock", resolved_model = "m", tier = "frontier")
+  budget <- new_usage_budget(mode = "strict", max_usd = 1, rates = fixed_rate_fixture())
+  quote <- usage_reservation_quote(budget, request, context)
+  expect_true(quote$ok)
+  expect_identical(usage_reservation_quote(budget, compact, context), quote)
+  reservation <- reserve_usage_request(budget, compact, context)
+  expect_identical(reservation$input_bound, quote$input_bound)
+  expect_identical(budget$reserved_amount, quote$amount)
+
+  plain <- request
+  plain$native_history <- NULL
+  fields <- c(max_request_chars = "chars", max_request_bytes = "bytes",
+              max_input_tokens = "conservative_input_tokens")
+  for (limit in names(fields)) {
+    capped <- do.call(new_usage_budget, stats::setNames(list(expected_metrics[[fields[[limit]]]] - 1L), limit))
+    expect_true(usage_reservation_quote(capped, plain)$ok)
+    expected <- usage_reservation_quote(capped, request)
+    actual <- usage_reservation_quote(capped, compact)
+    expect_false(actual$ok)
+    expect_identical(actual$error$reason, expected$error$reason)
+  }
+})
+
 test_that("ellmer cost is catalog_estimate, never provider-reported", {
   row <- usage_from_ellmer(
     cost = 0.05, input = 100, output = 20,

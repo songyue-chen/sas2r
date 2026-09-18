@@ -30,6 +30,12 @@ parallel_budget_rpc <- function(budget, operation, args) {
   # their public contracts are needed by the parent's existing admission code.
   if (!is.null(args$audit_context)) args$audit_context$.usage_redactor <- NULL
   if (!is.null(args$request)) {
+    if (!is.null(args$request$native_history)) {
+      # The trusted worker measures the complete request before discarding
+      # accounting-only native history from the on-disk RPC payload.
+      args$request$text_metrics <- request_text_metrics(args$request)
+      args$request$native_history <- NULL
+    }
     args$request$tools <- lapply(args$request$tools, function(tool)
       tool[intersect(names(tool), c("name", "description", "schema"))])
   }

@@ -1,4 +1,4 @@
-# sas2r (development version)
+# sas2r 0.4.6
 
 * Write each manifest component's dependencies as a JSON array, including empty
   and single-dependency cases, so graph consumers use one consistent field type.
@@ -20,9 +20,13 @@
   and Gemini thought signatures. On ellmer 0.5.0+, admit every tool continuation
   through public request hooks and explicitly admit structured finalization.
   `max_calls` therefore counts requests within conversations in both modes.
+  Existing `max_calls` values may need raising after upgrade to allow the same
+  amount of translation work; review the intended budget before increasing them.
   Custom adapters without a process factory, ellmer older than 0.5.0, and
   configurations with internal transport retries (`max_tries > 1`) report a
   one-workflow fallback. Older ellmer keeps legacy serial phase-level metering.
+  Worker accounting messages carry precomputed size measurements instead of
+  native reasoning history; full history remains in the worker conversation.
 * Persist component phases and revisit allowances in version-9 checkpoints;
   import compatible version-8 revisions without resetting known repair limits.
   Retain interrupted requests as unknown, including any held strict reservation.

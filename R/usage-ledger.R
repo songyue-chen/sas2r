@@ -456,6 +456,9 @@ reconstruct_usage_budget <- function(budget, records) {
 }
 
 request_text_metrics <- function(request) {
+  # Parallel admission carries measurements made here by the worker, without
+  # persisting provider reasoning text in its transient accounting messages.
+  if (!is.null(request$text_metrics)) return(request$text_metrics)
   tool_contracts <- lapply(request$tools %||% list(), function(tool) {
     list(
       name = tool$name %||% NULL,

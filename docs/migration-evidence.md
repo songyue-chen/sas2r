@@ -166,6 +166,10 @@ All processes draw from one usage ledger. An interrupted admitted request may
 already have reached the provider, so it remains accounted for with unknown
 outcome/cost where appropriate; it is not treated as a free cancelled call.
 Increasing concurrency does not increase the configured budget or repair limits.
+Workers measure the complete request, including native reasoning history, before
+sending accounting messages. Only its size measurements travel with the public
+request fields; the additional native history stays in the worker conversation.
+The coordinator still applies the shared size, token and spending limits.
 Parallel mode remains opt-in pending paired live quality and performance
 validation; common prompts and offline checks alone do not establish equal
 translation quality.
