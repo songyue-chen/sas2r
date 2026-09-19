@@ -593,10 +593,10 @@ sas_config("_sas2r.yml")
 
 # Which models can my account use? (name any model to identify yourself;
 # the answer lists everything your account serves)
-sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+sas_llm_models(list(provider = "anthropic", model = "claude-sonnet-5"))
 
 # Does my sign-in actually work?
-sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-4-6"))
+sas_llm_probe(list(provider = "anthropic", model = "claude-sonnet-5"))
 
 ```
 

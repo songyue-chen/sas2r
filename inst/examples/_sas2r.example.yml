@@ -89,15 +89,16 @@ environment:
 # Evaluate Gemini Flash or DeepSeek Flash first; use frontier models when needed.
 # Keep the same source-based review and output checks with every model.
 # These are starting profiles, not a guarantee of translation quality.
-# Development branch: Gemini/DeepSeek tool-continuation history still needs
-# transport work and validation before study use; see docs/llm-providers.md.
+# Provider history is preserved; validate study outputs before production use.
 # Keep exactly one llm block active.
 # High reasoning is explicit where ellmer 0.4.2 maps it. DeepSeek uses its
 # documented server default; requesting explicit effort stops on this connector.
 # max_output_tokens is a per-response allowance for reasoning plus the answer
-# where the provider counts both. Use 65536 for this Gemini profile, 131072 for
-# DeepSeek, or 32768 for OpenAI/Claude; adjust within the model/connector limit.
-# Larger ceilings can increase cost and time; they do not guarantee completion.
+# where the provider counts both. Published maxima: Gemini 65536, DeepSeek
+# 393216, Luna 128000, Sonnet 5 128000. Respect endpoint and context limits.
+# Unused allowance is not billed; only actual generation consumes output tokens.
+# More generation can cost more and take longer; a ceiling guarantees neither
+# completion nor accuracy. Claude's full allowance is conditional: see below.
 # Startup verifies explicit settings and sets their effective capabilities.
 # Unsupported, ignored, or unverified settings stop the run before agent work.
 # Probe calls share the run budget; sas_preflight() stays offline.
@@ -105,7 +106,8 @@ environment:
 # Cloud/local providers and connector limitations: docs/llm-providers.md.
 # timeout_seconds bounds each HTTP transfer attempt, not inactivity: receiving
 # output does not reset it. The package default is 300 seconds; these profiles
-# allow 900 seconds (1800 for DeepSeek) for reasoning and tool use.
+# allow 900 seconds (1800 for DeepSeek) for reasoning and tool use. These are
+# starting timeouts, not guarantees that the full token ceiling fits that time.
 # max_tries defaults to 1. Larger values add transport attempts beneath sas2r's
 # own retries and can multiply elapsed time and ambiguous spend.
 #
@@ -128,7 +130,7 @@ llm:
 #   auth_mode: api_key
 #   model: deepseek-flash              # or deepseek-v4-pro
 #   # Server thinking remains enabled; ellmer 0.4.2 does not forward effort here.
-#   max_output_tokens: 131072
+#   max_output_tokens: 393216
 #   capabilities:
 #     structured_output: fallback
 #     tool_calling: native
@@ -142,20 +144,24 @@ llm:
 #   auth_mode: api_key
 #   model: gpt-5.6-luna
 #   reasoning_effort: high
-#   max_output_tokens: 32768
+#   max_output_tokens: 128000
 #   capabilities:
 #     structured_output: native
 #     tool_calling: native
 #   timeout_seconds: 900
 #   max_tries: 1
 
-# Alternative: Anthropic (ANTHROPIC_API_KEY)
+# Alternative: Claude Sonnet 5 (ANTHROPIC_API_KEY)
+# Conditional full allowance: sas2r currently uses non-streaming calls. Anthropic
+# recommends streaming/batch for long requests; validate representative requests
+# before relying on 128000 tokens. YAML changes do not enable streaming.
+# See docs/llm-providers.md#anthropic for the long-response qualification.
 # llm:
 #   provider: anthropic
 #   auth_mode: api_key
-#   model: claude-sonnet-4-6
+#   model: claude-sonnet-5
 #   reasoning_effort: high
-#   max_output_tokens: 32768
+#   max_output_tokens: 128000
 #   capabilities:
 #     structured_output: fallback
 #     tool_calling: native
@@ -167,10 +173,12 @@ llm:
 # 7. Usage Budget & Policy (Optional)
 # ------------------------------------------------------------------------------
 # Default is mode: observe, max_usd: Inf (audits usage without stopping calls).
+# Strict dollar budgets reserve worst-case request costs, not actual charges.
+# Larger allowances need sufficient shared budget for concurrent requests.
 # budget:
 #   mode: observe                       # observe | soft | strict
 #   max_calls: 50
-#   max_output_tokens: 131072           # per-request admission ceiling; must be
+#   max_output_tokens: 393216           # per-request admission ceiling; must be
 #                                       # >= llm.max_output_tokens when both are set
 #   max_usd: 5.00
 #   max_retries: 2                      # sas2r-level; see llm.max_tries

@@ -99,7 +99,7 @@ llm:                  # a recommended Flash starting profile
   provider: deepseek
   auth_mode: api_key
   model: deepseek-flash
-  max_output_tokens: 131072
+  max_output_tokens: 393216
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -232,19 +232,22 @@ See the [official Luna model documentation](https://developers.openai.com/api/do
 ### Recommended starting settings
 
 These are suggested profiles, not automatic package defaults. Model availability
-and settings were checked on **September 18, 2026**.
+and settings were checked on **September 18, 2026**. Use the documented maximum
+output allowance when your endpoint accepts it and the request fits the context
+window, to give reasoning and complete R code room to finish.
 
 | Starting choice | Model | Reasoning | Output token ceiling | Request timeout |
 | --- | --- | --- | ---: | ---: |
 | Gemini Flash | `gemini-3.8-flash` | `high` | 65536 | 900 seconds |
-| DeepSeek Flash | `deepseek-flash` | Keep server thinking default | 131072 | 1800 seconds |
-| OpenAI Luna | `gpt-5.6-luna` | `high` | 32768 | 900 seconds |
-| Anthropic alternative | `claude-sonnet-4-6` | `high` with adaptive thinking | 32768 | 900 seconds |
+| DeepSeek Flash | `deepseek-flash` | Keep server thinking default | 393216 | 1800 seconds |
+| OpenAI Luna | `gpt-5.6-luna` | `high` | 128000 | 900 seconds |
+| Claude Sonnet 5 | `claude-sonnet-5` | `high` with adaptive thinking | 128000 (see below) | 900 seconds |
 
 - Set `llm.max_output_tokens` and `llm.timeout_seconds` to the values above.
-  The larger output allowances leave room for reasoning and complete R code;
-  they are ceilings, not amounts charged on every call. Timeouts apply to each
-  request, not the entire migration.
+  **Unused output allowance is not billed.** A higher ceiling permits more
+  generation; actual usage, including billable reasoning, determines token cost.
+  Timeouts are starting values per request, not a promise that the full output
+  ceiling can be generated in that time.
 - Use `max_tries: 1` and `capabilities.tool_calling: native`. Set
   `capabilities.structured_output: fallback` for Gemini, DeepSeek and Anthropic,
   or `native` for OpenAI. Leave `temperature` and `top_p` unset.
@@ -254,6 +257,16 @@ and settings were checked on **September 18, 2026**.
 - Start with `migration.max_parallel_translations: 1`, then try `2` with the
   same programs and checks. Increase further only when provider quotas and
   available memory permit.
+- If you set `budget.max_output_tokens`, keep it at least as large as
+  `llm.max_output_tokens`. Strict dollar budgets reserve worst-case costs before
+  requests; larger ceilings may need more budget, especially with parallel work.
+
+**Claude qualification:** Sonnet 5 replaces the older Sonnet 4.6 recommendation.
+Its 128,000-token maximum is conditional guidance for this package: sas2r currently
+uses non-streaming requests, and very long responses need transport validation.
+Anthropic recommends streaming or batch processing for long requests; increasing
+the token ceiling or timeout does not enable either. See the
+[Claude profile](docs/llm-providers.md#anthropic) before using its full allowance.
 
 Use the [provider guide](docs/llm-providers.md) for complete connection profiles,
 model availability checks, output allowances, timeouts and tuning guidance.
