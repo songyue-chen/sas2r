@@ -1,5 +1,7 @@
-# sas2r 0.4.6
+# sas2r 0.5.0
 
+* Explain in the README FAQ why two or four translation workers do not promise
+  half or one-quarter of the total run time, with an illustrative timing example.
 * Keep the README focused on getting started, with general study-programming
   examples and a short FAQ. Move detailed workflow, troubleshooting, macro and
   privacy guidance into linked guides, and use the provider guide as the shared

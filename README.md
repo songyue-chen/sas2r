@@ -212,6 +212,8 @@ translation put affected work on hold and block the full study run.
 
 Start with one, then compare two on representative programs. Equal live-model
 quality and a particular speedup are not established by the offline tests.
+The [speed FAQ](#will-two-workers-halve-the-run-time-or-four-workers-quarter-it)
+explains why more workers do not give proportional time savings.
 See [parallel details](docs/running-migrations.md#parallel-translation-opt-in)
 and [provider settings](docs/llm-providers.md#recommended-starting-settings).
 
@@ -342,10 +344,30 @@ labels and presentation, as applicable. See the
 A program waits for its required upstream programs to finish initial translation
 and checks. For example, a summary program waits for the derivation it reads.
 Unrelated programs or macros can use the other available workers. The full
-study run still follows dependency order. More workers therefore do not imply
-the same multiple of speed improvement. Parallel mode retains the existing
+study run still follows dependency order. Parallel mode retains the existing
 checks, but unchanged live-model quality and speedup have not yet been
 established by a paired study run. See [parallel translation](#parallel-translation-opt-in).
+
+### Will two workers halve the run time, or four workers quarter it?
+
+No. **Two workers do not guarantee 50% of the one-worker time, and four do not
+guarantee 25%.** The setting allows up to that many workflows at once; it does
+not divide every step of a study evenly among them:
+
+- **Dependencies:** a table program may need to wait for an analysis dataset
+  program. Extra workers help only when independent work is ready.
+- **Steps that run one at a time:** execution checks, repairs and the full study
+  run remain serial, with the same quality checks.
+- **Uneven work:** a large program or complex macro can take much longer than
+  others, leaving workers idle near the end.
+- **Shared limits:** provider request/token quotas, response times, local CPU
+  and memory, and worker startup/coordination overhead can reduce the benefit.
+
+For illustration, suppose a one-worker run takes 60 minutes: 20 minutes must
+run one at a time and 40 minutes can be shared perfectly. Even with no extra
+overhead, two workers would take **40 minutes**, and four **30 minutes**.
+This is an example, not a measured sas2r benchmark. Compare elapsed time and
+output checks on the same representative study before increasing the setting.
 
 ### What should I do when a run is blocked or a comparison fails?
 

@@ -624,6 +624,6 @@ migration status or rerunning the bundle.
 
 ## Frequently asked questions
 
-See the [11-question study-team FAQ](../README.md#frequently-asked-questions)
-for preparation, reference outputs, independent QC, dependencies, interrupted
-runs, privacy and working with the exported R code.
+See the [study-team FAQ](../README.md#frequently-asked-questions)
+for preparation, reference outputs, independent QC, dependencies, parallel
+timing, interrupted runs, privacy and working with the exported R code.
