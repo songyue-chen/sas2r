@@ -6,12 +6,18 @@ repo <- normalizePath(".", mustWork = TRUE)
 if (!file.exists(file.path(repo, "DESCRIPTION"))) stop("Run from the repository root")
 if ("--source" %in% args) pkgload::load_all(repo, quiet = TRUE) else library(sas2r)
 
-files <- c("README.md", "docs/output-evidence.md", "docs/clinical-qc-preflight.md",
+files <- c("README.md", "docs/running-migrations.md", "docs/output-evidence.md", "docs/clinical-qc-preflight.md",
            "vignettes/dependency-aware-migration.Rmd", "vignettes/runtime-helpers.Rmd")
 source(file.path(repo, "tests/testthat/helper-documentation.R"))
 blocks <- unlist(lapply(files, function(file) {
   doc_code_blocks(readLines(file.path(repo, file), warn = FALSE), file)
 }), recursive = FALSE)
+# Full provider profiles now live in one guide. Validate those configurations;
+# partial settings fragments are described in the context of a complete profile.
+provider_file <- "docs/llm-providers.md"
+provider_blocks <- doc_code_blocks(readLines(file.path(repo, provider_file)), provider_file)
+blocks <- c(blocks, Filter(function(block) block$language == "yaml" &&
+  !is.null(yaml::yaml.load(block$code)$llm$provider), provider_blocks))
 for (i in seq_along(blocks)) {
   block <- blocks[[i]]
   if (block$language == "r" && !grepl("^<!-- sas2r-example: (offline|network) [a-z0-9-]+ -->$", block$marker)) {

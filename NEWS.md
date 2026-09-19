@@ -1,5 +1,9 @@
 # sas2r 0.4.6
 
+* Keep the README focused on getting started, with general study-programming
+  examples and a short FAQ. Move detailed workflow, troubleshooting, macro and
+  privacy guidance into linked guides, and use the provider guide as the shared
+  source of complete model profiles. Continue checking the relocated examples.
 * Respect `options(sas2r.progress = FALSE)` for the initial preflight console
   summary. Keep the final outcome and saved reports available regardless of
   this option. Clarify that known preflight cycles stop the whole run before

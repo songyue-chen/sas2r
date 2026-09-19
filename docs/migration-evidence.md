@@ -67,7 +67,7 @@ It remains selected until a new attempt meets the replacement criteria; repair
 and usage limits still apply. A regression against an attempt selected within
 the current pipeline stops further repair and retains that attempt.
 
-Under the default `agent_evidence = "code_only"` policy, agents receive source code, inferred schemas, project paths and execution diagnostics without explicit dataset previews. Code, comments and errors can still contain patient values or identifiers; this policy does not de-identify them. See the [README privacy explanation](../README.md#privacy-what-your-model-provider-can-receive).
+Under the default `agent_evidence = "code_only"` policy, agents receive source code, inferred schemas, project paths and execution diagnostics without explicit dataset previews. Code, comments and errors can still contain patient values or identifiers; this policy does not de-identify them. See the [full privacy explanation](model-privacy.md).
 
 ### Source-based repair and selection
 

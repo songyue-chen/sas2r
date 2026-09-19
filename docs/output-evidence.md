@@ -148,7 +148,7 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 
 ## 4. Data & Model Privacy Boundary
 
-`sas2r` processes datasets locally and controls which evidence enters model requests. Source code, comments, paths and execution diagnostics can still contain confidential information; these controls are not automatic de-identification. See the [README privacy explanation](../README.md#privacy-what-your-model-provider-can-receive).
+`sas2r` processes datasets locally and controls which evidence enters model requests. Source code, comments, paths and execution diagnostics can still contain confidential information; these controls are not automatic de-identification. See the [full privacy explanation](model-privacy.md).
 
 - **Dataset Files Are Processed Locally**: Dataset reading and comparison happen in the local R process or its subprocesses. The normal translation workflow does not attach complete dataset or TLF files to model requests. Values embedded in code, logs or permitted previews may still reach the model.
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.

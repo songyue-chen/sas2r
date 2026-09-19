@@ -55,7 +55,8 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 translation/review/repair checks. Frontier models remain available for programs
 where the first model leaves material source-based findings. This is a practical
 starting strategy, not a guarantee that any model is sufficient for every study.
-The four direct-provider examples match the [README profiles](../README.md#recommended-_sas2ryml-profiles).
+The complete provider profiles below are the shared reference for the README
+and migration guides.
 Copy one complete `llm:` block; the model must be available to your account.
 
 ### Recommended starting settings
@@ -419,8 +420,8 @@ probe <- sas2r::sas_llm_probe(llm, tier = "frontier")
 print(probe)
 ```
 
-`sas_llm()` is the supported constructor for the adapter every agent phase and
-`sas_refine_with_outputs()` take as their `llm` argument. It reads the same
+`sas_llm()` is the supported constructor for the adapter passed to
+`sas_translate()` as its `llm` argument. It reads the same
 `llm:` mapping shown above, contacts no network, and leaves credentials with
 `ellmer`.
 
@@ -471,19 +472,17 @@ budget:
 > **Two retry layers exist.** `budget.max_retries` counts sas2r-level retries.
 > `llm.max_tries` controls transport attempts inside ellmer. sas2r defaults that
 > setting to **1**; keep it at 1 for parallel translation so hidden transport
-> retries do not bypass per-attempt coordination. Configuring a larger value
-> retains that policy and visibly falls back to one translation at a time.
+> retries do not bypass per-attempt coordination. If both `max_tries` and
+> `max_parallel_translations` exceed 1, startup stops and asks you to set one to 1.
 
 ### Cost Provenance
 `sas2r` records cost under five provenance states: `billed_amount`, `contract_estimate`, `catalog_estimate`, `incomplete_estimate`, or `unknown`. `sas2r` owns no built-in fallback price table; unknown pricing remains `unknown` and is never estimated from arbitrary hard-coded rates.
 
 Per-agent tool limits are separate from run-level `usage_limits`. The shipped
-translator, reviewer, and fixer each allow 15 tool calls per request, with smaller
-per-tool limits (`search_skills`: 2; `lookup_rulebook`: 6 for translation/review,
-4 for fixing). A run reporting `max_tool_calls=unlimited` still has these agent
-limits. A tool warning saying “exceeded its budget after refusal” means the model
-requested a tool again after its local allowance was exhausted; it is not a
-provider billing-quota error.
+translator, reviewer and fixer each allow 30 tool calls per invocation, shared
+across their tools. A run reporting `max_tool_calls=unlimited` still has these
+agent limits. See [agent tool limits](running-migrations.md#agent-tool-limits)
+for role overrides and the behavior when an allowance is exhausted.
 
 ---
 
@@ -592,16 +591,17 @@ includes `max_tokens` but omits `reasoning_effort`. The startup check therefore
 remains necessary on both versions; upgrading the connector alone does not
 repair sas2r's earlier omission of unconfirmed settings.
 
-> **Reasoning tokens are not counted.** ellmer's public token surface reports
-> `input`, `output`, and `cached_input` only. Where a provider bills reasoning
-> tokens separately, they are absent from the ledger and from cost estimates.
+Token summaries distinguish known total input/output usage from cached and
+reasoning categories. Reasoning is already included in total output where the
+provider counts it there; unavailable usage remains unknown. See the
+[usage evidence guide](migration-evidence.md#coverage-limits-and-reuse).
 
 ### Request timeout and retries (`timeout_seconds`, `max_tries`)
 
 Each HTTP request is bounded by ellmer's `ellmer_timeout_s` option, defaulting
 to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults to 1. A
-frontier model answering through a chain of tool calls can exceed the timeout
-and fail mid-stream with `sas2r_llm_timeout`. Increasing `max_tries` adds
+single long model response can exceed the timeout and fail mid-stream with
+`sas2r_llm_timeout`. Increasing `max_tries` adds
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
 Values above 1 require `migration.max_parallel_translations: 1`; incompatible
 effective settings raise a startup configuration error.
@@ -614,8 +614,8 @@ llm:
 
 `timeout_seconds` applies to one HTTP request; bound total runtime with
 `budget: max_wall_time:`. `max_tries` is the ellmer-level companion to
-`budget: max_retries:` -- set both, or the layer you did not set stays
-unbounded.
+`budget: max_retries:`. The settings limit different retry layers; increasing
+both can multiply attempts and spending.
 
 ### Other behaviour
 
@@ -631,3 +631,6 @@ unbounded.
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
 - **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. `code_only` omits these previews. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
 - **Data Residency**: All dataset reading, writing, and execution take place in local R processes on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
+
+Source code, comments and errors can themselves contain patient information.
+`code_only` does not de-identify them. Read the [full privacy guidance](model-privacy.md).
