@@ -600,6 +600,16 @@ ellmer_turns_from_messages <- function(messages) {
   })
 }
 
+.ellmer_invocation <- new.env(parent = emptyenv())
+.ellmer_invocation$current <- NULL
+
+ellmer_has_request_callbacks <- function() {
+  requireNamespace("ellmer", quietly = TRUE) &&
+    "Chat" %in% getNamespaceExports("ellmer") &&
+    is.function(getExportedValue("ellmer", "Chat")$public_methods$on_request_start) &&
+    is.function(getExportedValue("ellmer", "Chat")$public_methods$on_request_end)
+}
+
 ellmer_prepare_conversation <- function(chat, messages) {
   current <- messages[[length(messages)]]
   if (!identical(current$role, "user")) {
@@ -614,7 +624,16 @@ ellmer_prepare_conversation <- function(chat, messages) {
       cli::cli_abort("ellmer chat does not expose public turn history",
                      class = "sas2r_llm_transport_error")
     }
-    chat$set_turns(ellmer_turns_from_messages(history))
+    retained <- .ellmer_invocation$current
+    native <- if (!is.null(retained)) retained$turns else NULL
+    if (!is.null(native)) {
+      # Keep the current system instructions and tool allowance without flattening native
+      # assistant/tool history (reasoning, signatures and result grouping).
+      system <- Filter(function(message) identical(message$role, "system"), history)
+      native <- c(ellmer_turns_from_messages(system), Filter(function(turn)
+        !ellmer_is_public(turn, "SystemTurn"), native))
+    }
+    chat$set_turns(native %||% ellmer_turns_from_messages(history))
   }
   as.character(current$content %||% "")
 }
@@ -648,6 +667,10 @@ ellmer_conversation_messages <- function(chat) {
     error = function(error) NULL
   )
   if (!is.list(turns) || !length(turns)) return(NULL)
+  ellmer_messages_from_turns(turns)
+}
+
+ellmer_messages_from_turns <- function(turns) {
   messages <- list()
   append_message <- function(message) {
     messages[[length(messages) + 1L]] <<- message
@@ -1041,8 +1064,9 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
   state <- if (length(tools)) tools[[1L]]$budget_state else NULL
   if (!is.environment(state) || !is.function(chat$on_tool_result) ||
       !is.function(chat$set_tools)) return(chat$chat(prompt))
-  seen <- list()
+  seen <- native_results <- list()
   chat$on_tool_result(function(result) {
+    native_results[[length(native_results) + 1L]] <<- result
     request <- ellmer_public_prop(result, "request")
     seen[[length(seen) + 1L]] <<- list(
       role = "tool", name = ellmer_public_prop(request, "name"),
@@ -1056,8 +1080,8 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
       stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
-    # Update descriptions for the next native turn without altering the
-    # lookup's JSON result schema or adding unpaired messages to its history.
+    # ellmer owns the native tool loop. Request callbacks meter each HTTP
+    # transfer without flattening provider state or inserting a user prompt.
     chat$set_tools(lapply(tools, function(tool) {
       tool$description <- paste(tool$description, agent_tool_allowance_message(state))
       ellmer_tool_contract(tool)
@@ -1067,6 +1091,7 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
     messages <- ellmer_conversation_messages(chat)
     result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
                          function(m) m$tool_call_id %||% "", character(1))
+    native_result_ids <- result_ids
     messages <- c(messages, Filter(function(m) !m$tool_call_id %in% result_ids, seen))
     result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
                          function(m) m$tool_call_id %||% "", character(1))
@@ -1081,9 +1106,17 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
         content = ellmer_tool_result(list(error = "agent_tool_limit",
                                           message = AGENT_TOOL_LIMIT_MESSAGE))
       )
+      native_results[[length(native_results) + 1L]] <- ellmer_content("ContentToolResult",
+        request = ellmer_tool_request(call), value = ellmer_tool_result(list(
+          error = "agent_tool_limit", message = AGENT_TOOL_LIMIT_MESSAGE)))
     }
-    structure(AGENT_TOOL_LIMIT_MESSAGE,
-              conversation = interleave_tool_messages(messages))
+    # on_tool_result fires before ellmer appends the batch's UserTurn. Retain
+    # native results exactly once, including the result that exhausted tools.
+    native_results <- Filter(function(result) !ellmer_public_prop(
+      ellmer_public_prop(result, "request"), "id") %in% native_result_ids, native_results)
+    if (length(native_results)) chat$set_turns(c(chat$get_turns(include_system_prompt = TRUE),
+      list(ellmer_content("UserTurn", contents = native_results))))
+    structure(AGENT_TOOL_LIMIT_MESSAGE, conversation = interleave_tool_messages(messages))
   })
 }
 
@@ -1105,6 +1138,38 @@ ellmer_transport_request <- function(cfg, request, model, params) {
   constructor_args <- ellmer_constructor_args(cfg, model, params)
   chat <- do.call(constructor, constructor_args)
   prompt <- ellmer_prepare_conversation(chat, request$messages)
+  # Only retained native turns carry usage from earlier phases. Neutral input
+  # messages have no provider usage to subtract from this fresh chat.
+  before_turns <- if (is.null(.ellmer_invocation$current$turns)) 0L else length(chat$get_turns())
+  meter <- .usage_attempt_scope$native_meter
+  structured <- identical(request$schema_mode, "native") && !is.null(request$output_schema)
+  if (!is.null(meter) && is.function(chat$on_request_start) && is.function(chat$on_request_end)) {
+    start_request <- function(turns) {
+      pending <- request
+      pending$messages <- ellmer_messages_from_turns(turns)
+      # Count provider-native history too when enforcing request/input limits.
+      # This is local accounting material, never a prompt or a public log field.
+      pending$native_history <- lapply(turns, function(turn)
+        if (ellmer_is_public(turn, "AssistantTurn")) ellmer_public_prop(turn, "json") else NULL)
+      meter$start(pending)
+    }
+    end_request <- function(turn) {
+      raw <- list(type = "final", data = list())
+      attr(raw, "usage") <- ellmer_usage(list(get_turns = function() list(turn)))
+      cost <- ellmer_cost(chat)
+      if (!is.na(cost)) {
+        attr(raw, "cost_usd") <- cost
+        attr(raw, "cost_status") <- "catalog_estimate"
+        attr(raw, "cost_currency") <- "USD"
+        attr(raw, "cost_source") <- "ellmer / LiteLLM catalog"
+      }
+      meter$end(raw)
+    }
+    if (!structured) {
+      chat$on_request_start(start_request)
+      chat$on_request_end(end_request)
+    }
+  }
   if (length(request$tools)) {
     if (is.null(chat$register_tool) || !is.function(chat$register_tool)) {
       cli::cli_abort("ellmer chat does not expose native tool registration",
@@ -1113,18 +1178,19 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     for (tool in request$tools) chat$register_tool(ellmer_tool_contract(tool))
   }
 
-  raw <- if (identical(request$schema_mode, "native") &&
-             !is.null(request$output_schema)) {
+  raw <- if (structured) {
     if (is.null(chat$chat_structured) || !is.function(chat$chat_structured)) {
       cli::cli_abort("ellmer chat does not expose native structured output",
                      class = "sas2r_llm_invalid_schema")
     }
-    list(
-      type = "final",
-      data = chat$chat_structured(
-        prompt, type = ellmer_output_type(cfg, request$output_schema)
-      )
-    )
+    # ellmer 0.5.0's single structured request bypasses its request callbacks.
+    # Admit it explicitly; only the native tool loop uses the hooks above.
+    output_type <- ellmer_output_type(cfg, request$output_schema)
+    if (!is.null(meter)) start_request(c(chat$get_turns(include_system_prompt = TRUE),
+      list(ellmer_content("UserTurn", contents = list(ellmer_content("ContentText", text = prompt))))))
+    value <- chat$chat_structured(prompt, type = output_type)
+    if (!is.null(meter)) end_request(chat$last_turn())
+    list(type = "final", data = value)
   } else {
     value <- ellmer_gather_tools(chat, prompt, request$tools)
     gathered_conversation <- attr(value, "conversation", exact = TRUE)
@@ -1146,7 +1212,11 @@ ellmer_transport_request <- function(cfg, request, model, params) {
       )
     } else value
   }
-  usage <- ellmer_usage(chat)
+  turns <- chat$get_turns()
+  usage <- if (before_turns == 0L) ellmer_usage(chat) else
+    ellmer_usage(list(get_turns = function() turns[seq_along(turns) > before_turns]))
+  if (!is.null(.ellmer_invocation$current))
+    .ellmer_invocation$current$turns <- chat$get_turns(include_system_prompt = TRUE)
   attr(raw, "usage") <- usage
   cost <- ellmer_cost(chat)
   if (!is.na(cost)) {
@@ -1242,6 +1312,7 @@ ellmer_llm <- function(cfg) {
     timeout_seconds = cfg$timeout_seconds,
     transport_max_tries = cfg$max_tries
   ))
+  attr(adapter, "parallel_config") <- cfg
   attr(adapter, "is_ellmer") <- TRUE
   adapter <- with_usage_managed_request(adapter)
   attr(adapter, "auth_context") <- llm_selector_identity(cfg)
@@ -1886,6 +1957,10 @@ llm_log <- function(entry, dir = ".sas2r", redactor = redact_llm_secrets) {
                    class = "sas2r_llm_redaction_error")
   }
   entry <- redactor(entry)
+  if (!is.null(.parallel_worker$client)) {
+    parallel_rpc("log", list(entry = entry, dir = dir))
+    return(invisible(entry))
+  }
   cat(jsonlite::toJSON(entry, auto_unbox = TRUE, null = "null", na = "null"),
       "\n", file = file.path(dir, "llm_log.jsonl"), append = TRUE, sep = "")
   invisible(entry)

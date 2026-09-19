@@ -27,7 +27,7 @@ check_component_revision <- function(state, component_id) {
   state
 }
 
-review_component_revision <- function(state, component_id, round = 0L, reuse_only = FALSE) {
+review_component_revision <- function(state, component_id, round = 0L, reuse_only = FALSE, initial_review = NULL) {
   rev <- state$selected_revisions[[component_id]]
   rev_id <- rev$revision_id
   checks <- rev$checks
@@ -52,6 +52,12 @@ review_component_revision <- function(state, component_id, round = 0L, reuse_onl
   cached <- if (isTRUE(checks$pass)) do.call(review_program_revision,
     c(args, list(reuse_only = TRUE))) else NULL
   if (isTRUE(reuse_only)) return(cached)
+  if (is.null(cached) && !is.null(initial_review$review_key) &&
+      identical(initial_review$review_key, do.call(review_program_revision, c(args, list(identity_only = TRUE))))) {
+    cached <- initial_review
+    cached$reused <- TRUE
+    cached$spend_usd <- 0
+  }
   reason <- if (!isTRUE(checks$pass)) "mechanical_checks_failed; repair before semantic review" else
     if (!usage_budget_allows_future(state$usage_budget)) "budget_exhausted" else NULL
   review <- if (!is.null(cached)) cached else if (!is.null(reason)) {

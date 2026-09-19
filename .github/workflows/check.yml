@@ -165,5 +165,8 @@ jobs:
       - name: Exercise real ellmer public contract offline
         env:
           SAS2R_EXPECTED_ELLMER_VERSION: ${{ matrix.ellmer-version }}
-        run: source("tests/real-ellmer/contract.R", echo = TRUE)
+        run: |
+          source("tests/real-ellmer/contract.R", echo = TRUE)
+          source("tests/real-ellmer/native-history.R", echo = TRUE)
+          source("tests/real-ellmer/parallel.R", echo = TRUE)
         shell: Rscript {0}

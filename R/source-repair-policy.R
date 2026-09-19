@@ -112,6 +112,12 @@ source_review_config <- function(config) {
   config$llm <- NULL
   config$budget <- NULL
   config$usage_limits <- NULL
+  config$migration$max_parallel_translations <- NULL
+  if (!length(config$migration)) config$migration <- NULL
+  if (is.list(config$raw)) {
+    config$raw$migration$max_parallel_translations <- NULL
+    if (!length(config$raw$migration)) config$raw$migration <- NULL
+  }
   if (is.list(config$outputs)) {
     config$outputs$references <- NULL
     if (!length(config$outputs)) config$outputs <- NULL

@@ -3,7 +3,9 @@
 `sas2r` provides a closed registry of twelve native LLM providers powered by the `ellmer` package. All LLM calls route through named public `ellmer` constructor functions. `sas2r` does not implement direct provider HTTP APIs and does not support a generic `openai_compatible` provider route in this release.
 
 AI translation requires **ellmer 0.4.2 or newer**; **ellmer 0.5.0 is recommended
-for new installations**. Both versions pass the offline compatibility tests.
+for new installations and required for parallel translation**. Older ellmer
+installations visibly use one workflow. Both versions have offline compatibility
+tests; their request-counting units differ as described below.
 Install or update it with `install.packages("ellmer")`, then restart R.
 References to 0.4.2 below describe the minimum supported connector baseline,
 not a requirement to install that exact version. Startup verification checks
@@ -49,22 +51,143 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 
 ## 2. Configuration Examples (`_sas2r.yml`)
 
-Use a reasoning model for translation, review, and repair. The four direct-provider
-examples below match the [recommended README profiles](../README.md#recommended-_sas2ryml-profiles).
-Copy one complete `llm:` block. Startup verifies explicit effort and token
-ceilings; manual `supported` flags are no longer required. An initial
-`max_output_tokens: 32768` leaves space for reasoning and the final response;
-increase it for long programs within the chosen model's supported limit.
-Leaving it unset uses connector/provider defaults, not necessarily the model's
-maximum. No temperature or top-p override is needed for these profiles.
+**Evaluate Gemini Flash or DeepSeek Flash first**, retaining reasoning and all
+translation/review/repair checks. Frontier models remain available for programs
+where the first model leaves material source-based findings. This is a practical
+starting strategy, not a guarantee that any model is sufficient for every study.
+For OpenAI users, start with GPT-5.6 Luna using the profile below.
+The complete provider profiles below are the shared reference for the README
+and migration guides.
+Copy one complete `llm:` block; the model must be available to your account.
 
-The cloud/local examples also identify reasoning limitations. Their model or
-deployment names are examples; select a model available to your account. These
-are connector contracts checked with ellmer 0.4.2, not live translation results.
+### Recommended starting settings
+
+These are suggested YAML profiles, not automatic provider-specific package
+defaults. Settings/model documentation checked **September 18, 2026**. Startup
+verifies explicit parameters against the installed connector and selected model.
+For full-program translation, use the documented maximum output allowance when
+the endpoint accepts it and input plus output fit the context window. This gives
+reasoning and complete code more room without imposing a small common cutoff.
+
+| Provider / model | Reasoning | `llm.max_output_tokens` | `llm.timeout_seconds` | Structured output |
+| --- | --- | ---: | ---: | --- |
+| Gemini / `gemini-3.8-flash` | `high` | 65536 | 900 | `fallback` |
+| DeepSeek / `deepseek-flash` | Keep server thinking default; omit explicit effort on the documented ellmer route | 393216 | 1800 | `fallback` |
+| OpenAI / `gpt-5.6-luna` | `high` | 128000 | 900 | `native` |
+| Anthropic / `claude-sonnet-5` | `high` with adaptive thinking | 128000 (conditional; see below) | 900 | `fallback`; `cache: 1h` |
+
+Use `tool_calling: native` and `max_tries: 1` with all four profiles. Leave
+`temperature` and `top_p` unset. Output ceilings include reasoning where the
+provider counts it. **Unused allowance is not billed** and a maximum does not
+force a response to reach that length. More actual generation can still cost
+more and take longer. The timeouts are starting values, not guarantees that a
+model can emit its full ceiling before they expire. The package's unset timeout
+default remains 300 seconds. A timeout is per HTTP attempt, not an inactivity
+timer or a whole-translation deadline.
+
+**Claude's full allowance is conditional:** the current sas2r/ellmer route is
+non-streaming. The settings probe can verify parameter acceptance, but cannot
+establish reliable completion of very long responses. Read the
+[Anthropic profile](#anthropic) before relying on its 128,000-token allowance.
+
+For Vertex with the same Gemini model, start from the Gemini settings and supply
+your project/location. Posit's Claude route can use the Claude settings. For
+Azure, Bedrock, Databricks and Snowflake, use the actual deployment's supported
+output limit and default reasoning; do not copy an explicit effort setting that
+the connector cannot forward. Their examples below describe deployment-specific
+connections, not current model recommendations: replace the illustrative model
+IDs and 32768 allowances with values supported by your deployment. Start Ollama
+at one concurrent translation and choose a reasoning/tool-capable model that
+fits local memory. GitHub Models is
+retired and is not recommended for new configurations.
+
+For **every provider**, establish a checked baseline at:
+
+```yaml
+migration:
+  max_parallel_translations: 1
+```
+
+Then evaluate `2` concurrent program-or-macro workflows on the same inputs and
+settings. Raise to `3` or `4` only when quality checks, endpoint quotas and memory
+permit. Provider limits can depend on model, account, region and deployment;
+there is no universal safe provider concurrency number. This setting counts whole
+translation workflows, not translator/reviewer/fixer roles. Local execution and
+repair remain serial. No CPU-count clamp is applied.
+
+The adapter retains native conversation history, including DeepSeek reasoning
+content and Gemini thought signatures, through tool gathering and finalization.
+Offline replay tests cover multiple tool batches and concurrent workers on
+ellmer 0.5.0; ellmer 0.4.2 retains its serial native loop. These tests establish
+transport behavior, not study-level translation quality or live speedup.
+
+On ellmer 0.5.0+, `usage_limits.max_calls` counts each request admitted within a
+tool conversation and each finalization request, in either mode. This can reach
+an old call ceiling sooner than ellmer 0.4.2, which retains legacy phase-level
+metering in serial mode. Use `max_tries: 1` for individually accounted requests;
+connector-internal retries with a larger value are not separate admissions.
+If both `max_parallel_translations` and `max_tries` exceed 1, preflight and
+translation stop before provider calls with instructions to set either value to 1.
+The existing agent retry policy remains separately metered. See the
+[usage evidence guide](migration-evidence.md#coverage-limits-and-reuse).
+
+The `frontier` tier name in agent routing can map to a Flash model. It is a
+configuration label, not an instruction to buy a particular model class.
+
+### Adjust settings according to the result
+
+- **Incomplete output:** inspect the finish reason and effective output allowance.
+  Increase a too-small allowance within the model limit; also check context size.
+  A summary covering multiple tool turns is not the size of one response. Do not
+  accept partial code or lower reasoning automatically to obtain a completion.
+- **Timeout:** allow more time for an otherwise valid long request, and check
+  endpoint latency. Increasing retries can multiply both elapsed time and spend.
+- **Rate limit / overload:** reduce concurrent translations and check the
+  endpoint's request/token quotas. More parallel work can make throttling worse.
+- **Unsupported/ignored settings:** follow the connector-specific profile and
+  startup verification. A capability flag does not make a connector forward a
+  parameter it cannot carry. Do not disable verification to force a request.
+- **Tool/history errors:** confirm the installed connector can preserve the
+  provider's required multi-turn state. Increasing timeout or tokens cannot fix
+  a protocol mismatch. A tool-free connection probe does not verify this path.
+- **Completed but incorrect output:** inspect source-based review findings and
+  complete output values/metadata; consider a stronger model with the same checks.
+  A stronger model does not replace a missing input or unsupported runtime feature.
+
+`llm.max_output_tokens` sets the requested per-response allowance.
+`budget.max_output_tokens` is an admission ceiling for that request; when both
+are set, keep the budget ceiling at least as large as the requested allowance.
+In strict dollar mode, sas2r reserves worst-case request costs before dispatch.
+A larger output allowance can therefore cause a request to exceed the remaining
+budget even when the eventual response might be short. Reservations are not
+provider charges; concurrent requests share that same available budget.
+Use run-level call, tool, time and dollar limits separately. An unknown monetary
+cost is not zero cost or proof that a dollar ceiling can be enforced.
+
+Sources: [Gemini model/settings](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
+[Gemini quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
+[DeepSeek request parameters](https://api-docs.deepseek.com/api/create-chat-completion/),
+[DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
+[OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), and
+[Claude Sonnet 5](https://platform.claude.com/docs/en/models/sonnet-5/overview).
+The token ceilings are published model limits for these direct-provider routes;
+timeouts and the choice to use those ceilings are sas2r recommendations, subject
+to connector, context and account constraints.
 
 Never commit literal API keys, tokens, or private secrets into `_sas2r.yml`. Always supply secrets via shell environment variables. Every configuration should specify an explicit `model` or `tiers` definition rather than relying on changing library defaults.
 
 ### OpenAI
+
+**GPT-5.6 Luna is the recommended OpenAI starting model.** OpenAI describes it
+as a model for cost-sensitive, high-volume workloads. It supports the Responses
+API, function calling and structured output. `high` reasoning is supported;
+the model's default is `medium`. The profile uses its **128,000-token** maximum
+output allowance to leave room for reasoning and complete code.
+The **900-second** timeout is our per-request recommendation. Verify translation
+quality on representative programs with the same review and output checks.
+Facts checked September 18, 2026 against the
+[official Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
@@ -72,9 +195,9 @@ export OPENAI_API_KEY="sk-..."
 llm:
   provider: openai
   auth_mode: api_key
-  model: gpt-5.6-terra
+  model: gpt-5.6-luna
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 128000
   capabilities:
     structured_output: native
     tool_calling: native
@@ -83,6 +206,25 @@ llm:
 ```
 
 ### Anthropic
+
+Use **Claude Sonnet 5** (`claude-sonnet-5`) for new direct Claude API evaluations.
+Sonnet 4.6 remains available as a legacy model. Sonnet 5 supports **128,000**
+output tokens, including thinking; adaptive thinking is on by default and
+`high` effort is supported. Keep sampling parameters unset and use adaptive
+thinking, since manual extended-thinking budgets are rejected. See the
+[model overview](https://platform.claude.com/docs/en/models/sonnet-5/overview)
+and [migration guide](https://platform.claude.com/docs/en/models/sonnet-5/migration-guide).
+
+**Before relying on the full allowance:** sas2r uses non-streaming ellmer calls.
+Anthropic recommends streaming or batch processing for long requests, especially
+beyond ten minutes. The profile below requests the model maximum, but reliable
+very-long-response completion has not been established on this route. Validate
+representative requests before study use; if they need sustained long output,
+use a validated streaming/batch integration or another validated provider route.
+Changing YAML limits does not add streaming support. The separate **300K batch
+beta** is not this package's Messages API ceiling. See
+[Anthropic's long-request guidance](https://platform.claude.com/docs/en/api/errors#long-requests).
+
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
@@ -90,9 +232,9 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 llm:
   provider: anthropic
   auth_mode: api_key
-  model: claude-sonnet-4-6
+  model: claude-sonnet-5
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 128000
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -113,7 +255,7 @@ llm:
   cache: auto
   # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
   # If explicitly requested high reasoning is required, use a supported route.
-  max_output_tokens: 32768           # requires this allowance on your endpoint
+  max_output_tokens: 32768           # illustrative; replace with deployment maximum
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -133,7 +275,7 @@ llm:
   model: my-reasoning-model-deployment
   # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
   # If explicitly requested high reasoning is required, use a supported route.
-  max_output_tokens: 32768           # requires this allowance on your endpoint
+  max_output_tokens: 32768           # illustrative; replace with deployment maximum
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -152,7 +294,7 @@ llm:
   model: databricks-claude-sonnet-4-6
   # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
   # If explicitly requested high reasoning is required, use a supported route.
-  max_output_tokens: 32768           # requires this allowance on your endpoint
+  max_output_tokens: 32768           # illustrative; replace with deployment maximum
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -162,6 +304,11 @@ llm:
 ```
 
 ### DeepSeek
+
+The profile requests **393,216 tokens**, the documented Chat Completions maximum.
+Input plus generated tokens must still fit the model's context window. See the
+[`max_tokens` API contract](https://api-docs.deepseek.com/api/create-chat-completion/).
+
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
 ```
@@ -172,12 +319,12 @@ llm:
   model: deepseek-flash              # or deepseek-v4-pro
   # DeepSeek currently defaults to thinking enabled, high effort.
   # ellmer 0.4.2 does not forward reasoning_effort on this route.
-  max_output_tokens: 32768
+  max_output_tokens: 393216
   capabilities:
     structured_output: fallback
     tool_calling: native
     reasoning_effort: unsupported    # connector limitation; thinking is not disabled
-  timeout_seconds: 900
+  timeout_seconds: 1800
   max_tries: 1
 ```
 
@@ -229,7 +376,7 @@ llm:
   auth_mode: api_key
   model: gemini-3.8-flash
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 65536
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -247,7 +394,7 @@ llm:
   location: us-central1
   model: gemini-3.8-flash
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 65536
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -273,14 +420,17 @@ llm:
 ```
 
 ### Posit AI
-Authenticate via Posit Workbench/Connect OAuth:
+Authenticate via Posit Workbench/Connect OAuth.
+Use this profile only when your deployment offers Sonnet 5 and its full allowance;
+the [Anthropic long-response qualification](#anthropic) also applies.
+
 ```yaml
 llm:
   provider: posit
   auth_mode: ambient
-  model: claude-sonnet-4-6           # selects ellmer's Anthropic route
+  model: claude-sonnet-5           # selects ellmer's Anthropic route
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 128000
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -299,7 +449,7 @@ llm:
   model: claude-sonnet-4-6
   # ellmer 0.4.2 does not forward effort on this route; model defaults apply.
   # If explicitly requested high reasoning is required, use a supported route.
-  max_output_tokens: 32768           # requires this allowance on your endpoint
+  max_output_tokens: 32768           # illustrative; replace with deployment maximum
   capabilities:
     structured_output: fallback
     tool_calling: native
@@ -327,8 +477,8 @@ probe <- sas2r::sas_llm_probe(llm, tier = "frontier")
 print(probe)
 ```
 
-`sas_llm()` is the supported constructor for the adapter every agent phase and
-`sas_refine_with_outputs()` take as their `llm` argument. It reads the same
+`sas_llm()` is the supported constructor for the adapter passed to
+`sas_translate()` as its `llm` argument. It reads the same
 `llm:` mapping shown above, contacts no network, and leaves credentials with
 `ellmer`.
 
@@ -362,9 +512,8 @@ budget:
   max_retries: 2                        # sas2r-level retries (see note below)
   max_tool_calls: 500                   # total tool executions across the run
   max_wall_time: 7200                   # seconds, whole run
-  max_output_tokens: 128000             # keep well clear of the model's own
-                                        # maximum; a low ceiling truncates
-                                        # reasoning models mid-answer
+  max_output_tokens: 393216             # per-request admission ceiling; must be
+                                        # >= llm.max_output_tokens when both are set
   max_request_bytes: 1048576
   max_request_chars: 500000
   max_input_tokens: 128000
@@ -372,26 +521,25 @@ budget:
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
 
-> **`max_usd` binds only when the provider reports cost.** Where pricing is
-> unavailable, every record carries `cost_status: unknown`, cumulative spend
-> stays `0`, and the dollar ceiling never trips. `sas2r` warns when this
-> happens. Bound such runs with the non-dollar ceilings above.
+> **Dollar enforcement requires known cost or usable pricing.** Unknown cost
+> cannot be treated as zero or used to certify a dollar limit. Strict mode needs
+> a usable rate card for upfront reservations; use non-dollar call, tool and time
+> ceilings as well when pricing is unavailable.
 
-> **Two retry layers exist.** `budget: max_retries:` counts sas2r-level retries
-> only. Beneath it, ellmer retries each HTTP request `ellmer_max_tries` times
-> (default 3), which the ledger does not see -- so a run can issue three times
-> the requests it appears to. Set `llm: max_tries:` to bound that layer.
+> **Two retry layers exist.** `budget.max_retries` counts sas2r-level retries.
+> `llm.max_tries` controls transport attempts inside ellmer. sas2r defaults that
+> setting to **1**; keep it at 1 for parallel translation so hidden transport
+> retries do not bypass per-attempt coordination. If both `max_tries` and
+> `max_parallel_translations` exceed 1, startup stops and asks you to set one to 1.
 
 ### Cost Provenance
 `sas2r` records cost under five provenance states: `billed_amount`, `contract_estimate`, `catalog_estimate`, `incomplete_estimate`, or `unknown`. `sas2r` owns no built-in fallback price table; unknown pricing remains `unknown` and is never estimated from arbitrary hard-coded rates.
 
 Per-agent tool limits are separate from run-level `usage_limits`. The shipped
-translator, reviewer, and fixer each allow 15 tool calls per request, with smaller
-per-tool limits (`search_skills`: 2; `lookup_rulebook`: 6 for translation/review,
-4 for fixing). A run reporting `max_tool_calls=unlimited` still has these agent
-limits. A tool warning saying “exceeded its budget after refusal” means the model
-requested a tool again after its local allowance was exhausted; it is not a
-provider billing-quota error.
+translator, reviewer and fixer each allow 30 tool calls per invocation, shared
+across their tools. A run reporting `max_tool_calls=unlimited` still has these
+agent limits. See [agent tool limits](running-migrations.md#agent-tool-limits)
+for role overrides and the behavior when an allowance is exhausted.
 
 ---
 
@@ -420,12 +568,13 @@ support from another API or provider.
 
 ### Reasoning support in the recommended profiles
 
-Checked against the installed ellmer 0.4.2 connector code on September 12, 2026:
+Connector mappings checked on ellmer 0.4.2; the Sonnet 5 adaptive-thinking mapping
+also checked on installed ellmer 0.5.0 on September 18, 2026:
 
 | Provider/route | What happens to `reasoning_effort: high` |
 |---|---|
-| OpenAI, GPT-5.6 Terra | Forwarded to the Responses API reasoning effort. |
-| Anthropic, Claude Sonnet/Opus 4.6 | Enables `thinking: {type: adaptive}` and `output_config.effort: high`. |
+| OpenAI, GPT-5.6 Luna | Forwarded to the Responses API reasoning effort. |
+| Anthropic, Claude Sonnet 5 | Enables `thinking: {type: adaptive}` and `output_config.effort: high`. |
 | Gemini / Vertex, Gemini 3 thinking models | Forwarded as `thinkingConfig.thinkingLevel: high`. |
 | Posit, Claude route | Uses the Anthropic mapping above. Posit's OpenAI-compatible route drops effort. |
 | DeepSeek | Dropped by this connector. Current DeepSeek models default to thinking enabled at high effort. |
@@ -434,7 +583,7 @@ Checked against the installed ellmer 0.4.2 connector code on September 12, 2026:
 | GitHub | Retired; do not start new translation runs with it. |
 
 Sources for model behavior:
-[OpenAI Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
 [Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
@@ -452,7 +601,7 @@ in memory without rewriting `_sas2r.yml`:
 ```yaml
 llm:
   reasoning_effort: high
-  max_output_tokens: 32768
+  max_output_tokens: 128000 # Luna/Sonnet limit; use the selected model's value
 ```
 
 This fragment belongs inside a complete provider profile above. Keep the
@@ -500,17 +649,20 @@ includes `max_tokens` but omits `reasoning_effort`. The startup check therefore
 remains necessary on both versions; upgrading the connector alone does not
 repair sas2r's earlier omission of unconfirmed settings.
 
-> **Reasoning tokens are not counted.** ellmer's public token surface reports
-> `input`, `output`, and `cached_input` only. Where a provider bills reasoning
-> tokens separately, they are absent from the ledger and from cost estimates.
+Token summaries distinguish known total input/output usage from cached and
+reasoning categories. Reasoning is already included in total output where the
+provider counts it there; unavailable usage remains unknown. See the
+[usage evidence guide](migration-evidence.md#coverage-limits-and-reuse).
 
 ### Request timeout and retries (`timeout_seconds`, `max_tries`)
 
 Each HTTP request is bounded by ellmer's `ellmer_timeout_s` option, defaulting
 to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults to 1. A
-frontier model answering through a chain of tool calls can exceed the timeout
-and fail mid-stream with `sas2r_llm_timeout`. Increasing `max_tries` adds
+single long model response can exceed the timeout and fail mid-stream with
+`sas2r_llm_timeout`. Increasing `max_tries` adds
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
+Values above 1 require `migration.max_parallel_translations: 1`; incompatible
+effective settings raise a startup configuration error.
 
 ```yaml
 llm:
@@ -520,8 +672,8 @@ llm:
 
 `timeout_seconds` applies to one HTTP request; bound total runtime with
 `budget: max_wall_time:`. `max_tries` is the ellmer-level companion to
-`budget: max_retries:` -- set both, or the layer you did not set stays
-unbounded.
+`budget: max_retries:`. The settings limit different retry layers; increasing
+both can multiply attempts and spending.
 
 ### Other behaviour
 
@@ -536,4 +688,7 @@ unbounded.
 
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
 - **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. `code_only` omits these previews. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
-- **Data Residency**: All dataset reading, writing, and execution take place in the local R process on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
+- **Data Residency**: All dataset reading, writing, and execution take place in local R processes on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
+
+Source code, comments and errors can themselves contain patient information.
+`code_only` does not de-identify them. Read the [full privacy guidance](model-privacy.md).

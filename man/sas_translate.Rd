@@ -22,13 +22,15 @@ sas_translate(
   recursive = FALSE,
   resume = FALSE,
   keep_raw_attempts = FALSE,
-  max_bundle_repairs_per_component = 2L
+  max_bundle_repairs_per_component = 2L,
+  max_parallel_translations = NULL
 )
 }
 \arguments{
 \item{path}{Path to a SAS file or directory containing SAS files, or a \code{sas2r_project}.}
 
-\item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.}
+\item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
+Relative paths resolve from the calling working directory before workers start.}
 
 \item{config}{Optional configuration list, YAML path, or \code{sas2r_config} object.
 With a reused project, a plain list replaces only its supplied top-level
@@ -72,9 +74,12 @@ request activity; unknown names and invalid values raise a configuration error.}
 
 \item{resume}{Logical; reuse saved translation revisions and completed reviews
 when source, input data, configuration, helpers, and worker prompts still
-match. Execution and output checks always run again in a fresh attempt.
-Missing or edited revision files trigger regeneration. Older planning versions
-also regenerate; resume explains why before new provider calls. Defaults to FALSE.}
+match. Full-bundle execution and output checks use fresh attempts; passing
+or deferred smoke results can be reused when their full context matches.
+Changing only the parallel translation limit does not invalidate reuse.
+Missing or edited revision files trigger regeneration. Compatible version-8
+checkpoints are imported; other incompatible checkpoints regenerate with an
+explanation before new provider calls. Defaults to FALSE.}
 
 \item{keep_raw_attempts}{Logical; retain raw outputs from unselected attempts,
 including isolated component smoke outputs and their replay scripts. These
@@ -82,6 +87,12 @@ are partial debugging artifacts, not validated final outputs. Defaults to FALSE.
 
 \item{max_bundle_repairs_per_component}{Maximum bundle fixer calls per component
 across the run. Defaults to 2L; separate from immediate program repairs.}
+
+\item{max_parallel_translations}{Maximum concurrent SAS program or macro translation workflows. Overrides
+\code{migration.max_parallel_translations} in \verb{_sas2r.yml}; defaults to 1. Model waiting can
+overlap on fewer CPUs. Local execution and repair remain serial.
+Values above 1 cannot be combined with \code{llm.max_tries} above 1; preflight
+and translation stop with a configuration error before provider calls.}
 }
 \value{
 An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \verb{$out_dir},

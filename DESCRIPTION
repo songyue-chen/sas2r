@@ -1,6 +1,6 @@
 Package: sas2r
 Title: Translate SAS Programs to R with Dependency-Aware Migration
-Version: 0.4.5
+Version: 0.5.0
 Authors@R: person("Songyue", "Chen", email = "chuckknow@gmail.com", role = c("aut", "cre"))
 Description: Translates SAS programs and projects to R using dependency-aware
     orchestration, program smoke execution, and final-output evidence.
@@ -31,6 +31,7 @@ Suggests:
     knitr,
     pdftools,
     pkgload,
+    ps,
     rmarkdown,
     S7,
     testthat (>= 3.1.7),

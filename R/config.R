@@ -325,9 +325,43 @@ normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
   outputs
 }
 
+normalize_max_parallel_translations <- function(value = NULL) {
+  if (is.null(value)) return(1L)
+  if (!is.numeric(value) || length(value) != 1L || is.na(value) ||
+      !is.finite(value) || value < 1 || value != floor(value) || value > .Machine$integer.max) {
+    cli::cli_abort("migration.max_parallel_translations must be a positive whole number",
+                   class = "sas2r_config_error")
+  }
+  as.integer(value)
+}
+
+validate_parallel_retry_settings <- function(max_parallel_translations, max_tries) {
+  if (max_parallel_translations <= 1L || is.null(max_tries) || max_tries <= 1L) return(invisible(NULL))
+  cli::cli_abort(c(
+    "Cannot start translation with these settings:",
+    " " = "migration.max_parallel_translations: {max_parallel_translations}",
+    " " = "llm.max_tries: {max_tries}",
+    "i" = "Parallel translation currently requires llm.max_tries: 1 so every provider request can be individually accounted for.",
+    "i" = "Choose one:",
+    "*" = "Keep parallel translation: set llm.max_tries to 1.",
+    "*" = "Keep provider-level retries: set migration.max_parallel_translations to 1.",
+    "i" = "Update _sas2r.yml or the supplied function arguments, then run again.",
+    "i" = "No translation was started. No settings were changed."
+  ), class = c("sas2r_parallel_config_error", "sas2r_config_error"))
+}
+
+normalize_migration_config <- function(config) {
+  config <- config %||% list()
+  if (!is.list(config)) cli::cli_abort("migration must be a mapping", class = "sas2r_config_error")
+  # Other migration keys were historically accepted but inactive.
+  # Only this setting gains execution meaning.
+  list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]))
+}
+
 normalize_project_config <- function(config, root) {
   assert_exact_names(config, PROJECT_CONFIG_KEYS)
   root <- include_normalize_path(root)
+  config$migration <- normalize_migration_config(config$migration)
   config$libraries <- normalize_library_entries(config$libraries, root)
   for (field in c("macro_search_path", "include_roots", "autoexec")) {
     config[[field]] <- config_anchor_paths(config[[field]], root)
@@ -446,6 +480,7 @@ sas_config <- function(path = NULL, start = ".") {
       base = if (is.na(src)) NULL else dirname(normalizePath(src, mustWork = FALSE))),
     llm = llm,
     budget = budget,
+    migration = normalize_migration_config(raw$migration),
     source = src,
     raw = raw
   ), class = "sas2r_config")

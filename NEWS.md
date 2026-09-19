@@ -1,3 +1,72 @@
+# sas2r 0.5.0
+
+* Explain in the README FAQ why two or four translation workers do not promise
+  half or one-quarter of the total run time, with an illustrative timing example.
+* Keep the README focused on getting started, with general study-programming
+  examples and a short FAQ. Move detailed workflow, troubleshooting, macro and
+  privacy guidance into linked guides, and use the provider guide as the shared
+  source of complete model profiles. Continue checking the relocated examples.
+* Respect `options(sas2r.progress = FALSE)` for the initial preflight console
+  summary. Keep the final outcome and saved reports available regardless of
+  this option. Clarify that known preflight cycles stop the whole run before
+  model calls, while dependency findings discovered during translation defer
+  the affected branch and block full-bundle execution. Explain the workflow in
+  study-programming terms and add a README FAQ for programmers and statisticians.
+* Reconcile every scanned source file with the translation schedule and existing
+  bundle execution planner during preflight. Expose `$pipeline` with execution
+  roles, positions, exclusions and issues; stop before provider setup for missing
+  coverage, duplicate scheduled components, conflicting component names or known
+  dependency cycles.
+* Reuse the scanner's SAS macro classification for parallel dependency findings,
+  avoiding false blocks for supplied macros such as `qleft` and `qtrim` while
+  retaining unresolved program, macro and dataset findings.
+* Announce dependency blocks immediately and preserve the specific finding in
+  the final report. Share an explicit run outcome across the console, saved
+  `diagnostics/logs/run-outcome.log`, machine report and HTML start-page banner.
+  Distinguish blocked/failed runs, pending review, skipped or incomplete bundle
+  execution and component versus bundle fixer invocations without changing gates.
+* Resolve the migration output root before launching workers so relative paths
+  refer to the same files in the coordinator and source-directory workers.
+  Prevent a startup stall while workers wait for their first progress reply.
+* Write each manifest component's dependencies as a JSON array, including empty
+  and single-dependency cases, so graph consumers use one consistent field type.
+* Add opt-in dependency-aware parallel component translation and final reviews
+  through `migration.max_parallel_translations` or
+  `sas_translate(max_parallel_translations = ...)`, default 1. The setting counts
+  whole program-or-macro workflows, including review and repair.
+  Preserve one local execution/repair lane and the existing serial bundle gates.
+* Recommend evaluating Gemini Flash or DeepSeek Flash first, with frontier
+  models available as alternatives. Document provider-specific output allowances,
+  timeouts, connector settings and gradual concurrency increases; keep all quality
+  checks in place. The example configuration starts with Gemini Flash and one
+  concurrent translation. Update the README workflow diagram, migration vignette,
+  preflight and evidence guides for coordinator ownership, final reviews, resume
+  stages and parallel diagnostics.
+* Coordinate worker request/tool admissions and accounting in the parent process;
+  give workers complete isolated role conversations and assignment-specific files.
+  Retain native tool loops and provider history, including DeepSeek reasoning
+  and Gemini thought signatures. On ellmer 0.5.0+, admit every tool continuation
+  through public request hooks and explicitly admit structured finalization.
+  `max_calls` therefore counts requests within conversations in both modes.
+  Existing `max_calls` values may need raising after upgrade to allow the same
+  amount of translation work; review the intended budget before increasing them.
+  Custom adapters without a process factory and ellmer older than 0.5.0 report a
+  one-workflow fallback. Preflight and translation reject configurations where
+  both `max_parallel_translations` and `max_tries` exceed 1, before provider calls,
+  with instructions to set either value to 1. Explicit argument overrides are
+  honored. Older ellmer keeps legacy serial phase-level metering.
+  Worker accounting messages carry precomputed size measurements instead of
+  native reasoning history; full history remains in the worker conversation.
+* Persist component phases and revisit allowances in version-9 checkpoints;
+  import compatible version-8 revisions without resetting known repair limits.
+  Retain interrupted requests as unknown, including any held strict reservation.
+* Drain and checkpoint active siblings after a worker crash before reporting
+  failure. Map selected diagnostic revision paths in each manifest component.
+* Treat descriptive dependency notes as observations; defer only unresolved
+  identifier findings and their affected branches while independent work continues.
+  Automatic source-confirmed graph correction remains the separately planned
+  dependency-tool change. Keep parallel mode opt-in pending paired live validation.
+
 # sas2r 0.4.5
 
 * Consolidate semantic reviews of earlier unchanged components into a review-only

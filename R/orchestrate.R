@@ -39,8 +39,7 @@ new_migration_state <- function(
   budget <- usage_budget %||% new_usage_budget(
     ledger_path = file.path(migration_paths(out_dir)$state, "usage.jsonl")
   )
-  paths <- migration_paths(out_dir, run_id = budget$run_id)
-  init_migration_paths(out_dir, run_id = budget$run_id)
+  paths <- init_migration_paths(out_dir, run_id = budget$run_id)
 
   baseline <- sas_transpile(p, paths$staging)
   plan <- plan %||% translation_plan(p, p$config$outputs)
@@ -168,19 +167,7 @@ normalize_migration_state <- function(
 #' @param max_program_repair_rounds Integer maximum repair rounds (default 1L).
 #' @return Updated migration state object.
 #' @noRd
-process_program_component <- function(
-  state,
-  component_id,
-  execute = TRUE,
-  max_program_repair_rounds = 1L
-) {
-  if (!is.list(state)) {
-    cli::cli_abort("{.arg state} must be a migration state list", class = "sas2r_invalid_argument")
-  }
-  if (!is.character(component_id) || length(component_id) != 1L || !nzchar(component_id)) {
-    cli::cli_abort("{.arg component_id} must be a non-empty string", class = "sas2r_invalid_argument")
-  }
-
+initialize_program_component <- function(state, component_id) {
   # 1. Initial generation / activation
   rev <- state$selected_revisions[[component_id]]
   if (is.null(rev)) {
@@ -254,6 +241,26 @@ process_program_component <- function(
     }
   }
 
+  state
+}
+
+process_program_component <- function(
+  state,
+  component_id,
+  execute = TRUE,
+  max_program_repair_rounds = 1L,
+  initial_review = NULL
+) {
+  if (!is.list(state)) {
+    cli::cli_abort("{.arg state} must be a migration state list", class = "sas2r_invalid_argument")
+  }
+  if (!is.character(component_id) || length(component_id) != 1L || !nzchar(component_id)) {
+    cli::cli_abort("{.arg component_id} must be a non-empty string", class = "sas2r_invalid_argument")
+  }
+
+  state$component_stage[[component_id]] <- "processing"
+  state <- initialize_program_component(state, component_id)
+
   # 2. Repair loop
   round <- state$repair_counts[[component_id]] %||% 0L
   prior_candidate <- NULL
@@ -262,7 +269,8 @@ process_program_component <- function(
     rev_id <- rev$revision_id %||% paste0("r", round + 1L)
 
     state <- check_component_revision(state, component_id)
-    reviewed <- review_component_revision(state, component_id, round)
+    reviewed <- review_component_revision(state, component_id, round, initial_review = initial_review)
+    initial_review <- NULL
     state <- smoke_component_revision(reviewed$state, component_id, execute)
     rev <- state$selected_revisions[[component_id]]
     checks <- rev$checks
@@ -413,6 +421,7 @@ process_program_component <- function(
     round <- next_round
   }
 
+  state$component_stage[[component_id]] <- "settled"
   state$active_revision <- state$selected_revisions[[component_id]]$revision_id
   state
 }
@@ -445,12 +454,17 @@ run_program_pipeline <- function(
   schedule <- state$schedule %||% stable_dependency_schedule(state$graph)
   cids <- if (nrow(schedule) > 0L) schedule$component_id else names(state$selected_revisions) %||% character()
 
+  if ((state$parallel$effective %||% 1L) > 1L) {
+    return(run_parallel_program_pipeline(state, cids, execute, max_program_repair_rounds))
+  }
+
   revisit_queue <- cids
   # Only context-triggered visits of already processed, unchanged components
   # skip agents. A first visit or an actual component edit still gets review.
   processed <- lapply(state$selected_revisions[state$resumed_components %||% character()],
     component_content_identity)
-  revisit_count <- stats::setNames(rep(0L, length(cids)), cids)
+  revisit_count <- state$revisit_counts %||% stats::setNames(rep(0L, length(cids)), cids)
+  state$revisit_counts <- revisit_count
   max_revisits_per_comp <- 3L
 
   old_hashes <- stats::setNames(character(length(cids)), cids)
@@ -471,7 +485,7 @@ run_program_pipeline <- function(
       state <- process_program_component(state, cid, execute, max_program_repair_rounds)
     }
     processed[[cid]] <- component_content_identity(state$selected_revisions[[cid]])
-    if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
+    state$component_stage[[cid]] <- "settled"
 
     new_cid_hash <- state$selected_revisions[[cid]]$binding$binding_hash %||% ""
 
@@ -493,7 +507,7 @@ run_program_pipeline <- function(
       requeue <- setdiff(requeue, cid)
 
       for (rq_cid in requeue) {
-        if (revisit_count[[rq_cid]] < max_revisits_per_comp && !rq_cid %in% revisit_queue) {
+        if (!is.na(revisit_count[[rq_cid]]) && revisit_count[[rq_cid]] < max_revisits_per_comp && !rq_cid %in% revisit_queue) {
           revisit_count[[rq_cid]] <- revisit_count[[rq_cid]] + 1L
           revisit_queue <- c(revisit_queue, rq_cid)
           signal_immediate_coordinator_event("component_revisited", rq_cid)
@@ -501,6 +515,8 @@ run_program_pipeline <- function(
       }
       old_hashes <- new_hashes
     }
+    state$revisit_counts <- revisit_count
+    if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
   }
 
   if (length(state$selected_revisions) > 0L && is.null(state$active_revision)) {

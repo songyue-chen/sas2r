@@ -19,7 +19,7 @@ Evidence is strictly immutable per revision binding: any source, code, or helper
 
 When `sas_translate()` processes a project or SAS file, the final bundle is assigned one of four canonical states:
 
-- **`blocked`**: Bundle execution failed, or a required output is missing, unreadable, or fails its checks, including a configured reference comparison. Dependency cycles also prevent execution.
+- **`blocked`**: Bundle execution failed, or a required output is missing, unreadable, or fails its checks, including a configured reference comparison. Dependency cycles and deferred dependency branches also prevent execution.
 - **`needs_review`**: Execution was deferred (`execute = FALSE`), or required review/lineage evidence is incomplete or blocked. This can occur even when smoke execution succeeds; the status reason identifies the missing evidence.
 - **`migration_ready`**: Bundle execution, required output checks, and lineage requirements passed, without passing reference evidence for a required target. Existence and readability checks alone do not establish matching dataset values.
 - **`validated`**: Required output checks and lineage requirements pass, and at least one required target has a passing reference comparison. Other targets can remain unreferenced. This status does not mean every output was compared.
@@ -67,7 +67,7 @@ It remains selected until a new attempt meets the replacement criteria; repair
 and usage limits still apply. A regression against an attempt selected within
 the current pipeline stops further repair and retains that attempt.
 
-Under the default `agent_evidence = "code_only"` policy, agents receive source code, inferred schemas, project paths and execution diagnostics without explicit dataset previews. Code, comments and errors can still contain patient values or identifiers; this policy does not de-identify them. See the [README privacy explanation](../README.md#privacy-what-your-model-provider-can-receive).
+Under the default `agent_evidence = "code_only"` policy, agents receive source code, inferred schemas, project paths and execution diagnostics without explicit dataset previews. Code, comments and errors can still contain patient values or identifiers; this policy does not de-identify them. See the [full privacy explanation](model-privacy.md).
 
 ### Source-based repair and selection
 
@@ -102,9 +102,80 @@ After focused review, lineage and status are refreshed from the same attempt's s
 ### Copy-on-Write Attempt Isolation
 
 Each run has a timestamp-first folder directly in the output directory. Attempts are isolated beneath `<run_id>/diagnostics/bundle_attempts/`; revisions, smoke executions, and logs have separate diagnostics folders. Open `START_HERE.html` for navigation. The selected editable code lives in `bundle/`, saved contract-declared deliverables in `outputs/`, and reports in `report/`. Missing code and partial results remain explicit. Manual runs write beneath `bundle/output/` without changing automated evidence. The shared `.sas2r/` folder retains resume state and a copy of the latest report.
+In `manifest.json`, every component's `dependencies` field is a JSON array,
+including `[]` for no dependencies and `["provider_id"]` for a single dependency.
+
 - Source inputs are never mutated (protected by copy-on-write library registries).
 - Attempt outputs, logs, and `record.json` are captured atomically.
 - Deterministic selection ensures newer attempts are selected only if they improve upon or maintain previous pass criteria without regressions.
+
+## Parallel coordination and evidence
+
+`migration.max_parallel_translations` defaults to 1 and limits simultaneous
+program or called-macro workflows. The matching `sas_translate()` argument
+overrides YAML. It does not count translator, reviewer and fixer roles
+separately. See the [provider guide](llm-providers.md#recommended-starting-settings)
+for suggested model settings and gradual concurrency increases.
+
+The coordinator schedules dependency-ready components and owns selected
+revisions, shared request/tool/spending limits, and checkpoints. Separate R
+processes use the existing role context builders and tools with snapshots of
+the selected upstream revisions. Initial translation and review may overlap.
+Smoke execution and complete repair transactions, including affected-consumer
+checks, proceed one at a time. Concurrently completed drafts wait for that
+transaction to finish before being selected. Final reviews use a fixed
+code/helper selection and can overlap; findings from that pass enter the bundle
+repair queue.
+Whole-bundle execution and repair remain serial.
+
+The report's `diagnostics.parallel` records requested and effective concurrency,
+the backend and any fallback reason. For a parallel run, its `observed` field
+includes peak process count, sampled process memory and coordinator admission
+latency. These are run
+observations, not CPU allocation or provider capacity guarantees. A custom
+adapter without process reconstruction support, or ellmer older than 0.5.0,
+falls back to one workflow and reports why. Requesting parallel translation with
+`llm.max_tries` above 1 instead stops preflight and translation before provider
+calls. The error shows both effective settings and asks you to set either
+`llm.max_tries` or `migration.max_parallel_translations` to 1. Settings are not
+changed automatically; function argument overrides are honored.
+
+Each process job keeps `job.json`, `stdout.log` and `stderr.log` under
+`<run_id>/diagnostics/workers/<job_id>/`. The job record identifies its component
+and phase. `completed` means the process returned; `accepted` means the coordinator
+merged its result. Neither means the component or bundle passed all quality
+gates. Component histories, final reviews and bundle output assessments remain
+the acceptance evidence. Selected revisions remain in these durable diagnostic
+folders; each manifest component's `revision_id` and `revision_path` map to the
+original revision file. Its `code` field points to the editable user bundle.
+
+If a worker crashes, the coordinator stops new dispatch, drains active sibling
+jobs, checkpoints their completed drafts or reviews with their actual stage,
+and then reports the failure with log paths. It does not promote a saved draft
+to passed quality checks. An explicit user interruption still cancels the run.
+
+Only standalone identifiers, dataset names (`lib.member`) and macro names
+(`%macro`) are interpreted as dependency findings. Descriptive sentences stay
+in the translation contract for review. When an identifier cannot be reconciled
+with the known graph, the
+coordinator defers that component and its known descendants. Independent work
+continues, while `diagnostics.dependency_findings` and
+`diagnostics.parallel_deferred` identify the affected branch. The bundle remains
+`blocked` and full-bundle execution is withheld. Automatic graph correction and
+task reassignment are planned separately. Correct the source/configuration or
+dependency information before retrying the affected branch.
+
+All processes draw from one usage ledger. An interrupted admitted request may
+already have reached the provider, so it remains accounted for with unknown
+outcome/cost where appropriate; it is not treated as a free cancelled call.
+Increasing concurrency does not increase the configured budget or repair limits.
+Workers measure the complete request, including native reasoning history, before
+sending accounting messages. Only its size measurements travel with the public
+request fields; the additional native history stays in the worker conversation.
+The coordinator still applies the shared size, token and spending limits.
+Parallel mode remains opt-in pending paired live quality and performance
+validation; common prompts and offline checks alone do not establish equal
+translation quality.
 
 ## Data Residency & Model Boundary
 
@@ -136,13 +207,42 @@ Configure non-dollar ceilings using, for example,
 `usage_limits = list(max_calls = 0)` prevents all provider requests.
 The accepted names are documented in `?sas_translate`; misspellings fail.
 
+For shipped adapters on ellmer 0.5.0+, `max_calls` counts each admitted request:
+initial gathering, every tool-result continuation, and structured or JSON
+finalization. For example, two tool batches followed by a gathered answer and
+finalization use four calls within one agent invocation. This applies with one
+or several workflows. ellmer 0.4.2 uses the native serial tool loop with legacy
+phase-level admission, so that example uses two admissions; parallel execution
+falls back to one workflow. Review ceilings configured for the older counting
+unit when upgrading. With `max_tries > 1`, connector-internal HTTP retries are
+not separately admitted; parallel mode requires `max_tries: 1`. Agent-level
+retries remain individually admitted. Custom adapters retain their own request
+boundary.
+
+The usage ledger records request IDs and their `invocation_id` for grouping;
+`llm_log.jsonl` keeps the existing gathering/finalization entries rather than
+adding a runner entry or user prompt for every tool batch.
+
 `resume = TRUE` uses `.sas2r/resume.rds` to reuse exact selected revision records
 and completed reviews when source, input data, configuration, runtime, and worker
-prompts still match. It does not reconstruct program paths from report labels.
+prompts still match. Changing concurrency alone does not invalidate this reuse.
+It does not reconstruct program paths from report labels.
 Missing or edited code files, or changed input bytes, cause regeneration.
-Older runs without a checkpoint regenerate. Smoke and full output checks always
-rerun in fresh attempts. The usage ledger remains cumulative across resumed runs;
-elapsed time describes this invocation. A previously unavailable review is retried.
+Older runs without a checkpoint regenerate. Passing or deferred smoke results
+can be reused when their complete context still matches; changed code, helpers,
+input identity or callable paths require fresh checks. Full-bundle execution and
+output checks use fresh attempts. The usage ledger remains cumulative across
+resumed runs; elapsed time describes this invocation. A previously unavailable
+review is retried within the remaining budget.
+
+Parallel checkpoints distinguish drafts from components that have completed
+immediate processing. A saved draft must finish its checks and repair before
+releasing dependent work. Completed final reviews are saved individually.
+Repair invocations and component revisit counts are preserved, including an
+interrupted repair invocation. Checkpoint format 9 imports compatible format-8
+checkpoints with their repair counts intact. Missing historical revisit counts
+stay unknown and do not grant additional automatic revisits. Other incompatible
+checkpoints regenerate with an explicit reason.
 
 For a compatible checkpoint, completed reviews additionally require the same
 review request context. Changed helper documentation, rulebook content or

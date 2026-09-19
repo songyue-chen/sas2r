@@ -15,8 +15,10 @@
 #'   scanner `findings`, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
 #'   `called_macros` lists reachable search-path macro definitions and their
 #'   standalone R and interface-test paths.
+#'   `pipeline` reconciles every scanned file with the translation schedule and
+#'   bundle execution roles, listing intentional exclusions and blocking gaps.
 #'   Also includes `status`, `configured_libraries`, `schedule`, explanatory `notes`,
-#'   and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
+#'   `max_parallel_translations`, and the scanned `project`, reusable by `sas_translate()` while sources are unchanged.
 #'   `ready_for_translation` means no known missing inputs or unresolved scan
 #'   findings; it does not mean execution or reference validation has passed.
 #' @examples
@@ -30,12 +32,13 @@
 sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                           budget_usd = Inf, budget_mode = "stop",
                           pricing_source = "catalog", pricing_rates = NULL,
-                          usage_limits = NULL, recursive = FALSE) {
+                          usage_limits = NULL, recursive = FALSE, max_parallel_translations = NULL) {
   root <- if (is.null(out_dir)) "<temporary output root>" else migration_paths(out_dir)$root
   if (!is.null(out_dir)) root <- config_anchor_paths(root, getwd())
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits)
-  setup <- translation_setup(path, config, outputs, recursive)
+  setup <- translation_setup(path, config, outputs, recursive,
+                             max_parallel_translations = max_parallel_translations)
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan
@@ -55,7 +58,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   )
   findings <- project$flags
   unresolved <- findings$kind %in% preflight_blocking_findings()
-  needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing")
+  needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing") || length(plan$pipeline$issues) > 0L
   paths <- migration_paths(root, "<run_id>")
   destinations <- list(root = root, run = paths$run_root, state = paths$state,
                        generated_outputs = paths$outputs,
@@ -68,9 +71,11 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     sources = sources, called_macros = called_macro_units(project), libraries = effective$bindings,
     configured_libraries = effective$seed, inputs = inputs, references = references,
     unsupported = unsupported, findings = findings, outputs = contracts,
-    schedule = plan$schedule, project = project, destinations = destinations,
+    schedule = plan$schedule, pipeline = plan$pipeline, project = project, destinations = destinations,
     budget = as.list(budget)[limits], model_calls = 0L,
+    max_parallel_translations = setup$max_parallel_translations,
     next_actions = c(
+      if (length(plan$pipeline$issues)) "Resolve the pipeline coverage gaps or dependency cycles; inspect $pipeline$sources and $pipeline$issues.",
       if (any(inputs$status == "missing")) "Supply missing input members or correct their library paths; inspect $inputs$searched_paths.",
       if (any(inputs$status == "backward_dependency")) "Move the producer before its read in the same source file; an existing output does not establish correct execution order.",
       if (any(inputs$status == "no_producer")) "Identify or supply the earlier step that creates the WORK input; inspect $inputs source locations.",
@@ -140,6 +145,8 @@ preflight_unsupported <- function(project) {
 print.sas2r_preflight <- function(x, ...) {
   cli::cli_h1("sas2r offline preflight: {x$status}")
   cli::cli_text("{nrow(x$sources)} source files; {nrow(x$outputs)} output targets; 0 model calls")
+  for (line in pipeline_coverage_lines(x$pipeline)) cli::cli_text("{line}")
+  for (issue in x$pipeline$issues) cli::cli_text("ERROR: {issue}")
   if (nrow(x$called_macros)) {
     cli::cli_text("{nrow(x$called_macros)} called macro dependencies:")
     print(x$called_macros[c("name", "file", "staged_file")])
@@ -151,6 +158,7 @@ print.sas2r_preflight <- function(x, ...) {
   for (action in x$next_actions) cli::cli_text("{action}")
   cli::cli_text("Output root: {x$destinations$root}")
   cli::cli_text("Budget: {x$budget$mode}; max_usd={x$budget$max_usd}; max_calls={x$budget$max_calls}")
+  cli::cli_text("Concurrent translation limit: {x$max_parallel_translations}; local execution and repair remain serial.")
   cli::cli_text("Static inspection only; inspect $libraries, $outputs, $budget for full details.")
   invisible(x)
 }

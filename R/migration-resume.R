@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 8L
+RESUME_CHECKPOINT_VERSION <- 9L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -21,14 +21,14 @@ component_source_text <- function(graph, component_id) {
   }, character(1)), collapse = "\n")
 }
 
-migration_resume_fingerprint <- function(state) {
+migration_resume_fingerprint <- function(state, version = RESUME_CHECKPOINT_VERSION) {
   roles <- c("translator", "reviewer", "fixer")
   skills <- agent_skill_catalog()
   llm <- state$translator_llm
   source_outputs <- state$output_contracts
   source_outputs$reference_path <- NULL
   migration_hash(list(
-    version = RESUME_CHECKPOINT_VERSION,
+    version = version,
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),
@@ -57,8 +57,10 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   }
   checkpoint <- tryCatch(readRDS(path), error = function(e) NULL)
   if (is.null(checkpoint)) return(invalidate("checkpoint is unreadable"))
-  if (!identical(checkpoint$version, RESUME_CHECKPOINT_VERSION)) return(invalidate("checkpoint uses an older planning policy"))
-  if (!identical(checkpoint$fingerprint, fingerprint)) return(invalidate("sources, inputs, configuration, or worker settings changed"))
+  legacy <- identical(checkpoint$version, 8L)
+  if (!legacy && !identical(checkpoint$version, RESUME_CHECKPOINT_VERSION)) return(invalidate("checkpoint uses an older planning policy"))
+  expected <- if (legacy) migration_resume_fingerprint(state, version = 8L) else fingerprint
+  if (!identical(checkpoint$fingerprint, expected)) return(invalidate("sources, inputs, configuration, or worker settings changed"))
   revisions <- checkpoint$selected_revisions
   # Missing or locally edited artifacts are cheap to regenerate. Do not rebuild
   # paths from revision labels, which need not match the on-disk directory name.
@@ -71,15 +73,24 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   state$selected_revisions <- revisions
   state$histories <- checkpoint$histories
   state$repair_counts <- checkpoint$repair_counts
+  state$revisit_counts <- checkpoint$revisit_counts %||% stats::setNames(
+    rep(NA_integer_, nrow(state$schedule)), state$schedule$component_id)
   writeLines(checkpoint$helper_code, state$runtime$helpers)
-  state$resumed_components <- names(revisions)
-  state$diagnostics <- checkpoint$diagnostics
+  state$component_stage <- checkpoint$component_stage
+  state$resumed_components <- if (is.null(checkpoint$component_stage)) names(revisions) else
+    intersect(names(revisions), names(Filter(function(stage) identical(stage, "settled"), checkpoint$component_stage)))
+  state$diagnostics <- utils::modifyList(checkpoint$diagnostics %||% list(), state$diagnostics %||% list())
+  if (legacy) state$diagnostics$resume_import <- "v8: preserved repairs; previous revisit counts unknown"
   state$diagnostics$resume_invalidated <- NULL
   state$diagnostics$resumed_components <- names(revisions)
   state
 }
 
 write_migration_checkpoint <- function(state, fingerprint) {
+  if (!is.null(.parallel_worker$client)) {
+    parallel_rpc("checkpoint", list(repair_counts = state$repair_counts))
+    return(invisible(NULL))
+  }
   checkpoint <- list(
     version = RESUME_CHECKPOINT_VERSION,
     fingerprint = fingerprint,
@@ -90,6 +101,8 @@ write_migration_checkpoint <- function(state, fingerprint) {
     helper_code = runtime_helper_code(if (!is.null(state$bundle_dir))
       list(helpers = file.path(state$bundle_dir, "runtime", "sas2r-helpers.R")) else state$runtime),
     repair_counts = state$repair_counts,
+    revisit_counts = state$revisit_counts,
+    component_stage = state$component_stage,
     diagnostics = state$diagnostics
   )
   atomic_write_file(function(path) saveRDS(checkpoint, path),

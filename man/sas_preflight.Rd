@@ -14,7 +14,8 @@ sas_preflight(
   pricing_source = "catalog",
   pricing_rates = NULL,
   usage_limits = NULL,
-  recursive = FALSE
+  recursive = FALSE,
+  max_parallel_translations = NULL
 )
 }
 \arguments{
@@ -50,6 +51,12 @@ Output overrides are retained in the returned project for reuse.}
 request activity; unknown names and invalid values raise a configuration error.}
 
 \item{recursive}{Logical; whether to scan subdirectories recursively. Defaults to FALSE.}
+
+\item{max_parallel_translations}{Maximum concurrent SAS program or macro translation workflows. Overrides
+\code{migration.max_parallel_translations} in \verb{_sas2r.yml}; defaults to 1. Model waiting can
+overlap on fewer CPUs. Local execution and repair remain serial.
+Values above 1 cannot be combined with \code{llm.max_tries} above 1; preflight
+and translation stop with a configuration error before provider calls.}
 }
 \value{
 A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries},
@@ -58,8 +65,10 @@ created_if_missing, or generated), \code{references}, \code{unsupported},
 scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
 \code{called_macros} lists reachable search-path macro definitions and their
 standalone R and interface-test paths.
+\code{pipeline} reconciles every scanned file with the translation schedule and
+bundle execution roles, listing intentional exclusions and blocking gaps.
 Also includes \code{status}, \code{configured_libraries}, \code{schedule}, explanatory \code{notes},
-and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.
+\code{max_parallel_translations}, and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.
 \code{ready_for_translation} means no known missing inputs or unresolved scan
 findings; it does not mean execution or reference validation has passed.
 }

@@ -318,7 +318,7 @@ append_usage_record <- function(budget, record, redactor = NULL) {
   path <- budget$ledger_path
   if (!is.null(path)) {
     json <- jsonlite::toJSON(
-      record, auto_unbox = TRUE, null = "null", na = "null"
+      record, auto_unbox = TRUE, null = "null", na = "null", digits = NA
     )
     existing <- if (file.exists(path)) {
       readLines(path, warn = FALSE)
@@ -382,6 +382,12 @@ reconstruct_usage_budget <- function(budget, records) {
       recovered = TRUE
     )
     budget$reserved_amount <- budget$reserved_amount + amount
+    abandoned <- any(vapply(records, function(event) identical(event$record_type, "request_abandoned") &&
+      identical(event$request_id, record$request_id), logical(1)))
+    if (abandoned) {
+      budget$reservations[[record$request_id]]$abandoned <- TRUE
+      budget$unknown_count <- budget$unknown_count + 1L
+    }
   }
   tool_events <- Filter(function(record) {
     record$record_type %in% c(
@@ -450,6 +456,9 @@ reconstruct_usage_budget <- function(budget, records) {
 }
 
 request_text_metrics <- function(request) {
+  # Parallel admission carries measurements made here by the worker, without
+  # persisting provider reasoning text in its transient accounting messages.
+  if (!is.null(request$text_metrics)) return(request$text_metrics)
   tool_contracts <- lapply(request$tools %||% list(), function(tool) {
     list(
       name = tool$name %||% NULL,
@@ -457,7 +466,7 @@ request_text_metrics <- function(request) {
       schema = tool$schema %||% NULL
     )
   })
-  text <- jsonlite::toJSON(list(
+  payload <- list(
     messages = request$messages,
     tools = tool_contracts,
     output_schema = request$output_schema,
@@ -465,7 +474,9 @@ request_text_metrics <- function(request) {
     schema_version = request$schema_version,
     parameters = request$parameters,
     model = request$model
-  ), auto_unbox = TRUE, null = "null", na = "null")
+  )
+  if (!is.null(request$native_history)) payload$native_history <- request$native_history
+  text <- jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null", na = "null")
   list(
     chars = nchar(text, type = "chars"),
     bytes = nchar(text, type = "bytes"),
@@ -680,6 +691,7 @@ usage_audit_identity <- function(budget, request, audit_context = list(),
     record_type = record_type,
     run_id = budget$run_id,
     request_id = request$request_id,
+    invocation_id = audit_context$invocation_id %||% NULL,
     parent_request_id = audit_context$parent_request_id %||%
       request$parent_request_id %||% NULL,
     retry_of = audit_context$retry_of %||% request$retry_of %||% NULL,
@@ -728,6 +740,7 @@ usage_audit_identity <- function(budget, request, audit_context = list(),
 }
 
 reserve_usage_request <- function(budget, request, audit_context = list()) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "reserve_usage_request", list(request = request, audit_context = audit_context)))
   started_elapsed <- unname(proc.time()[["elapsed"]])
   quote <- usage_reservation_quote(budget, request, audit_context)
   if (!isTRUE(quote$ok)) stop(quote$error)
@@ -776,6 +789,22 @@ reserve_usage_request <- function(budget, request, audit_context = list()) {
   reservation
 }
 
+# The provider outcome after a process interruption is unknown. Retain any
+# strict reservation across resume; do not turn the ceiling into billed spend
+# or release it as if the request definitely never reached the provider.
+abandon_usage_request <- function(budget, request_id) {
+  reservation <- budget$reservations[[request_id]]
+  if (is.null(reservation) || isTRUE(reservation$abandoned)) return(invisible(NULL))
+  record <- usage_audit_identity(budget, reservation$request, reservation$audit_context,
+    "request_abandoned", "unknown", reservation$attempt, reserved_amount = reservation$amount)
+  record$cost_status <- "unknown"
+  record$per_call_amount <- NA_real_
+  append_usage_record(budget, record, redactor = reservation$audit_context$.usage_redactor)
+  budget$reservations[[request_id]]$abandoned <- TRUE
+  budget$unknown_count <- budget$unknown_count + 1L
+  invisible(NULL)
+}
+
 normalized_response_cost_record <- function(response) {
   cost <- response$cost %||% list()
   if (!is.list(cost)) cost <- list()
@@ -806,6 +835,7 @@ normalized_response_cost_record <- function(response) {
 }
 
 reconcile_usage_request <- function(budget, reservation, response) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "reconcile_usage_request", list(reservation = reservation, response = response)))
   assert_usage_budget(budget)
   request_id <- reservation$request_id
   held <- budget$reservations[[request_id]]$amount %||% reservation$amount %||% 0
@@ -835,6 +865,8 @@ reconcile_usage_request <- function(budget, reservation, response) {
     request_tool_events <- if (length(budget$tool_events) >= first_tool_event) {
       budget$tool_events[seq.int(first_tool_event, length(budget$tool_events))]
     } else list()
+    request_tool_events <- Filter(function(event)
+      identical(event$request_id, request_id), request_tool_events)
     actual_tool_names <- vapply(request_tool_events, function(event) {
       event_id <- event$tool_event_id %||% ""
       if (inherits(budget$tool_pricing_names, "environment") &&
@@ -1118,6 +1150,7 @@ call_llm_transport <- function(llm, request, context) {
 .usage_attempt_scope <- new.env(parent = emptyenv())
 .usage_attempt_scope$callback <- NULL
 .usage_attempt_scope$tool_audit_context <- NULL
+.usage_attempt_scope$native_meter <- NULL
 
 with_usage_attempt_callback <- function(callback, expr) {
   previous <- .usage_attempt_scope$callback
@@ -1142,7 +1175,9 @@ current_usage_tool_audit_context <- function() {
 }
 
 attempt_usage_transport <- function(request, provider, usage_budget,
-                                    audit_context, transport) {
+                                    audit_context, transport, native_meter = FALSE) {
+  if (native_meter) return(attempt_native_usage_transport(
+    request, provider, usage_budget, audit_context, transport))
   reservation <- reserve_usage_request(
     usage_budget, request, audit_context
   )
@@ -1158,6 +1193,57 @@ attempt_usage_transport <- function(request, provider, usage_budget,
     stop(apply_reconciled_usage_cost(raw, reconciliation))
   }
   response
+}
+
+attempt_native_usage_transport <- function(request, provider, budget, context, transport) {
+  meter <- new.env(parent = emptyenv())
+  meter$records <- list()
+  meter$current <- meter$response <- NULL
+  meter$finish <- function(failure = NULL) {
+    if (is.null(meter$current)) return(invisible(NULL))
+    response <- normalize_provider_response(meter$response %||% failure,
+      request = meter$request, provider = provider)
+    record <- reconcile_usage_request(budget, meter$current, response)
+    meter$records[[length(meter$records) + 1L]] <- record
+    meter$current <- meter$response <- NULL
+    invisible(NULL)
+  }
+  meter$start <- function(pending) {
+    # Reconcile after tool execution, so per-request tool prices are included,
+    # and before admitting the next HTTP transfer against the shared budget.
+    meter$finish()
+    next_context <- context
+    if (length(meter$records)) {
+      pending$request_id <- new_request_id()
+      pending$parent_request_id <- request$request_id
+      pending$retry_of <- NULL
+      next_context$parent_request_id <- request$request_id
+      next_context$retry_of <- NULL
+    }
+    next_context$request_id <- pending$request_id
+    meter$current <- reserve_usage_request(budget, pending, next_context)
+    meter$request <- pending
+    .usage_attempt_scope$tool_audit_context <- next_context
+  }
+  meter$end <- function(raw) meter$response <- raw
+  previous <- .usage_attempt_scope$native_meter
+  previous_context <- .usage_attempt_scope$tool_audit_context
+  .usage_attempt_scope$native_meter <- meter
+  on.exit({
+    .usage_attempt_scope$native_meter <- previous
+    .usage_attempt_scope$tool_audit_context <- previous_context
+  }, add = TRUE)
+  raw <- tryCatch(transport(), error = identity)
+  meter$finish(if (inherits(raw, "condition")) raw else NULL)
+  response <- normalize_provider_response(raw, request = request, provider = provider)
+  amounts <- vapply(meter$records, function(record) nonnegative_number_or_na(record$per_call_amount), numeric(1))
+  statuses <- vapply(meter$records, function(record) record$cost_status, "")
+  aggregate <- list(per_call_amount = if (!length(amounts) || anyNA(amounts)) NA_real_ else sum(amounts),
+    cost_status = if (!length(amounts) || anyNA(amounts)) "unknown" else
+      if (length(unique(statuses)) == 1L) statuses[[1L]] else "catalog_estimate",
+    currency = "USD", rate_source = "per-HTTP usage ledger")
+  if (inherits(raw, "condition")) stop(apply_reconciled_usage_cost(raw, aggregate))
+  apply_reconciled_usage_cost(response, aggregate)
 }
 
 attempt_llm_request <- function(request, llm, usage_budget = NULL,
@@ -1239,7 +1325,7 @@ attempt_llm_request <- function(request, llm, usage_budget = NULL,
         subrequest, llm$provider, usage_budget, subcontext,
         function() with_usage_tool_audit_context(
           subcontext, transport(subrequest, params)
-        )
+        ), native_meter = isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && ellmer_has_request_callbacks()
       )
     }
     raw <- with_usage_attempt_callback(
@@ -1481,6 +1567,7 @@ refuse_usage_tool_call <- function(budget, tool_name = NULL,
                                    audit_context = list(),
                                    result_status = "policy_refused",
                                    error_class = NULL) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "refuse_usage_tool_call", list(tool_name = tool_name, arguments = arguments, audit_context = audit_context, result_status = result_status, error_class = error_class)))
   reservation <- begin_usage_tool_call(
     budget, tool_name = tool_name, arguments = arguments,
     audit_context = audit_context, admitted = FALSE
@@ -1495,6 +1582,7 @@ refuse_usage_tool_call <- function(budget, tool_name = NULL,
 reserve_usage_tool_call <- function(budget, tool_name = NULL,
                                     arguments = NULL,
                                     audit_context = list()) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "reserve_usage_tool_call", list(tool_name = tool_name, arguments = arguments, audit_context = audit_context)))
   if (is.null(budget)) return(invisible(NULL))
   assert_usage_budget(budget)
   if (budget$tool_count >= budget$max_tool_calls) {
@@ -1517,6 +1605,7 @@ complete_usage_tool_call <- function(budget, reservation,
                                      outcome = c("completed", "refused", "failed"),
                                      result_status = NULL,
                                      error_class = NULL) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "complete_usage_tool_call", list(reservation = reservation, outcome = match.arg(outcome), result_status = result_status, error_class = error_class)))
   if (is.null(budget) || is.null(reservation)) return(invisible(NULL))
   assert_usage_budget(budget)
   outcome <- match.arg(outcome)
@@ -1560,6 +1649,7 @@ complete_usage_tool_call <- function(budget, reservation,
 }
 
 usage_budget_allows_future <- function(budget) {
+  if (is_parallel_budget(budget)) return(parallel_budget_rpc(budget, "usage_budget_allows_future", list()))
   if (is.null(budget)) return(TRUE)
   assert_usage_budget(budget)
   elapsed <- as.numeric(difftime(Sys.time(), budget$start_time, units = "secs"))

@@ -1,7 +1,7 @@
 # Report projection only. Attempted execution and the current handoff's
 # verification are separate; neither changes selection or evidence gates.
-bundle_execution_report <- function(state) {
-  records <- resume_migration_attempts(state$paths)$completed_attempts
+bundle_execution_report <- function(state, attempts = resume_migration_attempts(state$paths)) {
+  records <- attempts$completed_attempts
   records <- Filter(function(r) identical(r$kind, "bundle"), records)
   if (length(records)) records <- records[order(vapply(records, function(r) as.integer(r$sequence), 1L))]
   helper <- state$runtime$helpers

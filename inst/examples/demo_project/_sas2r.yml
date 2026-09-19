@@ -16,7 +16,7 @@ macros:
 #   # Reasoning uses endpoint defaults: ellmer 0.4.2 does not forward effort
 #   # on Bedrock. Use a recommended direct-provider profile for explicit high.
 #   # See docs/llm-providers.md; choose an output allowance your model supports.
-#   max_output_tokens: 32768
+#   max_output_tokens: 32768 # illustrative; replace with deployment maximum
 #   capabilities:
 #     structured_output: fallback
 #     tool_calling: native

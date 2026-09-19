@@ -134,6 +134,8 @@ test_that("every sas2r symbol shipped docs present as API is exported", {
   paths <- c(
     readme = test_path("..", "..", "README.md"),
     news = test_path("..", "..", "NEWS.md"),
+    running = test_path("..", "..", "docs", "running-migrations.md"),
+    privacy = test_path("..", "..", "docs", "model-privacy.md"),
     providers = test_path("..", "..", "docs", "llm-providers.md"),
     evidence = test_path("..", "..", "docs", "output-evidence.md"),
     migration_evidence = test_path("..", "..", "docs", "migration-evidence.md"),
@@ -229,7 +231,7 @@ test_that("README documents dependency-aware migration workflow and contracts", 
 
   # Core disclaimers
   expect_match(text, "does not require SAS", ignore.case = TRUE)
-  expect_match(text, "NOT PARITY", fixed = TRUE)
+  expect_match(text, "not proof of SAS equivalence", fixed = TRUE)
   expect_false(grepl("sasr", text, ignore.case = TRUE))
   expect_identical(forbidden_parity_claims(text), character())
 
@@ -255,7 +257,7 @@ test_that("README documents dependency-aware migration workflow and contracts", 
   expect_match(text, "outputs", fixed = TRUE)
   expect_match(text, "agent_evidence", fixed = TRUE)
   expect_match(text, "code_only", fixed = TRUE)
-  expect_match(text, "copy-on-write", ignore.case = TRUE)
+  expect_match(text, "Input libraries and generated outputs have separate locations", fixed = TRUE)
   expect_match(text, "directory", ignore.case = TRUE)
   expect_match(text, "sas_write", fixed = TRUE)
 
@@ -450,6 +452,7 @@ test_that("every document describing the model boundary discloses what crosses i
     news = test_path("..", "..", "NEWS.md"),
     guide = test_path("..", "..", "docs", "output-evidence.md"),
     migration_guide = test_path("..", "..", "docs", "migration-evidence.md"),
+    privacy_guide = test_path("..", "..", "docs", "model-privacy.md"),
     vignette = test_path("..", "..", "vignettes", "dependency-aware-migration.Rmd"),
     example = test_path("..", "..", "inst", "examples", "_sas2r.example.yml")
   )
