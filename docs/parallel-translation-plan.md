@@ -21,7 +21,7 @@ Progress: configuration, process workers, parallel final reviews, and dependency
 - The coordinator owns budget admission, revision selection and checkpoints. The native ellmer tool loop remains intact; no user turn is inserted between tool batches. Invocation-scoped native turns preserve reasoning content and thought signatures into finalization. On ellmer 0.5.0+, public callbacks admit each tool-loop request and explicit admission covers structured output, which bypasses those callbacks. `max_calls` counts these requests in both modes. Older ellmer retains serial phase-level metering and visibly falls back to one workflow; custom adapters without a reconstruction factory also fall back. When both `max_parallel_translations` and `max_tries` exceed 1, preflight and translation stop before provider calls with instructions to set either value to 1; effective argument overrides are honored.
 - Fresh workers inherit verified model settings and tested capability records. Optional-setting rejections flow back to the coordinator and onward to workers. Already-admitted peer requests can still discover the same rejection concurrently.
 - Version-9 checkpoints save component stages and revisit counts and import compatible version-8 work. Legacy revisit counts remain unknown. Interrupted requests retain unknown costs and strict reservations rather than receiving a speculative refund. A worker crash stops dispatch and drains active siblings before checkpointing and aborting. Manifest revision paths identify original artifacts even when produced in worker directories.
-- Standalone unresolved dependency identifiers defer the affected branch; independent components continue. Automatic graph reconciliation and the new reporting tool remain step 5 in a separate follow-up. Until then, the full dynamic-recovery feature is **not complete**.
+- Preflight reconciles every scanned source file with the translation schedule and existing bundle planner. Known omissions, duplicate components, conflicting component names and dependency cycles stop the whole run before provider setup or model calls. Standalone unresolved dependency identifiers discovered during translation defer the affected branch; independent components continue, but full-bundle execution remains blocked. Automatic graph reconciliation and the new reporting tool remain step 5 in a separate follow-up. Until then, the full dynamic-recovery feature is **not complete**.
 - Offline validation covers 1/2/3/4 workers, complete fixture output values, chain/fork/join ordering, review payload parity, shared limits, helper rollback, interruption/resume and installed ellmer 0.4.2/0.5.0 replay. The paired live PHUSE pilot has not run. Neither live speedup nor real-model quality equivalence is claimed; the default remains one.
 
 The local implementation record is `docs/local/parallel-translation-implementation.md`. It records check results, the process/polling measurements, review caveats and the outstanding live pilot; it is intentionally excluded from the package.
@@ -159,7 +159,7 @@ flowchart TD
 
 ### Component-stage scheduling
 
-Keep `stable_dependency_schedule()` as the source of dependency validity, cycle groups and stable ordering. For N>1, rank only ready components by longest remaining downstream chain: `height(component) = 1 + max(height(consumer))`, with leaves at 1 and stable schedule order breaking ties. N=1 retains today's order. Recompute heights after an accepted graph correction; unresolved cycles remain deferred. Do not prioritize a consumer before its prerequisites. This heuristic can reduce idle tail time but is not universally optimal, and under a scarce shared budget priority can affect which work finishes.
+Keep `stable_dependency_schedule()` as the source of dependency validity, cycle groups and stable ordering. Known cycles stop the whole run in preflight before model calls. For N>1, rank only ready components by longest remaining downstream chain: `height(component) = 1 + max(height(consumer))`, with leaves at 1 and stable schedule order breaking ties. N=1 retains today's order. In the planned dynamic-recovery follow-up, recompute heights after an accepted graph correction; an unresolved cycle discovered after work starts defers its affected branch and blocks full-bundle execution. Do not prioritize a consumer before its prerequisites. This heuristic can reduce idle tail time but is not universally optimal, and under a scarce shared budget priority can affect which work finishes.
 
 A component waits for its required providers to have selected candidates and settled immediate processing, with known interfaces and no unresolved material provider-identity finding. Never read half-written provider artifacts.
 
@@ -229,6 +229,13 @@ Existing discovered/suspected dependency output fields remain. Deliver the narro
 
 ## D5 — Dependency correction and affected branches
 
+Preflight and recovery during translation have different scopes. A known invalid
+pipeline, including a dependency cycle, stops the whole run before provider setup
+or model calls so the user can correct it before translation starts. Findings
+first discovered during translation defer the affected branch while independent
+work continues; full-bundle execution remains blocked. Source-confirmed graph
+correction and reassignment below remain the separate step-5 follow-up.
+
 Use the existing graph/resolvers and source semantics as authority. Accept a correction only when source evidence establishes the relationship: for example, a uniquely bound producer of the library/member actually read by the consumer. Confidence scores, filenames, an invented R helper call, reference answers or a mere runtime name match are insufficient.
 
 Discover additional macro components only through the configured source/include/macro paths and existing scanner. Removing or rebinding an edge needs positive source evidence; absence of a call from generated R is not sufficient. Unsupported dynamic forms remain unresolved rather than introducing a general SAS interpreter.
@@ -242,7 +249,8 @@ The coordinator owns one effective graph. Keep `state$graph`, the project graph 
 | Only reviewer facts change | Recompute full review identity and refresh required reviews; do not label this a translation change. Existing resume compatibility still applies. |
 | Source/input files change | Follow existing fingerprint invalidation/rescan rules. Do not silently mix source/input versions to keep workers busy. |
 | Dynamic identity, missing source or ambiguous writer cannot be established | Continue demonstrably unaffected work; defer the affected branch with source locations and the missing fact. |
-| Cycle without an established resolution | Keep the cycle visible and defer its affected work. Running one worker does not solve a dependency cycle. |
+| Cycle known during preflight | Stop the whole run before provider setup or model calls; report the cycle and require correction before translation. |
+| Cycle first discovered after translation starts, without an established resolution | Keep the cycle visible and defer its affected work while independent work continues; block full-bundle execution. Running one worker does not solve a dependency cycle. Dynamic graph reconciliation remains planned. |
 
 On a confirmed correction, compute affected consumers using old and new relationships, pause their admissions, recompute bindings and schedule, then checkpoint before dispatch under the new plan. An unrelated graph revision is not by itself grounds to discard a valid result. Affected late results remain diagnostic artifacts and cannot become current evidence simply because they finish later. Unchanged code from an obsolete snapshot can be reassessed through existing checks/review rules; old evidence is never relabelled current.
 

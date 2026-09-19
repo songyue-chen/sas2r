@@ -149,8 +149,10 @@ sas_translate <- function(
   state$schedule <- setup$plan$schedule
   state$output_contracts <- setup$plan$contracts
   state$diagnostics$pipeline <- setup$plan$pipeline
-  cli::cat_line(pipeline_coverage_lines(setup$plan$pipeline), file = stderr())
-  flush(stderr())
+  if (sas2r_progress_enabled()) {
+    cli::cat_line(pipeline_coverage_lines(setup$plan$pipeline), file = stderr())
+    flush(stderr())
+  }
   require_resolved_macros(setup$project)
   require_complete_pipeline(setup$plan$pipeline)
   cfg <- setup$config

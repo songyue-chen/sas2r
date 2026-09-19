@@ -5,9 +5,12 @@
 <!-- badges: start -->
 <!-- badges: end -->
 
-**sas2r** is an open-source R package for **clinical statistical programmers and biostatisticians** in pharmaceutical, biotech, and CRO organizations. It runs a **coordinated multi-agent workflow** that moves clinical trial data pipelines (SDTM, ADaM, Tables, Listings, and Figures) from SAS to R — an AI translator, an independent AI reviewer, and an AI fixer, each with a defined role inside a deterministic process — and shows you the evidence for every step it took.
+**sas2r** is an open-source R package for **clinical statistical programmers and biostatisticians** in pharmaceutical, biotech, and CRO organizations. It helps translate SAS programs for SDTM, ADaM, tables, listings and figures into R. Separate AI roles translate the code, review it against the original SAS, and fix identified problems. The package runs the translated programs, checks their outputs, and reports what passed and what still needs attention.
 
 `sas2r` does not require SAS to translate or execute the generated R. Dataset processing and comparison run on your own infrastructure; a configured AI provider receives the [code, context and diagnostics described below](#privacy-what-your-model-provider-can-receive). Reference-based validation requires outputs from the corresponding SAS programs, using the same inputs and parameters.
+
+Start with [how a migration runs](#how-a-migration-runs), the [quickstart](#quickstart),
+or the [FAQ for study teams](#frequently-asked-questions).
 
 > **Also check out [sas2r.ai](https://sas2r.ai)** — a web-based companion tool for quick, browser-based SAS to R code translation. While sas2r.ai currently uses direct model translation for rapid code conversions, we plan to bring this R package's multi-agent workflow and dataset QC capabilities to the cloud platform in the future!
 
@@ -24,47 +27,65 @@
 
 ---
 
-## How a Migration Runs: a Coordinated Multi-Agent Workflow
+## How a migration runs
 
-`sas2r` is agentic where judgment helps and deterministic where trust is required. The AI agents — translator, independent reviewer, fixer — exercise real judgment inside their steps: each decides which of its tools to consult (macro sources, the dependency graph, the rulebook, registered translation skills) within a fixed call budget. But the process around them is code, not model choice: the pipeline sequence, the repair-round limits, the execution of every program, and the final status are all decided deterministically, and no agent ever grades its own work.
+The work has two parts: **translate and check individual programs**, then
+**run the complete study pipeline and check its outputs**. Called macros are
+translated too, so programs can use their R equivalents.
 
-The workflow first translates and checks each program or called macro, then runs
-the whole pipeline and assesses its outputs. A deterministic coordinator assigns
-dependency-ready work, records results, and enforces shared budgets. With
-[parallel translation](#parallel-translation-opt-in) enabled, independent drafts
-and their initial reviews can overlap in separate R processes. The default is
-one translation workflow at a time.
+Three AI roles help with the work:
+
+| Role | What it does |
+| --- | --- |
+| Translator | Writes R code based on the original SAS, its macros and the programs it depends on. |
+| Reviewer | Separately checks the R code against the SAS and reports possible translation errors. |
+| Fixer | Corrects identified problems supported by the SAS source. The changed code is reviewed and tested again. |
+
+The package controls the order of work, the number of repair attempts and the
+spending limits using fixed rules. This scheduling logic is called the
+**coordinator** in the logs; it is not another AI model. AI review helps find
+problems but does not replace independent statistical QC.
 
 ```mermaid
 flowchart TD
-    source["SAS programs, macros and includes"] --> coordinator["Dependency graph and deterministic coordinator"]
-    coordinator --> draft["Ready components: translate, check and independently review<br/>Up to max_parallel_translations workflows"]
-    draft --> settle["One component at a time: smoke test, repair if needed,<br/>re-review and check affected consumers"]
-    settle -->|"Release ready downstream work"| coordinator
-    settle -->|"Component processing complete"| review["Final review checkpoint against a fixed code/helper selection<br/>Reuse current reviews; missing reviews may overlap"]
-    review --> bundle["Whole bundle: dependency-ordered execution in a fresh working copy"]
-    bundle --> outputs["Required output checks and configured dataset comparisons"]
-    outputs -->|"Execution error or source-supported finding"| repair["Bounded repair of the responsible component and review"]
-    outputs -->|"Reference mismatch alone"| investigate["Bounded source review"]
-    investigate -->|"Translation defect found"| repair
-    repair -->|"Fresh full run"| bundle
-    outputs --> report["Selected bundle, evidence and status report"]
-    investigate -->|"No supported repair"| report
+    source["Check SAS files, macros and program dependencies"] --> draft["Translate each program or macro into R<br/>Independent work can run in parallel"]
+    draft --> check["Review and test each program<br/>Fix problems within the configured limits"]
+    check --> review["Complete any outstanding reviews<br/>using the latest code"]
+    review --> run["Run the complete study pipeline<br/>in dependency order"]
+    run --> outputs["Check execution and required outputs<br/>Compare with SAS reference datasets when supplied"]
+    outputs -->|"Problem found"| investigate["Investigate against the original SAS"]
+    investigate -->|"Supported fix; repair allowance remains"| repair["Fix the code and review the change"]
+    repair -->|"Run the full pipeline again"| run
+    outputs --> report["Save R programs, outputs and a report<br/>showing passed checks and unresolved issues"]
+    investigate -->|"Unresolved or no supported fix"| report
 ```
 
-During component processing, only one smoke/repair transaction changes shared
-code at a time. Other drafts can finish privately while that transaction runs.
-Before bundle execution, final reviews use the same fixed code/helper selection;
-that pass collects findings without repairing code. The full bundle stage stays
-serial. If dependencies cannot be resolved, parallel translation defers the
-affected branch, continues independent work, and reports the blocked bundle.
-Completing a draft or a review call alone does not establish translation quality.
+**Program dependencies determine the order.** For example, if ADVS reads ADSL
+and a table reads ADVS, the order is ADSL → ADVS → table. `sas2r` determines this
+from the SAS sources; these program names are not built into the package.
+With [parallel translation](#parallel-translation-opt-in), independent programs
+or macros can be translated and reviewed at the same time. A program waits for
+the programs it uses to finish their initial translation and checks.
 
-A new attempt replaces the selected one only if it preserves or improves the
-existing pass criteria. If a new run initially performs worse than an older run,
-the older result stays selected while the new run uses its bounded repair
-allowance. A repair that regresses an attempt already selected in the current
-run stops further repair and keeps that selected attempt.
+Program execution tests and repairs run one at a time. If a repair changes a
+shared R function, programs that use it are checked again. Before running the
+full pipeline, the package completes outstanding reviews of the code versions
+that will be used. That review step reports findings without changing the code.
+The full pipeline also runs one program at a time in dependency order.
+
+**Known pipeline problems, such as missing schedule entries or dependency cycles,
+stop the run before AI calls.** A new dependency problem found during translation
+puts the affected programs on hold while unrelated
+work can continue. The full pipeline remains blocked until the dependency issue
+is resolved. The exported set of R programs and supporting files is called the
+**bundle**; having those files does not mean all checks passed.
+
+A repair cannot replace the chosen result if it loses checks that had already
+passed. If a new run initially performs worse than a saved result, that earlier
+result is retained while the new run uses its remaining repair allowance. If a
+later repair makes the chosen result from the current run worse, further repair
+stops and that chosen result is kept. The report distinguishes retained results
+from the outcome of the current run.
 
 ---
 
@@ -345,6 +366,15 @@ produce `validated`; it does not mean all three were compared.
 
 ### Reading the progress log
 
+Live console updates are enabled by default in interactive R and `Rscript`.
+Set `options(sas2r.progress = FALSE)` before a run to hide routine progress,
+including the initial preflight summary; use `options(sas2r.progress = TRUE)`
+to show it again. This is an R session option, not an `_sas2r.yml` setting.
+It controls console output only: translation, parallelism and quality checks
+run the same way. The final outcome and report locations remain visible, and
+saved diagnostics and HTML reports are still written. The final outcome also
+includes the pipeline summary. Tests disable routine progress by default.
+
 | Log message | What it establishes |
 | --- | --- |
 | `reviewer ...: review completed: repair_required, 3 tool calls` | The request completed and the review found a material issue. The tool count describes tool use, not findings. Older logs use `ok` for request completion alone. |
@@ -442,19 +472,23 @@ checks and ambiguous alignment.
 
 ### When scripts are reviewed
 
-Each new script receives a semantic review, and an actual repair receives another
-review. When shared helpers or dependencies change later, earlier unchanged
-scripts receive local mechanical checks and smoke tests. Their semantic reviews
-wait until component translation finishes, immediately before bundle execution.
-That final pass reuses complete reviews whose full context still matches and
-reviews the remaining scripts once. It collects findings without making repairs
-during the pass; source-supported findings go to the existing bundle repair queue.
+Each new script is reviewed against the SAS source, and each actual repair
+receives another review. If an upstream program or shared R function changes
+later, the package checks the earlier scripts that may be affected and performs
+applicable execution tests. These are called **smoke tests** in the logs.
+They show whether the tested code runs and passes the checks applied to it;
+they do not establish that every calculation matches SAS.
 
-A smoke pass means the tested code ran, not that every calculation matches SAS.
-Earlier scripts remain provisional until their review is current. Unresolved
-findings or unavailable reviews still prevent acceptance, even if the bundle
-runs successfully and no reference datasets are configured. Subsequent bundle
-repairs still require review and fresh execution, and existing repair limits apply.
+Before the full pipeline runs, the package completes outstanding AI reviews.
+A completed review is reused only when its code and supporting information
+still match. This avoids repeating an AI review after every shared-code change.
+The final review step collects findings without making repairs itself; findings
+supported by the SAS source can be addressed in the full-pipeline repair stage.
+
+A script is still awaiting acceptance if its review is missing, out of date or
+has unresolved findings, even when execution succeeds and no reference datasets
+are configured. Repairs during the full-pipeline stage also require review and
+a fresh run, within the same configured repair limits.
 
 ### Resume and limit provider calls
 
@@ -499,7 +533,8 @@ for the complete limits and reuse contract.
 
 ## Parallel translation (opt-in)
 
-Set the maximum number of concurrent translation workflows in `_sas2r.yml`:
+Set how many SAS programs or called macros can be processed at the same time
+in `_sas2r.yml`:
 
 ```yaml
 migration:
@@ -507,24 +542,28 @@ migration:
 ```
 
 Or override it for one run with `sas_translate("study", max_parallel_translations = 2)`.
-The default is **1**. One slot covers a SAS program or called macro through
-translation, review and any necessary repair. The setting counts component
-workflows, not translator, reviewer and fixer roles separately. Each process uses
-the existing role context builders, tools, model settings and quality checks,
-with a snapshot of the selected dependencies when its task starts. Completed
-findings are merged by the coordinator; agents do not share a live conversation.
-Independent programs can translate and review at the same time; consumers wait
-for their providers to finish immediate processing.
-Execution, complete repair transactions and the final bundle stage stay serial.
-All workflows share the same request, tool and spending limits; increasing
-concurrency does not multiply those budgets or repair allowances.
+The default is **1**. A value of **2** allows up to two program-or-macro
+translation workflows at once, including their review and repair steps. It does
+not start two translators, two reviewers and two fixers all at once. A **worker**
+is a separate R process handling an assigned translation or review task. The
+coordinator assigns the work and records its results.
 
-These are workflow slots, not dedicated CPU cores. Establish a baseline at one,
-then evaluate two; more may help
-while waiting for a remote model, but use the run's observed worker/memory/admission
-metrics and your workbench limits to decide. A custom adapter that cannot be rebuilt
-in a child process uses one worker and reports why. For the shipped ellmer adapters,
-parallel mode requires **ellmer 0.5.0 or newer** and `llm.max_tries: 1` (the
+Each task uses the same source information, tools, configured model settings and
+quality checks as the one-at-a-time workflow. It starts with a recorded version
+of the upstream code it needs; workers do not share one ongoing AI conversation.
+Independent programs can translate and review together. A program that uses
+another program's output waits for that upstream program's initial work to finish.
+Execution tests, repairs and the full study run still happen one at a time.
+The whole run shares the configured AI-call, tool-use and spending limits;
+allowing more parallel work does not increase those limits or repair allowances.
+
+This number is not a CPU count. Much of translation time can be spent waiting
+for the AI provider, so more than one task can make progress on the same CPU.
+Start with one, then compare two on your study. Check elapsed time, memory use
+and provider limits before increasing it further. Custom AI connections that
+cannot run in a separate R process use one worker and report the reason.
+For the supplied ellmer connections, parallel mode requires **ellmer 0.5.0 or
+newer** and `llm.max_tries: 1` (the
 default); older ellmer installations visibly use one workflow. If both
 `max_parallel_translations` and `llm.max_tries` exceed 1, preflight and translation
 stop before provider calls and explain which setting to change. Set `llm.max_tries`
@@ -535,8 +574,10 @@ within a tool conversation, plus finalization, in both modes. See the
 [usage-counting details](docs/migration-evidence.md#coverage-limits-and-reuse)
 before reusing a limit tuned to older ellmer.
 
-Unresolved dependency findings defer the affected branch while independent work
-continues. The run does not claim a successful full bundle for a deferred branch.
+Known pipeline problems, including dependency cycles, stop the whole run during
+preflight before any model calls. Unresolved dependency findings discovered
+during translation defer the affected branch while independent work continues.
+Full-bundle execution stays blocked while a branch is deferred.
 Worker findings use the scanner's recognized SAS macro list, so supplied macro
 names such as `qleft` and `qtrim` do not create false missing dependencies.
 Automatic graph correction/reassignment is a separate planned change. Offline
@@ -998,6 +1039,99 @@ keys by occurrence. For repeated records or inferred keys, use
 `compare_aligned_outputs()` as shown in the [comparison guide](docs/output-evidence.md).
 These standalone checks produce comparison evidence without changing the saved
 migration status or rerunning the bundle.
+
+---
+
+## Frequently asked questions
+
+### What should I prepare before translating a study?
+
+Provide the SAS programs, called macros and include files, the input data
+locations, and the list of required outputs. Add matching SAS reference outputs
+if available. Use `_sas2r.yml` to describe the study, then run `sas_preflight()`
+to find setup problems before AI calls. See the [quickstart](#quickstart).
+
+### Do I need SAS installed? Can I start without SAS reference outputs?
+
+SAS is not required to translate code or run the generated R. Without reference
+outputs, the package can still review code, test execution and apply configured
+output checks, but it cannot compare results with SAS. A `migration_ready`
+result is different from `validated`; see [the four statuses](#the-four-statuses).
+For comparisons, use SAS outputs produced from the same programs, inputs,
+macros and parameters.
+
+### Does the AI reviewer replace independent programming or statistical QC?
+
+No. It reviews translated R against the SAS source; it does not independently
+implement the analysis from the protocol, SAP or programming specifications.
+Your team's independent review and QC procedures still apply. The saved code,
+findings and comparison reports help reviewers inspect the work.
+
+### Does `validated` mean every dataset and analysis is correct?
+
+No. It means the configured reference comparisons passed within the declared
+tolerances, alongside the package's required checks. An output without a
+reference has not received that comparison. Read the report's coverage and
+unresolved findings; the status does not establish that the original SAS,
+the analysis specification or every statistical result is correct.
+
+### Will sas2r correct my ADaM derivations or make them CDISC compliant?
+
+The translation follows the supplied SAS. It does not independently decide
+whether a population definition, baseline rule, imputation or analysis method is
+appropriate for the study. Review those decisions against the SAP and dataset
+specifications, and perform your usual CDISC checks separately. A problem in
+the original SAS can remain a problem in a faithful translation.
+
+### Are tables, listings and figures checked as fully as datasets?
+
+Dataset comparisons check the configured reference data and tolerances. A
+readable table or figure file alone does not establish that its content is
+correct. Review the analysis populations, denominators, statistics, rounding,
+labels and presentation, as applicable. See the
+[output-evidence guide](docs/output-evidence.md) for comparison coverage.
+
+### Can ADVS translate in parallel with the ADSL program it reads?
+
+ADVS waits for the upstream ADSL program's initial translation and checks.
+Unrelated programs or macros can use the other available workers. The full
+study run still follows dependency order. More workers therefore do not imply
+the same multiple of speed improvement. Parallel mode retains the existing
+checks, but unchanged live-model quality and speedup have not yet been
+established by a paired study run. See [parallel translation](#parallel-translation-opt-in).
+
+### What should I do when a run is blocked or a comparison fails?
+
+Start with the console message and the saved `START_HERE.html` report, when
+available. They identify the reason, what ran and what still needs attention.
+Check input paths, missing programs or macros, and the reported code error.
+For comparison failures, first confirm that the SAS reference uses the same
+inputs and specifications. Do not change R code merely to match a reference
+that represents a different analysis. See
+[reference differences](#reference-differences-translation-error-or-different-specification).
+
+### Must I restart everything after an interruption or a fix?
+
+Use `resume = TRUE` to reuse compatible saved work. Changed source code, inputs
+or other relevant settings can require fresh translation or checks. Repair
+allowances and recorded spending are retained; resume does not reset them.
+See [resume and limit provider calls](#resume-and-limit-provider-calls).
+
+### Can patient data reach the AI provider?
+
+Data processing runs locally, and the default `agent_evidence = "code_only"`
+omits explicit dataset previews. However, SAS source, comments and error messages
+can contain patient information and can be sent to the configured provider.
+`code_only` does not de-identify them. Use your organization's approved endpoint
+and review the [privacy details](#privacy-what-your-model-provider-can-receive)
+before using confidential study material.
+
+### Can our programmers edit and run the R code without sas2r or AI?
+
+Yes. Export with `sas_write()` and keep the complete exported set of scripts and
+supporting files. Its guide lists required R packages and input paths; `run.R`
+launches the programs in order without sas2r or an AI key. Human edits and manual
+reruns need new QC and do not automatically update the saved migration report.
 
 ---
 

@@ -1,5 +1,11 @@
 # sas2r 0.4.6
 
+* Respect `options(sas2r.progress = FALSE)` for the initial preflight console
+  summary. Keep the final outcome and saved reports available regardless of
+  this option. Clarify that known preflight cycles stop the whole run before
+  model calls, while dependency findings discovered during translation defer
+  the affected branch and block full-bundle execution. Explain the workflow in
+  study-programming terms and add a README FAQ for programmers and statisticians.
 * Reconcile every scanned source file with the translation schedule and existing
   bundle execution planner during preflight. Expose `$pipeline` with execution
   roles, positions, exclusions and issues; stop before provider setup for missing
