@@ -105,6 +105,9 @@ test_that("partial navigation reports missing code and escapes local names and e
   expect_match(html, "report%20%26%20review.R", fixed = TRUE)
   links <- regmatches(html, gregexpr('href="[^"]+"', html))[[1L]]
   links <- sub('^href="(.*)"$', '\\1', links)
+  expect_true("#components" %in% links)
+  expect_match(html, 'id="components"', fixed = TRUE)
+  links <- links[!startsWith(links, "#")]
   expect_true(all(file.exists(file.path(state$paths$run_root, utils::URLdecode(links)))))
 })
 
@@ -137,6 +140,9 @@ test_that("handled preflight failure leaves a blocked page and keeps its origina
   manifest <- read_json_record(file.path(dirname(pages), "manifest.json"))
   expect_identical(manifest$status, "blocked")
   expect_null(manifest$selected_attempt_id)
+  expect_identical(manifest$outcome$severity, "error")
+  expect_identical(manifest$outcome$title, "Run incomplete - failed")
+  expect_match(paste(readLines(pages), collapse = "\n"), "Stopped during: preflight", fixed = TRUE)
 })
 
 test_that("manual output-root changes apply to every write and allow supplied upstream data", {

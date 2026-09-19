@@ -143,11 +143,16 @@ sas_translate <- function(
                              max_parallel_translations = max_parallel_translations, llm = llm)
   translation_limit <- setup$max_parallel_translations
   paths <- init_migration_paths(out_dir, budget$run_id)
+  state$paths <- paths
   state$project <- setup$project
   state$graph <- setup$plan$graph
   state$schedule <- setup$plan$schedule
   state$output_contracts <- setup$plan$contracts
+  state$diagnostics$pipeline <- setup$plan$pipeline
+  cli::cat_line(pipeline_coverage_lines(setup$plan$pipeline), file = stderr())
+  flush(stderr())
   require_resolved_macros(setup$project)
+  require_complete_pipeline(setup$plan$pipeline)
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan
@@ -186,6 +191,7 @@ sas_translate <- function(
   )
   # Adopt the state's run-scoped paths for code, execution evidence, and reports.
   paths <- state$paths
+  state$diagnostics$pipeline <- plan$pipeline
   state$output_contracts <- output_contracts
   state$parallel <- resolve_parallel_execution(state, translation_limit)
   state$diagnostics$parallel <- state$parallel
@@ -211,17 +217,21 @@ sas_translate <- function(
                                    environment = state$environment),
                               class = c("sas2r_progress", "condition")))
     prepare_migration_llm_settings(state)
-    prog_state <- run_program_pipeline(
+    state <- run_program_pipeline(
       state = state,
       max_program_repair_rounds = as.integer(max_program_repair_rounds),
       execute = isTRUE(execute)
     )
-    if (length(prog_state$diagnostics$parallel_deferred)) prog_state else run_bundle_pipeline(
-      state = prog_state,
-      max_bundle_repair_rounds = max_bundle_repair_rounds,
-      max_bundle_repairs_per_component = max_bundle_repairs_per_component,
-      execute = isTRUE(execute)
-    )
+    if (!length(state$diagnostics$parallel_deferred)) {
+      stage <- "bundle execution and repair"
+      state <- run_bundle_pipeline(
+        state = state,
+        max_bundle_repair_rounds = max_bundle_repair_rounds,
+        max_bundle_repairs_per_component = max_bundle_repairs_per_component,
+        execute = isTRUE(execute)
+      )
+    }
+    state
   })
 
   stage <- "finalization"
@@ -280,7 +290,7 @@ sas_translate <- function(
 
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()
-  write_migration_report(state)
+  write_migration_report(state, emit_outcome = TRUE)
   write_migration_checkpoint(state, resume_fingerprint)
   with_sas2r_progress(signal_bundle_event(
     "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
@@ -319,7 +329,8 @@ sas_translate <- function(
     # Evidence writing must never hide the original failure, including an
     # unwritable output location. No additional success state is invented.
     tryCatch({
-      init_migration_paths(out_dir, budget$run_id)
+      paths <- init_migration_paths(out_dir, budget$run_id)
+      state$paths <- paths
       state$status <- "blocked"
       state$status_reason <- conditionMessage(error)
       state$diagnostics$failure <- list(stage = stage, message = conditionMessage(error))
@@ -328,7 +339,7 @@ sas_translate <- function(
         materialize_user_bundle(partial, paths$bundle, state$project)
       }
       state$bundle_dir <- if (dir.exists(paths$bundle)) paths$bundle else NULL
-      write_migration_report(state)
+      write_migration_report(state, emit_outcome = TRUE)
       cli::cat_line("Blocked run: ", paths$start_here)
     }, error = function(report_error) {
       cli::cat_line("Could not write run report: ", conditionMessage(report_error))

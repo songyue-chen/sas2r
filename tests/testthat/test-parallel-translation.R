@@ -176,7 +176,15 @@ test_that("a crashed reviewer drains and checkpoints its paid sibling before abo
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   state$resume_fingerprint <- migration_resume_fingerprint(state)
-  expect_error(finalize_parallel_component_reviews(state), class = "sas2r_parallel_worker_error")
+  events <- list()
+  expect_error(withCallingHandlers(finalize_parallel_component_reviews(state),
+    sas2r_progress = function(e) events[[length(events) + 1L]] <<- e),
+    class = "sas2r_parallel_worker_error")
+  failures <- Filter(function(e) identical(e$event, "worker_failed"), events)
+  expect_length(failures, 1L)
+  expect_identical(failures[[1L]]$component_id, "p01")
+  expect_identical(failures[[1L]]$severity, "error")
+  expect_match(format_sas2r_progress(failures[[1L]]), "No new tasks will start", fixed = TRUE)
   saved <- readRDS(file.path(state$paths$state, "resume.rds"))
   expect_identical(component_review_verdict(saved$histories$p02), "reviewed_no_material_finding")
   expect_identical(saved$histories$p03, state$histories$p03)
@@ -281,6 +289,16 @@ test_that("source-resolved dataset and component names are confirmations, not ne
   state$selected_revisions$p02$contract$discovered_dependencies <- c("work.out1", "p01")
   expect_length(parallel_dependency_findings(state, "p01"), 0L)
   expect_length(parallel_dependency_findings(state, "p02"), 0L)
+})
+
+test_that("supplied SAS macro findings use scanner rules without hiding unknown dependencies", {
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  state <- fx$state
+  state$selected_revisions$p01$contract$suspected_dependencies <- c("qleft", "%QTRIM", "kleft")
+  state$selected_revisions$p01$contract$discovered_dependencies <-
+    c("work.qtrim", "missing_program", "%missing_macro", "%qklength")
+  expect_identical(parallel_dependency_findings(state, "p01"),
+    c("work.qtrim", "missing_program", "%missing_macro", "%qklength"))
 })
 
 test_that("dependency prose remains an observation and does not defer independent work", {

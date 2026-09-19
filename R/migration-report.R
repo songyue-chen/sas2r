@@ -55,9 +55,10 @@ migration_md_table <- function(df) {
 #' selected paths, and usage/cost accounting.
 #'
 #' @param state Migration state object, bundle pipeline result, or translation object.
+#' @param emit_outcome Print the saved run outcome to the console.
 #' @return The path to the written markdown report, invisibly.
 #' @noRd
-write_migration_report <- function(state) {
+write_migration_report <- function(state, emit_outcome = FALSE) {
   if (is.null(state)) {
     cli::cli_abort("{.arg state} must be provided", class = "sas2r_invalid_argument")
   }
@@ -211,7 +212,8 @@ write_migration_report <- function(state) {
   ))
 
   observations <- repair_report_observations(state, paths)
-  bundle_execution <- bundle_execution_report(state)
+  attempt_records <- resume_migration_attempts(paths)
+  bundle_execution <- bundle_execution_report(state, attempt_records)
 
   # 1. Construct JSON report payload
   report_payload <- list(
@@ -254,6 +256,8 @@ write_migration_report <- function(state) {
     created_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
 
+  report_payload$outcome <- migration_run_outcome(state, report_payload, attempt_records)
+
   atomic_write_json(state$graph %||% list(), file.path(paths$report_dir, "graph.json"))
   # Write JSON report
   atomic_write_json(report_payload, paths$report_json)
@@ -270,6 +274,8 @@ write_migration_report <- function(state) {
     paste0("- **Run ID:** `", run_id, "`"),
     paste0("- **Timestamp:** `", report_payload$created_at, "`"),
     migration_environment_lines(state$environment),
+    "",
+    migration_outcome_lines(report_payload$outcome),
     "",
     "## Selected Artifacts",
     "",
@@ -498,6 +504,14 @@ write_migration_report <- function(state) {
   writeLines(md_lines, paths$report_md)
 
   write_run_navigation(state, report_payload)
+  outcome_lines <- c(migration_outcome_lines(report_payload$outcome),
+    paste("Details:", paths$start_here))
+  dir.create(paths$logs, recursive = TRUE, showWarnings = FALSE)
+  writeLines(outcome_lines, file.path(paths$logs, "run-outcome.log"))
+  if (isTRUE(emit_outcome)) {
+    cli::cat_line(outcome_lines, file = stderr())
+    flush(stderr())
+  }
   invisible(paths$report_md)
 }
 

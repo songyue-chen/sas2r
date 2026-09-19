@@ -366,6 +366,8 @@ parallel_poll <- function(pool) {
       pool$failures[[id]] <- list(component_id = job$component_id, phase = job$kind,
         job_id = id, reason = conditionMessage(result),
         stdout = file.path(job$dir, "stdout.log"), stderr = file.path(job$dir, "stderr.log"))
+      signal_immediate_coordinator_event("worker_failed", job$component_id,
+        severity = "error", reason = conditionMessage(result), path = job$dir)
       pool$state$component_stage[[job$component_id]] <- "interrupted"
       next
     }

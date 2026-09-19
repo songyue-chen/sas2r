@@ -65,6 +65,8 @@ created_if_missing, or generated), \code{references}, \code{unsupported},
 scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
 \code{called_macros} lists reachable search-path macro definitions and their
 standalone R and interface-test paths.
+\code{pipeline} reconciles every scanned file with the translation schedule and
+bundle execution roles, listing intentional exclusions and blocking gaps.
 Also includes \code{status}, \code{configured_libraries}, \code{schedule}, explanatory \code{notes},
 \code{max_parallel_translations}, and the scanned \code{project}, reusable by \code{sas_translate()} while sources are unchanged.
 \code{ready_for_translation} means no known missing inputs or unresolved scan

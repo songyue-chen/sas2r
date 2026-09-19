@@ -64,6 +64,7 @@ translation_setup <- function(path, config, outputs, recursive, cache = FALSE,
     scan_project(path, config = cfg, recursive = recursive, cache = cache)
   if (!inherits(path, "sas2r_project")) cfg <- project$config
   plan <- translation_plan(project, overrides, cfg$comparison_rules)
+  plan$pipeline <- translation_pipeline_coverage(project, plan$graph, plan$schedule)
   if (inherits(path, "sas2r_project")) validate_effective_qc(overrides, cfg$comparison_rules, plan$contracts)
   # The returned project represents this complete plan, including explicit
   # output overrides, so reusing it does not silently lose preflight settings.

@@ -3,6 +3,7 @@ test_that("parallel translation shares relative output paths across different wo
   dir.create(file.path(root, "programs"))
   for (i in 1:2) writeLines(sprintf("data work.out%d; retain x %d; run;", i, i),
     file.path(root, "programs", paste0("p", i, ".sas")))
+  cat("\n%let label=%qtrim(%qleft(example));\n", file = file.path(root, "programs", "p1.sas"), append = TRUE)
   helpers <- normalizePath(test_path(c("helper-agents.R", "helper-parallel.R")))
   # Bound the whole run: the regression otherwise waits forever for a reply in
   # the wrong directory. Real child workers and mock models exercise the public API.
@@ -18,6 +19,7 @@ test_that("parallel translation shares relative output paths across different wo
     responses <- list(reviewer = fixtures$valid_program_review_response())
     for (i in 1:2) responses[[paste0("translator:p", i)]] <- fixtures$valid_program_translation_response(
       code = sprintf("lib_write(data.frame(x = %d), 'work', 'out%d')", i, i))
+    responses[["translator:p1"]]$data$suspected_dependencies <- list("qtrim", "%QLEFT")
     result <- withCallingHandlers(sas2r::sas_translate("programs", out_dir = "migration_output",
       config = list(), llm = fixtures$parallel_test_llm(responses, delay = 0.2),
       outputs = c("work.out1", "work.out2"),
@@ -37,6 +39,9 @@ test_that("parallel translation shares relative output paths across different wo
   expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output")))
   expect_true(dir.exists(observed$bundle))
   expect_true(file.exists(observed$report))
+  report <- read_json_record(observed$report)
+  expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED", fixed = TRUE)
+  expect_length(report$diagnostics$parallel_deferred, 0L)
   expect_identical(observed$parallel$effective, 4L)
   expect_gte(observed$parallel$observed$peak_workers, 2L)
   started <- Filter(function(event) identical(event$event, "agent_started") &&

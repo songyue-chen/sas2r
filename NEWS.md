@@ -1,5 +1,18 @@
 # sas2r 0.4.6
 
+* Reconcile every scanned source file with the translation schedule and existing
+  bundle execution planner during preflight. Expose `$pipeline` with execution
+  roles, positions, exclusions and issues; stop before provider setup for missing
+  coverage, duplicate scheduled components, conflicting component names or known
+  dependency cycles.
+* Reuse the scanner's SAS macro classification for parallel dependency findings,
+  avoiding false blocks for supplied macros such as `qleft` and `qtrim` while
+  retaining unresolved program, macro and dataset findings.
+* Announce dependency blocks immediately and preserve the specific finding in
+  the final report. Share an explicit run outcome across the console, saved
+  `diagnostics/logs/run-outcome.log`, machine report and HTML start-page banner.
+  Distinguish blocked/failed runs, pending review, skipped or incomplete bundle
+  execution and component versus bundle fixer invocations without changing gates.
 * Resolve the migration output root before launching workers so relative paths
   refer to the same files in the coordinator and source-directory workers.
   Prevent a startup stall while workers wait for their first progress reply.

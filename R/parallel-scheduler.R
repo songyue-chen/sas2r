@@ -32,6 +32,9 @@ parallel_dependency_findings <- function(state, cid) {
   # lib.member names and %macro names can request dependency reconciliation.
   # Preserve other observations in the contract and existing semantic reviews.
   reported <- reported[grepl("^(%?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$", reported)]
+  # Use the scanner's canonical SAS macro classification, including supplied
+  # autocall macros. Qualified dataset names still require graph reconciliation.
+  reported <- reported[!tolower(sub("^%", "", reported)) %in% MACRO_BUILTINS]
   # A confirmation of an existing provider is not a graph correction. Anything
   # else needs source-based reconciliation; no guessed independence/order.
   graph <- state$graph
@@ -55,7 +58,13 @@ parallel_defer_finding <- function(state, cid, finding) {
     reason = "source_reconciliation_required")
   state$diagnostics$parallel_deferred <- union(state$diagnostics$parallel_deferred, affected)
   state$status <- "blocked"
-  state$status_reason <- "Dependency findings require source reconciliation; affected work deferred"
+  state$status_reason <- paste("Dependency findings require source reconciliation:", paste(
+    vapply(names(state$diagnostics$dependency_findings), function(id) paste0(id, " (",
+      paste(state$diagnostics$dependency_findings[[id]]$findings, collapse = ", "), ")"), ""),
+    collapse = "; "))
+  signal_immediate_coordinator_event("dependency_blocked", cid, severity = "error",
+    reason = paste("Dependency findings require source reconciliation:", paste(finding, collapse = ", ")),
+    affected = affected)
   state
 }
 
@@ -67,6 +76,8 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
   unresolved <- state$schedule$component_id[lengths(state$schedule$unresolved_dependencies) > 0L]
   blocked <- unique(c(unresolved, ids[vapply(providers, function(deps) any(deps %in% unresolved), logical(1))]))
   pending <- setdiff(pending, blocked)
+  if (length(blocked)) signal_immediate_coordinator_event("dependency_blocked", "dependency schedule",
+    severity = "error", reason = "Unresolved source dependencies", affected = blocked)
   done <- active <- character()
   drafts <- list()
   settle <- NULL
@@ -172,6 +183,8 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
     }
     if (!length(active) && length(pending)) {
       blocked <- union(blocked, pending)
+      signal_immediate_coordinator_event("dependency_blocked", "dependency schedule",
+        severity = "error", reason = "No dependency-ready components remain", affected = pending)
       break
     }
     if (length(active)) Sys.sleep(0.025)
@@ -180,7 +193,8 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
   if (length(blocked)) {
     state$diagnostics$parallel_deferred <- blocked
     state$status <- "blocked"
-    state$status_reason <- "Unresolved dependencies or a dependency cycle; affected components require review"
+    if (!length(state$diagnostics$dependency_findings))
+      state$status_reason <- "Unresolved dependencies or no dependency-ready components; affected work deferred"
   }
   state <- finalize_parallel_component_reviews(state, pool)
   structure(state, class = c("sas2r_program_pipeline_result", "sas2r_migration_state", "list"))

@@ -168,6 +168,27 @@ sas_write(result, "r_production/")
 
 Open `migration_output/<run_id>/START_HERE.html` first. It links the selected
 scripts, errors, output comparisons, and instructions for running or editing code.
+Its top banner summarizes the current run, the reason for any block or failure,
+affected components, and whether component fixes, bundle execution and bundle
+fixes ran. The same summary is printed to the console and saved in
+`<run_id>/diagnostics/logs/run-outcome.log`. An existing bundle or saved partial
+code does not mean the current run completed successfully.
+
+Before provider setup, the shared preflight checks that every scanned source file
+is accounted for in the pipeline. Inspect `sas_preflight(...)$pipeline$sources`
+for each file's components, translation positions and execution roles: main
+program, startup, called macro, included by its caller, or an explicit
+exclusion when no active source units remain. `$pipeline$execution_order` uses
+the same bundle planner as execution. Unexplained omissions, duplicate scheduled
+components, conflicting component names and known dependency cycles stop
+translation before model calls. For example, a regular `setup.sas` file cannot
+share the reserved startup component with `autoexec.sas`; preflight names both
+files and asks you to rename the conflicting source and rescan.
+Complete coverage is separate from input availability and translation quality;
+preflight can still report `needs_attention` for other findings.
+The main programs are listed in dependency order; this does not mean they are
+independent. A consumer waits for its upstream components during parallel
+translation, and the full bundle executes the main programs serially in that order.
 
 ```text
 <run_id>/
@@ -333,6 +354,17 @@ produce `validated`; it does not mean all three were compared.
 | `smoke ...: passed` | The program executed and any applicable source population checks passed. Inspect unverified checks separately; this does not establish agreement with SAS reference data. |
 | `smoke ...: failed -- blocked by upstream: ...` | Execution failed in the named dependency. The consumer is recorded as blocked and is not sent to the fixer for that upstream crash. |
 | `bundle ... assessed -- migration_ready` | The selected bundle met the requirements described above. Read reference coverage separately. |
+| `ERROR: coordinator ...: Dependency findings require source reconciliation: ...` | The named component and its consumers are deferred. Unaffected work may continue, but full-bundle execution is blocked. |
+| `ERROR: Run incomplete - blocked` | A required part of the migration could not complete or pass. The summary names the reason, recorded activity and next action. |
+| `ERROR: Run incomplete - failed` | An exception terminated the run. Available diagnostics are saved and the original exception is raised. |
+| `WARNING: Run requires review` | The run returned `needs_review`; inspect the outstanding review or execution evidence before use. |
+
+A controlled block still returns the `sas2r_translation` result and preserves
+available work. The error severity makes the incomplete outcome visible without
+aborting independent work immediately. The HTML uses a red banner for a blocked
+or failed run and an amber banner when review is required. Attempted execution,
+fixer invocation and passing validation are reported separately; invoking a fixer
+does not mean its patch was accepted or its findings resolved.
 
 Review findings can trigger a fixer even after mechanical checks and smoke tests
 pass. A repaired revision is checked, reviewed, and executed before selection.
@@ -505,6 +537,8 @@ before reusing a limit tuned to older ellmer.
 
 Unresolved dependency findings defer the affected branch while independent work
 continues. The run does not claim a successful full bundle for a deferred branch.
+Worker findings use the scanner's recognized SAS macro list, so supplied macro
+names such as `qleft` and `qtrim` do not create false missing dependencies.
 Automatic graph correction/reassignment is a separate planned change. Offline
 parity checks do not establish unchanged live-model quality or a particular speedup;
 parallel execution remains opt-in until the paired live comparison is completed.
