@@ -9,13 +9,15 @@ The package **does not require SAS** to translate or run generated R. Comparing
 results with SAS requires matching reference outputs. AI review does not replace
 independent programming or your organization's statistical QC procedures.
 
-[Quickstart](#quickstart) · [Parallel translation](#parallel-translation-opt-in) ·
+[Quickstart](#quickstart) · [AI models](#choosing-an-ai-model) ·
+[Parallel translation](#parallel-translation-opt-in) ·
 [FAQ](#frequently-asked-questions) · [Guides](#guides)
 
 ## What it helps with
 
-- Translate common DATA steps and procedures; use AI for more complex code and
-  called macros, with unsupported cases and unresolved findings reported.
+- Migrate connected SAS programs and called macros into R, including data
+  preparation, analysis derivations and reporting workflows. AI agents translate,
+  review and repair code, building on rule-based translation where available.
 - Compare generated datasets with supplied SAS references, including row
   alignment, missing values, metadata and configurable numeric tolerances.
 - Export editable R programs and supporting files that run without sas2r or an
@@ -25,17 +27,28 @@ independent programming or your organization's statistical QC procedures.
 
 ```mermaid
 flowchart TD
-    source["Check SAS programs, macros and dependencies"] --> translate["Translate and independently review each program"]
-    translate --> test["Test the R code and repair identified problems"]
-    test --> run["Complete outstanding reviews and run the full study pipeline"]
-    run --> check["Check required outputs and supplied SAS references"]
-    check --> report["Save R code, outputs and a report of results and issues"]
-    check -->|"Source-supported fix; repair allowance remains"| test
+    source["Preflight: check sources, inputs and dependencies"] --> coordinator["Coordinator: assign programs when dependencies are ready"]
+    coordinator --> translator
+    subgraph program["Each program or called macro"]
+        translator["AI translator: write R from SAS"] --> checks["Automated code checks"]
+        checks --> reviewer["AI reviewer: independently check R against SAS"]
+        reviewer --> execution["Run R and check execution"]
+        checks -->|"Code problem"| fixer["AI fixer: repair source-supported problems"]
+        reviewer -->|"Review finding"| fixer
+        execution -->|"Execution problem"| fixer
+        fixer -->|"Recheck revised code"| checks
+    end
+    execution -->|"Initial processing finished"| final_review["Complete reviews for the selected code"]
+    final_review --> study["Run the full study pipeline and check outputs / supplied references"]
+    study -->|"Source-supported repair; allowance remains"| fixer
+    study --> report["Save R, outputs, findings and run status"]
 ```
 
-The **translator** writes R, the **reviewer** checks it against SAS, and the
-**fixer** addresses identified problems. The package controls program order,
-repair limits and spending. This scheduling logic is called the *coordinator*.
+The **translator**, **reviewer** and **fixer** are separate AI roles. The
+**coordinator** is package logic that assigns work and controls program order,
+repair limits and spending. Repairs return through the checks; unresolved
+problems are reported rather than treated as successful translations. A
+reference difference prompts investigation against the SAS source before repair.
 
 Dependencies come from the SAS sources. For example, a summary program waits
 for the program that creates its analysis dataset. Independent translation and
@@ -82,17 +95,22 @@ outputs:              # what the migration must produce
     adam.adsl: data/reference/adsl.xpt
     adam.adae: data/reference/adae.xpt
 
-llm:                  # the AI model (see the provider guide below)
-  provider: anthropic
-  model: claude-sonnet-4-6
-  reasoning_effort: high
-  max_output_tokens: 32768
+llm:                  # a recommended Flash starting profile
+  provider: deepseek
+  auth_mode: api_key
+  model: deepseek-flash
+  max_output_tokens: 131072
   capabilities:
     structured_output: fallback
     tool_calling: native
-  timeout_seconds: 900
+    reasoning_effort: unsupported # connector cannot set effort; server thinking stays on
+  timeout_seconds: 1800
   max_tries: 1
 ```
+
+Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemini
+Flash or another provider, replace the `llm:` block with its complete
+[provider profile](docs/llm-providers.md#2-configuration-examples-_sas2ryml).
 
 ### 3. Check the setup offline
 
@@ -199,10 +217,39 @@ and [provider settings](docs/llm-providers.md#recommended-starting-settings).
 
 ## Choosing an AI model
 
-Evaluate Gemini Flash or DeepSeek Flash on representative programs first;
-frontier models are available when the first model leaves unresolved errors.
-Keep the same review and output checks with every model. A fast answer or a
-successful connection does not establish correct translation.
+**Start with Gemini Flash or DeepSeek Flash.** They offer a practical balance
+of speed, cost and coding capability, making them our recommended first choice
+for translation trials. Confirm accuracy on representative study programs with
+the same code review, execution and output checks you would use with a frontier
+model. Use a frontier model when the first choice leaves unresolved translation
+problems. See the current [Gemini model documentation](https://ai.google.dev/gemini-api/docs/latest-model)
+and [DeepSeek model and pricing information](https://api-docs.deepseek.com/quick_start/pricing/).
+
+### Recommended starting settings
+
+These are suggested profiles, not automatic package defaults. Model availability
+and settings were checked on **September 18, 2026**.
+
+| Starting choice | Model | Reasoning | Output token ceiling | Request timeout |
+| --- | --- | --- | ---: | ---: |
+| Gemini Flash | `gemini-3.8-flash` | `high` | 65536 | 900 seconds |
+| DeepSeek Flash | `deepseek-flash` | Keep server thinking default | 131072 | 1800 seconds |
+| OpenAI alternative | `gpt-5.6-terra` | `high` | 32768 | 900 seconds |
+| Anthropic alternative | `claude-sonnet-4-6` | `high` with adaptive thinking | 32768 | 900 seconds |
+
+- Set `llm.max_output_tokens` and `llm.timeout_seconds` to the values above.
+  The larger output allowances leave room for reasoning and complete R code;
+  they are ceilings, not amounts charged on every call. Timeouts apply to each
+  request, not the entire migration.
+- Use `max_tries: 1` and `capabilities.tool_calling: native`. Set
+  `capabilities.structured_output: fallback` for Gemini, DeepSeek and Anthropic,
+  or `native` for OpenAI. Leave `temperature` and `top_p` unset.
+- With the documented DeepSeek connector, omit a top-level `reasoning_effort`
+  and use `capabilities.reasoning_effort: unsupported`, as in the quickstart.
+  This retains server-default thinking; it does not switch reasoning off.
+- Start with `migration.max_parallel_translations: 1`, then try `2` with the
+  same programs and checks. Increase further only when provider quotas and
+  available memory permit.
 
 Use the [provider guide](docs/llm-providers.md) for complete connection profiles,
 model availability checks, output allowances, timeouts and tuning guidance.
@@ -226,25 +273,95 @@ study material; generated R is not a filesystem sandbox.
 
 ## Frequently asked questions
 
-**Do I need SAS reference outputs to start?** No, but without them the package
-cannot compare R results with SAS. Execution and review provide different evidence.
+### What should I prepare before translating a study?
 
-**Will it correct my analysis definitions or make ADaM CDISC compliant?** It
-follows the supplied SAS. Check study definitions against the SAP/specifications
-and perform your usual CDISC and independent statistical QC separately.
+Provide the SAS programs, called macros and include files, the input data
+locations, and the list of required outputs. Add matching SAS reference outputs
+if available. Use `_sas2r.yml` to describe the study, then run `sas_preflight()`
+to find setup problems before AI calls. See the [quickstart](#quickstart).
 
-**Are tables and figures fully checked?** Producing a readable file is
-insufficient. Review populations, denominators, statistics, labels and presentation.
+### Do I need SAS installed? Can I start without SAS reference outputs?
 
-**Can dependent programs translate together?** A program waits for its required
-upstream programs. Independent programs and macros can use the other workers.
+SAS is not required to translate code or run the generated R. Without reference
+outputs, the package can still review code, test execution and apply configured
+output checks, but it cannot compare results with SAS. A `migration_ready`
+result is different from `validated`; see [the four statuses](#the-four-statuses).
+For comparisons, use SAS outputs produced from the same programs, inputs,
+macros and parameters.
 
-**Can our team edit and run the exported R?** Yes. Keep the complete export,
-install its listed R packages and configure input paths. Manual changes need new
-QC and do not automatically update the saved migration report.
+### Does the AI reviewer replace independent programming or statistical QC?
 
-More questions about setup, validation, interrupted runs and privacy are answered
-in the [study-team FAQ](docs/running-migrations.md#frequently-asked-questions).
+No. It reviews translated R against the SAS source; it does not independently
+implement the analysis from the protocol, SAP or programming specifications.
+Your team's independent review and QC procedures still apply. The saved code,
+findings and comparison reports help reviewers inspect the work.
+
+### Does `validated` mean every dataset and analysis is correct?
+
+No. It means the configured reference comparisons passed within the declared
+tolerances, alongside the package's required checks. An output without a
+reference has not received that comparison. Read the report's coverage and
+unresolved findings; the status does not establish that the original SAS,
+the analysis specification or every statistical result is correct.
+
+### Will sas2r correct my ADaM derivations or make them CDISC compliant?
+
+The translation follows the supplied SAS. It does not independently decide
+whether a population definition, baseline rule, imputation or analysis method is
+appropriate for the study. Review those decisions against the SAP and dataset
+specifications, and perform your usual CDISC checks separately. A problem in
+the original SAS can remain a problem in a faithful translation.
+
+### Are tables, listings and figures checked as fully as datasets?
+
+Dataset comparisons check the configured reference data and tolerances. A
+readable table or figure file alone does not establish that its content is
+correct. Review the analysis populations, denominators, statistics, rounding,
+labels and presentation, as applicable. See the
+[output-evidence guide](docs/output-evidence.md) for comparison coverage.
+
+### Can dependent programs translate at the same time?
+
+A program waits for its required upstream programs to finish initial translation
+and checks. For example, a summary program waits for the derivation it reads.
+Unrelated programs or macros can use the other available workers. The full
+study run still follows dependency order. More workers therefore do not imply
+the same multiple of speed improvement. Parallel mode retains the existing
+checks, but unchanged live-model quality and speedup have not yet been
+established by a paired study run. See [parallel translation](#parallel-translation-opt-in).
+
+### What should I do when a run is blocked or a comparison fails?
+
+Start with the console message and the saved `START_HERE.html` report, when
+available. They identify the reason, what ran and what still needs attention.
+Check input paths, missing programs or macros, and the reported code error.
+For comparison failures, first confirm that the SAS reference uses the same
+inputs and specifications. Do not change R code merely to match a reference
+that represents a different analysis. See
+[reference differences](docs/running-migrations.md#reference-differences-translation-error-or-different-specification).
+
+### Must I restart everything after an interruption or a fix?
+
+Use `resume = TRUE` to reuse compatible saved work. Changed source code, inputs
+or other relevant settings can require fresh translation or checks. Repair
+allowances and recorded spending are retained; resume does not reset them.
+See [resume and limit provider calls](docs/running-migrations.md#resume-and-limit-provider-calls).
+
+### Can patient data reach the AI provider?
+
+Data processing runs locally, and the default `agent_evidence = "code_only"`
+omits explicit dataset previews. However, SAS source, comments and error messages
+can contain patient information and can be sent to the configured provider.
+`code_only` does not de-identify them. Use your organization's approved endpoint
+and review the [privacy details](docs/model-privacy.md)
+before using confidential study material.
+
+### Can our programmers edit and run the R code without sas2r or AI?
+
+Yes. Export with `sas_write()` and keep the complete exported set of scripts and
+supporting files. Its guide lists required R packages and input paths; `run.R`
+launches the programs in order without sas2r or an AI key. Human edits and manual
+reruns need new QC and do not automatically update the saved migration report.
 
 ## Guides
 
