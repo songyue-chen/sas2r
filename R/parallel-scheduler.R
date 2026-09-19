@@ -29,12 +29,16 @@ parallel_dependency_findings <- function(state, cid) {
   contract <- state$selected_revisions[[cid]]$contract
   reported <- unique(trimws(c(contract$suspected_dependencies, contract$discovered_dependencies)))
   # These schema fields also contain prose assumptions. Only plain identifiers,
-  # lib.member names and %macro names can request dependency reconciliation.
+  # lib.member names, %macro names and &variable names can request reconciliation.
   # Preserve other observations in the contract and existing semantic reviews.
-  reported <- reported[grepl("^(%?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$", reported)]
+  reported <- reported[grepl("^(%?[A-Za-z_][A-Za-z0-9_]*|&[A-Za-z_][A-Za-z0-9_]*[.]?|[A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$", reported)]
   # Use the scanner's canonical SAS macro classification, including supplied
-  # autocall macros. Qualified dataset names still require graph reconciliation.
+  # autocall macros. Environment resources and configured path-only symbols do
+  # not add a producer to the schedule; their translation still needs review.
   reported <- reported[!tolower(sub("^%", "", reported)) %in% MACRO_BUILTINS]
+  paths <- configured_path_dependency_symbols(state$project, cid)
+  resources <- c(SAS_METADATA_RESOURCES, paths, paste0("&", paths), paste0("&", paths, "."))
+  reported <- reported[!tolower(reported) %in% resources]
   # A confirmation of an existing provider is not a graph correction. Anything
   # else needs source-based reconciliation; no guessed independence/order.
   graph <- state$graph
@@ -69,6 +73,10 @@ parallel_defer_finding <- function(state, cid, finding) {
 }
 
 run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
+  # A resumed run must reassess saved observations against the current source
+  # and resolver. The previous run's report retains its original blockers.
+  state$diagnostics$dependency_findings <- NULL
+  state$diagnostics$parallel_deferred <- NULL
   pool <- parallel_new_pool(state)
   on.exit(parallel_stop_pool(pool), add = TRUE)
   pending <- parallel_component_order(state$graph, ids)

@@ -1,5 +1,11 @@
 # sas2r 0.5.0
 
+* Reconcile worker dependency findings with documented SAS session metadata
+  resources and configured LIBNAME path bindings. Avoid treating those resources
+  as missing study-data producers; preserve findings for unknown dependencies
+  and variables used outside resolved paths. Share this context with all agent
+  roles, reassess dependency blocks on parallel resume, and retain the existing
+  review, execution and output checks.
 * Explain in the README FAQ why two or four translation workers do not promise
   half or one-quarter of the total run time, with an illustrative timing example.
 * Keep the README focused on getting started, with general study-programming

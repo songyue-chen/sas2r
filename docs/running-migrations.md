@@ -472,6 +472,17 @@ during translation defer the affected branch while independent work continues.
 Full-bundle execution stays blocked while a branch is deferred.
 Worker findings use the scanner's recognized SAS macro list, so supplied macro
 names such as `qleft` and `qtrim` do not create false missing dependencies.
+[SAS session metadata views](https://support.sas.com/documentation/cdl/en/sqlproc/63043/HTML/default/n02s19q65mw08gn140bwfdh7spx7.htm), such as `SASHELP.VEXTFL` and
+`DICTIONARY.EXTFILES`, are environment queries rather than missing study-data
+producers. Likewise, a macro variable used only in a LIBNAME path does not need
+another program when the library resolver has already selected its configured
+path. This uses the actual source and library binding, regardless of the
+variable's name. Variables needed elsewhere, unknown datasets and missing
+programs/macros still require reconciliation. These classifications preserve
+the reported observations and do not waive review, execution or output checks;
+unsupported environment-query behavior can still prevent a successful run.
+Resuming parallel translation reassesses dependency findings; a prior run's
+block is not carried forward without that check.
 Automatic graph correction/reassignment is a separate planned change. Offline
 parity checks do not establish unchanged live-model quality or a particular speedup;
 parallel execution remains opt-in until the paired live comparison is completed.
