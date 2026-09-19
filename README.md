@@ -225,6 +225,10 @@ model. Use a frontier model when the first choice leaves unresolved translation
 problems. See the current [Gemini model documentation](https://ai.google.dev/gemini-api/docs/latest-model)
 and [DeepSeek model and pricing information](https://api-docs.deepseek.com/quick_start/pricing/).
 
+For OpenAI, start with **GPT-5.6 Luna**, which is designed for cost-sensitive,
+high-volume work. Apply the same study-level accuracy checks.
+See the [official Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+
 ### Recommended starting settings
 
 These are suggested profiles, not automatic package defaults. Model availability
@@ -234,7 +238,7 @@ and settings were checked on **September 18, 2026**.
 | --- | --- | --- | ---: | ---: |
 | Gemini Flash | `gemini-3.8-flash` | `high` | 65536 | 900 seconds |
 | DeepSeek Flash | `deepseek-flash` | Keep server thinking default | 131072 | 1800 seconds |
-| OpenAI alternative | `gpt-5.6-terra` | `high` | 32768 | 900 seconds |
+| OpenAI Luna | `gpt-5.6-luna` | `high` | 32768 | 900 seconds |
 | Anthropic alternative | `claude-sonnet-4-6` | `high` with adaptive thinking | 32768 | 900 seconds |
 
 - Set `llm.max_output_tokens` and `llm.timeout_seconds` to the values above.

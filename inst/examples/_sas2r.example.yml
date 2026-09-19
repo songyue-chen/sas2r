@@ -136,11 +136,11 @@ llm:
 #   timeout_seconds: 1800
 #   max_tries: 1
 
-# Alternative: OpenAI (OPENAI_API_KEY)
+# Alternative: OpenAI Luna — cost-focused starting model (OPENAI_API_KEY)
 # llm:
 #   provider: openai
 #   auth_mode: api_key
-#   model: gpt-5.6-terra
+#   model: gpt-5.6-luna
 #   reasoning_effort: high
 #   max_output_tokens: 32768
 #   capabilities:

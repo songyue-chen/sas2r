@@ -55,6 +55,7 @@ No test in this package contacts a provider, starts an OAuth flow, invokes a CLI
 translation/review/repair checks. Frontier models remain available for programs
 where the first model leaves material source-based findings. This is a practical
 starting strategy, not a guarantee that any model is sufficient for every study.
+For OpenAI users, start with GPT-5.6 Luna using the profile below.
 The complete provider profiles below are the shared reference for the README
 and migration guides.
 Copy one complete `llm:` block; the model must be available to your account.
@@ -69,7 +70,7 @@ verifies explicit parameters against the installed connector and selected model.
 | --- | --- | ---: | ---: | --- |
 | Gemini / `gemini-3.8-flash` | `high` | 65536 | 900 | `fallback` |
 | DeepSeek / `deepseek-flash` | Keep server thinking default; omit explicit effort on the documented ellmer route | 131072 | 1800 | `fallback` |
-| OpenAI / `gpt-5.6-terra` | `high` | 32768 | 900 | `native` |
+| OpenAI / `gpt-5.6-luna` | `high` | 32768 | 900 | `native` |
 | Anthropic / `claude-sonnet-4-6` | `high` with adaptive thinking | 32768 | 900 | `fallback`; `cache: 1h` |
 
 Use `tool_calling: native` and `max_tries: 1` with all four profiles. Leave
@@ -150,7 +151,7 @@ Sources: [Gemini model/settings](https://ai.google.dev/gemini-api/docs/latest-mo
 [Gemini quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
 [DeepSeek request parameters](https://api-docs.deepseek.com/api/create-chat-completion/),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
-[OpenAI Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), and
+[OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), and
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost).
 Provider facts describe API capabilities; the exact ceilings/timeouts above are
 sas2r starting recommendations, subject to connector and account verification.
@@ -158,6 +159,17 @@ sas2r starting recommendations, subject to connector and account verification.
 Never commit literal API keys, tokens, or private secrets into `_sas2r.yml`. Always supply secrets via shell environment variables. Every configuration should specify an explicit `model` or `tiers` definition rather than relying on changing library defaults.
 
 ### OpenAI
+
+**GPT-5.6 Luna is the recommended OpenAI starting model.** OpenAI describes it
+as a model for cost-sensitive, high-volume workloads. It supports the Responses
+API, function calling and structured output. `high` reasoning is supported;
+the model's default is `medium`. Its maximum output is **128,000 tokens**, so
+the **32,768** allowance below is a starting ceiling, not the model limit.
+The **900-second** timeout is our per-request recommendation. Verify translation
+quality on representative programs with the same review and output checks.
+Facts checked September 18, 2026 against the
+[official Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
@@ -165,7 +177,7 @@ export OPENAI_API_KEY="sk-..."
 llm:
   provider: openai
   auth_mode: api_key
-  model: gpt-5.6-terra
+  model: gpt-5.6-luna
   reasoning_effort: high
   max_output_tokens: 32768
   capabilities:
@@ -515,7 +527,7 @@ Checked against the installed ellmer 0.4.2 connector code on September 12, 2026:
 
 | Provider/route | What happens to `reasoning_effort: high` |
 |---|---|
-| OpenAI, GPT-5.6 Terra | Forwarded to the Responses API reasoning effort. |
+| OpenAI, GPT-5.6 Luna | Forwarded to the Responses API reasoning effort. |
 | Anthropic, Claude Sonnet/Opus 4.6 | Enables `thinking: {type: adaptive}` and `output_config.effort: high`. |
 | Gemini / Vertex, Gemini 3 thinking models | Forwarded as `thinkingConfig.thinkingLevel: high`. |
 | Posit, Claude route | Uses the Anthropic mapping above. Posit's OpenAI-compatible route drops effort. |
@@ -525,7 +537,7 @@ Checked against the installed ellmer 0.4.2 connector code on September 12, 2026:
 | GitHub | Retired; do not start new translation runs with it. |
 
 Sources for model behavior:
-[OpenAI Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
 [Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
