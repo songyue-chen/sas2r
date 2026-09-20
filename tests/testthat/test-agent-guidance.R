@@ -172,9 +172,11 @@ test_that("all actual role requests receive the same source context without refe
     expect_match(messages, guidance$text, fixed = TRUE)
     expect_match(messages, agent_guidance_policy(), fixed = TRUE)
     expect_match(messages, "check <- function() 1L", fixed = TRUE)
+    # Every allowlisted package is named with its observed version or as not
+    # installed; CI runners do not carry every listed package.
     expect_match(messages, "Allowlisted packages", fixed = TRUE)
-    expect_match(messages, "haven [0-9]")
-    expect_match(messages, "stringr [0-9]")
+    expect_match(messages, "haven ([0-9]|not installed)")
+    expect_match(messages, "stringr ([0-9]|not installed)")
     expect_identical(grepl("cite its current context_fact_id", messages, fixed = TRUE),
       identical(llm, reviewer))
     # The style preference is for the roles that write code; the reviewer judges semantics only.
