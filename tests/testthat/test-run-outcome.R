@@ -1,4 +1,4 @@
-test_that("a blocked parallel run names the finding immediately and reports skipped bundle work", {
+test_that("a continuing parallel run names warnings and reports skipped bundle work", {
   fx <- repair_workflow_fixture(n = 3L, failures = integer())
   # RETAIN requires agent translation, so the public API actually receives the
   # worker's dependency finding instead of keeping a complete baseline program.
@@ -22,18 +22,19 @@ test_that("a blocked parallel run names the finding immediately and reports skip
     max_program_repair_rounds = 1L, max_bundle_repair_rounds = 1L,
     outputs = c("work.out2", "work.out3")),
     sas2r_progress = function(event) events[[length(events) + 1L]] <<- event), type = "message")
-  expect_identical(result$status, "blocked")
+  expect_identical(result$status, "needs_review")
   expect_match(result$status_reason, "p01 (work.missing)", fixed = TRUE)
-  expect_setequal(result$diagnostics$parallel_deferred, c("p01", "p02"))
-  blocked <- which(vapply(events, function(e) identical(e$event, "dependency_blocked"), logical(1)))
+  expect_setequal(result$diagnostics$dependency_findings$p01$affected, c("p01", "p02"))
+  expect_setequal(names(result$component_evidence), c("p01", "p02", "p03"))
+  blocked <- which(vapply(events, function(e) identical(e$event, "dependency_warning"), logical(1)))
   expect_length(blocked, 1L)
-  expect_identical(events[[blocked]]$severity, "error")
-  expect_true(any(vapply(events[seq.int(blocked + 1L, length(events))], function(e)
+  expect_identical(events[[blocked]]$severity, "warning")
+  expect_true(any(vapply(events, function(e)
     identical(e$event, "program_smoke_passed") && identical(e$component_id, "p03"), logical(1))))
   log <- paste(output, collapse = "\n")
-  expect_match(log, "ERROR: coordinator  p01", fixed = TRUE)
-  expect_match(log, "Unaffected work may continue", fixed = TRUE)
-  expect_match(log, "ERROR: Run incomplete - blocked", fixed = TRUE)
+  expect_match(log, "WARNING: coordinator  p01", fixed = TRUE)
+  expect_match(log, "Translation continues", fixed = TRUE)
+  expect_match(log, "WARNING: Run requires review", fixed = TRUE)
   expect_match(log, "Bundle execution: NOT RUN (0 attempts)", fixed = TRUE)
   expect_match(log, "Bundle-level fixes: NOT INVOKED", fixed = TRUE)
   expect_match(log, "Component fixes: INVOKED (1 fixer invocation;", fixed = TRUE)
@@ -42,14 +43,14 @@ test_that("a blocked parallel run names the finding immediately and reports skip
   paths <- migration_paths(result$out_dir, result$run_id)
   saved <- paste(readLines(file.path(paths$logs, "run-outcome.log")), collapse = "\n")
   html <- paste(readLines(paths$start_here), collapse = "\n")
-  expect_identical(report$outcome$severity, "error")
-  expect_match(html, '<section class="outcome error"', fixed = TRUE)
-  for (text in c("Run incomplete - blocked", "p01 (work.missing)",
-                 "Bundle execution: NOT RUN (0 attempts)", "Required validation: NOT COMPLETED")) {
+  expect_identical(report$outcome$severity, "warning")
+  expect_match(html, '<section class="outcome warning"', fixed = TRUE)
+  for (text in c("Run requires review", "p01 (work.missing)",
+                 "Bundle execution: NOT RUN (0 attempts)", "Required validation: REVIEW REQUIRED")) {
     expect_match(saved, text, fixed = TRUE)
     expect_match(html, text, fixed = TRUE)
   }
-  expect_lt(regexpr("Run incomplete - blocked", html, fixed = TRUE)[1L],
+  expect_lt(regexpr("Run requires review", html, fixed = TRUE)[1L],
     regexpr('id="components"', html, fixed = TRUE)[1L])
 })
 

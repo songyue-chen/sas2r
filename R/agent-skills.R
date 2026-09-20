@@ -609,6 +609,7 @@ render_component_libraries <- function(project, component_id) {
              "; status=", b$status, "; selected_path=", b$selected_path,
              "; origin=", b$selection_origin, "; reason=", b$fallback_reason)
     }, character(1)),
-    "Do not replace an established binding with a guessed relative path. Explicit later reassignments still apply."
+    "Do not replace an established binding with a guessed relative path. Explicit later reassignments still apply.",
+    render_dependency_resources(project, component_id)
   ), collapse = "\n")
 }

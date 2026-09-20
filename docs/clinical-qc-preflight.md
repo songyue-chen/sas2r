@@ -75,7 +75,11 @@ earlier producer (`no_producer`), a read whose only producer occurs later in
 the same file (`backward_dependency`), and data with a known in-project producer
 (`generated`). An APPEND base with no existing input is `created_if_missing`: SAS
 creates that base on its first append. Other WORK members need an earlier
-creation step, not a disk file. Generated inputs still depend on that
+creation step, not a disk file. `no_producer` and `backward_dependency` are
+static-analysis warnings, not proof that an input is unavailable: a translated
+macro may create it. They allow execution to test that behavior. A failed file
+lookup (`missing`) or unavailable library binding (`unresolved`) still defers
+affected execution. Generated inputs still depend on that
 producer running successfully. `unsupported` lists constructs the deterministic
 emitter defers; the AI workflow may translate them. Runtime-only restrictions,
 data values, reference comparability, and model credentials remain unchecked.
@@ -221,3 +225,19 @@ historical `comparison_rules$tolerance` field is ignored with a warning.
 Use a single YAML document and `true`/`false` booleans. Some YAML writers emit
 `yes`/`no` by default; convert those boolean values to `true`/`false` before
 loading the configuration. Metadata keys such as `N` and `Y` remain strings.
+
+## Warnings and translation-only work
+
+Preflight is a readiness report. Missing input files, source includes/macros and
+uncertain dependency order normally produce warnings while available source
+continues translating. Inspect `check$readiness$warnings` for affected components,
+source locations, consequences and suggested actions. Documented SAS metadata
+reads have input status `environment`; they do not require a study data file.
+
+Use `sas_translate(..., execute = FALSE)` when you only want translated code.
+Leaving references unconfigured does not select that mode: programs can run and
+undergo output checks without SAS reference comparisons. Missing source cannot be
+invented; affected translations and downstream assumptions remain provisional.
+Missing execution prerequisites defer execution, while missing configured
+references defer comparison. No active source, unusable configuration and
+unexplained pipeline omissions still stop the run before translation.

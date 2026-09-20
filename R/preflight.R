@@ -11,8 +11,8 @@
 #'   output root, as used by `sas_translate()`, without creating it.
 #' @return A `sas2r_preflight` list with `sources`, point-of-use `libraries`,
 #'   `inputs` (available, missing, unresolved, no_producer, backward_dependency,
-#'   created_if_missing, or generated), `references`, `unsupported`,
-#'   scanner `findings`, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
+#'   created_if_missing, generated, or environment), `references`, `unsupported`,
+#'   scanner `findings`, shared `readiness` warnings, `outputs`, `destinations`, `budget`, `next_actions`, and `model_calls`.
 #'   `called_macros` lists reachable search-path macro definitions and their
 #'   standalone R and interface-test paths.
 #'   `pipeline` reconciles every scanned file with the translation schedule and
@@ -44,20 +44,17 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
   plan <- setup$plan
   contracts <- plan$contracts
   effective <- effective_librefs(project)
-  inputs <- preflight_inputs(project, effective)
+  inputs <- project$readiness$inputs
   unsupported <- preflight_unsupported(project)
   limits <- c("mode", usage_limit_names(), "pricing_source")
-  reference_paths <- vapply(seq_len(nrow(contracts)), function(i)
-    output_reference_path(contracts[i, ], cfg$comparison_rules), character(1))
-  keep_refs <- which(!is.na(reference_paths) & nzchar(reference_paths))
-  references <- tibble::tibble(
-    target_key = contracts$target_key[keep_refs],
-    path = reference_paths[keep_refs],
-    status = c("missing", "available")[1L + as.integer(
-      file.exists(reference_paths[keep_refs]) & !dir.exists(reference_paths[keep_refs]))]
-  )
+  references <- project$readiness$references
   findings <- project$flags
   unresolved <- findings$kind %in% preflight_blocking_findings()
+  for (lib in c("sashelp", "dictionary")) {
+    reads <- startsWith(tolower(inputs$dataset), paste0(lib, "."))
+    if (any(reads) && all(inputs$status[reads] == "environment"))
+      unresolved[findings$kind == "libref_undeclared" & tolower(findings$detail) == lib] <- FALSE
+  }
   needs_attention <- any(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency")) || any(unresolved) || any(references$status == "missing") || length(plan$pipeline$issues) > 0L
   paths <- migration_paths(root, "<run_id>")
   destinations <- list(root = root, run = paths$run_root, state = paths$state,
@@ -71,11 +68,12 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     sources = sources, called_macros = called_macro_units(project), libraries = effective$bindings,
     configured_libraries = effective$seed, inputs = inputs, references = references,
     unsupported = unsupported, findings = findings, outputs = contracts,
-    schedule = plan$schedule, pipeline = plan$pipeline, project = project, destinations = destinations,
+    schedule = plan$schedule, pipeline = plan$pipeline, readiness = project$readiness,
+    project = project, destinations = destinations,
     budget = as.list(budget)[limits], model_calls = 0L,
     max_parallel_translations = setup$max_parallel_translations,
     next_actions = c(
-      if (length(plan$pipeline$issues)) "Resolve the pipeline coverage gaps or dependency cycles; inspect $pipeline$sources and $pipeline$issues.",
+      if (length(plan$pipeline$issues)) "Resolve the pipeline coverage gaps; inspect $pipeline$sources and $pipeline$issues.",
       if (any(inputs$status == "missing")) "Supply missing input members or correct their library paths; inspect $inputs$searched_paths.",
       if (any(inputs$status == "backward_dependency")) "Move the producer before its read in the same source file; an existing output does not establish correct execution order.",
       if (any(inputs$status == "no_producer")) "Identify or supply the earlier step that creates the WORK input; inspect $inputs source locations.",
@@ -85,6 +83,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
       if (nrow(unsupported)) "Review deferred constructs; they require AI translation or manual implementation."
     ),
     notes = c("Static inspection only; datasets and generated programs were not executed.",
+              "Missing resources normally allow translation with warnings; affected execution remains unavailable.",
               "Budget matches sas_translate arguments; config$budget is not used by that entry point.",
               "Run and attempt identifiers are assigned when translation starts.")
   ), class = "sas2r_preflight")
@@ -104,6 +103,7 @@ preflight_inputs <- function(project, effective) {
   create_if_missing <- keys %in% keys[append_targets]
   for (i in seq_along(reads)) {
     row <- reads[i]
+    if (tolower(lineage$dataset[row]) %in% SAS_METADATA_RESOURCES) { status[i] <- "environment"; next }
     path <- paths[row]
     if (is.na(path) || !nzchar(path)) next
     if (producers$backward[row]) { status[i] <- "backward_dependency"; next }
@@ -147,6 +147,7 @@ print.sas2r_preflight <- function(x, ...) {
   cli::cli_text("{nrow(x$sources)} source files; {nrow(x$outputs)} output targets; 0 model calls")
   for (line in pipeline_coverage_lines(x$pipeline)) cli::cli_text("{line}")
   for (issue in x$pipeline$issues) cli::cli_text("ERROR: {issue}")
+  for (line in readiness_warning_lines(x$readiness)) cli::cli_text("WARNING: {line}")
   if (nrow(x$called_macros)) {
     cli::cli_text("{nrow(x$called_macros)} called macro dependencies:")
     print(x$called_macros[c("name", "file", "staged_file")])

@@ -42,7 +42,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       evidence_ids = packet$evidence_ids
     ),
     error = function(e) {
-      if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+      if (critical_translation_error(e)) stop(e)
       list(status = "repair_failed", message = conditionMessage(e))
     }
   )
@@ -84,7 +84,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     state <- refreshed$state
     refreshed$reasons
   }, error = function(e) {
-    if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+    if (critical_translation_error(e)) stop(e)
     paste("candidate review unavailable:", conditionMessage(e))
   })
   if (length(rejection)) {

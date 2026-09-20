@@ -4,6 +4,12 @@
 #' On platforms or filesystems where rename cannot overwrite an existing destination,
 #' safely falls back to copy with overwrite.
 #'
+#' The callback serializes an already prepared artifact. Callback errors,
+#' including serialization errors, mean the artifact could not be persisted
+#' and are raised as `sas2r_write_failed` with the original condition as parent.
+#' This class does not diagnose a disk-space or permissions problem; the
+#' underlying condition explains the cause.
+#'
 #' @param write_fn Function taking a file path argument to execute the write.
 #' @param target_file Target destination path.
 #' @param pattern Tempfile prefix pattern.
@@ -13,7 +19,10 @@ atomic_write_file <- function(write_fn, target_file, pattern = "atomic_") {
   dir.create(dirname(target_file), showWarnings = FALSE, recursive = TRUE)
   tf <- tempfile(pattern = pattern, tmpdir = dirname(target_file))
   on.exit(if (file.exists(tf)) unlink(tf), add = TRUE)
-  write_fn(tf)
+  tryCatch(write_fn(tf), error = function(error) {
+    cli::cli_abort("failed to write {.file {target_file}}: {conditionMessage(error)}",
+      class = "sas2r_write_failed", parent = error)
+  })
   ok <- tryCatch(file.rename(tf, target_file), error = function(e) FALSE)
   if (!isTRUE(ok)) {
     copy_ok <- tryCatch(file.copy(tf, target_file, overwrite = TRUE), error = function(e) FALSE)

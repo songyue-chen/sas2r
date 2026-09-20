@@ -71,7 +71,7 @@ review_helper_consumers <- function(state, retained, components, round,
         execution = execution), llm = state$reviewer_llm,
         usage = state$usage_budget, paths = state$paths, round = round,
         history = state$histories[[cid]]), error = function(e) {
-          if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+          if (critical_translation_error(e)) stop(e)
           list(verdict = "review_unavailable", reason = conditionMessage(e),
             history = record_review_unavailable(state$histories[[cid]], conditionMessage(e)))
         })
@@ -109,7 +109,7 @@ refresh_component_runtime_binding <- function(state, component_id) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   rev$r_path <- file.path(dir, "program.R")
   rev$contract_path <- file.path(dir, "contract.json")
-  writeLines(rev$r_code, rev$r_path)
+  atomic_write_file(function(path) writeLines(rev$r_code, path), rev$r_path)
   atomic_write_json(rev$contract, rev$contract_path)
   # Retain the smoke result only as a cache candidate; its full local execution
   # identity must match before it can be reused or grant coverage.

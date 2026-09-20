@@ -45,6 +45,7 @@ new_migration_state <- function(
   plan <- plan %||% translation_plan(p, p$config$outputs)
   graph <- plan$graph
   schedule <- plan$schedule
+  p$readiness <- p$readiness %||% translation_readiness(p, plan)
   attempt <- init_attempt(paths, kind = "smoke", sequence = 1L)
 
   staged_dir <- file.path(attempt$attempt_dir, "staged")
@@ -258,6 +259,7 @@ process_program_component <- function(
     cli::cli_abort("{.arg component_id} must be a non-empty string", class = "sas2r_invalid_argument")
   }
 
+  tryCatch({
   state$component_stage[[component_id]] <- "processing"
   state <- initialize_program_component(state, component_id)
 
@@ -284,7 +286,7 @@ process_program_component <- function(
         consumer_check <- tryCatch(check_helper_consumers(state, prior_candidate$retained_state,
           setdiff(names(state$selected_revisions), component_id), execute),
           error = function(e) {
-            if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+            if (critical_translation_error(e)) stop(e)
             list(state = state, reasons = conditionMessage(e))
           })
         state <- consumer_check$state
@@ -366,7 +368,7 @@ process_program_component <- function(
         config = state$config
       ),
       error = function(e) {
-        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+        if (critical_translation_error(e)) stop(e)
         list(status = "repair_failed", message = conditionMessage(e))
       }
     )
@@ -424,6 +426,10 @@ process_program_component <- function(
   state$component_stage[[component_id]] <- "settled"
   state$active_revision <- state$selected_revisions[[component_id]]$revision_id
   state
+  }, error = function(error) {
+    # Preserve the last completed phase if a later component step fails.
+    record_component_failure(state, component_id, error)
+  })
 }
 
 #' Run the full program pipeline with graph-driven targeted revisit
@@ -453,6 +459,13 @@ run_program_pipeline <- function(
 
   schedule <- state$schedule %||% stable_dependency_schedule(state$graph)
   cids <- if (nrow(schedule) > 0L) schedule$component_id else names(state$selected_revisions) %||% character()
+  tryCatch({
+  # Resume reassesses observations, rather than carrying forward old blocks.
+  state$diagnostics[c("parallel_deferred", "dependency_findings", "component_failures",
+    "execution_deferred")] <- NULL
+  state$project$dependency_findings <- NULL
+  for (cid in names(state$selected_revisions)) state <- record_dependency_finding(
+    state, cid, parallel_dependency_findings(state, cid))
 
   if ((state$parallel$effective %||% 1L) > 1L) {
     return(run_parallel_program_pipeline(state, cids, execute, max_program_repair_rounds))
@@ -480,12 +493,13 @@ run_program_pipeline <- function(
 
     content <- component_content_identity(state$selected_revisions[[cid]])
     if (!is.null(content) && identical(processed[[cid]], content)) {
-      state <- revisit_component_runtime(state, cid, execute)
+      state <- tryCatch(revisit_component_runtime(state, cid, execute),
+        error = function(error) record_component_failure(state, cid, error, "revisit"))
     } else {
       state <- process_program_component(state, cid, execute, max_program_repair_rounds)
     }
     processed[[cid]] <- component_content_identity(state$selected_revisions[[cid]])
-    state$component_stage[[cid]] <- "settled"
+    if (is.null(state$diagnostics$component_failures[[cid]])) state$component_stage[[cid]] <- "settled"
 
     new_cid_hash <- state$selected_revisions[[cid]]$binding$binding_hash %||% ""
 
@@ -507,7 +521,8 @@ run_program_pipeline <- function(
       requeue <- setdiff(requeue, cid)
 
       for (rq_cid in requeue) {
-        if (!is.na(revisit_count[[rq_cid]]) && revisit_count[[rq_cid]] < max_revisits_per_comp && !rq_cid %in% revisit_queue) {
+        if (is.null(state$diagnostics$component_failures[[rq_cid]]) &&
+            !is.na(revisit_count[[rq_cid]]) && revisit_count[[rq_cid]] < max_revisits_per_comp && !rq_cid %in% revisit_queue) {
           revisit_count[[rq_cid]] <- revisit_count[[rq_cid]] + 1L
           revisit_queue <- c(revisit_queue, rq_cid)
           signal_immediate_coordinator_event("component_revisited", rq_cid)
@@ -525,6 +540,10 @@ run_program_pipeline <- function(
 
   state <- finalize_component_reviews(state)
   structure(state, class = c("sas2r_program_pipeline_result", "sas2r_migration_state", "list"))
+  }, error = function(error) {
+    error$migration_state <- error$migration_state %||% state
+    stop(error)
+  })
 }
 
 #' Build a causal repair packet for bundle-level repair

@@ -59,12 +59,27 @@ full pipeline, the package completes outstanding reviews of the code versions
 that will be used. That review step reports findings without changing the code.
 The full pipeline also runs one program at a time in dependency order.
 
-**Known pipeline problems, such as missing schedule entries or dependency cycles,
-stop the run before AI calls.** A new dependency problem found during translation
-puts the affected programs on hold while unrelated
-work can continue. The full pipeline remains blocked until the dependency issue
-is resolved. The exported set of R programs and supporting files is called the
-**bundle**; having those files does not mean all checks passed.
+**Available source keeps translating when dependencies are missing or uncertain.**
+Preflight lists the affected programs and what is needed. New findings discovered
+by a worker also remain warnings: downstream drafts carry those findings instead
+of treating an upstream draft as verified behavior. A component that cannot
+finish keeps its available artifacts while other programs continue.
+
+Execution remains separate. Missing required input data or source dependencies
+prevent the affected smoke checks and full-bundle execution; they do not trigger
+repeated attempts to repair code for absent resources. Missing configured SAS
+references prevent comparison, but do not by themselves prevent execution.
+An intermediate dataset with no producer visible to the scanner, or a possible
+statement-order issue, remains a warning and can be tested by execution. This
+allows translated macros to create their intermediate datasets at runtime.
+`execute = FALSE` explicitly requests code only. Reports show saved code, component
+failures and execution activity separately. A partial translation is never marked
+validated. The exported R programs and supporting files form the **bundle**.
+
+No readable source, unusable configuration, inconsistent pipeline coverage,
+accounting/output-write failures and provider-wide failures still stop the run.
+The existing budget and retry limits remain in force. Completed artifacts and
+component diagnostics are retained for review and resume.
 
 A repair cannot replace the chosen result if it loses checks that had already
 passed. If a new run initially performs worse than a saved result, that earlier
@@ -81,8 +96,7 @@ for each file's components, translation positions and execution roles: main
 program, startup, called macro, included by its caller, or an explicit
 exclusion when no active source units remain. `$pipeline$execution_order` uses
 the same bundle planner as execution. Unexplained omissions, duplicate scheduled
-components, conflicting component names and known dependency cycles stop
-translation before model calls. For example, a regular `setup.sas` file cannot
+components and conflicting component names stop translation before model calls. For example, a regular `setup.sas` file cannot
 share the reserved startup component with `autoexec.sas`; preflight names both
 files and asks you to rename the conflicting source and rescan.
 Complete coverage is separate from input availability and translation quality;
@@ -90,6 +104,9 @@ preflight can still report `needs_attention` for other findings.
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel
 translation, and the full bundle executes the main programs serially in that order.
+Cycles are warnings: drafts use stable source order inside a cycle, while execution
+waits for the dependency issue to be resolved. This draft order is not a claim
+that the programs can execute in that order.
 
 ## Files and manual reruns
 
@@ -454,6 +471,21 @@ for the AI provider, so more than one task can make progress on the same CPU.
 Start with one, then compare two on your study. Check elapsed time, memory use
 and provider limits before increasing it further. Custom AI connections that
 cannot run in a separate R process use one worker and report the reason.
+
+If you supply your own `sas2r_llm` adapter, set `attr(llm, "parallel_factory")`
+to a function that takes no arguments and returns a fresh adapter. Each worker
+calls it in a new R process. The factory must be self-contained: objects that
+exist only in the calling session's global environment are not transported.
+Capture the small settings it needs in its own closure, and access package
+functions through their installed namespaces. Keep captured state small. The
+combined encoded startup data (adapter factories, provider configuration and
+capability settings) has a conservative limit of **100,000 bytes per worker**.
+Exceeding it stops that worker's launch with a configuration error showing the
+size and the remedy: reduce captured settings or use `max_parallel_translations = 1`.
+This limit is on adapter startup data, not the SAS programs or study datasets.
+Without a reconstruction factory, the custom adapter uses one workflow and
+reports the reason.
+
 For the supplied ellmer connections, parallel mode requires **ellmer 0.5.0 or
 newer** and `llm.max_tries: 1` (the
 default); older ellmer installations visibly use one workflow. If both
@@ -466,12 +498,34 @@ within a tool conversation, plus finalization, in both modes. See the
 [usage-counting details](migration-evidence.md#coverage-limits-and-reuse)
 before reusing a limit tuned to older ellmer.
 
-Known pipeline problems, including dependency cycles, stop the whole run during
-preflight before any model calls. Unresolved dependency findings discovered
-during translation defer the affected branch while independent work continues.
-Full-bundle execution stays blocked while a branch is deferred.
+Missing resources and uncertain dependencies are reported while available source
+continues translating in both execution modes. Known upstream order is preserved;
+cycle members receive provisional drafts. Actual component failures do not cancel
+independent work. Full-bundle execution waits for unavailable dependencies.
 Worker findings use the scanner's recognized SAS macro list, so supplied macro
 names such as `qleft` and `qtrim` do not create false missing dependencies.
+[SAS session metadata views](https://support.sas.com/documentation/cdl/en/sqlproc/63043/HTML/default/n02s19q65mw08gn140bwfdh7spx7.htm), such as `SASHELP.VEXTFL` and
+`DICTIONARY.EXTFILES`, are environment queries rather than missing study-data
+producers. Likewise, a macro variable used only in a LIBNAME path does not need
+another program when the library resolver has already selected its configured
+path. This uses the actual source and library binding, regardless of the
+variable's name. Variables needed elsewhere, unknown datasets and missing
+programs/macros still require reconciliation. These classifications preserve
+the reported observations and do not waive review, execution or output checks;
+unsupported environment-query behavior can still prevent a successful run.
+Preflight uses the same metadata classification (`inputs$status = "environment"`).
+Documented automatic variables used by the source, such as `&SYSDATE9`, `&SYSVER`
+and `&SYSLAST`, and search options `SASAUTOS`/`FMTSEARCH` are recognized as SAS
+facilities. Recognition does not implement them: session date/time must stay fixed
+at run start; R's version is not SAS's version; status variables and the last
+dataset still depend on earlier operations. Search options do not supply missing
+macros or custom formats. Agents receive this guidance and must report unsupported
+behavior. See the [SAS automatic-variable reference](https://support.sas.com/documentation/cdl/en/mcrolref/62978/HTML/default/p14ym6slnzfstzn1t9yp5v31ijis.htm)
+and [system-option reference](https://support.sas.com/documentation/cdl/en/lesysoptsref/64892/HTML/default/n1ag2fud7ue3aln1xiqqtev7ergg.htm).
+Ordinary data such as `SASHELP.CLASS`, `SASUSER.*` and `WORK.*` retain their real
+input/producer requirements. No whole library or SYS prefix is exempted.
+Resuming reassesses saved dependency observations; old blockers are not simply
+carried into the new run.
 Automatic graph correction/reassignment is a separate planned change. Offline
 parity checks do not establish unchanged live-model quality or a particular speedup;
 parallel execution remains opt-in until the paired live comparison is completed.
@@ -537,9 +591,9 @@ Inspect `sas_preflight(...)$called_macros` for the discovered definitions and
 planned file paths. Macro translation requires an AI provider. Dynamic macro
 names, nested macro definitions, `%INCLUDE` inside an autocall macro, and library
 files with executable initialization outside their macro definitions remain
-unresolved. Translation
-stops before model calls and reports the macro name, source file and line. If a
-definition is missing, configure `macros.search_path` or supply the definition
+unresolved. Translation attempts the available source and reports missing logic;
+execution remains unavailable for affected components. If a definition is missing,
+configure `macros.search_path` or supply the definition
 in the scanned sources, then run preflight again. Preflight returns dependency
 findings for inspection; malformed source such as an unterminated macro comment
 raises a parse error with its location. sas2r does not expand arbitrary SAS macro
@@ -552,8 +606,8 @@ NLS macro functions and SAS-supplied NLS autocall macros), `%INCLUDE`, `%LIST`,
 `%RUN`, and `%label:` declarations are not user calls. Macro/block comments and
 single-quoted literals do not introduce calls; double-quoted text can. Simple
 `%NRSTR(...)` text is treated as literal. Computed names and quoting that requires
-expansion (such as `%UNQUOTE(%NRSTR(%generated_call()))`) stop with an explicit analysis
-finding, rather than a missing-macro-file diagnosis. Macro text inside ordinary
+expansion (such as `%UNQUOTE(%NRSTR(%generated_call()))`) produce an explicit analysis
+warning, rather than a missing-macro-file diagnosis. Macro text inside ordinary
 SAS `* comment;` statements also requires expansion and is reported separately.
 Unquoting a variable alone, such as `%UNQUOTE(&condition)` in a WHERE expression,
 is advisory: it does not prove that a user macro is called. Such generated text
@@ -561,7 +615,7 @@ remains unverified; offline mapping does not fully execute the macro language.
 
 For literal SQL patterns, use single quotes, for example `like '%Total%'`.
 In `like "%Total%"`, SAS attempts to invoke `%Total`, even without parentheses.
-sas2r stops if it cannot resolve that name: assuming literal text would also hide
+sas2r reports the unresolved name and marks the draft incomplete: assuming literal text would hide
 a genuine call whose macro folder was not configured. Use SAS macro quoting
 when literal percent text must coexist with macro expansion.
 

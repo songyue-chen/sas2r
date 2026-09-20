@@ -69,8 +69,7 @@ test_that("missing definitions and executable library initializers remain unreso
                file.path(root, "macros", "add.sas"))
     p <- sas_project(file.path(root, "programs"))
     expect_true("macro_library_initialization_unsupported" %in% p$flags$kind)
-    expect_error(require_resolved_macros(p), "macro_library_initialization_unsupported",
-                 class = "sas2r_macro_dependency_error")
+    expect_true(all(p$macros$resolution$status == "unresolved"))
   }
 })
 
@@ -251,43 +250,24 @@ test_that("nested macro definitions are deferred instead of sharing a translatio
   expect_identical(p$status, "needs_attention")
 })
 
-test_that("translation stops before model calls when the macro folder was not configured", {
-  root <- withr::local_tempdir()
-  file <- file.path(root, "program.sas")
-  writeLines("data work.out; x=%missing_helper(value=1); run;", file)
-  out <- file.path(root, "translation")
-  calls <- 0L
-  llm <- new_llm(function(request, ...) {
-    calls <<- calls + 1L
-    stop("provider must not be reached")
-  }, provider = "mock")
-  condition <- tryCatch(sas_translate(file, out_dir = out, llm = llm), error = identity)
-  expect_s3_class(condition, "sas2r_macro_dependency_error")
-  expect_match(conditionMessage(condition), "%missing_helper", fixed = TRUE)
-  expect_match(conditionMessage(condition), "program.sas:1", fixed = TRUE)
-  expect_match(conditionMessage(condition), "macros.search_path", fixed = TRUE)
-  expect_match(conditionMessage(condition), "No macro search directories", fixed = TRUE)
-  expect_identical(calls, 0L)
-  expect_length(list.files(out, pattern = "START_HERE.html", recursive = TRUE), 1L)
-  pre <- sas_preflight(file)
-  expect_identical(pre$status, "needs_attention")
-  expect_identical(pre$model_calls, 0L)
-})
-
-test_that("missing macros in configured folders and dynamic calls also stop early", {
+test_that("unavailable macros produce drafts and actionable warnings", {
   root <- called_macro_fixture()
   file <- file.path(root, "programs", "first.sas")
-  writeLines("%not_in_library;", file)
-  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
-               "Searched macro directories:", class = "sas2r_macro_dependency_error")
-  writeLines("%&name;", file)
-  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
-               "Resolve dynamic macro names", class = "sas2r_macro_dependency_error")
+  for (source in c("%not_in_library;", "%&name;")) {
+    writeLines(source, file)
+    result <- sas_translate(file, out_dir = file.path(root, "out"), execute = FALSE)
+    expect_identical(result$status, "needs_review")
+    expect_true(length(result$diagnostics$readiness$warnings) > 0L)
+    expect_match(paste(readiness_warning_lines(result$diagnostics$readiness), collapse = " "),
+      "macros.search_path", fixed = TRUE)
+    expect_true(length(result$component_evidence) > 0L)
+  }
   writeLines("%add(value=3);", file)
   writeLines("%macro scale(value=1); %missing_nested; %mend;",
              file.path(root, "macros", "utilities.sas"))
-  expect_error(sas_translate(file, out_dir = file.path(root, "out")),
-               "%missing_nested at .*utilities.sas:1", class = "sas2r_macro_dependency_error")
+  result <- sas_translate(file, out_dir = file.path(root, "out"), execute = FALSE)
+  expect_match(paste(readiness_warning_lines(result$diagnostics$readiness), collapse = " "),
+    "missing_nested", fixed = TRUE)
   expect_length(list.files(file.path(root, "out"), pattern = "START_HERE.html", recursive = TRUE), 3L)
 })
 
@@ -302,5 +282,4 @@ test_that("local macro definitions and SAS builtins need no search path", {
   project <- sas_project(file)
   expect_identical(project$macros$resolution$name, "local_helper")
   expect_identical(project$macros$resolution$status, "resolved_project")
-  expect_no_error(require_resolved_macros(project))
 })

@@ -52,16 +52,14 @@ test_that("a planner omission is reported by preflight and refused before provid
   expect_identical(report$outcome$severity, "error")
 })
 
-test_that("known inter-program cycles stop before any model work", {
+test_that("known cycles remain explicit readiness warnings with complete source coverage", {
   root <- withr::local_tempdir()
   writeLines("data work.a; set work.b; run;", file.path(root, "a.sas"))
   writeLines("data work.b; set work.a; run;", file.path(root, "b.sas"))
   check <- sas_preflight(root)
-  expect_identical(check$pipeline$status, "invalid")
-  expect_match(paste(check$pipeline$issues, collapse = " "), "Dependency cycle", fixed = TRUE)
-  testthat::local_mocked_bindings(sas_llm = function(...) stop("provider setup must not run"))
-  expect_error(sas_translate(root, out_dir = file.path(root, "out")),
-    "Dependency cycle", class = "sas2r_pipeline_coverage_error")
+  expect_identical(check$pipeline$status, "complete")
+  expect_identical(check$status, "needs_attention")
+  expect_true(any(vapply(check$readiness$warnings, function(x) x$kind == "dependency_cycle", logical(1))))
 })
 
 test_that("a source name colliding with reserved startup identity is not silently merged", {

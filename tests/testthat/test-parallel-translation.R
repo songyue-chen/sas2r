@@ -167,7 +167,7 @@ test_that("an interrupted worker retains admitted usage and useful failure diagn
   expect_true(file.exists(file.path(job$dir, "stderr.log")))
 })
 
-test_that("a crashed reviewer drains and checkpoints its paid sibling before aborting", {
+test_that("a crashed reviewer preserves accounting and continues remaining reviews", {
   fx <- repair_workflow_fixture(n = 3L, failures = integer())
   state <- fx$state
   for (cid in fx$ids) state <- check_component_revision(state, cid)
@@ -177,20 +177,19 @@ test_that("a crashed reviewer drains and checkpoints its paid sibling before abo
   state$parallel <- resolve_parallel_execution(state, 2L)
   state$resume_fingerprint <- migration_resume_fingerprint(state)
   events <- list()
-  expect_error(withCallingHandlers(finalize_parallel_component_reviews(state),
-    sas2r_progress = function(e) events[[length(events) + 1L]] <<- e),
-    class = "sas2r_parallel_worker_error")
-  failures <- Filter(function(e) identical(e$event, "worker_failed"), events)
+  result <- withCallingHandlers(finalize_parallel_component_reviews(state),
+    sas2r_progress = function(e) events[[length(events) + 1L]] <<- e)
+  failures <- Filter(function(e) identical(e$event, "component_failed"), events)
   expect_length(failures, 1L)
   expect_identical(failures[[1L]]$component_id, "p01")
-  expect_identical(failures[[1L]]$severity, "error")
-  expect_match(format_sas2r_progress(failures[[1L]]), "No new tasks will start", fixed = TRUE)
+  expect_identical(failures[[1L]]$severity, "warning")
+  expect_match(format_sas2r_progress(failures[[1L]]), "other programs will continue", fixed = TRUE)
   saved <- readRDS(file.path(state$paths$state, "resume.rds"))
   expect_identical(component_review_verdict(saved$histories$p02), "reviewed_no_material_finding")
-  expect_identical(saved$histories$p03, state$histories$p03)
-  expect_identical(state$usage_budget$request_count, 2L)
+  expect_identical(component_review_verdict(saved$histories$p03), "reviewed_no_material_finding")
+  expect_identical(state$usage_budget$request_count, 3L)
   expect_identical(state$usage_budget$unknown_count, 1L)
-  expect_identical(saved$component_stage$p01, "interrupted")
+  expect_identical(saved$component_stage$p01, "failed")
   expect_identical(saved$diagnostics$worker_failures[[1L]]$component_id, "p01")
 })
 
@@ -207,14 +206,14 @@ test_that("a crashed translator preserves completed sibling drafts for resume", 
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   state$resume_fingerprint <- migration_resume_fingerprint(state)
-  expect_error(run_program_pipeline(state, execute = FALSE), class = "sas2r_parallel_worker_error")
+  initial <- run_program_pipeline(state, execute = FALSE)
   saved <- readRDS(file.path(state$paths$state, "resume.rds"))
-  expect_identical(saved$component_stage$p02, "draft")
+  expect_identical(saved$component_stage$p02, "settled")
   expect_true(file.exists(saved$selected_revisions$p02$r_path))
-  expect_null(saved$selected_revisions$p03)
-  expect_identical(state$usage_budget$request_count, 3L) # crashed call plus sibling translation/review
+  expect_true(file.exists(saved$selected_revisions$p03$r_path))
+  expect_identical(state$usage_budget$request_count, 5L) # crashed call plus both siblings translation/review
   expect_identical(state$usage_budget$unknown_count, 1L)
-  # The retained draft must settle on resume; it is not accepted QC evidence.
+  # Successful sibling work is reusable; the failed component is retried.
   llm <- parallel_test_llm(responses, delay = 0)
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   resumed <- restore_migration_checkpoint(state, state$resume_fingerprint)
@@ -222,7 +221,7 @@ test_that("a crashed translator preserves completed sibling drafts for resume", 
   result <- run_program_pipeline(resumed, execute = FALSE)
   expect_identical(result$component_stage$p02, "settled")
   expect_true(all(vapply(result$histories, component_review_verdict, "") == "reviewed_no_material_finding"))
-  expect_identical(result$usage_budget$request_count - before, 4L) # two translations/reviews; sibling evidence reused
+  expect_identical(result$usage_budget$request_count - before, 2L) # failed component translation/review
 })
 
 test_that("helper repair rollback preserves other selected programs with parallel drafts", {
@@ -246,7 +245,7 @@ test_that("helper repair rollback preserves other selected programs with paralle
   expect_identical(result$repair_counts$p01, 1L)
 })
 
-test_that("dependency uncertainty defers its branch while independent work settles", {
+test_that("dependency uncertainty permits drafts while deferring execution", {
   fx <- repair_workflow_fixture(n = 3L, failures = integer())
   state <- fx$state
   state$selected_revisions$p01$contract$suspected_dependencies <- "work.missing"
@@ -254,8 +253,8 @@ test_that("dependency uncertainty defers its branch while independent work settl
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 3L)
   result <- run_program_pipeline(state, execute = FALSE)
-  expect_true("p01" %in% result$diagnostics$parallel_deferred)
-  expect_identical(result$status, "blocked")
+  expect_identical(result$component_stage$p01, "settled")
+  expect_match(component_execution_reasons(result, "p01"), "work.missing", fixed = TRUE)
   expect_identical(result$component_stage$p02, "settled")
   expect_identical(result$component_stage$p03, "settled")
   expect_identical(result$diagnostics$dependency_findings$p01$findings, "work.missing")
@@ -315,7 +314,6 @@ test_that("dependency prose remains an observation and does not defer independen
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   result <- run_program_pipeline(state, execute = FALSE)
-  expect_length(result$diagnostics$parallel_deferred, 0L)
   expect_identical(result$component_stage$p01, "settled")
   expect_identical(result$component_stage$p02, "settled")
   expect_identical(result$selected_revisions$p01$contract$suspected_dependencies, observations)

@@ -45,13 +45,12 @@ translation_pipeline_coverage <- function(project, graph, schedule) {
       paste0("Component ", id, " combines different source files: ", paste(files, collapse = ", "),
         ". Rename the conflicting source file and rescan."))
   }
-  cycles <- schedule$component_id[schedule$group_kind == "cycle"]
-  if (length(cycles)) issues <- c(issues, paste("Dependency cycle:", paste(cycles, collapse = ", ")))
   sources <- if (length(rows)) do.call(rbind, rows) else tibble::tibble(file = character(),
     components = list(), execution_roles = list(), translation_positions = list(),
     bundle_positions = list(), status = character(), reason = character())
   list(status = if (length(issues)) "invalid" else "complete", sources = sources,
-    execution_order = bundle$execution_order, issues = issues)
+    execution_order = bundle$execution_order, issues = issues,
+    cycle_components = schedule$component_id[schedule$group_kind == "cycle"])
 }
 
 require_complete_pipeline <- function(pipeline) {
@@ -66,6 +65,7 @@ pipeline_coverage_lines <- function(pipeline) {
   c(sprintf("Preflight pipeline: %s; %d covered, %d intentionally excluded, %d unplanned files.",
     pipeline$status, sum(pipeline$sources$status == "covered"),
     sum(pipeline$sources$status == "excluded"), sum(pipeline$sources$status == "unplanned")),
-    paste("Main programs in dependency order:", if (length(pipeline$execution_order))
+    paste(if (length(pipeline$cycle_components)) "Provisional main-program draft order (dependency cycle):" else
+      "Main programs in dependency order:", if (length(pipeline$execution_order))
       paste(pipeline$execution_order, collapse = " -> ") else "(none)"))
 }

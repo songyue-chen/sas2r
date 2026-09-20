@@ -7,12 +7,13 @@
 #' baseline generation and immediate program repair -> full bundle attempt execution
 #' and output-driven repair -> deterministic gate selection and reporting.
 #'
-#' Called macro dependencies must resolve during offline dependency mapping.
-#' Missing definitions or unsupported dynamic macro calls raise a
-#' `sas2r_macro_dependency_error` before provider setup or model requests, with
-#' source locations and configuration guidance. Use [sas_preflight()] to inspect
-#' the findings, and configure `macros.search_path` in `_sas2r.yml` when definitions
-#' live outside the scanned sources.
+#' Missing inputs, called macros, includes and uncertain dependencies are reported
+#' while available source continues translating. Unavailable dependencies defer
+#' affected execution; they do not authorize inventing missing source or data.
+#' Component failures preserve useful work and allow other components to proceed.
+#' Unusable configuration, inconsistent pipeline coverage and critical provider or
+#' accounting failures still stop the run. Use [sas_preflight()] to inspect
+#' readiness and configure `macros.search_path` for external macro definitions.
 #'
 #' @param path Path to a SAS file or directory containing SAS files, or a `sas2r_project`.
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
@@ -36,6 +37,11 @@
 #'   Output overrides are retained in the returned project for reuse.
 #' @param agent_evidence Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".
 #' @param llm Optional `sas2r_llm` instance for agent-assisted translation, review, and repair.
+#'   For parallel execution, a custom adapter needs a self-contained, zero-argument
+#'   function in `attr(llm, "parallel_factory")` that returns a fresh adapter.
+#'   Without a factory, execution uses one workflow and reports why. Capture only small
+#'   settings: caller-global objects are not transported, and the combined encoded
+#'   adapter startup data is limited to 100,000 bytes per worker.
 #' @param budget_usd Dollar threshold for LLM spend. Defaults to Inf (unlimited).
 #' @param budget_mode Dollar enforcement mode: "stop", "observe", "soft", or "strict". Defaults to "stop".
 #' @param pricing_source Cost provenance source ("catalog", "adapter", "organization", "external"). Defaults to "catalog".
@@ -153,8 +159,14 @@ sas_translate <- function(
     cli::cat_line(pipeline_coverage_lines(setup$plan$pipeline), file = stderr())
     flush(stderr())
   }
-  require_resolved_macros(setup$project)
   require_complete_pipeline(setup$plan$pipeline)
+  if (!nrow(setup$plan$schedule)) cli::cli_abort("No active source code is available to translate.",
+    class = "sas2r_no_translation_source")
+  readiness_lines <- readiness_warning_lines(setup$project$readiness)
+  if (length(readiness_lines)) {
+    cli::cli_inform("Translation will continue with preflight warnings:")
+    for (line in readiness_lines) cli::cli_inform(c("!" = "{line}"))
+  }
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan
@@ -194,6 +206,7 @@ sas_translate <- function(
   # Adopt the state's run-scoped paths for code, execution evidence, and reports.
   paths <- state$paths
   state$diagnostics$pipeline <- plan$pipeline
+  state$diagnostics$readiness <- project$readiness
   state$output_contracts <- output_contracts
   state$parallel <- resolve_parallel_execution(state, translation_limit)
   state$diagnostics$parallel <- state$parallel
@@ -204,6 +217,9 @@ sas_translate <- function(
   resume_fingerprint <- migration_resume_fingerprint(state)
   state$resume_fingerprint <- resume_fingerprint
   if (isTRUE(resume)) state <- restore_migration_checkpoint(state, resume_fingerprint)
+  # These are fresh assessments, not history to merge from a checkpoint.
+  state$diagnostics$readiness <- project$readiness
+  state$diagnostics$pipeline <- plan$pipeline
 
   # 9./10. Program pipeline (baseline translation, mechanical checks, review,
   # immediate repair) then bundle pipeline (full execution attempt, output
@@ -224,7 +240,8 @@ sas_translate <- function(
       max_program_repair_rounds = as.integer(max_program_repair_rounds),
       execute = isTRUE(execute)
     )
-    if (!length(state$diagnostics$parallel_deferred)) {
+    unavailable <- component_execution_reasons(state)
+    if (!length(unavailable)) {
       stage <- "bundle execution and repair"
       state <- run_bundle_pipeline(
         state = state,
@@ -232,6 +249,12 @@ sas_translate <- function(
         max_bundle_repairs_per_component = max_bundle_repairs_per_component,
         execute = isTRUE(execute)
       )
+    } else {
+      state$status <- "needs_review"
+      state$status_reason <- paste0("Available source translated with unresolved findings; ",
+        if (isTRUE(execute)) "bundle execution not performed: " else "execution disabled; findings: ",
+        paste(unavailable, collapse = "; "))
+      state$diagnostics$execution_deferred <- unavailable
     }
     state
   })
@@ -248,23 +271,24 @@ sas_translate <- function(
   outputs_dir <- if (length(state$saved_outputs)) paths$outputs else NULL
   state$outputs_dir <- outputs_dir
 
-  # Status adjustments for execute = FALSE
+  # Preserve bundle assessment unless drafting/check failures prevent it.
   if (isFALSE(execute)) {
     state$outputs_dir <- NULL
     outputs_dir <- NULL
-    # If there are check failures, status is blocked; otherwise needs_review
-    has_check_failure <- any(vapply(state$selected_revisions, function(r) {
-      identical(r$status, "check_failed")
-    }, logical(1)))
-    if (length(state$diagnostics$parallel_deferred)) {
-      state$status <- "blocked"
-    } else if (has_check_failure) {
-      state$status <- "blocked"
-      state$status_reason <- "Mechanical check failed for one or more components"
-    } else {
-      state$status <- "needs_review"
-      state$status_reason <- "Execution disabled (execute = FALSE); outputs unverified"
-    }
+  }
+  has_check_failure <- any(vapply(state$selected_revisions,
+    function(r) identical(r$status, "check_failed"), logical(1)))
+  if (length(state$diagnostics$component_failures)) {
+    state$status <- state$current_run_status <- "blocked"
+    state$status_reason <- paste("Translation could not finish for:",
+      paste(names(state$diagnostics$component_failures), collapse = ", "),
+      "; other available source was processed. Inspect the component failures.")
+  } else if (has_check_failure && (isFALSE(execute) || length(state$diagnostics$execution_deferred))) {
+    state$status <- state$current_run_status <- "blocked"
+    state$status_reason <- "Mechanical checks failed for one or more components; other available source was processed."
+  } else if (isFALSE(execute) && !length(state$diagnostics$execution_deferred)) {
+    state$status <- state$current_run_status <- "needs_review"
+    state$status_reason <- "Execution disabled (execute = FALSE); outputs unverified"
   }
 
   # A run whose LLM calls failed must not read like a successful deterministic
@@ -325,6 +349,7 @@ sas_translate <- function(
     class = c("sas2r_translation", "list")
   )
   }, error = function(error) {
+    state <- error$migration_state %||% state
     if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
         "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error"))) stop(error)
     finalize_usage_run(budget, terminal_status = "failed")

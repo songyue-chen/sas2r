@@ -917,7 +917,7 @@ generate_program_revision <- function(
   r_path <- file.path(rev_dir, "program.R")
   contract_path <- file.path(rev_dir, "contract.json")
 
-  writeLines(final_r_code_lines, r_path)
+  atomic_write_file(function(path) writeLines(final_r_code_lines, path), r_path)
   atomic_write_json(contract, contract_path)
 
   registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "autoexec.R")

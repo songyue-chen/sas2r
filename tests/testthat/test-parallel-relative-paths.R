@@ -41,7 +41,7 @@ test_that("parallel translation shares relative output paths across different wo
   expect_true(file.exists(observed$report))
   report <- read_json_record(observed$report)
   expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED", fixed = TRUE)
-  expect_length(report$diagnostics$parallel_deferred, 0L)
+  expect_length(report$diagnostics$execution_deferred, 0L)
   expect_identical(observed$parallel$effective, 4L)
   expect_gte(observed$parallel$observed$peak_workers, 2L)
   started <- Filter(function(event) identical(event$event, "agent_started") &&

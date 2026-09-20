@@ -8,15 +8,22 @@ migration_run_outcome <- function(state, report, attempts) {
     blocked = "Run incomplete - blocked", needs_review = "Run requires review",
     migration_ready = "Run migration-ready", validated = "Run validated", paste("Run status:", status))
   findings <- report$diagnostics$dependency_findings %||% list()
-  affected <- unique(c(report$diagnostics$parallel_deferred,
-    unlist(lapply(findings, `[[`, "affected"), use.names = FALSE)))
+  readiness <- report$diagnostics$readiness
+  failures <- report$diagnostics$component_failures %||% list()
+  affected <- unique(unlist(lapply(c(findings,
+    Filter(function(x) isTRUE(x$blocks_execution), readiness$warnings), failures), `[[`, "affected"), use.names = FALSE))
   details <- c(
     if (!is.null(failure$stage)) paste("Stopped during:", failure$stage),
     if (!is.null(report$diagnostics$pipeline)) pipeline_coverage_lines(report$diagnostics$pipeline),
-    if (length(report$diagnostics$parallel_deferred)) "Blocked before: bundle execution",
+    if (length(report$diagnostics$execution_deferred)) paste("Execution unavailable:",
+      paste(report$diagnostics$execution_deferred, collapse = "; ")),
+    readiness_warning_lines(readiness),
     vapply(names(findings), function(id) paste0("Dependency findings for ", id, ": ",
       paste(findings[[id]]$findings, collapse = ", ")), ""),
-    if (length(affected)) paste0(length(affected), " components deferred: ", paste(affected, collapse = ", ")))
+    vapply(names(failures), function(id) paste0("Component could not finish: ", id, " (",
+      failures[[id]]$phase, "): ", failures[[id]]$reason,
+      if (!is.null(failures[[id]]$logs)) paste0("; logs: ", failures[[id]]$logs)), ""),
+    if (length(affected)) paste0(length(affected), " components with unresolved findings: ", paste(affected, collapse = ", ")))
 
   # Attempt records are run-scoped. A prepared/interrupted or deferred attempt
   # must not be counted as executed, even when a prior bundle remains selected.
@@ -45,15 +52,19 @@ migration_run_outcome <- function(state, report, attempts) {
       length(ids), if (length(ids) == 1L) "" else "s") else "NOT INVOKED"
   }
   parallel <- report$diagnostics$parallel %||% report$environment$parallel
+  total <- length(state$schedule$component_id)
+  generated <- length(intersect(state$schedule$component_id, names(state$selected_revisions)))
   stages <- c(
     if (!is.null(parallel)) c("Translation workers" = paste0(parallel$effective, " effective",
       if (!is.null(parallel$observed$peak_workers)) paste0("; peak observed ", parallel$observed$peak_workers))),
+    "Translation" = sprintf("%d of %d components have saved code; %d could not finish", generated, total, length(failures)),
     "Component fixes" = fixes(FALSE), "Bundle execution" = bundle_status,
     "Bundle-level fixes" = fixes(TRUE),
     "Required validation" = if (severity == "error") {
       if (executed == 0L || !is.null(failure) || length(affected)) "NOT COMPLETED" else "NOT PASSED"
     } else if (status == "needs_review") "REVIEW REQUIRED" else "PASSED (see reference coverage)")
-  next_action <- if (length(affected)) "Resolve the dependency findings before rerunning." else
+  next_action <- if (length(failures)) "Resolve the component failures and any dependency findings before rerunning." else
+    if (length(affected)) "Resolve the dependency findings before rerunning." else
     if (severity == "error") "Resolve the reported error or failed checks before rerunning." else
       if (severity == "warning") "Review the outstanding evidence and reported findings before use." else
         "Inspect output and reference coverage before use."

@@ -58,6 +58,10 @@ parallel_adapter_recipe <- function(llm) {
   cfg <- attr(llm, "parallel_config", exact = TRUE)
   factory <- attr(llm, "parallel_factory", exact = TRUE)
   if (is.null(cfg) && !is.function(factory)) return(NULL)
+  # Source references can carry an entire parsed source file into this small
+  # startup recipe and exceed Linux's per-environment-string size limit.
+  # Keep the executable closure and captured values, not its source metadata.
+  if (is.function(factory)) factory <- utils::removeSource(factory)
   list(kind = if (!is.null(cfg)) "ellmer" else "factory", config = cfg,
     factory = factory, verified = as.list(llm$verified_settings))
 }
@@ -123,6 +127,14 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
     list(recipes = recipes, configs = packet$configs,
       tested_capabilities = as.list(.llm_tested_capability_registry),
       rejected_capabilities = as.list(.llm_rejected_capabilities)), NULL)))
+  # Use a conservative ceiling for this single encoded environment value.
+  # Reject the whole oversized packet; source metadata is already stripped above.
+  startup_bytes <- nchar(env[["SAS2R_WORKER_ADAPTERS"]], type = "bytes")
+  if (startup_bytes > 100000L) cli::cli_abort(c(
+    "Parallel worker startup data is too large ({startup_bytes} bytes; limit 100000 bytes).",
+    "i" = "Reduce captured values in parallel_factory or provider configuration.",
+    "i" = "Alternatively, set max_parallel_translations = 1 (migration.max_parallel_translations: 1 in _sas2r.yml)."
+  ), class = "sas2r_parallel_config_error")
   snapshot <- packet$state
   snapshot$paths$component_revisions <- file.path(dir, "components")
   # Attempt execution remains in one lane, using the established smoke layout.
@@ -360,14 +372,15 @@ parallel_poll <- function(pool) {
     if (job$process$is_alive()) next
     result <- tryCatch(job$process$get_result(), error = identity)
     if (inherits(result, "condition")) {
+      reason <- redact_secrets(conditionMessage(result))
       parallel_abandon_job(pool, job)
-      parallel_job_record(job, "failed", conditionMessage(result))
+      parallel_job_record(job, "failed", reason)
       pool$jobs[[id]] <- NULL
       pool$failures[[id]] <- list(component_id = job$component_id, phase = job$kind,
-        job_id = id, reason = conditionMessage(result),
+        job_id = id, reason = reason, critical = critical_translation_error(result),
         stdout = file.path(job$dir, "stdout.log"), stderr = file.path(job$dir, "stderr.log"))
-      signal_immediate_coordinator_event("worker_failed", job$component_id,
-        severity = "error", reason = conditionMessage(result), path = job$dir)
+      if (isTRUE(pool$failures[[id]]$critical)) signal_immediate_coordinator_event("worker_failed", job$component_id,
+        severity = "error", reason = reason, path = job$dir)
       pool$state$component_stage[[job$component_id]] <- "interrupted"
       next
     }
@@ -378,6 +391,20 @@ parallel_poll <- function(pool) {
     pool$jobs[[id]] <- NULL
   }
   completed
+}
+
+parallel_collect_component_failures <- function(pool) {
+  handled <- character()
+  for (id in names(pool$failures)) {
+    failure <- pool$failures[[id]]
+    if (isTRUE(failure$critical)) next
+    pool$state <- record_component_failure(pool$state, failure$component_id,
+      simpleError(failure$reason), failure$phase, dirname(failure$stderr))
+    pool$state$diagnostics$worker_failures[[id]] <- failure
+    handled <- union(handled, failure$component_id)
+    pool$failures[[id]] <- NULL
+  }
+  handled
 }
 
 parallel_abort_failure <- function(pool) {
@@ -403,6 +430,7 @@ parallel_apply_result <- function(state, result) {
     max(state$repair_counts[[cid]] %||% 0L, result$repair_counts[[cid]])
   state$events <- c(state$events, result$events)
   if (length(result$diagnostics)) state$diagnostics <- utils::modifyList(state$diagnostics %||% list(), result$diagnostics)
+  state <- sync_dependency_context(state)
   if (!is.null(result$assignment)) parallel_job_record(result$assignment, "accepted")
   state$active_revision <- state$selected_revisions[[result$component_id]]$revision_id
   state

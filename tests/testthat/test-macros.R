@@ -188,12 +188,14 @@ test_that("expansion-dependent quoting is unknown rather than a missing macro fi
   file <- withr::local_tempfile(fileext = ".sas")
   for (code in c("%unquote(%nrstr(%generated_call()));",
                  "%let text=%nrstr(%unclosed;", "* %possibly_active;")) {
-    writeLines(code, file)
+    writeLines(c(code, "data work.out; x=1; run;"), file)
     preflight <- sas_preflight(file)
     expect_true("macro_dependency_analysis_deferred" %in% preflight$findings$kind)
     expect_false("unresolved_macro" %in% preflight$findings$kind)
-    expect_error(sas_translate(file, out_dir = tempfile()), "requires expansion",
-                 class = "sas2r_macro_dependency_error")
+    result <- sas_translate(file, out_dir = tempfile(), execute = FALSE)
+    expect_s3_class(result, "sas2r_translation")
+    expect_true(any(vapply(result$diagnostics$readiness$warnings,
+      function(x) x$kind == "macro_dependency_analysis_deferred", logical(1))))
   }
 })
 
@@ -204,5 +206,4 @@ test_that("unquoting a variable is advisory rather than an invented missing call
   expect_true("macro_expansion_unverified" %in% p$findings$kind)
   expect_false("unresolved_macro" %in% p$findings$kind)
   expect_equal(nrow(p$project$macros$calls), 0L)
-  expect_no_error(require_resolved_macros(p$project))
 })

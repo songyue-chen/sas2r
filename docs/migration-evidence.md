@@ -149,21 +149,25 @@ the acceptance evidence. Selected revisions remain in these durable diagnostic
 folders; each manifest component's `revision_id` and `revision_path` map to the
 original revision file. Its `code` field points to the editable user bundle.
 
-If a worker crashes, the coordinator stops new dispatch, drains active sibling
-jobs, checkpoints their completed drafts or reviews with their actual stage,
-and then reports the failure with log paths. It does not promote a saved draft
-to passed quality checks. An explicit user interruption still cancels the run.
+An ordinary component or worker failure is recorded with its log paths while
+other translation work continues. Configuration, provider access, accounting
+and artifact persistence failures stop new dispatch; active sibling jobs finish
+and their completed work is checkpointed before the error is raised. Saved
+drafts are not promoted to passed quality checks. An explicit user interruption
+still cancels the run.
 
 Only standalone identifiers, dataset names (`lib.member`) and macro names
 (`%macro`) are interpreted as dependency findings. Descriptive sentences stay
 in the translation contract for review. When an identifier cannot be reconciled
-with the known graph, the
-coordinator defers that component and its known descendants. Independent work
-continues, while `diagnostics.dependency_findings` and
-`diagnostics.parallel_deferred` identify the affected branch. The bundle remains
-`blocked` and full-bundle execution is withheld. Automatic graph correction and
-task reassignment are planned separately. Correct the source/configuration or
-dependency information before retrying the affected branch.
+with the known graph, the coordinator emits a `dependency_warning`. Available
+source keeps translating, including affected downstream drafts with the finding
+in their context. `diagnostics.dependency_findings` records those findings and
+their affected components; `diagnostics.execution_deferred` records why the
+full bundle could not execute. Such a run requires review (`needs_review`);
+component or mechanical-check failures can instead make it `blocked`. Independent
+components can still receive their smoke checks. Automatic graph correction,
+task reassignment and partial-bundle execution are separate design items.
+Resolve required dependencies before expecting complete execution evidence.
 
 All processes draw from one usage ledger. An interrupted admitted request may
 already have reached the provider, so it remains accounted for with unknown

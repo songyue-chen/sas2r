@@ -176,7 +176,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
       phase = "bundle", source_input_identity = state$input_manifest %||% input_hash_manifest(state$project)), llm = state$reviewer_llm,
       usage = state$usage_budget, paths = state$paths, history = history,
       round = round, attempt_id = attempt$attempt_id), error = function(e) {
-        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+        if (critical_translation_error(e)) stop(e)
         list(verdict = "review_unavailable", reason = conditionMessage(e),
           history = record_review_unavailable(history, conditionMessage(e)))
       })

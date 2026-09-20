@@ -1,3 +1,27 @@
+# sas2r 0.5.1
+
+- Translation now continues through missing inputs, source dependencies and
+  dependency cycles, preserving available code and warning about unresolved
+  behavior. Known provider order remains enforced; cycle drafts do not establish
+  a valid execution order. Missing resources defer execution, not translation.
+- Component failures preserve completed work and allow other programs to
+  continue in sequential and parallel runs. Configuration, usage/accounting and
+  provider-wide and output-write failures remain terminal. Logs and HTML distinguish saved code,
+  incomplete components and execution that was not performed.
+- Preflight and workers share recognition of documented SAS metadata resources,
+  source-used automatic macro variables, search options and configured LIBNAME
+  paths. Recognition does not supply missing data, custom formats or macro code;
+  unknown dependencies and non-path uses of variables retain their findings.
+- Unproven intermediate producers and statement order remain warnings so
+  execution can assess translated macro behavior. Resume reports fresh readiness,
+  warning text preserves literal braces, and downstream agent context retains
+  both dependency findings and component failures with secret redaction.
+- Custom adapter factories omit debugging source metadata during worker startup,
+  avoiding process-launch failures caused by oversized source metadata. Oversized
+  remaining startup data now raises a configuration error with its size and
+  guidance to reduce captured settings or use one translation workflow. The
+  custom-adapter reconstruction contract is documented in the migration guide.
+
 # sas2r 0.5.0
 
 * Explain in the README FAQ why two or four translation workers do not promise
