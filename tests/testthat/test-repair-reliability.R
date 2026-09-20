@@ -270,6 +270,35 @@ test_that("execution blockers rank before unrelated review findings within the s
   expect_length(result$repairs, 2)
 })
 
+test_that("saved static blockers outrank other source defects on required output paths", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), value_errors = 1L)
+  fx$state <- stage_workflow_revision(fx$state, "p02",
+    "render <- function() stop('required output not implemented')", "reviewed_no_material_finding")
+  fx$state$reviewer_llm <- recording_reviewer(function(req) {
+    text <- paste(vapply(req$messages, `[[`, "", "content"), collapse = "\n")
+    if (req$component_id == "p02" && grepl("required output not implemented", text, fixed = TRUE)) {
+      response <- material_review_response(sas_evidence = "data work.out2; set raw.input; value=value+1; run;",
+        r_evidence = "render <- function() stop('required output not implemented')")
+      response$data$static_runnability <- "known_blocker"
+      response$data$findings[[1]]$affected_outputs <- list("work.out2")
+      return(response)
+    }
+    if (req$component_id == "p01" && grepl("value + 9", text, fixed = TRUE)) {
+      response <- material_review_response(sas_evidence = "value=value+1", r_evidence = "value + 9")
+      response$data$findings[[1]]$affected_outputs <- list("work.out1")
+      return(response)
+    }
+    valid_program_review_response()
+  })
+  # Use the actual review API and its persisted event, not fabricated history.
+  for (cid in fx$ids) {
+    fx$state <- check_component_revision(fx$state, cid)
+    fx$state <- review_component_revision(fx$state, cid)$state
+  }
+  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L)
+  expect_identical(vapply(result$repairs, `[[`, "", "component_id"), c("p02", "p01"))
+})
+
 test_that("paired dependency packets retain dataset producers even without translated calls", {
   fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
   cat(paste0('\n/* ', paste(rep('source context ', 1000), collapse = ''), ' */'),

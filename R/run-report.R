@@ -93,6 +93,12 @@ write_run_navigation <- function(state, report) {
     execution_order = as.character(unlist(order$programs)))
   atomic_write_json(manifest, paths$manifest)
   link <- function(path, label) run_html_link(path, label, paths$run_root)
+  log_link <- function(path, label) {
+    root <- paste0(normalizePath(paths$run_root, winslash = "/", mustWork = FALSE), "/")
+    full <- if (!is.null(path)) normalizePath(path, winslash = "/", mustWork = FALSE) else ""
+    relative <- if (startsWith(full, root)) substring(full, nchar(root) + 1L) else NULL
+    link(relative, label)
+  }
   rows <- vapply(components, function(component) {
     checks <- component$mechanical_checks
     mechanical <- if (is.null(checks)) "unverified" else if (isTRUE(checks$pass)) "passed" else "failed"
@@ -149,7 +155,10 @@ write_run_navigation <- function(state, report) {
     paste0('<h2>', run_html_escape(migration_outcome_lines(report$outcome)[1L]), '</h2>'),
     paste0('<pre>', run_html_escape(paste(migration_outcome_lines(report$outcome)[-1L], collapse = "\n")), '</pre>'),
     paste0('<p><a href="#components">Affected components and checks</a> | ',
-      link("report/translation.md", "Full report"), ' | ', link("diagnostics", "Diagnostics"), '</p></section>'),
+      link("report/translation.md", "Full report"), ' | ', link("diagnostics", "Diagnostics"),
+      paste(vapply(names(report$outcome$bundle_logs), function(name)
+        paste0(' | ', log_link(report$outcome$bundle_logs[[name]], paste("Last bundle", name))), ""), collapse = ""),
+      '</p></section>'),
     paste0('<p>Recorded status: ', run_html_escape(report$status), '</p>'),
     '<p>Execution, independent review, and reference equivalence are separate results. Saved outputs may be partial or unvalidated. Manual edits and reruns do not change this report.</p>',
     paste0('<nav>', paste(c(link("bundle/README.md", "Bundle instructions"), link("report/translation.md", "Translation report"),

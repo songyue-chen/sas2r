@@ -1,5 +1,5 @@
-# Deterministic source context, shared by authoring and static review. This is
-# not an agent tool and never reads datasets, comparisons, or prior opinions.
+# Deterministic source context and paged code access, shared by authoring and
+# static review. Neither reads datasets, comparisons, or prior opinions.
 agent_guidance_policy <- function() {
   paste(readLines(system.file("prompts", "translation-policy.md", package = "sas2r"),
     warn = FALSE), collapse = "\n")
@@ -39,6 +39,33 @@ direct_component_dependencies <- function(graph, component_id, downstream = FALS
   sort(setdiff(unique(result[!is.na(result)]), component_id), method = "radix")
 }
 
+# Code-only context shared by all three roles. Neighbour identifiers come from
+# the graph; R bodies come from the selected revision snapshot, never outputs.
+agent_dependency_bodies <- function(project, component_id, selected_revisions = list(),
+                                    graph = project$graph) {
+  ids <- unique(c(direct_component_dependencies(graph, component_id),
+    direct_component_dependencies(graph, component_id, downstream = TRUE)))
+  stats::setNames(lapply(ids, function(cid) list(
+    sas = component_source_text(graph, cid),
+    r = selected_revisions[[cid]]$r_code %||% "",
+    revision = selected_revisions[[cid]]$revision_id %||% "unavailable",
+    symbol = selected_revisions[[cid]]$contract$macro_contract$name %||% sub("^macro__", "", cid))), ids)
+}
+
+read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
+  bodies <- agent_dependency_bodies(ctx$project, ctx$component_id,
+    ctx$selected_revisions %||% list(), ctx$graph %||% ctx$project$graph)
+  body <- bodies[[component_id]]
+  if (is.null(body)) return(list(error = "not_a_direct_dependency_or_consumer"))
+  code <- body[[language]]
+  size <- nchar(code)
+  end <- min(size, offset + 11999L)
+  list(component_id = component_id, revision_id = body$revision, language = language,
+    status = if (size) "available" else "unavailable", total_characters = size,
+    offset = offset, next_offset = if (end < size) end + 1L else NULL,
+    code = if (offset <= size) substr(code, offset, end) else "")
+}
+
 build_agent_guidance <- function(project, component_id, contract = NULL,
                                  selected_revisions = list(), graph = project$graph,
                                  body_limit = 6000L, packet_limit = 24000L,
@@ -52,19 +79,15 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
   while (length(projections) && nchar(paste(render_source_projections(projections), collapse = "\n")) >
       min(6000L, floor(packet_limit / 3L))) projections <- utils::head(projections, -1L)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
-  bodies <- lapply(deps, function(cid) list(
-    sas = component_source_text(graph, cid),
-    r = selected_revisions[[cid]]$r_code %||% "",
-    revision = selected_revisions[[cid]]$revision_id %||% "unavailable",
-    symbol = selected_revisions[[cid]]$contract$macro_contract$name %||% sub("^macro__", "", cid)))
-  names(bodies) <- deps
+  available_bodies <- agent_dependency_bodies(project, component_id, selected_revisions, graph)
+  bodies <- available_bodies[deps]
   calls <- r_call_names(selected_revisions[[component_id]]$r_code %||% "")
   called <- vapply(bodies, function(b) b$symbol %in% calls, logical(1))
   cited <- deps %in% priority_dependencies | vapply(bodies, function(b)
     b$symbol %in% priority_dependencies, logical(1))
   deps <- deps[order(!cited, !called, seq_along(deps))]
   bodies <- bodies[deps]
-  scope <- migration_hash(list(component_id, macro, bodies, environment, projections, consumers,
+  scope <- migration_hash(list(component_id, macro, available_bodies, environment, projections, consumers,
     policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
   facts <- list()
   add_fact <- function(kind, subject, value) {
@@ -78,6 +101,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     paste("R:", environment$r_version),
     paste(names(environment$versions), "allowed by mechanical lint; installed version:", environment$versions),
     "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.",
+    "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Direct dependencies and consumers are readable.",
+    paste("Additional downstream consumer IDs:", paste(utils::head(setdiff(names(available_bodies), deps), 32L), collapse = ", ")),
     render_source_projections(projections))
   params <- macro$parameters
   if (!is.null(params) && nrow(params)) for (i in utils::head(seq_len(nrow(params)), 32L)) {
@@ -93,6 +118,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     id <- add_fact("dependency_body", body$symbol, "missing_or_truncated")
     paste(id, "dependency_body", body$symbol, "component", cid,
       "selected revision", body$revision,
+      "available characters: sas", nchar(body$sas), "r", nchar(body$r),
       if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency")
   }, character(1))
   label_budget <- max(0L, packet_limit - nchar(paste(text, collapse = "\n")) - 150L)

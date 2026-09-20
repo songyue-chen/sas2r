@@ -473,6 +473,7 @@ review_program_revision <- function(
   # their catalog fallback either way.
   tools <- build_tools(spec, list(
     agent_role = "reviewer",
+    component_id = component_id, selected_revisions = context$selected_revisions,
     project = context$project,
     unit_stmts = comp_stmts,
     schemas = tryCatch(infer_schemas(context$project), error = function(e) list()),

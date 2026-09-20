@@ -57,6 +57,10 @@ TOOL_ARGUMENT_SCHEMAS <- list(
   ), "name"),
   find_macro = closed_tool_schema(list(name = tool_string()), "name"),
   get_macro_source = closed_tool_schema(list(name = tool_string()), "name"),
+  read_dependency_context = closed_tool_schema(list(
+    component_id = tool_string(), language = list(type = "string", enum = c("sas", "r")),
+    offset = list(type = "integer", minimum = 1L, maximum = .Machine$integer.max - 12000L)
+  ), c("component_id", "language")),
   list_macro_files = closed_tool_schema(),
   search_docs = closed_tool_schema(list(
     construct = tool_string(), package = tool_string(), topic = tool_string()
@@ -72,6 +76,7 @@ TOOL_DESCRIPTIONS <- c(
   lookup_rulebook = "Look up deterministic SAS-to-R semantic rules.",
   find_macro = "Find indexed SAS macro definitions by name.",
   get_macro_source = "Read bounded source for an indexed SAS macro.",
+  read_dependency_context = "Read a 12000-character page of SAS source or selected R code for a direct dependency or downstream consumer. Follow next_offset for the remainder. No data or reference outputs are exposed.",
   list_macro_files = "List indexed SAS macro source filenames.",
   search_docs = "Search the configured local documentation mirror.",
   search_skills = "Search registered skills in the curated catalogue.",
@@ -117,6 +122,9 @@ validate_tool_arguments <- function(args, schema, name) {
 }
 
 TOOL_IMPLS <- list(
+  read_dependency_context = function(ctx) function(args) {
+    read_dependency_context(ctx, args$component_id, args$language, args$offset %||% 1L)
+  },
   read_unit_context = function(ctx) function(args) {
     inputs <- if (!is.null(ctx$project$lineage) && !is.null(ctx$unit_stmts)) {
       unique(ctx$project$lineage$dataset[

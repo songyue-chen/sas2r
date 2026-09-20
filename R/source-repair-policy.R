@@ -32,6 +32,16 @@ missing_source_dataset <- function(state, cid, condition) {
   NULL
 }
 
+# Recorded output presence is enough to avoid blaming its producer for a
+# reader lookup failure. It does not certify the dataset's content or binding.
+recorded_dataset_output <- function(attempt, dataset) {
+  if (is.null(dataset)) return(character())
+  bits <- split_ds(dataset)
+  candidates <- paste0(bits[["lib"]], "/", bits[["member"]], ".", OUTPUT_CANDIDATE_FORMATS)
+  paths <- names(attempt$output_hashes)
+  paths[tolower(paths) %in% tolower(candidates)]
+}
+
 non_translation_runtime_reason <- function(state, cid, condition) {
   if (any(grepl("timeout", condition$class %||% character(), fixed = TRUE)))
     return("execution_timeout; no translation defect established")

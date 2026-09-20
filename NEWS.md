@@ -1,5 +1,12 @@
 # sas2r 0.5.1
 
+- Authoring, review and repair can retrieve paged SAS and selected R dependency
+  code when the initial context is truncated. Native graphics guidance and the
+  default package list include R plotting and PDF support.
+- Generated literal LIBNAME assignments are checked against preflight's resolved
+  paths. A reader lookup failure with an already recorded producer output stays
+  with the reader for diagnosis. Run summaries identify the last bundle error,
+  affected component and logs separately from outstanding static reviews.
 - Translation now continues through missing inputs, source dependencies and
   dependency cycles, preserving available code and warning about unresolved
   behavior. Known provider order remains enforced; cycle drafts do not establish

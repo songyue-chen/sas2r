@@ -53,3 +53,59 @@ test_that("the shipped plot example sends source-defined whiskers to the rendere
   expect_identical(received$names, "Group A")
   expect_true(file.exists(file))
 })
+
+test_that("native graphics guidance reaches template definitions and callers in all roles", {
+  for (source in c("proc template; define statgraph example; begingraph; endgraph; end; run;",
+                   "ods pdf file='plot.pdf'; proc sgrender data=work.summary template=example; run; ods pdf close;")) {
+    for (role in c("translator", "reviewer", "fixer")) {
+      text <- render_agent_skills(route_agent_skills(list(agent = role, flags = skill_flags_from_sas(source))))
+      expect_match(text, "sas-native-graphics", fixed = TRUE)
+      expect_match(text, "caller must capture and use it", fixed = TRUE)
+      expect_match(text, "read_dependency_context", fixed = TRUE)
+    }
+  }
+  code <- skill_example_code("sas-native-graphics")
+  expect_false(any(lint_r_code(code)$kind == "disallowed_namespace"))
+  expect_true(any(lint_r_code(code, allowlist = c("base", "stats"))$kind == "disallowed_namespace"))
+  expect_true(all(c("graphics", "grDevices", "grid") %in% agent_package_facts()$allowed))
+})
+
+test_that("a returned native template is consumed and preserves statistics on both PDF pages", {
+  env <- new.env(parent = baseenv())
+  eval(parse(text = skill_example_code("sas-native-graphics")), env)
+  # Acceptance values from the same seven-observation definition-5 example
+  # above. Rendering must consume these values rather than recompute hinges.
+  box <- list(stats = matrix(c(0, 1, 3, 5, 5), ncol = 1), n = 7,
+    conf = matrix(NA_real_, 2, 1), out = 20, group = 1L, names = "Treatment A")
+  labels <- c("Treatment", "n", "Mean", "Std Dev", "Min", "Q1", "Median", "Q3", "Max")
+  page <- list(box = box, notch = FALSE, means = 5, references = c(2, 8),
+    ylim = c(0, 25), ylab = "Observed value", title = "Visit 1",
+    table = cbind(labels, c("A", "7", "5", "6.83", "0", "1", "3", "5", "20")),
+    footnote = "Source summary and IQR outliers")
+  second <- page; second$title <- "Visit 2"
+  received <- list(); original <- graphics::bxp
+  testthat::local_mocked_bindings(bxp = function(z, ...) {
+    received[[length(received) + 1L]] <<- z
+    original(z, ...)
+  }, .package = "graphics")
+  path <- file.path(withr::local_tempdir(), "new-output-folder", "summary.pdf")
+  device_before <- grDevices::dev.cur()
+  env$draw_summary(list(page, second), path)
+  expect_identical(grDevices::dev.cur(), device_before)
+  expect_length(received, 2)
+  for (z in received) {
+    expect_identical(z, box)
+    expect_equal(as.numeric(z$stats), c(0, 1, 3, 5, 5))
+    expect_identical(z$out, 20)
+  }
+  expect_gt(file.info(path)$size, 1000)
+  if (requireNamespace("pdftools", quietly = TRUE)) {
+    expect_equal(pdftools::pdf_info(path)$pages, 2)
+    pages <- pdftools::pdf_text(path)
+    for (i in 1:2) {
+      for (label in c(labels, "Observed value", "Source summary and IQR outliers", paste("Visit", i))) {
+        expect_match(pages[[i]], label, fixed = TRUE)
+      }
+    }
+  }
+})

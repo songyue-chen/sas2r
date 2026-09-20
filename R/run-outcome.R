@@ -10,10 +10,27 @@ migration_run_outcome <- function(state, report, attempts) {
   findings <- report$diagnostics$dependency_findings %||% list()
   readiness <- report$diagnostics$readiness
   failures <- report$diagnostics$component_failures %||% list()
+  bundles <- Filter(function(x) identical(x$kind, "bundle"), attempts$completed_attempts)
+  latest <- if (length(bundles)) utils::tail(bundles, 1L)[[1L]] else NULL
+  stopped <- if (!is.null(latest) && !isTRUE(latest$passed) && !isTRUE(latest$deferred)) latest$condition else NULL
   affected <- unique(unlist(lapply(c(findings,
     Filter(function(x) isTRUE(x$blocks_execution), readiness$warnings), failures), `[[`, "affected"), use.names = FALSE))
+  affected <- unique(c(affected, stopped$component_id))
+  pending <- names(Filter(function(x) x$review_status %in% c("repair_required", "review_unavailable"),
+    report$component_evidence %||% list()))
   details <- c(
     if (!is.null(failure$stage)) paste("Stopped during:", failure$stage),
+    if (!is.null(stopped$message)) paste0("Bundle execution stopped in ", stopped$component_id %||% "unknown component",
+      " (", latest$attempt_id, "): ", stopped$message),
+    if (!is.null(stopped$message)) {
+      missing <- missing_source_dataset(state, stopped$component_id, stopped)
+      recorded <- recorded_dataset_output(latest, missing)
+      if (length(recorded)) paste("The attempt recorded", paste(recorded, collapse = ", "),
+        "but this reader could not find it. Check the effective library bindings; output contents remain unverified.")
+    },
+    if (!is.null(stopped$message)) paste("Bundle logs:", latest$stdout_path, latest$stderr_path),
+    if (length(pending)) paste0("Separate outstanding static reviews (not proof these paths executed): ",
+      paste(pending, collapse = ", ")),
     if (!is.null(report$diagnostics$pipeline)) pipeline_coverage_lines(report$diagnostics$pipeline),
     if (length(report$diagnostics$execution_deferred)) paste("Execution unavailable:",
       paste(report$diagnostics$execution_deferred, collapse = "; ")),
@@ -27,7 +44,6 @@ migration_run_outcome <- function(state, report, attempts) {
 
   # Attempt records are run-scoped. A prepared/interrupted or deferred attempt
   # must not be counted as executed, even when a prior bundle remains selected.
-  bundles <- Filter(function(x) identical(x$kind, "bundle"), attempts$completed_attempts)
   incomplete <- sum(startsWith(attempts$incomplete_attempt_ids, "bundle_attempt_"))
   deferred <- sum(vapply(bundles, function(x) isTRUE(x$deferred), logical(1)))
   executed <- length(bundles) - deferred
@@ -64,12 +80,14 @@ migration_run_outcome <- function(state, report, attempts) {
       if (executed == 0L || !is.null(failure) || length(affected)) "NOT COMPLETED" else "NOT PASSED"
     } else if (status == "needs_review") "REVIEW REQUIRED" else "PASSED (see reference coverage)")
   next_action <- if (length(failures)) "Resolve the component failures and any dependency findings before rerunning." else
+    if (!is.null(stopped$message)) "Repair the reported bundle failure and resolve outstanding review findings before rerunning." else
     if (length(affected)) "Resolve the dependency findings before rerunning." else
     if (severity == "error") "Resolve the reported error or failed checks before rerunning." else
       if (severity == "warning") "Review the outstanding evidence and reported findings before use." else
         "Inspect output and reference coverage before use."
   list(severity = severity, title = title, reason = failure$message %||% report$status_reason,
     details = details, stages = as.list(stages), affected_components = affected,
+    bundle_logs = if (!is.null(stopped$message)) list(stdout = latest$stdout_path, stderr = latest$stderr_path) else list(),
     next_action = next_action)
 }
 

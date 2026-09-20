@@ -64,6 +64,23 @@ test_that("a bundle that ran and invoked a fixer is not reported as skipped", {
   expect_identical(outcome$stages[["Component fixes"]], "NOT INVOKED")
 })
 
+test_that("failed bundles expose their actual exception and log links above advisories", {
+  fx <- repair_workflow_fixture(n = 1L, failures = 1L)
+  state <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 0L)
+  write_migration_report(state)
+  report <- read_json_record(state$paths$report_json)
+  html <- paste(readLines(state$paths$start_here), collapse = "\n")
+  log <- paste(readLines(file.path(state$paths$logs, "run-outcome.log")), collapse = "\n")
+  expect_true("p01" %in% report$outcome$affected_components)
+  for (text in c("Bundle execution stopped in p01", "translation fault p01", "bundle_attempt_001")) {
+    expect_match(html, text, fixed = TRUE)
+    expect_match(log, text, fixed = TRUE)
+  }
+  expect_match(html, 'href="diagnostics/bundle_attempts/bundle_attempt_001/logs/bundle_stderr.log"', fixed = TRUE)
+  expect_lt(regexpr("Bundle execution stopped in p01", html, fixed = TRUE)[1L],
+    regexpr('id="components"', html, fixed = TRUE)[1L])
+})
+
 test_that("disabled execution and interrupted attempts are distinguished from executed bundles", {
   root <- withr::local_tempdir()
   writeLines("data work.out; x=1; run;", file.path(root, "p.sas"))

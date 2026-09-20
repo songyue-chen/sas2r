@@ -57,7 +57,7 @@ review_helper_consumers <- function(state, retained, components, round,
       state$histories[[cid]] <- activate_component_binding(state$histories[[cid]], rev$binding)
     }
     rev$checks <- check_program_revision(rev$r_path, contract = rev$contract,
-      helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist)
+      helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist, project = state$project)
     rev$status <- if (isTRUE(rev$checks$pass)) "ok" else "check_failed"
     state$selected_revisions[[cid]] <- rev
     state$histories[[cid]] <- record_program_checks(state$histories[[cid]], rev$checks)

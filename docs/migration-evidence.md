@@ -128,6 +128,18 @@ code/helper selection and can overlap; findings from that pass enter the bundle
 repair queue.
 Whole-bundle execution and repair remain serial.
 
+Translator, reviewer and fixer share a read-only dependency-code reader. When
+the initial context omits a needed body, they can retrieve pages of its SAS
+source and selected R implementation within the existing tool-call budget.
+This does not provide dataset or reference-output access. Generated literal
+library assignments are also checked against the paths resolved during preflight.
+
+After an execution failure, the start page names the last failed component,
+shows the actual exception and links its logs. Outstanding static reviews are
+listed separately: a later stopping stub may exist without having executed.
+When an upstream dataset was recorded but a reader cannot find it, repair
+investigates the reader's library binding before blaming the producer.
+
 The report's `diagnostics.parallel` records requested and effective concurrency,
 the backend and any fallback reason. For a parallel run, its `observed` field
 includes peak process count, sampled process memory and coordinator admission
@@ -260,6 +272,25 @@ Shared worker prompts, skills, policy and runtime helper code also participate
 in the checkpoint identity. Changes to them can regenerate translations, not
 just reviews. Version 0.4.5 includes a shared policy change. A package version
 number alone does not invalidate a checkpoint.
+
+## Checking figure content
+
+A valid PDF and a completed model review do not prove that every annotation is
+visible. Inspect the rendered pages. For required labels or headings, configure
+the existing text assertions in `_sas2r.yml`:
+
+```yaml
+outputs:
+  tlfs: [outputs/summary.pdf]
+  assertions:
+    outputs/summary.pdf:
+      required_text: [Mean, Median, "Std Dev"]
+```
+
+With `pdftools` installed, the output gate checks extracted PDF text and rejects
+missing required text. This checks presence across the PDF; it does not verify
+each page, layout or statistical values. Those still need review or suitable
+reference evidence.
 
 ## Moving a deliverable
 

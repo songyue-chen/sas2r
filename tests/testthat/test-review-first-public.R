@@ -165,7 +165,8 @@ test_that("public exports include every library and TLF and run after moving", {
     "dir.create('outputs', showWarnings = FALSE)",
     "writeLines('<html><body><table><tr><td>Results</td></tr></table></body></html>', 'outputs/table.html')",
     "writeLines('Summary', 'summary.txt')", sep = "\n")
-  adapter <- counted_review_llm(list(good_review(), good_translation(second_code), good_review()))
+  # The producer's final review refreshes after its consumer becomes readable.
+  adapter <- counted_review_llm(list(good_review(), good_translation(second_code), good_review(), good_review()))
   result <- sas_translate(fx$root, config = fx$config, out_dir = file.path(fx$root, "migration"), llm = adapter$llm)
   expect_identical(result$status, "migration_ready")
   for (rel in c("datasets/adam/out.rds", "tlf/outputs/table.html")) {

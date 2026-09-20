@@ -175,6 +175,8 @@ test_that("all actual role requests receive the same source context without refe
       identical(llm, reviewer))
     expect_false(grepl("FORBIDDEN_REFERENCE_PATH|FORBIDDEN_TARGET_COUNT", messages))
     expect_false("read_comparison_report" %in% names(request$tools))
+    expect_identical(request$tools$read_dependency_context$call(list(
+      component_id = "macro__check", language = "r"))$code, "check <- function() 1L")
   }
   expect_false("get_macro_source" %in% names(reviewer$requests()[[1]]$tools))
 })

@@ -20,11 +20,12 @@ gate_parse <- function(code) {
 #' @param registry Optional path to `autoexec.R` or registry object.
 #' @param helper_patch Optional candidate shared-helper patch; checked without execution.
 #' @param allowlist Configured package namespaces, or NULL for the default.
+#' @param project Optional scanned project for resolved library binding checks.
 #' @return A list with `pass` (logical), `errors` (character vector),
 #'   `warnings` (character vector), and `lint` (lint tibble).
 #' @noRd
 check_program_revision <- function(r_path, contract = NULL, registry = NULL, helper_patch = NULL,
-                                   allowlist = NULL) {
+                                   allowlist = NULL, project = NULL) {
   errors <- character()
   warnings <- character()
 
@@ -39,6 +40,7 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
 
   code_lines <- readLines(r_path, warn = FALSE)
   code_text <- paste(code_lines, collapse = "\n")
+  errors <- c(errors, check_component_library_assignments(code_text, project, contract$component_id))
 
   # 1. Parse check
   parsed <- tryCatch(parse(text = code_text), error = function(e) e)

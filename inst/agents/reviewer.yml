@@ -8,6 +8,7 @@ temperature: 0
 tools:
   query_project_graph: {}
   lookup_rulebook:     {}
+  read_dependency_context: {}
   search_skills:       {}
   read_skill:          {}
 tool_call_limit: 30

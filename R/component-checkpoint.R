@@ -4,7 +4,7 @@ check_component_revision <- function(state, component_id) {
   rev_id <- rev$revision_id
   registry_p <- if (!is.null(state$runtime)) state$runtime$registry else NULL
   checks <- check_program_revision(rev$r_path, contract = rev$contract, registry = registry_p,
-    helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist)
+    helper_patch = candidate_helper_patch(rev, state$runtime), allowlist = state$config$allowlist, project = state$project)
   checks$check_id <- paste0("check_", substr(migration_hash(list(
     component_id, rev_id, rev$r_code, checks)), 1L, 16L))
 
