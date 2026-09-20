@@ -114,7 +114,8 @@ lib_call_misuse <- function(e, fname) {
 # One package-list policy for prompts, facts, reconciliation and lint. An
 # explicit list replaces the default; accept YAML lists and comma-separated text.
 normalize_package_allowlist <- function(allowlist = NULL) {
-  if (is.null(allowlist)) return(c("base", "dplyr", "tidyr", "haven", "stats", "utils", "graphics", "grDevices", "grid"))
+  if (is.null(allowlist)) return(c("base", "dplyr", "tidyr", "ggplot2", "stringr", "forcats", "purrr",
+    "lubridate", "tibble", "haven", "stats", "utils", "graphics", "grDevices", "grid"))
   packages <- trimws(unlist(strsplit(as.character(unlist(allowlist)), ",", fixed = TRUE)))
   unique(packages[!is.na(packages) & nzchar(packages)])
 }

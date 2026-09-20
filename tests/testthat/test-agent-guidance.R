@@ -49,7 +49,10 @@ test_that("configured namespaces share one policy for metadata, facts and lint",
   expect_true(checked$pass)
   expect_false(any(checked$lint$kind == "disallowed_namespace"))
   expect_length(reconcile_helper_use(code, contract$helper_use, allowlist = configured), 0)
-  default <- check_program_revision(path, contract)
+  outside <- withr::local_tempfile(fileext = ".R")
+  writeLines('out <- jsonlite::toJSON(list(x = 1))', outside)
+  default <- check_program_revision(outside,
+    new_behavioral_contract("example", helper_use = "jsonlite::toJSON"))
   expect_false(default$pass)
   expect_true(any(default$lint$kind == "disallowed_namespace"))
 })
@@ -173,6 +176,8 @@ test_that("all actual role requests receive the same source context without refe
     expect_match(messages, "stringr allowed by mechanical lint; installed version:", fixed = TRUE)
     expect_identical(grepl("cite its current context_fact_id", messages, fixed = TRUE),
       identical(llm, reviewer))
+    # The style preference is for the roles that write code; the reviewer judges semantics only.
+    expect_identical(grepl("tidyverse first", messages, fixed = TRUE), !identical(llm, reviewer))
     expect_false(grepl("FORBIDDEN_REFERENCE_PATH|FORBIDDEN_TARGET_COUNT", messages))
     expect_false("read_comparison_report" %in% names(request$tools))
     expect_identical(request$tools$read_dependency_context$call(list(

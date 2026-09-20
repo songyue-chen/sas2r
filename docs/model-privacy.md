@@ -50,7 +50,9 @@ labels alone do not cancel a proven execution or translation failure.
 
 The configured `allowlist` (a comma-separated string or YAML list) is used
 consistently in prompts, package facts, helper checks and lint. An explicit list
-replaces the default `base, dplyr, tidyr, haven, stats, utils, graphics, grDevices, grid`.
+replaces the default `base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate, tibble, haven, stats, utils, graphics, grDevices, grid`.
+Packages must be installed where the bundle executes; the style guidance names
+only allowlisted packages that are installed.
 Installed package versions are descriptive context: a package update alone does
 not discard saved translations on resume. Execution checks still run with the
 current environment.

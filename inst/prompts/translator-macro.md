@@ -13,6 +13,7 @@ Constraints, in order:
    exist in the runtime that executes the bundle.
    Do not call library() or require(), including for allowlisted packages.
    Qualify package functions (e.g. dplyr::mutate) and use the base |> pipe.
+   {{style}}
 3. Faithful to actual SAS behavior, bug-for-bug.
    For dataset deletion use lib_delete("work", c("scratch_a", "scratch_b"))
    with explicit names. Do not use file.remove/unlink or replace observable
