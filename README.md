@@ -127,7 +127,7 @@ check$budget       # effective limits; no model calls are made
 ```
 
 Preflight checks the source setup without model calls or reading dataset contents.
-Resolve reported problems before translating. See the [preflight guide](docs/clinical-qc-preflight.md)
+Review the findings: missing resources usually allow translation with warnings. See the [preflight guide](docs/clinical-qc-preflight.md)
 for library paths, output requirements and QC profiles.
 
 ### 4. Run it
@@ -207,8 +207,11 @@ spend time waiting, but memory and provider quotas still limit useful concurrenc
 Parallel mode requires **ellmer 0.5.0 or newer** and `llm.max_tries: 1`.
 If both `max_parallel_translations` and `max_tries` exceed 1, the run stops with
 instructions to change one. Older ellmer uses one workflow and reports why.
-Known invalid pipelines stop in preflight; new dependency findings during
-translation put affected work on hold and block the full study run.
+Missing inputs or source dependencies produce warnings while available code keeps
+translating. A failed component does not stop other programs. Reports distinguish
+saved code from execution that could not run. Use `execute = FALSE` for code only;
+omitting SAS references still permits execution. Unusable configuration and
+pipeline omissions remain errors.
 
 Start with one, then compare two on representative programs. Equal live-model
 quality and a particular speedup are not established by the offline tests.

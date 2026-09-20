@@ -61,8 +61,8 @@ and translation stop with a configuration error before provider calls.}
 \value{
 A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries},
 \code{inputs} (available, missing, unresolved, no_producer, backward_dependency,
-created_if_missing, or generated), \code{references}, \code{unsupported},
-scanner \code{findings}, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
+created_if_missing, generated, or environment), \code{references}, \code{unsupported},
+scanner \code{findings}, shared \code{readiness} warnings, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
 \code{called_macros} lists reachable search-path macro definitions and their
 standalone R and interface-test paths.
 \code{pipeline} reconciles every scanned file with the translation schedule and

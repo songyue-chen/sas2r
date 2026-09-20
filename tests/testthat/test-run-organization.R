@@ -132,9 +132,9 @@ test_that("manifest dependencies are arrays for zero, one and multiple providers
 
 test_that("handled preflight failure leaves a blocked page and keeps its original error", {
   root <- withr::local_tempdir()
-  writeLines("%unavailable_macro();", file.path(root, "program.sas"))
+  writeLines("/* no active source */", file.path(root, "program.sas"))
   out <- withr::local_tempdir()
-  expect_error(sas_translate(root, out_dir = out, execute = FALSE), "macro")
+  expect_error(sas_translate(root, out_dir = out, execute = FALSE), "No active source")
   pages <- list.files(out, pattern = "START_HERE.html", recursive = TRUE, full.names = TRUE)
   expect_length(pages, 1L)
   manifest <- read_json_record(file.path(dirname(pages), "manifest.json"))

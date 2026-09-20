@@ -113,12 +113,13 @@ baseline generation and immediate program repair -> full bundle attempt executio
 and output-driven repair -> deterministic gate selection and reporting.
 }
 \details{
-Called macro dependencies must resolve during offline dependency mapping.
-Missing definitions or unsupported dynamic macro calls raise a
-\code{sas2r_macro_dependency_error} before provider setup or model requests, with
-source locations and configuration guidance. Use \code{\link[=sas_preflight]{sas_preflight()}} to inspect
-the findings, and configure \code{macros.search_path} in \verb{_sas2r.yml} when definitions
-live outside the scanned sources.
+Missing inputs, called macros, includes and uncertain dependencies are reported
+while available source continues translating. Unavailable dependencies defer
+affected execution; they do not authorize inventing missing source or data.
+Component failures preserve useful work and allow other components to proceed.
+Unusable configuration, inconsistent pipeline coverage and critical provider or
+accounting failures still stop the run. Use \code{\link[=sas_preflight]{sas_preflight()}} to inspect
+readiness and configure \code{macros.search_path} for external macro definitions.
 }
 \examples{
 # Translate a small SAS program with the deterministic rule-based engine.

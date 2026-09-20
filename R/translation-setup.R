@@ -73,6 +73,8 @@ translation_setup <- function(path, config, outputs, recursive, cache = FALSE,
   project$output_contracts <- plan$contracts
   project$graph <- plan$graph
   project$schedule <- plan$schedule
+  project$readiness <- translation_readiness(project, plan)
+  project$dependency_findings <- NULL
   list(config = cfg, project = project, plan = plan, max_parallel_translations = translation_limit)
 }
 

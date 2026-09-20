@@ -1,4 +1,16 @@
-# sas2r 0.5.0
+# sas2r 0.5.1
+
+- Translation now continues through missing inputs, source dependencies and
+  dependency cycles, preserving available code and warning about unresolved
+  behavior. Known provider order remains enforced; cycle drafts do not establish
+  a valid execution order. Missing resources defer execution, not translation.
+- Component failures preserve completed work and allow other programs to
+  continue in sequential and parallel runs. Configuration, usage/accounting and
+  provider-wide failures remain terminal. Logs and HTML distinguish saved code,
+  incomplete components and execution that was not performed.
+- Preflight and workers share recognition of documented SAS metadata resources,
+  source-used automatic macro variables, search options and configured LIBNAME
+  paths. Recognition does not supply missing data, custom formats or macro code.
 
 * Reconcile worker dependency findings with documented SAS session metadata
   resources and configured LIBNAME path bindings. Avoid treating those resources
@@ -6,6 +18,9 @@
   and variables used outside resolved paths. Share this context with all agent
   roles, reassess dependency blocks on parallel resume, and retain the existing
   review, execution and output checks.
+
+# sas2r 0.5.0
+
 * Explain in the README FAQ why two or four translation workers do not promise
   half or one-quarter of the total run time, with an illustrative timing example.
 * Keep the README focused on getting started, with general study-programming

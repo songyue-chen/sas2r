@@ -99,9 +99,13 @@ promote_reviewed_smoke <- function(state, component_id) {
 }
 
 smoke_component_revision <- function(state, component_id, execute = TRUE) {
+  state <- record_dependency_finding(state, component_id, parallel_dependency_findings(state, component_id))
   rev <- state$selected_revisions[[component_id]]
+  unavailable <- component_execution_reasons(state, component_id)
   plan <- if (!isTRUE(rev$checks$pass)) {
     list(status = "deferred", reason = "mechanical_checks_failed")
+  } else if (isTRUE(execute) && length(unavailable)) {
+    list(status = "deferred", reason = paste("Dependencies unavailable:", paste(unavailable, collapse = "; ")))
   } else build_program_smoke_plan(state$graph, component_id,
     state$selected_revisions, execute = execute)
   plan$population_specs <- source_population_specs(state$project, c(plan$dependency_prefix, component_id))
@@ -176,6 +180,7 @@ revisit_component_runtime <- function(state, component_id, execute = TRUE) {
 finalize_component_reviews <- function(state) {
   ids <- intersect(state$schedule$component_id %||% names(state$selected_revisions),
     names(state$selected_revisions))
+  ids <- setdiff(ids, names(state$diagnostics$component_failures))
   signal_immediate_coordinator_event("component_review_checkpoint_started", "all components")
   reused <- completed <- unavailable <- 0L
   for (cid in ids) {

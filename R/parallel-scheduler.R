@@ -35,10 +35,7 @@ parallel_dependency_findings <- function(state, cid) {
   # Use the scanner's canonical SAS macro classification, including supplied
   # autocall macros. Environment resources and configured path-only symbols do
   # not add a producer to the schedule; their translation still needs review.
-  reported <- reported[!tolower(sub("^%", "", reported)) %in% MACRO_BUILTINS]
-  paths <- configured_path_dependency_symbols(state$project, cid)
-  resources <- c(SAS_METADATA_RESOURCES, paths, paste0("&", paths), paste0("&", paths, "."))
-  reported <- reported[!tolower(reported) %in% resources]
+  reported <- filter_dependency_resources(reported, state$project, cid)
   # A confirmation of an existing provider is not a graph correction. Anything
   # else needs source-based reconciliation; no guessed independence/order.
   graph <- state$graph
@@ -56,36 +53,14 @@ parallel_affected_components <- function(graph, cid, ids) {
   union(cid, ids[vapply(ids, function(id) cid %in% dependency_closure(graph, id), logical(1))])
 }
 
-parallel_defer_finding <- function(state, cid, finding) {
-  affected <- parallel_affected_components(state$graph, cid, state$schedule$component_id)
-  state$diagnostics$dependency_findings[[cid]] <- list(findings = finding, affected = affected,
-    reason = "source_reconciliation_required")
-  state$diagnostics$parallel_deferred <- union(state$diagnostics$parallel_deferred, affected)
-  state$status <- "blocked"
-  state$status_reason <- paste("Dependency findings require source reconciliation:", paste(
-    vapply(names(state$diagnostics$dependency_findings), function(id) paste0(id, " (",
-      paste(state$diagnostics$dependency_findings[[id]]$findings, collapse = ", "), ")"), ""),
-    collapse = "; "))
-  signal_immediate_coordinator_event("dependency_blocked", cid, severity = "error",
-    reason = paste("Dependency findings require source reconciliation:", paste(finding, collapse = ", ")),
-    affected = affected)
-  state
-}
-
 run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
   # A resumed run must reassess saved observations against the current source
   # and resolver. The previous run's report retains its original blockers.
-  state$diagnostics$dependency_findings <- NULL
-  state$diagnostics$parallel_deferred <- NULL
   pool <- parallel_new_pool(state)
   on.exit(parallel_stop_pool(pool), add = TRUE)
+  tryCatch({
   pending <- parallel_component_order(state$graph, ids)
-  providers <- stats::setNames(lapply(ids, function(cid) intersect(dependency_closure(state$graph, cid), ids)), ids)
-  unresolved <- state$schedule$component_id[lengths(state$schedule$unresolved_dependencies) > 0L]
-  blocked <- unique(c(unresolved, ids[vapply(providers, function(deps) any(deps %in% unresolved), logical(1))]))
-  pending <- setdiff(pending, blocked)
-  if (length(blocked)) signal_immediate_coordinator_event("dependency_blocked", "dependency schedule",
-    severity = "error", reason = "Unresolved source dependencies", affected = blocked)
+  providers <- translation_providers(state$graph, state$schedule, ids)
   done <- active <- character()
   drafts <- list()
   settle <- NULL
@@ -98,37 +73,12 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
     completed <- parallel_poll(pool)
     for (entry in completed) {
       cid <- entry$job$component_id
-      if (cid %in% blocked) {
-        parallel_job_record(entry$job, "deferred", "source_reconciliation_required")
-        next
-      }
-      if (length(entry$result$dependency_findings)) {
-        pool$state <- parallel_defer_finding(pool$state, cid, entry$result$dependency_findings)
-        affected <- pool$state$diagnostics$dependency_findings[[cid]]$affected
-        blocked <- union(blocked, affected)
-        pending <- setdiff(pending, affected)
-        done <- setdiff(done, affected)
-        active <- setdiff(active, affected)
-        drafts[intersect(names(drafts), affected)] <- NULL
-        for (id in names(pool$jobs)) {
-          job <- pool$jobs[[id]]
-          if (!job$component_id %in% affected) next
-          if (job$process$is_alive()) job$process$kill_tree()
-          parallel_abandon_job(pool, job)
-          parallel_job_record(job, "deferred", "source_reconciliation_required")
-          pool$jobs[[id]] <- NULL
-          if (identical(settle, id)) settle <- NULL
-        }
-        if (identical(settle, entry$job$id)) settle <- NULL
-        parallel_job_record(entry$job, "deferred", "source_reconciliation_required")
-        parallel_save_checkpoint(pool)
-        next
-      }
+      pool$state <- record_dependency_finding(pool$state, cid, entry$result$dependency_findings)
       if (entry$job$kind == "draft") {
         drafts[[cid]] <- entry$result
       } else {
         pool$state <- parallel_apply_result(pool$state, entry$result)
-        pool$state$component_stage[[cid]] <- "settled"
+        pool$state$component_stage[[cid]] <- if (is.null(pool$state$diagnostics$component_failures[[cid]])) "settled" else "failed"
         done <- union(done, cid)
         active <- setdiff(active, cid)
         settle <- NULL
@@ -139,6 +89,7 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
         revisits <- setdiff(intersect(done, requeue_components(state$graph, old_hashes, hashes,
           runtime_deferred = deferred, waiting_on = lapply(pool$state$selected_revisions,
             function(rev) rev$smoke$waiting_on))), cid)
+        revisits <- setdiff(revisits, names(pool$state$diagnostics$component_failures))
         for (id in revisits) {
           count <- counts[[id]] %||% 0L
           if (!is.na(count) && count < 3L) {
@@ -152,6 +103,15 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
         old_hashes <- hashes
         parallel_save_checkpoint(pool)
       }
+    }
+    failed <- parallel_collect_component_failures(pool)
+    if (length(failed)) {
+      done <- union(done, failed)
+      active <- setdiff(active, failed)
+      pending <- setdiff(pending, failed)
+      drafts[intersect(names(drafts), failed)] <- NULL
+      if (!is.null(settle) && !settle %in% names(pool$jobs)) settle <- NULL
+      parallel_save_checkpoint(pool)
     }
     if (length(pool$failures)) {
       # Drain admitted sibling work without dispatching more calls. A running
@@ -190,28 +150,26 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
       pending <- setdiff(pending, cid)
     }
     if (!length(active) && length(pending)) {
-      blocked <- union(blocked, pending)
-      signal_immediate_coordinator_event("dependency_blocked", "dependency schedule",
-        severity = "error", reason = "No dependency-ready components remain", affected = pending)
-      break
+      # A source cycle was already classified by readiness. Unexpected graph
+      # omissions are not recoverable here: do not silently discard programs.
+      cli::cli_abort("Translation scheduler cannot account for pending components: {paste(pending, collapse = ', ')}",
+        class = "sas2r_pipeline_coverage_error")
     }
     if (length(active)) Sys.sleep(0.025)
   }
   state <- pool$state
-  if (length(blocked)) {
-    state$diagnostics$parallel_deferred <- blocked
-    state$status <- "blocked"
-    if (!length(state$diagnostics$dependency_findings))
-      state$status_reason <- "Unresolved dependencies or no dependency-ready components; affected work deferred"
-  }
   state <- finalize_parallel_component_reviews(state, pool)
   structure(state, class = c("sas2r_program_pipeline_result", "sas2r_migration_state", "list"))
+  }, error = function(error) {
+    error$migration_state <- pool$state
+    stop(error)
+  })
 }
 
 finalize_parallel_component_reviews <- function(state, pool = parallel_new_pool(state)) {
   on.exit(parallel_stop_pool(pool), add = TRUE)
   ids <- setdiff(intersect(state$schedule$component_id, names(state$selected_revisions)),
-    state$diagnostics$parallel_deferred)
+    names(state$diagnostics$component_failures))
   signal_immediate_coordinator_event("component_review_checkpoint_started", "all components")
   reused <- completed <- unavailable <- 0L
   pending <- character()
@@ -233,12 +191,13 @@ finalize_parallel_component_reviews <- function(state, pool = parallel_new_pool(
     }
     for (entry in parallel_poll(pool)) {
       pool$state <- parallel_apply_result(pool$state, entry$result)
-      if (length(entry$result$dependency_findings)) pool$state <- parallel_defer_finding(
+      if (length(entry$result$dependency_findings)) pool$state <- record_dependency_finding(
         pool$state, entry$job$component_id, entry$result$dependency_findings)
       if (identical(entry$result$review$verdict, "review_unavailable")) unavailable <- unavailable + 1L else
         completed <- completed + 1L
       parallel_save_checkpoint(pool)
     }
+    parallel_collect_component_failures(pool)
     if (!length(pool$jobs)) parallel_abort_failure(pool)
     if (length(pool$jobs)) Sys.sleep(0.025)
   }

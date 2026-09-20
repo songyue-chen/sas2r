@@ -221,3 +221,19 @@ historical `comparison_rules$tolerance` field is ignored with a warning.
 Use a single YAML document and `true`/`false` booleans. Some YAML writers emit
 `yes`/`no` by default; convert those boolean values to `true`/`false` before
 loading the configuration. Metadata keys such as `N` and `Y` remain strings.
+
+## Warnings and translation-only work
+
+Preflight is a readiness report. Missing input files, source includes/macros and
+uncertain dependency order normally produce warnings while available source
+continues translating. Inspect `check$readiness$warnings` for affected components,
+source locations, consequences and suggested actions. Documented SAS metadata
+reads have input status `environment`; they do not require a study data file.
+
+Use `sas_translate(..., execute = FALSE)` when you only want translated code.
+Leaving references unconfigured does not select that mode: programs can run and
+undergo output checks without SAS reference comparisons. Missing source cannot be
+invented; affected translations and downstream assumptions remain provisional.
+Missing execution prerequisites defer execution, while missing configured
+references defer comparison. No active source, unusable configuration and
+unexplained pipeline omissions still stop the run before translation.

@@ -364,9 +364,9 @@ parallel_poll <- function(pool) {
       parallel_job_record(job, "failed", conditionMessage(result))
       pool$jobs[[id]] <- NULL
       pool$failures[[id]] <- list(component_id = job$component_id, phase = job$kind,
-        job_id = id, reason = conditionMessage(result),
+        job_id = id, reason = conditionMessage(result), critical = critical_translation_error(result),
         stdout = file.path(job$dir, "stdout.log"), stderr = file.path(job$dir, "stderr.log"))
-      signal_immediate_coordinator_event("worker_failed", job$component_id,
+      if (isTRUE(pool$failures[[id]]$critical)) signal_immediate_coordinator_event("worker_failed", job$component_id,
         severity = "error", reason = conditionMessage(result), path = job$dir)
       pool$state$component_stage[[job$component_id]] <- "interrupted"
       next
@@ -378,6 +378,20 @@ parallel_poll <- function(pool) {
     pool$jobs[[id]] <- NULL
   }
   completed
+}
+
+parallel_collect_component_failures <- function(pool) {
+  handled <- character()
+  for (id in names(pool$failures)) {
+    failure <- pool$failures[[id]]
+    if (isTRUE(failure$critical)) next
+    pool$state <- record_component_failure(pool$state, failure$component_id,
+      simpleError(failure$reason), failure$phase, dirname(failure$stderr))
+    pool$state$diagnostics$worker_failures[[id]] <- failure
+    handled <- union(handled, failure$component_id)
+    pool$failures[[id]] <- NULL
+  }
+  handled
 }
 
 parallel_abort_failure <- function(pool) {
@@ -403,6 +417,9 @@ parallel_apply_result <- function(state, result) {
     max(state$repair_counts[[cid]] %||% 0L, result$repair_counts[[cid]])
   state$events <- c(state$events, result$events)
   if (length(result$diagnostics)) state$diagnostics <- utils::modifyList(state$diagnostics %||% list(), result$diagnostics)
+  state$project$dependency_findings <- c(state$diagnostics$dependency_findings,
+    lapply(state$diagnostics$component_failures, function(x)
+      list(affected = x$affected, findings = paste("Component could not finish:", x$reason))))
   if (!is.null(result$assignment)) parallel_job_record(result$assignment, "accepted")
   state$active_revision <- state$selected_revisions[[result$component_id]]$revision_id
   state

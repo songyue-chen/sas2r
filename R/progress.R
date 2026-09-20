@@ -314,6 +314,14 @@ format_sas2r_progress <- function(progress) {
       }
     },
     coordinator = {
+      if (identical(event, "component_failed")) return(paste0(
+        "WARNING: coordinator  ", target, ": could not finish -- ", progress$reason,
+        "\nAvailable work is saved; other programs will continue.",
+        if (!is.null(progress$path)) paste0("\nWorker logs: ", progress$path)))
+      if (identical(event, "dependency_warning")) return(paste0(
+        "WARNING: coordinator  ", target, ": unresolved dependency -- ", progress$reason,
+        "\nTranslation continues. Affected drafts require review: ", paste(progress$affected, collapse = ", "),
+        "\nFull-bundle execution remains unavailable until these findings are resolved."))
       if (identical(event, "worker_failed")) return(paste0(
         "ERROR: coordinator  ", target, ": worker failed -- ", progress$reason,
         "\nNo new tasks will start. Active work will finish and be checkpointed before the error is raised.",

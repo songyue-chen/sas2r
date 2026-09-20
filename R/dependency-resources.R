@@ -19,6 +19,39 @@ SAS_METADATA_RESOURCES <- c(
     "vstyle", "vtabcon", "vtable", "vtitle", "vview"))
 )
 
+# Documented automatic variables, not a blanket SYS* exemption. Runtime-state
+# variables are recognized too, but their producing operations still matter.
+# https://support.sas.com/documentation/cdl/en/mcrolref/62978/HTML/default/p14ym6slnzfstzn1t9yp5v31ijis.htm
+SAS_AUTOMATIC_VARIABLES <- c("sysdate", "sysdate9", "sysday", "systime",
+  "sysscp", "sysscpl", "sysver", "sysvlong", "sysvlong4", "sysencoding",
+  "syshostname", "sysjobid", "sysuserid", "sysncpu", "syslast", "sysdsn",
+  "syserr", "syserrortext", "syswarningtext", "syscc", "sysnobs")
+SAS_SEARCH_OPTIONS <- c("sasautos", "fmtsearch")
+
+component_environment_resources <- function(project, component_id) {
+  stmts <- component_statements(project, component_id)
+  text <- tolower(paste(stmts$text[stmts$type == "code"], collapse = "\n"))
+  names <- unlist(regmatches(text, gregexpr(
+    "\\b(?:sashelp|dictionary)[.][a-z_][a-z0-9_]*\\b", text, perl = TRUE)))
+  variables <- intersect(source_macro_variable_names(text), SAS_AUTOMATIC_VARIABLES)
+  options <- SAS_SEARCH_OPTIONS[vapply(SAS_SEARCH_OPTIONS, function(name) {
+    grepl(paste0("\\bgetoption\\s*\\(\\s*['\"]?", name, "\\b"), text, perl = TRUE) ||
+      any(grepl(paste0("\\b", name, "\\s*="),
+        tolower(stmts$text[stmts$first_token == "options"]), perl = TRUE))
+  }, logical(1))]
+  list(metadata = intersect(names, SAS_METADATA_RESOURCES), variables = variables,
+    options = options, paths = configured_path_dependency_symbols(project, component_id))
+}
+
+filter_dependency_resources <- function(reported, project, component_id) {
+  env <- component_environment_resources(project, component_id)
+  symbols <- c(env$variables, env$paths)
+  resources <- c(SAS_METADATA_RESOURCES, symbols, paste0("&", symbols),
+    paste0("&", symbols, "."), env$options)
+  reported[!tolower(trimws(reported)) %in% resources &
+    !tolower(sub("^%", "", trimws(reported))) %in% MACRO_BUILTINS]
+}
+
 source_macro_variable_names <- function(text) {
   unique(tolower(sub("^&", "", unlist(regmatches(text,
     gregexpr("&[A-Za-z_][A-Za-z0-9_]*", text, perl = TRUE))))))
@@ -56,11 +89,9 @@ configured_path_dependency_symbols <- function(project, component_id) {
 }
 
 render_dependency_resources <- function(project, component_id) {
-  stmts <- component_statements(project, component_id)
-  names <- unlist(regmatches(tolower(stmts$text),
-    gregexpr("\\b(?:sashelp|dictionary)[.][a-z_][a-z0-9_]*\\b", tolower(stmts$text), perl = TRUE)))
-  metadata <- intersect(names, SAS_METADATA_RESOURCES)
-  paths <- configured_path_dependency_symbols(project, component_id)
+  env <- component_environment_resources(project, component_id)
+  metadata <- env$metadata
+  paths <- env$paths
   c(
     if (length(paths)) c(
       paste0("LIBNAME path variables covered by the selected configured bindings: ",
@@ -68,6 +99,11 @@ render_dependency_resources <- function(project, component_id) {
       "These path-only references do not require another program or a global R variable. Use the established library bindings; this does not resolve other uses of a macro variable."),
     if (length(metadata)) c(
       paste0("SAS session metadata resources: ", paste(metadata, collapse = ", "), "."),
-      "These describe the SAS environment, not missing study datasets or upstream programs. Translate the required query behavior using available R/project context; do not invent metadata rows or treat an unsupported query as implemented. Keep unresolved behavior in uncertainty for review and execution checks.")
+      "These describe the SAS environment, not missing study datasets or upstream programs. Translate the required query behavior using available R/project context; do not invent metadata rows or treat an unsupported query as implemented. Keep unresolved behavior in uncertainty for review and execution checks."),
+    if (length(env$variables)) c(paste("SAS automatic macro variables:", paste(env$variables, collapse = ", ")),
+      "Translate their documented meaning, not just their name. Session date/time is fixed at run start; R's version is not SAS's version. SYSLAST/SYSDSN and status/count variables depend on prior operations: preserve those relationships. Do not fabricate the original SAS environment; report unavailable values or unsupported behavior in uncertainty."),
+    if (length(env$options)) c(paste("SAS search options:", paste(env$options, collapse = ", ")),
+      "SASAUTOS describes macro search locations; use configured/discovered macro sources. FMTSEARCH describes format catalog lookup; preserve catalog precedence and required custom formats. Recognizing the option does not supply missing macro files or formats."),
+    component_readiness_context(project, component_id)
   )
 }
