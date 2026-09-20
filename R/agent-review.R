@@ -510,7 +510,8 @@ review_program_revision <- function(
     verdict <- data$verdict %||% "reviewed_no_material_finding"
     static_runnability <- data$static_runnability %||% "looks_runnable"
     unresolved_deps <- unique(as.character(unlist(data$unresolved_dependencies %||% character())))
-    findings <- classify_review_findings(data$findings %||% list(), guidance, r_code, contract)
+    findings <- classify_review_findings(data$findings %||% list(), guidance, r_code, contract,
+      available = names(context$selected_revisions %||% list()))
     if (identical(verdict, "review_unavailable")) {
       reason <- if (length(unresolved_deps)) {
         paste("Unresolved review dependencies:", paste(unresolved_deps, collapse = ", "))

@@ -8,12 +8,15 @@ migration_run_outcome <- function(state, report, attempts) {
     blocked = "Run incomplete - blocked", needs_review = "Run requires review",
     migration_ready = "Run migration-ready", validated = "Run validated", paste("Run status:", status))
   findings <- report$diagnostics$dependency_findings %||% list()
+  blocking <- Filter(function(x) length(x$findings), findings)
+  advisory <- Filter(function(x) length(x$advisory), findings)
+  judgment <- human_judgment_findings(report$component_evidence %||% list())
   readiness <- report$diagnostics$readiness
   failures <- report$diagnostics$component_failures %||% list()
   bundles <- Filter(function(x) identical(x$kind, "bundle"), attempts$completed_attempts)
   latest <- if (length(bundles)) utils::tail(bundles, 1L)[[1L]] else NULL
   stopped <- if (!is.null(latest) && !isTRUE(latest$passed) && !isTRUE(latest$deferred)) latest$condition else NULL
-  affected <- unique(unlist(lapply(c(findings,
+  affected <- unique(unlist(lapply(c(blocking,
     Filter(function(x) isTRUE(x$blocks_execution), readiness$warnings), failures), `[[`, "affected"), use.names = FALSE))
   affected <- unique(c(affected, stopped$component_id))
   pending <- names(Filter(function(x) x$review_status %in% c("repair_required", "review_unavailable"),
@@ -35,8 +38,12 @@ migration_run_outcome <- function(state, report, attempts) {
     if (length(report$diagnostics$execution_deferred)) paste("Execution unavailable:",
       paste(report$diagnostics$execution_deferred, collapse = "; ")),
     readiness_warning_lines(readiness),
-    vapply(names(findings), function(id) paste0("Dependency findings for ", id, ": ",
-      paste(findings[[id]]$findings, collapse = ", ")), ""),
+    vapply(names(blocking), function(id) paste0("Dependency findings for ", id, ": ",
+      paste(blocking[[id]]$findings, collapse = ", ")), ""),
+    vapply(names(advisory), function(id) paste0("Reported names without a scanned producer for ", id,
+      " (not blocking execution): ", paste(advisory[[id]]$advisory, collapse = ", ")), ""),
+    if (length(judgment)) paste0("Findings for human judgment (no automated repair addresses them): ",
+      paste(judgment, collapse = "; ")),
     vapply(names(failures), function(id) paste0("Component could not finish: ", id, " (",
       failures[[id]]$phase, "): ", failures[[id]]$reason,
       if (!is.null(failures[[id]]$logs)) paste0("; logs: ", failures[[id]]$logs)), ""),
@@ -53,6 +60,8 @@ migration_run_outcome <- function(state, report, attempts) {
     executed, if (executed == 1L) "" else "s", passed, executed - passed, deferred, incomplete) else if (incomplete > 0L)
       sprintf("INCOMPLETE (%d prepared attempts; execution completion unknown)", incomplete) else if (deferred > 0L)
         sprintf("NOT RUN (%d deferred attempt%s)", deferred, if (deferred == 1L) "" else "s") else "NOT RUN (0 attempts)"
+  skipped <- if (!is.null(latest)) as.character(unlist(latest$deferred_component_ids %||% character())) else character()
+  if (length(skipped)) bundle_status <- paste0(bundle_status, "; not executed: ", paste(skipped, collapse = ", "))
   if (isFALSE(state$execute)) bundle_status <- paste0(bundle_status, "; execution disabled")
 
   # A bundle fixer has an attempt_id; immediate component fixes do not. Count
@@ -95,4 +104,26 @@ migration_outcome_lines <- function(outcome) {
   c(paste0(toupper(outcome$severity), ": ", outcome$title), outcome$reason,
     outcome$details, paste(names(outcome$stages), unlist(outcome$stages), sep = ": "),
     paste("Next action:", outcome$next_action))
+}
+
+# Reviewer findings that no fixer round can address: claims about the SAS
+# source itself, and context requests that only name components already in
+# this run. They are listed so a person sees them without opening each review.
+human_judgment_findings <- function(evidence) {
+  clip <- function(x, n = 240L) if (nchar(x) > n) paste0(substr(x, 1L, n - 3L), "...") else x
+  unlist(lapply(names(evidence), function(cid) {
+    revisions <- evidence[[cid]]$revisions %||% list()
+    active <- evidence[[cid]]$active_revision_id
+    ids <- vapply(revisions, function(r) r$revision_id %||% "", "")
+    if (!is.null(active) && active %in% ids) revisions <- revisions[ids == active]
+    events <- unlist(lapply(revisions, function(r) r$events %||% list()), recursive = FALSE)
+    reviews <- Filter(function(e) identical(e$type, "review_completed"), events %||% list())
+    if (!length(reviews)) return(NULL)
+    findings <- Filter(function(f) (f$repair_disposition %||% "") %in%
+      c("source_syntax_claim_only", "context_available") || identical(f$category, "source_syntax_claim"),
+      utils::tail(reviews, 1L)[[1L]]$findings %||% list())
+    if (!length(findings)) return(NULL)
+    paste0(cid, ": ", paste(vapply(findings, function(f) clip(as.character(
+      f$sas_evidence %||% f$r_evidence %||% "(no evidence text)")[1L]), ""), collapse = " | "))
+  }), use.names = FALSE)
 }

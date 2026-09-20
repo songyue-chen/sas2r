@@ -13,11 +13,14 @@ artifact_failure_checks <- function(target) {
   Filter(function(x) isFALSE(x$passed), checks[intersect(names(checks), allowed)])
 }
 
-source_output_writers <- function(state, key) {
-  edges <- state$graph$edges
+source_output_writers <- function(state, key) graph_output_writers(state$graph, key)
+
+graph_output_writers <- function(graph, key, producer_node_id = NULL) {
+  edges <- graph$edges
   from <- edges$from[edges$type %in% c("writes_dataset", "writes_output") &
-    edges$detail == key & edges$resolution == "resolved"]
-  unique(stats::na.omit(state$graph$nodes$component_id[match(from, state$graph$nodes$node_id)]))
+    tolower(edges$detail) == tolower(key) & edges$resolution == "resolved"]
+  nodes <- unique(c(from, producer_node_id[!is.na(producer_node_id)]))
+  unique(stats::na.omit(graph$nodes$component_id[match(nodes, graph$nodes$node_id)]))
 }
 
 missing_source_dataset <- function(state, cid, condition) {

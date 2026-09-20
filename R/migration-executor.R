@@ -746,7 +746,13 @@ run_bundle_attempt <- function(
     source_hash = rev$contract$binding$source_hash %||% rev$binding$source_hash,
     affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs))
   plan <- build_bundle_execution_plan(state$graph)
-  exec_order <- plan$execution_order
+  # Root programs with unresolved blocking findings are not executed. Their
+  # outputs are assessed as not executed, never as produced or as missing.
+  deferred <- state$diagnostics$deferred_components %||% list()
+  deferred <- deferred[names(deferred) %in% plan$execution_order]
+  exec_order <- setdiff(plan$execution_order, names(deferred))
+  scope <- list(execution_scope = if (length(deferred)) "partial" else "complete",
+    deferred_component_ids = names(deferred) %||% character(), deferred_reasons = deferred)
   failed_checks <- Filter(function(id) identical(state$selected_revisions[[id]]$checks$pass, FALSE),
     unique(c(exec_order, unlist(lapply(exec_order, function(id) dependency_closure(state$graph, id))))))
   if (length(failed_checks)) {
@@ -755,12 +761,12 @@ run_bundle_attempt <- function(
       component_id = cid, class = "sas2r_mechanical_check_failure",
       message = paste(state$selected_revisions[[cid]]$checks$errors, collapse = "; ")
     )), failed_checks)
-    return(complete_attempt(attempt, passed = FALSE, deferred = TRUE,
+    return(do.call(complete_attempt, c(list(attempt, passed = FALSE, deferred = TRUE,
       reason = "mechanical_checks_failed", exit_status = NA_integer_,
       execution_order = exec_order, executed_component_ids = character(),
       condition = failures[[id]], mechanical_failures = failures,
       input_hashes_before = before_hashes, input_hashes_after = before_hashes,
-      output_hashes = list()))
+      output_hashes = list()), scope)))
   }
   program_files <- vapply(exec_order, function(cid) {
     rev <- state$selected_revisions[[cid]]
@@ -889,6 +895,9 @@ run_bundle_attempt <- function(
     elapsed_sec = elapsed_sec,
     execution_order = exec_order,
     executed_component_ids = executed_ids,
+    execution_scope = scope$execution_scope,
+    deferred_component_ids = scope$deferred_component_ids,
+    deferred_reasons = scope$deferred_reasons,
     population_checks = res$population_checks %||% prog_info$population_checks %||% list(),
     condition = condition,
     stdout_path = stdout_path,

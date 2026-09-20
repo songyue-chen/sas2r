@@ -78,18 +78,23 @@ readiness_warning_lines <- function(readiness) {
 component_readiness_context <- function(project, component_id) {
   warnings <- Filter(function(x) component_id %in% x$affected, project$readiness$warnings)
   findings <- Filter(function(x) component_id %in% x$affected, project$dependency_findings)
-  if (!length(warnings) && !length(findings)) return(character())
+  blocking <- Filter(function(x) length(x$findings), findings)
+  advisory <- unique(unlist(lapply(findings, `[[`, "advisory"), use.names = FALSE))
+  if (!length(warnings) && !length(blocking) && !length(advisory)) return(character())
   c("Translation readiness findings (static findings may be resolved by faithful translation):",
     readiness_warning_lines(list(warnings = warnings)),
-    unlist(lapply(findings, `[[`, "findings"), use.names = FALSE),
+    vapply(names(blocking), function(cid) paste0(cid, ": ",
+      paste(blocking[[cid]]$findings, collapse = ", ")), ""),
+    if (length(advisory)) paste0("Reported names without a scanned producer (not blocking execution; ",
+      "keep any unresolved behavior visible in uncertainty): ", paste(advisory, collapse = ", ")),
     "Translate only the available source. Do not invent missing macro/include bodies, dataset schemas, values or execution order. Preserve unresolved behavior explicitly in the code and contract uncertainty. An upstream draft is not verified behavior; review the available source and keep affected downstream assumptions visible.")
 }
 
 component_execution_reasons <- function(state, component_id = NULL) {
   warnings <- Filter(function(x) isTRUE(x$blocks_execution) &&
     (is.null(component_id) || component_id %in% x$affected), state$project$readiness$warnings)
-  findings <- Filter(function(x) is.null(component_id) || component_id %in% x$affected,
-    state$diagnostics$dependency_findings)
+  findings <- Filter(function(x) length(x$findings) &&
+    (is.null(component_id) || component_id %in% x$affected), state$diagnostics$dependency_findings)
   failures <- Filter(function(x) is.null(component_id) || component_id %in% x$affected,
     state$diagnostics$component_failures)
   unique(c(vapply(warnings, `[[`, "", "detail"),
@@ -109,18 +114,31 @@ record_dependency_finding <- function(state, cid, finding) {
     x[macro] <- key[macro]
     x
   }
+  finding <- unique(trimws(as.character(finding %||% character())))
+  finding <- finding[nzchar(finding)]
   finding <- finding[!normalize(finding) %in% normalize(vapply(known, `[[`, "", "detail"))]
-  if (!length(finding)) return(state)
-  prior <- state$diagnostics$dependency_findings[[cid]]$findings
-  finding <- c(prior, finding)
   finding <- finding[!duplicated(normalize(finding))]
+  # The recorded set is what the selected revision reports now. A revision
+  # that no longer reports a name retracts it; nothing accumulates.
+  blocking <- finding[dependency_finding_blocks_execution(finding)]
+  prior <- state$diagnostics$dependency_findings[[cid]]
+  if (!length(finding) && is.null(prior)) return(state)
   affected <- parallel_affected_components(state$graph, cid, state$schedule$component_id)
-  state$diagnostics$dependency_findings[[cid]] <- list(findings = finding, affected = affected,
-    reason = "source_reconciliation_required")
+  state$diagnostics$dependency_findings[[cid]] <- if (length(finding)) list(findings = blocking,
+    advisory = setdiff(finding, blocking), affected = affected, reason = "source_reconciliation_required")
   state <- sync_dependency_context(state)
-  if (!identical(prior, finding)) signal_immediate_coordinator_event("dependency_warning", cid,
-    severity = "warning", reason = paste(finding, collapse = ", "), affected = affected)
+  if (length(blocking) && !identical(prior$findings, blocking))
+    signal_immediate_coordinator_event("dependency_warning", cid, severity = "warning",
+      reason = paste(blocking, collapse = ", "), affected = affected)
   state
+}
+
+# SAS stops on a macro it cannot resolve and on a dataset it cannot open. An
+# unresolved macro variable, or a bare name the scanner cannot classify, is a
+# warning in SAS; execution remains the check on that translation rather than
+# the agent's own report exempting its code from execution.
+dependency_finding_blocks_execution <- function(x) {
+  grepl("^%", x) | grepl("^[A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*$", x)
 }
 
 sync_dependency_context <- function(state) {
@@ -129,7 +147,8 @@ sync_dependency_context <- function(state) {
     failure <- state$diagnostics$component_failures[[cid]]
     findings[[cid]] <- list(affected = union(findings[[cid]]$affected, failure$affected),
       findings = union(findings[[cid]]$findings,
-        paste("Component", cid, "could not finish:", failure$reason)))
+        paste("Component", cid, "could not finish:", failure$reason)),
+      advisory = findings[[cid]]$advisory)
   }
   state$project$dependency_findings <- findings
   state

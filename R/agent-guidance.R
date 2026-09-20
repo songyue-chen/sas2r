@@ -176,8 +176,10 @@ dependency_symbol_notices <- function(before, after, dependencies) {
 # Only two narrow missing-context requests are recognized. The R evidence must
 # be exactly the cited parameter symbol or one direct call, present in this R.
 # A label or an unrelated fact identifier cannot excuse a filter/derivation.
-classify_review_findings <- function(findings, guidance, r_code, contract) {
+classify_review_findings <- function(findings, guidance, r_code, contract, available = character()) {
   exprs <- tryCatch(parse(text = r_code), error = function(e) expression())
+  available <- tolower(available)
+  available <- unique(c(available, sub("^macro__", "", available[startsWith(available, "macro__")])))
   contains <- function(target, x) {
     if (identical(target, x)) return(TRUE)
     if (!is.call(x) && !is.expression(x) && !is.pairlist(x)) return(FALSE)
@@ -192,11 +194,20 @@ classify_review_findings <- function(findings, guidance, r_code, contract) {
       f$repair_disposition <- "source_syntax_claim_only"
       return(f)
     }
+    if (!identical(f$category, "missing_context")) return(f)
+    # Context that only names components translated in this run is available:
+    # the reviewer can retrieve it and no fixer round for this component can
+    # supply it. The verdict stands for human review; it is not a repair item.
+    named <- tolower(sub("^%", "", trimws(as.character(unlist(f$unresolved_dependencies %||% character())))))
+    named <- named[nzchar(named)]
+    context_available <- length(named) > 0L && all(named %in% available)
     fact <- guidance$facts[[f$context_fact_id %||% ""]]
     evidence <- tryCatch(parse(text = f$r_evidence), error = function(e) expression())
-    if (!identical(f$category, "missing_context") || is.null(fact) ||
-        !identical(fact$scope, guidance$identity) || length(evidence) != 1L ||
-        !contains(evidence[[1L]], exprs)) return(f)
+    if (is.null(fact) || !identical(fact$scope, guidance$identity) || length(evidence) != 1L ||
+        !contains(evidence[[1L]], exprs)) {
+      if (context_available) f$repair_disposition <- "context_available"
+      return(f)
+    }
     e <- evidence[[1L]]
     relevant <- identical(fact$kind, "dependency_body") &&
       identical(fact$value, "missing_or_truncated") && is.call(e) &&
@@ -206,14 +217,15 @@ classify_review_findings <- function(findings, guidance, r_code, contract) {
         identical(as.character(e), fact$subject) && !is.null(params)) {
       relevant <- any(params$name == fact$subject & params$default_status == "unresolved")
     }
-    if (relevant) f$repair_disposition <- "awaiting_context"
+    if (relevant) f$repair_disposition <- "awaiting_context" else
+      if (context_available) f$repair_disposition <- "context_available"
     f
   })
 }
 
 actionable_review_findings <- function(review) {
   Filter(function(f) !((f$repair_disposition %||% "unverified") %in%
-    c("awaiting_context", "source_syntax_claim_only")), review$findings %||% list())
+    c("awaiting_context", "source_syntax_claim_only", "context_available")), review$findings %||% list())
 }
 
 program_review_needs_repair <- function(review) {

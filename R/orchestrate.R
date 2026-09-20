@@ -912,7 +912,11 @@ run_bundle_pipeline <- function(
         (repair_counts[[cid]] %||% 0L) < component_limit && is.null(deferred[[cid]])
     }, logical(1))]
     if (!length(eligible)) {
-      stop_reason <- if (!length(queue) && length(diagnostic$non_translation_failures))
+      skipped <- as.character(unlist(attempt_rec$deferred_component_ids %||% character()))
+      stop_reason <- if (!length(queue) && length(skipped)) paste0("Bundle executed without ",
+          paste(skipped, collapse = ", "), "; unresolved: ", paste(unique(as.character(unlist(
+          attempt_rec$deferred_reasons))), collapse = "; ")) else
+        if (!length(queue) && length(diagnostic$non_translation_failures))
         paste(unique(unlist(diagnostic$non_translation_failures)), collapse = "; ") else
         if (!length(queue)) "no_causal_evidence" else
         if (all(vapply(queue, function(x) isTRUE(x$source_review_only), logical(1)))) "no_source_grounded_repair" else

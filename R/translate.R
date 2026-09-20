@@ -241,7 +241,14 @@ sas_translate <- function(
       execute = isTRUE(execute)
     )
     unavailable <- component_execution_reasons(state)
-    if (!length(unavailable)) {
+    # Blocking findings defer the affected root programs, not the pipeline.
+    # Every other root still executes so its outputs get their checks.
+    roots <- if (!is.null(state$graph)) build_bundle_execution_plan(state$graph)$execution_order else character()
+    deferred <- Filter(length, stats::setNames(lapply(roots, function(cid)
+      component_execution_reasons(state, cid)), roots))
+    state$diagnostics$deferred_components <- if (length(deferred)) deferred
+    if (!length(unavailable) || (isTRUE(execute) && length(roots) && length(deferred) < length(roots))) {
+      if (length(unavailable)) state$diagnostics$execution_deferred <- unavailable
       stage <- "bundle execution and repair"
       state <- run_bundle_pipeline(
         state = state,

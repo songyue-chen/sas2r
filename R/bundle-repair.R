@@ -272,7 +272,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   # After a crash, only targets whose writer actually completed can do so.
   for (key in names(assessment$targets)) {
     target <- assessment$targets[[key]]
-    if (isTRUE(target$passed) || identical(target$status, "unresolved_target")) next
+    if (isTRUE(target$passed) || target$status %in% c("unresolved_target", "not_executed")) next
     artifact_errors <- artifact_failure_checks(target)
     other_failed <- any(vapply(non_reference_checks(target), function(x) isFALSE(x$passed), logical(1)))
     if (!length(artifact_errors) && !other_failed &&
