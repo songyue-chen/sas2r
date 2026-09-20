@@ -43,10 +43,20 @@ parallel_dependency_findings <- function(state, cid) {
   incoming <- graph$edges[graph$edges$to %in% owner_nodes &
     graph$edges$resolution %in% c("resolved", "external"), , drop = FALSE]
   providers <- graph$nodes$component_id[match(incoming$from, graph$nodes$node_id)]
-  known <- unique(c(dependency_closure(graph, cid), providers, incoming$detail))
-  macros <- sub("^macro__", "", known[startsWith(known, "macro__")])
-  known <- tolower(c(known, macros, paste0("%", macros)))
-  reported[!tolower(trimws(reported)) %in% known]
+  # A scheduled component or a supplied project macro exists in the project
+  # whether or not this component's own closure records a call to it.
+  components <- unique(c(state$schedule$component_id, state$project$schedule$component_id,
+    graph$nodes$component_id))
+  supplied <- tolower(state$project$macros$defs$name %||% character())
+  known <- unique(c(dependency_closure(graph, cid), providers, incoming$detail, components))
+  macros <- unique(c(sub("^macro__", "", known[startsWith(known, "macro__")]), supplied))
+  known <- tolower(c(known, macros, paste0("%", macros), paste0("macro__", macros)))
+  reported <- reported[!tolower(trimws(reported)) %in% known]
+  # A macro variable assigned anywhere in the scanned source has a producer.
+  defined <- project_macro_variable_definitions(state$project)
+  symbol <- tolower(sub("[.]$", "", sub("^&", "", trimws(reported))))
+  variable_like <- grepl("^&?[A-Za-z_][A-Za-z0-9_]*[.]?$", trimws(reported))
+  reported[!(variable_like & symbol %in% defined)]
 }
 
 parallel_affected_components <- function(graph, cid, ids) {
@@ -191,8 +201,8 @@ finalize_parallel_component_reviews <- function(state, pool = parallel_new_pool(
     }
     for (entry in parallel_poll(pool)) {
       pool$state <- parallel_apply_result(pool$state, entry$result)
-      if (length(entry$result$dependency_findings)) pool$state <- record_dependency_finding(
-        pool$state, entry$job$component_id, entry$result$dependency_findings)
+      pool$state <- record_dependency_finding(pool$state, entry$job$component_id,
+        entry$result$dependency_findings)
       if (identical(entry$result$review$verdict, "review_unavailable")) unavailable <- unavailable + 1L else
         completed <- completed + 1L
       parallel_save_checkpoint(pool)

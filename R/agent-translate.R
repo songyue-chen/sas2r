@@ -820,6 +820,7 @@ generate_program_revision <- function(
     macro_idx <- project_macro_index(project, config)
     tool_ctx <- list(
       agent_role = "translator",
+      component_id = component_id, graph = graph, selected_revisions = selected_revisions,
       project = project,
       unit_stmts = unit_stmts,
       schemas = tryCatch(infer_schemas(project), error = function(e) list()),
@@ -845,11 +846,13 @@ generate_program_revision <- function(
       parsed_chk <- tryCatch(parse(text = tr_data$r_code), error = function(e) e)
       lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(tr_data$r_code, allowlist = config$allowlist) else NULL
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
+      binding_errors <- check_component_library_assignments(tr_data$r_code, project, component_id)
 
-      if (inherits(parsed_chk, "error") || has_lint_err) {
+      if (inherits(parsed_chk, "error") || has_lint_err || length(binding_errors)) {
         err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(
           sprintf("%s: %s", lint_chk$kind[lint_chk$level == "error"],
                   lint_chk$detail[lint_chk$level == "error"]), collapse = "; ")
+        err_msg <- paste(c(err_msg[nzchar(err_msg)], binding_errors), collapse = "; ")
         retry_record <- list(errors = err_msg, dynamic_code = grepl("banned_function.*(parse|eval)", err_msg),
           prior_revision_id = revision_id)
         retry_res <- run_agent(
@@ -922,7 +925,7 @@ generate_program_revision <- function(
 
   registry_path <- file.path(baseline$out_dir %||% paths$staging %||% paths$root, "autoexec.R")
   checks <- check_program_revision(r_path, contract = contract, registry = registry_path,
-    allowlist = config$allowlist)
+    allowlist = config$allowlist, project = project)
 
   list(
     component_id = component_id,

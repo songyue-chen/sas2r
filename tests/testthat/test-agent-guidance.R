@@ -175,6 +175,8 @@ test_that("all actual role requests receive the same source context without refe
       identical(llm, reviewer))
     expect_false(grepl("FORBIDDEN_REFERENCE_PATH|FORBIDDEN_TARGET_COUNT", messages))
     expect_false("read_comparison_report" %in% names(request$tools))
+    expect_identical(request$tools$read_dependency_context$call(list(
+      component_id = "macro__check", language = "r"))$code, "check <- function() 1L")
   }
   expect_false("get_macro_source" %in% names(reviewer$requests()[[1]]$tools))
 })
@@ -411,4 +413,33 @@ test_that("shared-helper revisions keep their affected-output declarations in ob
   after$output_hashes[["work/out.rds"]] <- "new"
   observation <- attempt_change_observation(before, after, list("work/out.rds" = "work.out"))
   expect_true(observation$changes[[1]]$declared_affected)
+})
+
+test_that("missing-context findings that name translated components are not repair items", {
+  guidance <- list(facts = list(), identity = "identity")
+  finding <- list(category = "missing_context", severity = "high",
+    sas_evidence = "The caller invokes %util_a, %util_b and %util_c.", r_evidence = "util_a('x')",
+    unresolved_dependencies = list("util_a", "%UTIL_B", "macro__util_c"))
+  available <- c("macro__util_a", "macro__util_b", "macro__util_c", "main")
+  out <- classify_review_findings(list(finding), guidance, "util_a('x')", list(), available = available)
+  expect_identical(out[[1L]]$repair_disposition, "context_available")
+  expect_length(actionable_review_findings(list(findings = out)), 0L)
+  expect_false(program_review_needs_repair(list(verdict = "repair_required", findings = out)))
+  partial <- classify_review_findings(list(finding), guidance, "util_a('x')", list(),
+    available = c("macro__util_a", "main"))
+  expect_identical(partial[[1L]]$repair_disposition, "unverified")
+  none <- finding
+  none$unresolved_dependencies <- list()
+  expect_identical(classify_review_findings(list(none), guidance, "util_a('x')", list(),
+    available = available)[[1L]]$repair_disposition, "unverified")
+  defect <- finding
+  defect$category <- "translation_defect"
+  expect_identical(classify_review_findings(list(defect), guidance, "util_a('x')", list(),
+    available = available)[[1L]]$repair_disposition, "unverified")
+})
+
+test_that("the reviewer grades unavailable SAS facilities by their effect on outputs", {
+  prompt <- paste(readLines(system.file("prompts", "reviewer.md", package = "sas2r")), collapse = "\n")
+  expect_match(prompt, "no R equivalent", fixed = TRUE)
+  expect_match(prompt, "translated components in this run", fixed = TRUE)
 })

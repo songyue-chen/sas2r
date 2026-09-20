@@ -1,8 +1,19 @@
 # Coverage comes from target checks, independently of a bundle-level label.
-migration_coverage <- function(targets = list(), histories = list()) {
+migration_coverage <- function(targets = list(), histories = list(), contracts = NULL) {
   is_unresolved <- vapply(targets, function(t) identical(t$status, "unresolved_target"), logical(1))
   unresolved <- names(targets)[is_unresolved]
   targets <- targets[!is_unresolved]
+  # A configured target that no attempt assessed is still a target: it counts
+  # as not produced rather than disappearing from the totals.
+  if (is.data.frame(contracts) && nrow(contracts)) {
+    for (i in seq_len(nrow(contracts))) {
+      key <- contracts$target_key[i]
+      resolved <- !(contracts$resolution[i] %||% "") %in% c("dynamic", "unresolved")
+      if (!resolved) unresolved <- union(unresolved, key) else if (is.null(targets[[key]]))
+        targets[[key]] <- list(target_key = key, required = isTRUE(contracts$required[i]),
+          passed = FALSE, has_reference = FALSE, reference_passed = FALSE, checks = list())
+    }
+  }
   detail <- lapply(targets, function(t) {
     compared <- !is.null(t$checks$reference_comparison) &&
       !is.null(t$checks$reference_comparison$passed) && !is.na(t$checks$reference_comparison$passed)

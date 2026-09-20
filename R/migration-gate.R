@@ -719,12 +719,15 @@ assess_final_outputs <- function(
   exec_deferred <- isTRUE(attempt$deferred) || isTRUE(attempt$runtime_deferred) ||
     identical(attempt$status, "deferred") || (!exec_completed && !exec_passed && isTRUE(attempt$reason == "execute_disabled"))
 
+  deferred_ids <- as.character(unlist(attempt$deferred_component_ids %||% character()))
   exec_summary <- list(
     completed = exec_completed,
     passed = exec_passed,
     exit_status = attempt$exit_status %||% (if (exec_passed) 0L else 1L),
     deferred = exec_deferred,
-    reason = attempt$reason %||% NA_character_
+    reason = attempt$reason %||% NA_character_,
+    scope = attempt$execution_scope %||% if (length(deferred_ids)) "partial" else "complete",
+    deferred_component_ids = deferred_ids
   )
 
   assessed_targets <- list()
@@ -745,13 +748,26 @@ assess_final_outputs <- function(
         assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules)
       }
 
+      # A target whose producer was deferred in this attempt was not executed.
+      # That is neither a produced output nor a missing one.
+      if (length(deferred_ids) && !is.null(graph)) {
+        writers <- graph_output_writers(graph, c_row$target_key, c_row$producer_node_id)
+        skipped <- intersect(writers, deferred_ids)
+        if (length(skipped)) {
+          reasons <- unique(as.character(unlist(attempt$deferred_reasons[skipped])))
+          res$status <- "not_executed"
+          res$passed <- FALSE
+          res$reason <- paste0("Producer not executed in this attempt: ",
+            paste(if (length(reasons)) reasons else skipped, collapse = "; "))
+        }
+      }
       assessed_targets[[c_row$target_key]] <- res
 
       if (isTRUE(c_row$required)) {
         if (!isTRUE(res$passed)) {
           all_req_passed <- FALSE
           if (identical(res$status, "missing_candidate")) any_target_missing <- TRUE
-          else any_target_failed <- TRUE
+          else if (!identical(res$status, "not_executed")) any_target_failed <- TRUE
         }
         if (isTRUE(res$has_reference) && isTRUE(res$reference_passed)) {
           has_reference_evaluated <- TRUE
@@ -944,7 +960,7 @@ derive_bundle_status <- function(assessment) {
       t_status <- t$status %||% (if (t_passed) "passed" else "failed")
 
       if (req) {
-        if (t_status %in% c("needs_review", "unresolved_target")) {
+        if (t_status %in% c("needs_review", "unresolved_target", "not_executed")) {
           any_target_needs_review = TRUE
           all_required_passed = FALSE
         } else if (t_status %in% c("missing_candidate", "unreadable")) {
@@ -974,6 +990,11 @@ derive_bundle_status <- function(assessment) {
 
   # 2. Check for needs_review conditions
   if (exec_deferred) {
+    return("needs_review")
+  }
+  # A partial attempt executed only part of the configured pipeline. It can
+  # be selected and reported, never presented as ready or validated.
+  if (identical(exec$scope, "partial") || length(exec$deferred_component_ids)) {
     return("needs_review")
   }
   if (isTRUE(lineage$review_unavailable) || isTRUE(lineage$is_blocked)) {

@@ -1386,6 +1386,7 @@ USAGE_TOOL_IDENTIFIER_ARGUMENTS <- list(
   lookup_rulebook = c("name", "functions", "procs"),
   find_macro = "name",
   get_macro_source = "name",
+  read_dependency_context = c("component_id", "language", "offset"),
   search_docs = c("construct", "package"),
   read_skill = "name",
   read_comparison_report = "report_id"
@@ -1477,7 +1478,9 @@ usage_tool_argument_digest <- function(arguments, tool_name = NULL,
     projected <- list(argument_count = length(arguments))
     for (field in intersect(argument_names, allowed)) {
       value <- arguments[[field]]
-      if (usage_safe_identifier(value)) {
+      page_offset <- identical(tool_key, "read_dependency_context") && identical(field, "offset") &&
+        is.numeric(value) && length(value) == 1L && !is.na(value) && is.finite(value) && value >= 1 && value == floor(value)
+      if (usage_safe_identifier(value) || page_offset) {
         projected[[field]] <- value
       } else {
         projected[[paste0(field, "_fingerprint")]] <-

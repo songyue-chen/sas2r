@@ -529,6 +529,9 @@ skill_flags_from_sas <- function(sas_text) {
   if (grepl("\\bretain\\b", x)) flags <- c(flags, "order_dependent")
   if (grepl("%|\\b(symputx?|symget)\\s*\\(", x)) flags <- c(flags, "macro_execution")
   if (grepl("\\bproc\\s+sort\\b", x)) flags <- c(flags, "order_dependent")
+  if (grepl("\\b(define\\s+statgraph|proc\\s+(sgrender|sgplot|sgpanel|sgscatter|gplot|gchart|boxplot)|ods\\s+graphics)\\b", x)) {
+    flags <- c(flags, "native_graphics")
+  }
   if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {
     flags <- c(flags, "statistical_defaults")
   }
@@ -597,9 +600,9 @@ component_statements <- function(project, component_id) {
 # asking an agent to reinterpret a source path using a different working folder.
 render_component_libraries <- function(project, component_id) {
   if (is.null(project$libref_registry)) return("(no library binding context)")
-  stmts <- component_statements(project, component_id)
-  bindings <- effective_librefs(project)$bindings
-  bindings <- bindings[bindings$use_file %in% unique(stmts$file), , drop = FALSE]
+  bindings <- component_library_bindings(project, component_id)
+  assignments <- bindings[bindings$kind == "statement" & bindings$status == "bound" &
+    bindings$libref != "work", , drop = FALSE]
   paste(c(
     paste0("Execution root for relative SAS paths: ", project$libref_registry$project_root),
     "Offline library bindings (use the selected path; retain the recorded reason for configured fallbacks):",
@@ -609,6 +612,9 @@ render_component_libraries <- function(project, component_id) {
              "; status=", b$status, "; selected_path=", b$selected_path,
              "; origin=", b$selection_origin, "; reason=", b$fallback_reason)
     }, character(1)),
+    "Resolved LIBNAME operations (reuse these paths, not unavailable source literals):",
+    unique(unlist(lapply(seq_len(nrow(assignments)), function(i)
+      emit_libref_statement(assignments[i, , drop = FALSE], project$config$libraries)), use.names = FALSE)),
     "Do not replace an established binding with a guessed relative path. Explicit later reassignments still apply.",
     render_dependency_resources(project, component_id)
   ), collapse = "\n")

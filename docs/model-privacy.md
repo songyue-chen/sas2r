@@ -41,13 +41,16 @@ usage or execution diagnostics confidential to the local process.
 
 Each role receives the same source policy and bounded selected direct-dependency
 SAS/R bodies (up to 6,000 characters per body and 24,000 characters per packet).
-Missing or truncated context is identified. This adds no agent tools, dataset
-access or memory. Missing-context and capability findings remain visible;
+Missing or truncated context is identified. The read-only `read_dependency_context`
+tool lets all three roles retrieve bounded pages of SAS source and selected R
+code for direct dependencies and consumers, up to 12,000 characters per call.
+Calls use the existing tool budget. They add no dataset or reference-output
+access. Missing-context and capability findings remain visible;
 labels alone do not cancel a proven execution or translation failure.
 
 The configured `allowlist` (a comma-separated string or YAML list) is used
 consistently in prompts, package facts, helper checks and lint. An explicit list
-replaces the default `base, dplyr, tidyr, haven, stats, utils`.
+replaces the default `base, dplyr, tidyr, haven, stats, utils, graphics, grDevices, grid`.
 Installed package versions are descriptive context: a package update alone does
 not discard saved translations on resume. Execution checks still run with the
 current environment.

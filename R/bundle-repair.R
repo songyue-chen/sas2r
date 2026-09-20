@@ -227,8 +227,15 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     repair_cid <- cid
     artifact_checks <- NULL
     missing <- missing_source_dataset(state, cid, failures[[cid]])
+    recorded <- recorded_dataset_output(attempt, missing)
     writers <- if (!is.null(missing)) source_output_writers(state, missing) else character()
-    if (length(writers) == 1L && writers != cid &&
+    if (length(recorded)) {
+      artifact_checks <- list(check_id = paste0("reader_binding:", missing), pass = FALSE,
+        errors = paste("The attempt recorded", paste(recorded, collapse = ", "),
+          "but", cid, "could not read", missing,
+          ". Trace this reader's LIBNAME assignments against the supplied resolved library plan and executor search paths.",
+          "Recorded presence does not establish correct contents; do not rewrite the producer solely because this lookup failed."))
+    } else if (length(writers) == 1L && writers != cid &&
         writers %in% dependency_closure(state$graph, cid)) {
       # A reader's missing intermediate identifies a producer defect only when
       # that producer completed. Preserve the actual reader error and log paths.
@@ -265,7 +272,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   # After a crash, only targets whose writer actually completed can do so.
   for (key in names(assessment$targets)) {
     target <- assessment$targets[[key]]
-    if (isTRUE(target$passed) || identical(target$status, "unresolved_target")) next
+    if (isTRUE(target$passed) || target$status %in% c("unresolved_target", "not_executed")) next
     artifact_errors <- artifact_failure_checks(target)
     other_failed <- any(vapply(non_reference_checks(target), function(x) isFALSE(x$passed), logical(1)))
     if (!length(artifact_errors) && !other_failed &&
@@ -357,10 +364,14 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
   }
   priority <- vapply(names(packets), function(cid) {
     p <- packets[[cid]]
-    if (isTRUE(p$source_review_only)) return(3L)
+    if (isTRUE(p$source_review_only)) return(4L)
     if (isTRUE(p$attributable_execution_failure)) return(0L)
-    if (isTRUE(p$code_local) && required_path_defect(cid)) return(1L)
-    2L
+    if (isTRUE(p$code_local) && required_path_defect(cid)) {
+      runnability <- p$review$review_record$static_runnability %||% p$review$static_runnability
+      if (identical(runnability, "known_blocker")) return(1L)
+      return(2L)
+    }
+    3L
   }, integer(1))
   packets[order(priority, seq_along(packets))]
 }

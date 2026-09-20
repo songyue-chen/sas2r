@@ -57,6 +57,27 @@ source_macro_variable_names <- function(text) {
     gregexpr("&[A-Za-z_][A-Za-z0-9_]*", text, perl = TRUE))))))
 }
 
+# Macro variables assigned by any scanned code statement (%LET, %GLOBAL,
+# %LOCAL, CALL SYMPUT/SYMPUTX, INTO :name). A reported symbol with a project
+# definition has a producer in the source; it is not a missing dependency.
+# Names built from other macro variables (%global &sym) stay unresolved.
+project_macro_variable_definitions <- function(project) {
+  stmts <- project$statements
+  if (is.null(stmts) || !is.data.frame(stmts) || !nrow(stmts)) return(character())
+  text <- tolower(stmts$text[stmts$type == "code"])
+  capture <- function(pattern, x = text) {
+    unlist(lapply(regmatches(x, gregexec(pattern, x, perl = TRUE)), function(m)
+      if (is.matrix(m) && ncol(m)) m[2L, ] else character()), use.names = FALSE)
+  }
+  scoped <- capture("%(?:global|local)\\s+([a-z_][a-z0-9_ ]*)")
+  names <- c(
+    capture("%let\\s+([a-z_][a-z0-9_]*)\\s*="),
+    unlist(strsplit(trimws(scoped), "\\s+")),
+    capture("call\\s+symputx?\\s*\\(\\s*['\"]([a-z_][a-z0-9_]*)['\"]"),
+    capture(":([a-z_][a-z0-9_]*)", text[grepl("\\binto\\s*:", text, perl = TRUE)]))
+  unique(names[nzchar(names)])
+}
+
 # Reuse the binding decision that supplies generated R and agent context. A
 # configured directory resolves the LIBNAME path, not arbitrary uses of that
 # macro variable (for example INFILE, a filter, or a dynamic dataset name).

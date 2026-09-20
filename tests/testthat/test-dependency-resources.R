@@ -140,3 +140,75 @@ test_that("resume reassesses old dependency blocks and retains genuine ones", {
     }
   }
 })
+
+test_that("macro variables defined by project source are producers, not missing dependencies", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "input"))
+  saveRDS(data.frame(id = 1:3, value = 10:12), file.path(root, "input", "input.rds"))
+  config <- list(libraries = list(raw = list(path = file.path(root, "input"), engine = "rds")))
+  writeLines(c("%let max_boxes_per_page = 20;", "%global study_flag other_flag;",
+    "data work.out1; set raw.input; call symput('row_count', put(_n_, 8.)); run;",
+    "proc sql noprint; select max(value), min(value) into :top_value, :low_value",
+    "  from work.out1; quit;"), file.path(root, "caller.sas"))
+  writeLines(c("data work.out2; set work.out1;",
+    "  if value > &max_boxes_per_page then flag = \"&study_flag\";", "run;"),
+    file.path(root, "consumer.sas"))
+  project <- sas_project(root, config = config)
+  expect_setequal(project_macro_variable_definitions(project),
+    c("max_boxes_per_page", "study_flag", "other_flag", "row_count", "top_value", "low_value"))
+  state <- new_migration_state(project, file.path(root, "migration"))
+  defined <- c("max_boxes_per_page", "&MAX_BOXES_PER_PAGE.", "Study_Flag", "other_flag",
+    "row_count", "&top_value", "low_value")
+  unknown <- c("undefined_setting", "&undefined_setting", "%missing_macro", "work.missing")
+  state$selected_revisions$consumer$contract$suspected_dependencies <- c(defined, unknown)
+  expect_identical(parallel_dependency_findings(state, "consumer"), unknown)
+  # A supplied project macro or another scheduled component is not missing
+  # either, even when this component's own graph closure does not include it.
+  writeLines(c("%macro helper(ds);", "  data &ds._h; set &ds; run;", "%mend helper;"),
+    file.path(root, "helper.sas"))
+  writeLines("data work.out3; set raw.input; run;", file.path(root, "other.sas"))
+  state$project <- sas_project(root, config = config)
+  state$graph <- state$project$graph
+  state$schedule <- state$project$schedule
+  state$selected_revisions$consumer$contract$suspected_dependencies <-
+    c("helper", "%HELPER", "other", "caller", unknown)
+  expect_identical(parallel_dependency_findings(state, "consumer"), unknown)
+})
+
+test_that("unverifiable agent-reported names warn while missing macros and datasets still defer execution", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
+  reported <- c("undefined_setting", "&undefined_setting", "%missing_macro", "work.missing")
+  state <- record_dependency_finding(fx$state, "p01", reported)
+  entry <- state$diagnostics$dependency_findings$p01
+  expect_identical(entry$findings, c("%missing_macro", "work.missing"))
+  expect_identical(entry$advisory, c("undefined_setting", "&undefined_setting"))
+  expect_setequal(entry$affected, c("p01", "p02"))
+  reasons <- component_execution_reasons(state, "p02")
+  expect_length(reasons, 1L)
+  expect_match(reasons, "p01 (%missing_macro, work.missing)", fixed = TRUE)
+  expect_false(grepl("undefined_setting", reasons, fixed = TRUE))
+  context <- paste(component_readiness_context(state$project, "p02"), collapse = "\n")
+  expect_match(context, "%missing_macro, work.missing", fixed = TRUE)
+  expect_match(context, "undefined_setting, &undefined_setting", fixed = TRUE)
+  expect_match(context, "not blocking execution", fixed = TRUE)
+
+  advisory_only <- record_dependency_finding(fx$state, "p01", "undefined_setting")
+  expect_length(advisory_only$diagnostics$dependency_findings$p01$findings, 0L)
+  expect_identical(advisory_only$diagnostics$dependency_findings$p01$advisory, "undefined_setting")
+  expect_length(component_execution_reasons(advisory_only), 0L)
+  expect_match(paste(component_readiness_context(advisory_only$project, "p02"), collapse = "\n"),
+    "undefined_setting", fixed = TRUE)
+})
+
+test_that("a revised contract retracts the dependency findings it no longer reports", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
+  state <- record_dependency_finding(fx$state, "p01", c("work.missing", "%missing_macro"))
+  expect_true(length(component_execution_reasons(state, "p02")) > 0L)
+  state <- record_dependency_finding(state, "p01", "%missing_macro")
+  expect_identical(state$diagnostics$dependency_findings$p01$findings, "%missing_macro")
+  expect_match(component_execution_reasons(state, "p02"), "p01 (%missing_macro)", fixed = TRUE)
+  state <- record_dependency_finding(state, "p01", character())
+  expect_null(state$diagnostics$dependency_findings$p01)
+  expect_length(component_execution_reasons(state, "p02"), 0L)
+  expect_false(any(grepl("missing", component_readiness_context(state$project, "p02"), fixed = TRUE)))
+})

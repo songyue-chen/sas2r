@@ -102,6 +102,20 @@ test_that("a missing generated intermediate is repaired at its declared writer",
   expect_match(text, "work.out1", fixed = TRUE)
 })
 
+test_that("a reader lookup failure cannot blame an already recorded producer output", {
+  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
+  fx$state <- stage_workflow_revision(fx$state, "p02", paste(
+    "sas2r_libname_assign('work', 'wrong-folder')", fx$fixed$p02, sep = "\n"), "reviewed_no_material_finding")
+  result <- run_bundle_pipeline(fx$state)
+  expect_identical(vapply(result$repairs, `[[`, "", "component_id"), "p02")
+  expect_identical(result$selected_revisions$p01$r_code, fx$fixed$p01)
+  expect_identical(result$status, "migration_ready")
+  request <- fx$state$fixer_llm$requests()[[1L]]
+  text <- paste(vapply(request$messages, function(m) as.character(m$content), ""), collapse = "\n")
+  expect_match(text, "attempt recorded work/out1.rds", fixed = TRUE)
+  expect_match(text, "reader", fixed = TRUE)
+})
+
 test_that("an unresolved upstream reference cannot hide a downstream source defect", {
   fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE, value_errors = 2L)
   ref <- file.path(fx$root, "reference.rds")

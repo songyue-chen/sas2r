@@ -66,7 +66,10 @@ of treating an upstream draft as verified behavior. A component that cannot
 finish keeps its available artifacts while other programs continue.
 
 Execution remains separate. Missing required input data or source dependencies
-prevent the affected smoke checks and full-bundle execution; they do not trigger
+prevent the affected smoke checks and defer the affected root programs in the
+bundle attempt; unaffected programs still execute, the attempt records what it
+skipped, and skipped outputs count as not executed rather than missing. Such an
+attempt cannot be reported as migration-ready. Deferral does not trigger
 repeated attempts to repair code for absent resources. Missing configured SAS
 references prevent comparison, but do not by themselves prevent execution.
 An intermediate dataset with no producer visible to the scanner, or a possible
@@ -295,7 +298,7 @@ includes the pipeline summary. Tests disable routine progress by default.
 | `smoke ...: passed` | The program executed and any applicable source population checks passed. Inspect unverified checks separately; this does not establish agreement with SAS reference data. |
 | `smoke ...: failed -- blocked by upstream: ...` | Execution failed in the named dependency. The consumer is recorded as blocked and is not sent to the fixer for that upstream crash. |
 | `bundle ... assessed -- migration_ready` | The selected bundle met the requirements described above. Read reference coverage separately. |
-| `ERROR: coordinator ...: Dependency findings require source reconciliation: ...` | The named component and its consumers are deferred. Unaffected work may continue, but full-bundle execution is blocked. |
+| `ERROR: coordinator ...: Dependency findings require source reconciliation: ...` | The named component and its consumers are deferred from execution. Unaffected work continues, and the bundle attempt executes the other root programs while recording the skipped ones. |
 | `ERROR: Run incomplete - blocked` | A required part of the migration could not complete or pass. The summary names the reason, recorded activity and next action. |
 | `ERROR: Run incomplete - failed` | An exception terminated the run. Available diagnostics are saved and the original exception is raised. |
 | `WARNING: Run requires review` | The run returned `needs_review`; inspect the outstanding review or execution evidence before use. |
@@ -501,9 +504,15 @@ before reusing a limit tuned to older ellmer.
 Missing resources and uncertain dependencies are reported while available source
 continues translating in both execution modes. Known upstream order is preserved;
 cycle members receive provisional drafts. Actual component failures do not cancel
-independent work. Full-bundle execution waits for unavailable dependencies.
+independent work. Bundle execution skips the programs affected by unavailable
+dependencies and records them as not executed.
 Worker findings use the scanner's recognized SAS macro list, so supplied macro
 names such as `qleft` and `qtrim` do not create false missing dependencies.
+Macro variables assigned anywhere in the scanned source, supplied project macros
+and scheduled components are recognized the same way. A reported name the
+scanner cannot classify is recorded as an observation for agents and the report;
+it does not by itself defer execution. Only a macro or dataset the project
+cannot supply still does.
 [SAS session metadata views](https://support.sas.com/documentation/cdl/en/sqlproc/63043/HTML/default/n02s19q65mw08gn140bwfdh7spx7.htm), such as `SASHELP.VEXTFL` and
 `DICTIONARY.EXTFILES`, are environment queries rather than missing study-data
 producers. Likewise, a macro variable used only in a LIBNAME path does not need

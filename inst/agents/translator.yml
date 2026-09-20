@@ -10,6 +10,7 @@ tools:
   lookup_rulebook:    {}
   find_macro:         {}
   get_macro_source:   {}
+  read_dependency_context: {}
   list_macro_files:   {}
   search_docs:        {}
   search_skills:      {}

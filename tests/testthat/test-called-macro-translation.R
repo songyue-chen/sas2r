@@ -113,7 +113,12 @@ test_that("called macros generate reusable files and execute through the public 
   expect_setequal(unique(translated), c("macro__scale", "macro__add", "first", "second"))
   expect_equal(sum(translated == "macro__scale"), 1L)
   expect_equal(sum(translated == "macro__add"), 1L)
-  expect_true(all(table(reviewed) == 1L))
+  # Newly generated callers change the code a macro reviewer can inspect.
+  # Refresh those reviews once; unchanged leaf-program reviews remain cached.
+  expect_equal(sum(reviewed == "macro__scale"), 2L)
+  expect_equal(sum(reviewed == "macro__add"), 2L)
+  expect_equal(sum(reviewed == "first"), 1L)
+  expect_equal(sum(reviewed == "second"), 1L)
   expect_true(file.exists(file.path(result$bundle_dir, "macros/add.R")))
   expect_true(file.exists(file.path(result$bundle_dir, "macros/scale.R")))
   expect_true(file.exists(file.path(result$bundle_dir, "tests_macros/test-add.R")))

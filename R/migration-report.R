@@ -158,6 +158,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
       dependency_notices = state$selected_revisions[[cid]]$dependency_notices,
       source_population_checks = stats::setNames(list(population), cid),
       blockers = curr$blockers %||% character(),
+      active_revision_id = h$active_revision_id,
       revisions = h$revisions %||% list()
     )
 
@@ -203,7 +204,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   # Usage and cost
   usage_obj <- state$usage_budget %||% state$usage
   usage_summary <- migration_usage_summary(usage_obj)
-  coverage <- migration_coverage(output_assessments, histories)
+  coverage <- migration_coverage(output_assessments, histories, contracts = state$output_contracts)
 
   # Diagnostics
   diagnostics <- redact_secrets(state$diagnostics %||% list(

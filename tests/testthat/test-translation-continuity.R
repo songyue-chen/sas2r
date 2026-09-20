@@ -16,7 +16,14 @@ test_that("missing data and source permit drafts in sequential and parallel runs
     expect_true(length(result$diagnostics$execution_deferred) > 0L)
     report <- read_json_record(result$report_json_path)
     expect_match(report$outcome$stages$Translation, "3 of 3", fixed = TRUE)
-    expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)
+    if (execute) {
+      # The independent root runs; the blocked root and its dependent do not.
+      expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED (1 attempt", fixed = TRUE)
+      expect_match(report$outcome$stages[["Bundle execution"]], "not executed: p01, p02", fixed = TRUE)
+      expect_setequal(names(result$diagnostics$deferred_components), c("p01", "p02"))
+    } else {
+      expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)
+    }
     if (execute) {
       expect_identical(current_component_evidence(result$component_evidence$p03)$level, "runtime_verified")
       expect_match(current_component_evidence(result$component_evidence$p02)$runtime_deferred,

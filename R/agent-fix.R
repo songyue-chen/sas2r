@@ -187,9 +187,10 @@ fix_program_revision <- function(
     allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", ")
   )
 
-  # Existing role tools retain their scope; deterministic guidance adds no tools.
+  # Dependency retrieval exposes source and selected code, never runtime data.
   tools <- build_tools(spec, list(
     agent_role = "fixer",
+    component_id = component_id, selected_revisions = selected_revisions,
     project = project,
     unit_stmts = comp_stmts,
     schemas = tryCatch(infer_schemas(project), error = function(e) list()),
@@ -230,7 +231,7 @@ fix_program_revision <- function(
   }
   assembled <- assemble(fix_data)
   candidate_checks <- check_program_revision(candidate_path, contract = contract,
-    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist)
+    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist, project = project)
   candidate_checks$errors <- c(candidate_checks$errors, assembled$error)
   retry_errors <- candidate_checks$errors[grepl("^(parse_error|lint_error)", candidate_checks$errors)]
   retry_record <- NULL
@@ -328,7 +329,7 @@ fix_program_revision <- function(
     atomic_write_file(function(path) writeLines(assembled$code, path), helper_path)
   }
   checks <- check_program_revision(new_r_path, contract = new_contract,
-    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist)
+    helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist, project = project)
   checks$errors <- c(checks$errors, assembled$error)
   checks$pass <- !length(checks$errors)
 

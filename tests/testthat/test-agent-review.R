@@ -190,7 +190,7 @@ test_that("reviewer spec tools are restricted and do not modify files or read da
   # {{context}}, built from the same objects the tool reads, so it could only
   # repeat what the prompt already carried.
   allowed_tools <- c(
-    "query_project_graph", "lookup_rulebook", "search_skills", "read_skill"
+    "query_project_graph", "lookup_rulebook", "read_dependency_context", "search_skills", "read_skill"
   )
   expect_setequal(names(rev_spec$tools), allowed_tools)
   expect_null(rev_spec$tools$read_diff_evidence)

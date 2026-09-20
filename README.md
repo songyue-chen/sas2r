@@ -336,6 +336,11 @@ the original SAS can remain a problem in a faithful translation.
 
 ### Are tables, listings and figures checked as fully as datasets?
 
+SAS graphics can be translated into native R plotting and PDF output; an R
+copy of the SAS graphics engine is not required. The translation must preserve
+the requested statistics, labels, summary tables and pagination. Fonts and
+spacing may need refinement.
+
 Dataset comparisons check the configured reference data and tolerances. A
 readable table or figure file alone does not establish that its content is
 correct. Review the analysis populations, denominators, statistics, rounding,

@@ -1,3 +1,36 @@
+# sas2r 0.5.2
+
+- Authoring, review and repair can retrieve paged SAS and selected R dependency
+  code when the initial context is truncated. Native graphics guidance and the
+  default package list include R plotting and PDF support.
+- The shared prompt policy, skill catalogue and default package list changed.
+  Resume checkpoints saved by 0.5.1 or earlier are invalidated; translations can
+  regenerate and incur fresh model calls.
+- Generated literal LIBNAME assignments are checked against preflight's resolved
+  paths. A reader lookup failure with an already recorded producer output stays
+  with the reader for diagnosis. Run summaries identify the latest completed bundle's error,
+  affected component and logs separately from outstanding static reviews.
+- Agent-reported dependency names are reconciled against the whole scanned
+  project before they can defer execution: macro variables assigned by any
+  `%LET`, `%GLOBAL`, `%LOCAL`, `CALL SYMPUT` or `INTO :` statement, supplied
+  project macros and scheduled components are producers, not missing sources.
+  Only a macro or dataset the project cannot supply still defers execution.
+  Other reported names are recorded as observations for agents and the report;
+  execution remains the check on that code. A revised contract that no longer
+  reports a name retracts the earlier finding within the run.
+- Bundle execution no longer waits for every root program. Root programs with
+  unresolved blocking findings, and their dependents, are skipped and the
+  attempt records its scope; their outputs are assessed as not executed rather
+  than missing, are never queued for repair, and a partial attempt cannot be
+  reported as migration-ready or validated. Runs that execute nothing keep the
+  previous outcome.
+- Reviewer findings that request context naming components translated in this
+  run are recorded as available context, not repair items, alongside claims
+  about the SAS source itself; the run outcome lists both for human judgment.
+  The reviewer prompt grades unavailable SAS facilities by their effect on
+  required outputs.
+- Coverage counts configured targets before any attempt assesses them.
+
 # sas2r 0.5.1
 
 - Translation now continues through missing inputs, source dependencies and
