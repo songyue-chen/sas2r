@@ -4,6 +4,12 @@
 #' On platforms or filesystems where rename cannot overwrite an existing destination,
 #' safely falls back to copy with overwrite.
 #'
+#' The callback serializes an already prepared artifact. Callback errors,
+#' including serialization errors, mean the artifact could not be persisted
+#' and are raised as `sas2r_write_failed` with the original condition as parent.
+#' This class does not diagnose a disk-space or permissions problem; the
+#' underlying condition explains the cause.
+#'
 #' @param write_fn Function taking a file path argument to execute the write.
 #' @param target_file Target destination path.
 #' @param pattern Tempfile prefix pattern.

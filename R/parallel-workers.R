@@ -58,6 +58,10 @@ parallel_adapter_recipe <- function(llm) {
   cfg <- attr(llm, "parallel_config", exact = TRUE)
   factory <- attr(llm, "parallel_factory", exact = TRUE)
   if (is.null(cfg) && !is.function(factory)) return(NULL)
+  # Source references can carry an entire parsed source file into this small
+  # startup recipe and exceed Linux's per-environment-string size limit.
+  # Keep the executable closure and captured values, not its source metadata.
+  if (is.function(factory)) factory <- utils::removeSource(factory)
   list(kind = if (!is.null(cfg)) "ellmer" else "factory", config = cfg,
     factory = factory, verified = as.list(llm$verified_settings))
 }

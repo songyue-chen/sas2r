@@ -16,6 +16,8 @@
   execution can assess translated macro behavior. Resume reports fresh readiness,
   warning text preserves literal braces, and downstream agent context retains
   both dependency findings and component failures with secret redaction.
+- Custom adapter factories omit debugging source metadata during worker startup,
+  avoiding process-launch failures caused by oversized startup data.
 
 # sas2r 0.5.0
 

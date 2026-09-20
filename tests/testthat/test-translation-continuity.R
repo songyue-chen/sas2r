@@ -86,7 +86,10 @@ test_that("a critical provider setup failure remains terminal across process wor
   fx <- repair_workflow_fixture(n = 2L, failures = integer())
   state <- fx$state
   llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 0)
-  factory <- function() stop(llm_settings_error("provider configuration unusable"))
+  # A source reference retains its whole file, even when the factory is tiny.
+  # This used to exceed process-start argument/environment limits on Linux.
+  factory <- eval(parse(text = c(paste0("# ", strrep("source metadata ", 70000L)),
+    'function() { stop(llm_settings_error("provider configuration unusable")) }'), keep.source = TRUE))
   environment(factory) <- asNamespace("sas2r")
   attr(llm, "parallel_factory") <- factory
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm

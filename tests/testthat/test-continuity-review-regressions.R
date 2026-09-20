@@ -87,6 +87,27 @@ test_that("adapter configuration failures remain terminal in a real process work
   expect_identical(state$usage_budget$request_count, 0L)
 })
 
+test_that("a write failure inside a process worker component handler stays terminal", {
+  fx <- repair_workflow_fixture(n = 2L, failures = 1L)
+  llm <- parallel_test_llm(list(fixer = valid_program_fix_response(fx$fixed$p01),
+    reviewer = valid_program_review_response()), delay = 0, write_failure_component = "p01")
+  state <- fx$state
+  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
+  state$parallel <- resolve_parallel_execution(state, 2L)
+  error <- suppressWarnings(tryCatch(run_program_pipeline(state, execute = TRUE,
+    max_program_repair_rounds = 1L), error = identity))
+  expect_s3_class(error, "sas2r_parallel_worker_error")
+  expect_length(error$migration_state$diagnostics$component_failures, 0L)
+  failures <- error$migration_state$diagnostics$worker_failures
+  expect_length(failures, 1L)
+  expect_true(failures[[1L]]$critical)
+  expect_identical(failures[[1L]]$phase, "settle")
+  expect_match(failures[[1L]]$reason, "failed to write", fixed = TRUE)
+  expect_match(failures[[1L]]$reason, "simulated revision write failure", fixed = TRUE)
+  expect_true(file.exists(failures[[1L]]$stderr))
+  expect_true(state$usage_budget$request_count > 0L)
+})
+
 test_that("supplying a reference before resume refreshes console JSON and HTML readiness", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   ref <- file.path(fx$root, "reference.rds")

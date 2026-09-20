@@ -136,6 +136,8 @@ sync_dependency_context <- function(state) {
 }
 
 critical_translation_error <- function(error) {
+  # Configuration, provider access, accounting and artifact persistence failures
+  # stop the run; ordinary component errors can leave other work useful.
   if (inherits(error, c("sas2r_llm_settings_error", "sas2r_llm_access_error",
       "sas2r_budget_error", "sas2r_usage_ledger_error", "sas2r_config_error",
       "sas2r_parallel_config_error", "sas2r_llm_config_error",
