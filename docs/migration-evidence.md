@@ -271,11 +271,10 @@ participate in review identity. Full paths remain in local execution records.
 
 Shared worker prompts, skills, policy and runtime helper code also participate
 in the checkpoint identity. Changes to them can regenerate translations, not
-just reviews. The native-graphics changes in 0.5.1 update the shared policy,
-skill catalogue and default package list. Checkpoints saved before these
-changes, including by earlier 0.5.1 builds, are invalidated and translations
-can regenerate with fresh model calls. A package version number alone does
-not invalidate a checkpoint.
+just reviews. The native-graphics changes in 0.5.2 update the shared policy,
+skill catalogue and default package list. Checkpoints saved by 0.5.1 or
+earlier are invalidated and translations can regenerate with fresh model
+calls. A package version number alone does not invalidate a checkpoint.
 
 ## Checking figure content
 

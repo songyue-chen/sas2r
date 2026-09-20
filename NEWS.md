@@ -1,15 +1,18 @@
-# sas2r 0.5.1
+# sas2r 0.5.2
 
 - Authoring, review and repair can retrieve paged SAS and selected R dependency
   code when the initial context is truncated. Native graphics guidance and the
   default package list include R plotting and PDF support.
 - The shared prompt policy, skill catalogue and default package list changed.
-  Resume checkpoints from earlier builds are invalidated; translations can
-  regenerate and incur fresh model calls, including from earlier 0.5.1 builds.
+  Resume checkpoints saved by 0.5.1 or earlier are invalidated; translations can
+  regenerate and incur fresh model calls.
 - Generated literal LIBNAME assignments are checked against preflight's resolved
   paths. A reader lookup failure with an already recorded producer output stays
   with the reader for diagnosis. Run summaries identify the latest completed bundle's error,
   affected component and logs separately from outstanding static reviews.
+
+# sas2r 0.5.1
+
 - Translation now continues through missing inputs, source dependencies and
   dependency cycles, preserving available code and warning about unresolved
   behavior. Known provider order remains enforced; cycle drafts do not establish
