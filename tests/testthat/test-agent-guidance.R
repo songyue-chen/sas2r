@@ -172,8 +172,9 @@ test_that("all actual role requests receive the same source context without refe
     expect_match(messages, guidance$text, fixed = TRUE)
     expect_match(messages, agent_guidance_policy(), fixed = TRUE)
     expect_match(messages, "check <- function() 1L", fixed = TRUE)
-    expect_match(messages, "haven allowed by mechanical lint; installed version:", fixed = TRUE)
-    expect_match(messages, "stringr allowed by mechanical lint; installed version:", fixed = TRUE)
+    expect_match(messages, "Allowlisted packages", fixed = TRUE)
+    expect_match(messages, "haven [0-9]")
+    expect_match(messages, "stringr [0-9]")
     expect_identical(grepl("cite its current context_fact_id", messages, fixed = TRUE),
       identical(llm, reviewer))
     # The style preference is for the roles that write code; the reviewer judges semantics only.

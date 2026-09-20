@@ -162,3 +162,16 @@ test_that("a configuration file with non-ASCII comments is read without warnings
   expect_no_warning(cfg <- sas_config(path))
   expect_identical(cfg$dialect, "tidyverse")
 })
+
+test_that("package facts take one line so a longer default list does not crowd the packet", {
+  root <- withr::local_tempdir()
+  writeLines("data work.out; x=1; run;", file.path(root, "p.sas"))
+  project <- sas_project(root, config = list(allowlist = c("base", "haven", "notapkg9")))
+  lines <- strsplit(build_agent_guidance(project, "p", config = project$config)$text, "\n", fixed = TRUE)[[1L]]
+  facts <- lines[grepl("installation is not semantic support", lines, fixed = TRUE)]
+  expect_length(facts, 1L)
+  expect_match(facts, "base [0-9]")
+  expect_match(facts, "haven [0-9]")
+  expect_match(facts, "notapkg9 not installed", fixed = TRUE)
+  expect_false(any(grepl("allowed by mechanical lint", lines, fixed = TRUE)))
+})
