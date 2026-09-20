@@ -63,7 +63,8 @@ migration_run_outcome <- function(state, report, attempts) {
     "Required validation" = if (severity == "error") {
       if (executed == 0L || !is.null(failure) || length(affected)) "NOT COMPLETED" else "NOT PASSED"
     } else if (status == "needs_review") "REVIEW REQUIRED" else "PASSED (see reference coverage)")
-  next_action <- if (length(affected)) "Resolve the dependency findings before rerunning." else
+  next_action <- if (length(failures)) "Resolve the component failures and any dependency findings before rerunning." else
+    if (length(affected)) "Resolve the dependency findings before rerunning." else
     if (severity == "error") "Resolve the reported error or failed checks before rerunning." else
       if (severity == "warning") "Review the outstanding evidence and reported findings before use." else
         "Inspect output and reference coverage before use."

@@ -85,7 +85,6 @@ test_that("environment observations reach bundle execution while required output
     config = fx$state$config, llm = parallel_test_llm(responses),
     max_parallel_translations = 4L, max_program_repair_rounds = 0L,
     max_bundle_repair_rounds = 0L, outputs = "work.out2")
-  expect_length(result$diagnostics$parallel_deferred, 0L)
   expect_length(result$diagnostics$dependency_findings, 0L)
   expect_identical(result$status, "migration_ready")
   report <- read_json_record(result$report_json_path)
@@ -108,7 +107,6 @@ test_that("recognizing metadata does not bypass execution failures", {
     config = fx$state$config, llm = parallel_test_llm(responses),
     max_parallel_translations = 2L, max_program_repair_rounds = 0L,
     max_bundle_repair_rounds = 0L, outputs = "work.out1")
-  expect_length(result$diagnostics$parallel_deferred, 0L)
   expect_identical(result$status, "blocked")
   report <- read_json_record(result$report_json_path)
   expect_match(report$outcome$stages[["Bundle execution"]], "1 failed", fixed = TRUE)
@@ -125,21 +123,17 @@ test_that("resume reassesses old dependency blocks and retains genuine ones", {
     state$resume_fingerprint <- migration_resume_fingerprint(state)
     # This is how the previous scheduler recorded both kinds of finding.
     blocked <- state
-    blocked$diagnostics$parallel_deferred <- c("p01", "p02")
     blocked$diagnostics$dependency_findings$p01 <- list(findings = finding,
       affected = c("p01", "p02"), reason = "source_reconciliation_required")
     blocked$diagnostics$execution_deferred <- finding
     write_migration_checkpoint(blocked, state$resume_fingerprint)
     resumed <- restore_migration_checkpoint(state, state$resume_fingerprint)
-    expect_setequal(resumed$diagnostics$parallel_deferred, c("p01", "p02"))
     result <- run_program_pipeline(resumed, execute = FALSE)
     expect_null(result$diagnostics$execution_deferred)
     if (finding == "SASHELP.VEXTFL") {
-      expect_length(result$diagnostics$parallel_deferred, 0L)
       expect_length(result$diagnostics$dependency_findings, 0L)
       expect_identical(result$component_stage$p02, "settled")
     } else {
-      expect_length(result$diagnostics$parallel_deferred, 0L)
       expect_identical(result$component_stage$p02, "settled")
       expect_true(length(component_execution_reasons(result, "p02")) > 0L)
       expect_identical(result$diagnostics$dependency_findings$p01$findings, finding)

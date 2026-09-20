@@ -69,8 +69,7 @@ test_that("missing definitions and executable library initializers remain unreso
                file.path(root, "macros", "add.sas"))
     p <- sas_project(file.path(root, "programs"))
     expect_true("macro_library_initialization_unsupported" %in% p$flags$kind)
-    expect_error(require_resolved_macros(p), "macro_library_initialization_unsupported",
-                 class = "sas2r_macro_dependency_error")
+    expect_true(all(p$macros$resolution$status == "unresolved"))
   }
 })
 
@@ -283,5 +282,4 @@ test_that("local macro definitions and SAS builtins need no search path", {
   project <- sas_project(file)
   expect_identical(project$macros$resolution$name, "local_helper")
   expect_identical(project$macros$resolution$status, "resolved_project")
-  expect_no_error(require_resolved_macros(project))
 })

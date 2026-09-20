@@ -158,8 +158,10 @@ sas_translate <- function(
   if (!nrow(setup$plan$schedule)) cli::cli_abort("No active source code is available to translate.",
     class = "sas2r_no_translation_source")
   readiness_lines <- readiness_warning_lines(setup$project$readiness)
-  if (length(readiness_lines)) cli::cli_inform(c("Translation will continue with preflight warnings:",
-    stats::setNames(readiness_lines, rep("!", length(readiness_lines)))))
+  if (length(readiness_lines)) {
+    cli::cli_inform("Translation will continue with preflight warnings:")
+    for (line in readiness_lines) cli::cli_inform(c("!" = "{line}"))
+  }
   cfg <- setup$config
   project <- setup$project
   plan <- setup$plan
@@ -210,6 +212,9 @@ sas_translate <- function(
   resume_fingerprint <- migration_resume_fingerprint(state)
   state$resume_fingerprint <- resume_fingerprint
   if (isTRUE(resume)) state <- restore_migration_checkpoint(state, resume_fingerprint)
+  # These are fresh assessments, not history to merge from a checkpoint.
+  state$diagnostics$readiness <- project$readiness
+  state$diagnostics$pipeline <- plan$pipeline
 
   # 9./10. Program pipeline (baseline translation, mechanical checks, review,
   # immediate repair) then bundle pipeline (full execution attempt, output
@@ -261,33 +266,24 @@ sas_translate <- function(
   outputs_dir <- if (length(state$saved_outputs)) paths$outputs else NULL
   state$outputs_dir <- outputs_dir
 
-  # Status adjustments for execute = FALSE
+  # Preserve bundle assessment unless drafting/check failures prevent it.
   if (isFALSE(execute)) {
     state$outputs_dir <- NULL
     outputs_dir <- NULL
-    # If there are check failures, status is blocked; otherwise needs_review
-    has_check_failure <- any(vapply(state$selected_revisions, function(r) {
-      identical(r$status, "check_failed")
-    }, logical(1)))
-    if (has_check_failure || length(state$diagnostics$component_failures)) {
-      state$status <- "blocked"
-      state$current_run_status <- "blocked"
-      state$status_reason <- "Mechanical check failed for one or more components"
-    } else if (!length(state$diagnostics$execution_deferred)) {
-      state$status <- "needs_review"
-      state$status_reason <- "Execution disabled (execute = FALSE); outputs unverified"
-    }
   }
-
+  has_check_failure <- any(vapply(state$selected_revisions,
+    function(r) identical(r$status, "check_failed"), logical(1)))
   if (length(state$diagnostics$component_failures)) {
     state$status <- state$current_run_status <- "blocked"
     state$status_reason <- paste("Translation could not finish for:",
       paste(names(state$diagnostics$component_failures), collapse = ", "),
       "; other available source was processed. Inspect the component failures.")
-  } else if (length(state$diagnostics$execution_deferred) &&
-      any(vapply(state$selected_revisions, function(x) identical(x$status, "check_failed"), logical(1)))) {
-    state$status <- "blocked"
-    state$status_reason <- paste("Mechanical checks failed; other source was processed.", state$status_reason)
+  } else if (has_check_failure && (isFALSE(execute) || length(state$diagnostics$execution_deferred))) {
+    state$status <- state$current_run_status <- "blocked"
+    state$status_reason <- "Mechanical checks failed for one or more components; other available source was processed."
+  } else if (isFALSE(execute) && !length(state$diagnostics$execution_deferred)) {
+    state$status <- state$current_run_status <- "needs_review"
+    state$status_reason <- "Execution disabled (execute = FALSE); outputs unverified"
   }
 
   # A run whose LLM calls failed must not read like a successful deterministic

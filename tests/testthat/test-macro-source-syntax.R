@@ -29,7 +29,6 @@ test_that("documented NLS macro functions do not require project macro files", {
   writeLines(paste0("%let value=", expressions, ";"), file)
   project <- sas_project(file)
   expect_equal(nrow(project$macros$calls), 0L)
-  expect_no_error(require_resolved_macros(project))
   # A k/qk prefix alone must not hide user-defined functions or typos.
   units <- sas_units(sas_statements("%kproject(); %qkproject(); %qklength(a);"))
   expect_identical(extract_macro_calls(units)$name, c("kproject", "qkproject", "qklength"))
@@ -91,10 +90,9 @@ test_that("double-quoted parameterless invocations cannot silently become litera
   writeLines('proc sql; select * from patients where site like "%Total%"; quit;', file)
   project <- sas_project(file)
   expect_identical(project$macros$resolution$name, "total")
-  expect_error(require_resolved_macros(project), "dependencies are unresolved",
-               class = "sas2r_macro_dependency_error")
+  expect_identical(project$macros$resolution$status, "unresolved")
   writeLines("proc sql; select * from patients where site like '%Total%'; quit;", file)
-  expect_no_error(require_resolved_macros(sas_project(file)))
+  expect_equal(nrow(sas_project(file)$macros$calls), 0L)
   writeLines(c("%macro total; Total %mend;", 'title "10%total";'), file)
   project <- sas_project(file)
   expect_identical(project$macros$resolution$status, "resolved_project")
@@ -105,7 +103,7 @@ test_that("macro statements and adjacent percent words in star comments remain u
   for (comment in c("* incidence >5%All patients;", "* Note: %let value=1;", "* %Y-%m-%d;")) {
     writeLines(comment, file)
     project <- sas_project(file)
-    expect_error(require_resolved_macros(project), "statement comment requires expansion",
-                 class = "sas2r_macro_dependency_error")
+    expect_match(project$flags$detail[project$flags$kind == "macro_dependency_analysis_deferred"],
+                 "statement comment requires expansion", fixed = TRUE)
   }
 })

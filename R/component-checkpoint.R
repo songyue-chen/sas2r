@@ -64,7 +64,7 @@ review_component_revision <- function(state, component_id, round = 0L, reuse_onl
     list(verdict = "review_unavailable", reason = reason,
       history = record_review_unavailable(state$histories[[component_id]], reason))
   } else tryCatch(do.call(review_program_revision, args), error = function(e) {
-    if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+    if (critical_translation_error(e)) stop(e)
     list(verdict = "review_unavailable", reason = conditionMessage(e),
       history = record_review_unavailable(state$histories[[component_id]], conditionMessage(e)))
   })

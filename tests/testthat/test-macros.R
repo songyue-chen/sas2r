@@ -206,5 +206,4 @@ test_that("unquoting a variable is advisory rather than an invented missing call
   expect_true("macro_expansion_unverified" %in% p$findings$kind)
   expect_false("unresolved_macro" %in% p$findings$kind)
   expect_equal(nrow(p$project$macros$calls), 0L)
-  expect_no_error(require_resolved_macros(p$project))
 })

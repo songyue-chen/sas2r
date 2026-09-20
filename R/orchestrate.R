@@ -286,7 +286,7 @@ process_program_component <- function(
         consumer_check <- tryCatch(check_helper_consumers(state, prior_candidate$retained_state,
           setdiff(names(state$selected_revisions), component_id), execute),
           error = function(e) {
-            if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+            if (critical_translation_error(e)) stop(e)
             list(state = state, reasons = conditionMessage(e))
           })
         state <- consumer_check$state
@@ -368,7 +368,7 @@ process_program_component <- function(
         config = state$config
       ),
       error = function(e) {
-        if (inherits(e, "sas2r_llm_settings_error")) stop(e)
+        if (critical_translation_error(e)) stop(e)
         list(status = "repair_failed", message = conditionMessage(e))
       }
     )
@@ -459,6 +459,7 @@ run_program_pipeline <- function(
 
   schedule <- state$schedule %||% stable_dependency_schedule(state$graph)
   cids <- if (nrow(schedule) > 0L) schedule$component_id else names(state$selected_revisions) %||% character()
+  tryCatch({
   # Resume reassesses observations, rather than carrying forward old blocks.
   state$diagnostics[c("parallel_deferred", "dependency_findings", "component_failures",
     "execution_deferred")] <- NULL
@@ -479,7 +480,6 @@ run_program_pipeline <- function(
   state$revisit_counts <- revisit_count
   max_revisits_per_comp <- 3L
 
-  tryCatch({
   old_hashes <- stats::setNames(character(length(cids)), cids)
   for (cid in cids) {
     old_hashes[[cid]] <- state$selected_revisions[[cid]]$binding$binding_hash %||% ""

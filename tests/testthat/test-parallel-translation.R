@@ -314,7 +314,6 @@ test_that("dependency prose remains an observation and does not defer independen
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   result <- run_program_pipeline(state, execute = FALSE)
-  expect_length(result$diagnostics$parallel_deferred, 0L)
   expect_identical(result$component_stage$p01, "settled")
   expect_identical(result$component_stage$p02, "settled")
   expect_identical(result$selected_revisions$p01$contract$suspected_dependencies, observations)

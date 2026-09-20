@@ -6,18 +6,16 @@
   a valid execution order. Missing resources defer execution, not translation.
 - Component failures preserve completed work and allow other programs to
   continue in sequential and parallel runs. Configuration, usage/accounting and
-  provider-wide failures remain terminal. Logs and HTML distinguish saved code,
+  provider-wide and output-write failures remain terminal. Logs and HTML distinguish saved code,
   incomplete components and execution that was not performed.
 - Preflight and workers share recognition of documented SAS metadata resources,
   source-used automatic macro variables, search options and configured LIBNAME
-  paths. Recognition does not supply missing data, custom formats or macro code.
-
-* Reconcile worker dependency findings with documented SAS session metadata
-  resources and configured LIBNAME path bindings. Avoid treating those resources
-  as missing study-data producers; preserve findings for unknown dependencies
-  and variables used outside resolved paths. Share this context with all agent
-  roles, reassess dependency blocks on parallel resume, and retain the existing
-  review, execution and output checks.
+  paths. Recognition does not supply missing data, custom formats or macro code;
+  unknown dependencies and non-path uses of variables retain their findings.
+- Unproven intermediate producers and statement order remain warnings so
+  execution can assess translated macro behavior. Resume reports fresh readiness,
+  warning text preserves literal braces, and downstream agent context retains
+  both dependency findings and component failures with secret redaction.
 
 # sas2r 0.5.0
 

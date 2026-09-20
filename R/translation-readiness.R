@@ -21,9 +21,12 @@ translation_readiness <- function(project, plan) {
   for (i in which(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency"))) {
     row <- inputs[i, ]
     components <- unique(nodes$component_id[nodes$source_file %in% row$file & nodes$component_id %in% ids])
+    unavailable <- row$status %in% c("missing", "unresolved")
     add(paste0("input_", row$status), paste0(row$dataset, " (", row$status, ")"),
-      components, row$file, row$line, action = paste0("Supply the input or correct its binding/producer.",
-        if (length(row$searched_paths[[1L]])) paste0(" Searched: ", paste(row$searched_paths[[1L]], collapse = ", "))))
+      components, row$file, row$line, blocks_execution = unavailable,
+      action = if (unavailable) paste0("Supply the input or correct its binding/producer.",
+        if (length(row$searched_paths[[1L]])) paste0(" Searched: ", paste(row$searched_paths[[1L]], collapse = ", ")))
+      else "Static analysis could not establish the producer/order. Review the source; execution must assess whether the translated program supplies this input.")
   }
   for (i in seq_len(nrow(plan$schedule))) {
     cid <- ids[i]
@@ -67,7 +70,7 @@ translation_readiness <- function(project, plan) {
 
 readiness_warning_lines <- function(readiness) {
   vapply(readiness$warnings, function(x) paste0(x$kind, ": ", x$detail,
-    if (!is.na(x$file)) paste0(" at ", x$file, ":", x$line),
+    if (!is.na(x$file)) paste0(" at ", x$file, if (!is.na(x$line)) paste0(":", x$line)),
     if (length(x$affected)) paste0(" [", paste(x$affected, collapse = ", "), "]"),
     ". ", x$action), "")
 }
@@ -98,24 +101,45 @@ component_execution_reasons <- function(state, component_id = NULL) {
 record_dependency_finding <- function(state, cid, finding) {
   known <- Filter(function(x) cid %in% x$affected && x$kind == "source_dependency",
     state$project$readiness$warnings)
-  finding <- setdiff(finding, vapply(known, `[[`, "", "detail"))
+  # SAS macro identifiers are case-insensitive and agents may prefix them with
+  # %. Preserve exact file/include spellings rather than normalizing paths.
+  normalize <- function(x) {
+    key <- tolower(sub("^%", "", trimws(x)))
+    macro <- key %in% state$project$macros$resolution$name
+    x[macro] <- key[macro]
+    x
+  }
+  finding <- finding[!normalize(finding) %in% normalize(vapply(known, `[[`, "", "detail"))]
   if (!length(finding)) return(state)
   prior <- state$diagnostics$dependency_findings[[cid]]$findings
-  finding <- union(prior, finding)
+  finding <- c(prior, finding)
+  finding <- finding[!duplicated(normalize(finding))]
   affected <- parallel_affected_components(state$graph, cid, state$schedule$component_id)
   state$diagnostics$dependency_findings[[cid]] <- list(findings = finding, affected = affected,
     reason = "source_reconciliation_required")
-  state$project$dependency_findings <- utils::modifyList(state$project$dependency_findings %||% list(),
-    state$diagnostics$dependency_findings)
+  state <- sync_dependency_context(state)
   if (!identical(prior, finding)) signal_immediate_coordinator_event("dependency_warning", cid,
     severity = "warning", reason = paste(finding, collapse = ", "), affected = affected)
+  state
+}
+
+sync_dependency_context <- function(state) {
+  findings <- state$diagnostics$dependency_findings %||% list()
+  for (cid in names(state$diagnostics$component_failures)) {
+    failure <- state$diagnostics$component_failures[[cid]]
+    findings[[cid]] <- list(affected = union(findings[[cid]]$affected, failure$affected),
+      findings = union(findings[[cid]]$findings,
+        paste("Component", cid, "could not finish:", failure$reason)))
+  }
+  state$project$dependency_findings <- findings
   state
 }
 
 critical_translation_error <- function(error) {
   if (inherits(error, c("sas2r_llm_settings_error", "sas2r_llm_access_error",
       "sas2r_budget_error", "sas2r_usage_ledger_error", "sas2r_config_error",
-      "sas2r_parallel_config_error"))) return(TRUE)
+      "sas2r_parallel_config_error", "sas2r_llm_config_error",
+      "sas2r_write_failed", "sas2r_record_exists"))) return(TRUE)
   if (inherits(error$parent, "condition")) return(critical_translation_error(error$parent))
   FALSE
 }
@@ -128,13 +152,13 @@ record_component_failure <- function(state, cid, error, phase = "translation", l
     stop(error)
   }
   affected <- parallel_affected_components(state$graph, cid, state$schedule$component_id)
+  reason <- redact_secrets(conditionMessage(error))
   state$diagnostics$component_failures[[cid]] <- list(component_id = cid, phase = phase,
-    reason = conditionMessage(error), affected = affected, logs = logs)
+    reason = reason, affected = affected, logs = logs)
   state$component_stage[[cid]] <- "failed"
-  state$project$dependency_findings[[cid]] <- list(affected = affected,
-    findings = paste("Component", cid, "could not finish:", conditionMessage(error)))
+  state <- sync_dependency_context(state)
   signal_immediate_coordinator_event("component_failed", cid, severity = "warning",
-    reason = conditionMessage(error), path = logs)
+    reason = reason, path = logs)
   state
 }
 

@@ -222,7 +222,7 @@ fix_program_revision <- function(
   # same checker as persisted revisions. This is an ordinary budgeted request.
   candidate_path <- tempfile(fileext = ".R")
   on.exit(unlink(candidate_path), add = TRUE)
-  writeLines(fix_data$r_code, candidate_path)
+  atomic_write_file(function(path) writeLines(fix_data$r_code, path), candidate_path)
   assemble <- function(data) {
     if (is.null(data$bundle_helper_patch)) return(list(code = helper_code, error = NULL))
     tryCatch(list(code = assemble_helper_overlay(helper_code, data$bundle_helper_patch$content), error = NULL),
@@ -310,22 +310,22 @@ fix_program_revision <- function(
     dir.create(new_rev_dir, recursive = TRUE, showWarnings = FALSE)
     new_r_path <- file.path(new_rev_dir, "program.R")
     new_contract_path <- file.path(new_rev_dir, "contract.json")
-    writeLines(fix_data$r_code, new_r_path)
+    atomic_write_file(function(path) writeLines(fix_data$r_code, path), new_r_path)
     atomic_write_json(new_contract, new_contract_path)
     if (!is.null(fix_data$bundle_helper_patch)) {
       hp_file <- file.path(new_rev_dir, "helper-overlay.R")
       dir.create(dirname(hp_file), recursive = TRUE, showWarnings = FALSE)
-      writeLines(fix_data$bundle_helper_patch$content, hp_file)
+      atomic_write_file(function(path) writeLines(fix_data$bundle_helper_patch$content, path), hp_file)
     }
   } else {
     new_r_path <- tempfile(fileext = ".R")
-    writeLines(fix_data$r_code, new_r_path)
+    atomic_write_file(function(path) writeLines(fix_data$r_code, path), new_r_path)
   }
 
   helper_path <- NULL
   if (!is.null(assembled$code)) {
     helper_path <- if (is.null(paths)) tempfile(fileext = ".R") else file.path(new_rev_dir, "candidate-helpers.R")
-    writeLines(assembled$code, helper_path)
+    atomic_write_file(function(path) writeLines(assembled$code, path), helper_path)
   }
   checks <- check_program_revision(new_r_path, contract = new_contract,
     helper_patch = list(content = assembled$code %||% ""), allowlist = config$allowlist)

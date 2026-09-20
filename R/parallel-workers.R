@@ -360,14 +360,15 @@ parallel_poll <- function(pool) {
     if (job$process$is_alive()) next
     result <- tryCatch(job$process$get_result(), error = identity)
     if (inherits(result, "condition")) {
+      reason <- redact_secrets(conditionMessage(result))
       parallel_abandon_job(pool, job)
-      parallel_job_record(job, "failed", conditionMessage(result))
+      parallel_job_record(job, "failed", reason)
       pool$jobs[[id]] <- NULL
       pool$failures[[id]] <- list(component_id = job$component_id, phase = job$kind,
-        job_id = id, reason = conditionMessage(result), critical = critical_translation_error(result),
+        job_id = id, reason = reason, critical = critical_translation_error(result),
         stdout = file.path(job$dir, "stdout.log"), stderr = file.path(job$dir, "stderr.log"))
       if (isTRUE(pool$failures[[id]]$critical)) signal_immediate_coordinator_event("worker_failed", job$component_id,
-        severity = "error", reason = conditionMessage(result), path = job$dir)
+        severity = "error", reason = reason, path = job$dir)
       pool$state$component_stage[[job$component_id]] <- "interrupted"
       next
     }
@@ -417,9 +418,7 @@ parallel_apply_result <- function(state, result) {
     max(state$repair_counts[[cid]] %||% 0L, result$repair_counts[[cid]])
   state$events <- c(state$events, result$events)
   if (length(result$diagnostics)) state$diagnostics <- utils::modifyList(state$diagnostics %||% list(), result$diagnostics)
-  state$project$dependency_findings <- c(state$diagnostics$dependency_findings,
-    lapply(state$diagnostics$component_failures, function(x)
-      list(affected = x$affected, findings = paste("Component could not finish:", x$reason))))
+  state <- sync_dependency_context(state)
   if (!is.null(result$assignment)) parallel_job_record(result$assignment, "accepted")
   state$active_revision <- state$selected_revisions[[result$component_id]]$revision_id
   state

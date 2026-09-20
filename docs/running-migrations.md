@@ -69,6 +69,9 @@ Execution remains separate. Missing required input data or source dependencies
 prevent the affected smoke checks and full-bundle execution; they do not trigger
 repeated attempts to repair code for absent resources. Missing configured SAS
 references prevent comparison, but do not by themselves prevent execution.
+An intermediate dataset with no producer visible to the scanner, or a possible
+statement-order issue, remains a warning and can be tested by execution. This
+allows translated macros to create their intermediate datasets at runtime.
 `execute = FALSE` explicitly requests code only. Reports show saved code, component
 failures and execution activity separately. A partial translation is never marked
 validated. The exported R programs and supporting files form the **bundle**.
