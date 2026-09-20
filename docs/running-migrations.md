@@ -541,6 +541,37 @@ parallel execution remains opt-in until the paired live comparison is completed.
 See the [migration evidence guide](migration-evidence.md#parallel-coordination-and-evidence)
 for requested/effective concurrency, process logs and interrupted-work accounting.
 
+## Code style and packages
+
+Translated code is written for maintenance as well as fidelity. Two
+configuration keys control the style:
+
+```yaml
+dialect: tidyverse
+allowlist: [base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate, tibble, haven, stats, utils, graphics, grDevices, grid]
+```
+
+`dialect: tidyverse` is the default. The translator, macro translator and fixer
+receive a style block naming the allowlisted, installed tidyverse packages to
+prefer and what each is for: dplyr for DATA step logic and PROC SQL, tidyr for
+PROC TRANSPOSE, ggplot2 for figures, stringr for character functions, forcats
+for format-driven levels, lubridate for dates. When no preferred package
+expresses the SAS behavior faithfully, base R or a bundle helper is the correct
+choice and is not a finding. The helpers that carry SAS semantics stay
+mandatory in every style: `lib_read` and `lib_write`, `sas_sort` (missing
+sorts first), `sas_merge`, `chr_cmp` and `%notin%`, `sas_round` and the format
+helpers. `dialect: base` reverses the preference; any other text is passed to
+the prompts as written.
+
+`allowlist` replaces the default package list shown above. Only packages that
+are both allowlisted and installed are recommended; a package that is
+allowlisted but not installed is named as unusable. The reviewer never grades
+style; it judges SAS fidelity only. The bundle README lists the packages the
+generated code references. Changing either key invalidates resume checkpoints.
+The translation report carries an advisory style observation, counting
+tidyverse package calls against base data-frame operations, so live runs can
+be compared before and after a style change.
+
 ## Called macros in separate folders
 
 Configure macro directories in `_sas2r.yml`; relative paths are resolved from

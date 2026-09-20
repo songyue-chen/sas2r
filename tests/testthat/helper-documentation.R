@@ -1,5 +1,6 @@
 doc_validate_config <- function(file) {
-  llm <- yaml::read_yaml(file)$llm
+  # The example file has non-ASCII comments; a C locale would otherwise warn on read.
+  llm <- yaml::read_yaml(file, readLines.warn = FALSE)$llm
   credential_envs <- if (!is.null(llm$provider)) {
     sas2r:::llm_provider_spec(llm$provider)$credential_envs
   } else character()
