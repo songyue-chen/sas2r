@@ -28,6 +28,7 @@ Suggests:
     diffdf,
     dplyr,
     ellmer (>= 0.4.2),
+    ggplot2,
     knitr,
     pdftools,
     pkgload,

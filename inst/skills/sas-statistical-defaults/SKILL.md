@@ -56,7 +56,10 @@ results; they are not cosmetic tweaks. If the source specifies a discrete
 axis, use explicit positions and labels in the source order; retain continuous
 spacing when the source requests it. Pass source pagination limits through
 every helper to the rendering loop, rather than relying on an unrelated R
-default. No extra plotting package is required by this guidance.
+default. When ggplot2 is allowlisted and installed, pass the same supplied
+statistics through ggplot2::geom_boxplot(stat = "identity") with ymin, lower,
+middle, upper and ymax; graphics::bxp remains the fallback. No extra plotting
+package is required by this guidance.
 
 For SAS ROUND, use the existing `sas_round()` contract rather than base R's
 ties-to-even rule. Check the source's actual numeric format for displayed
