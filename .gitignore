@@ -17,5 +17,6 @@ AGENTS.md
 # Local reviews, plans, validation notes, and design decisions.
 docs/local/
 docs/decisions/
+/PR*_CODE_REVIEW*.md
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds

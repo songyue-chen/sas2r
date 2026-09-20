@@ -4,6 +4,7 @@
 ^\.worktrees$
 ^worktrees$
 ^docs$
+^PR.*_CODE_REVIEW.*\.md$
 ^\.github$
 ^inst/examples/demo_project/\.sas2r$
 ^\.Rlib$
