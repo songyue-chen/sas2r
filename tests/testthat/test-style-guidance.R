@@ -154,3 +154,11 @@ test_that("dialect and allowlist in _sas2r.yml reach the project configuration a
   expect_null(plain$dialect)
   expect_null(plain$allowlist)
 })
+
+test_that("a configuration file with non-ASCII comments is read without warnings in any locale", {
+  root <- withr::local_tempdir()
+  path <- file.path(root, "_sas2r.yml")
+  writeLines(c("# Active example: Gemini Flash — first evaluation", "dialect: tidyverse"), path, useBytes = FALSE)
+  expect_no_warning(cfg <- sas_config(path))
+  expect_identical(cfg$dialect, "tidyverse")
+})

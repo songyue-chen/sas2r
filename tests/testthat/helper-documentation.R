@@ -1,6 +1,7 @@
 doc_validate_config <- function(file) {
-  # The example file has non-ASCII comments; a C locale would otherwise warn on read.
-  llm <- yaml::read_yaml(file, readLines.warn = FALSE)$llm
+  # Read as sas_config() does: UTF-8 lines through a plain connection, so the
+  # example file's non-ASCII comments do not warn in a C locale.
+  llm <- yaml::yaml.load(paste(readLines(file, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))$llm
   credential_envs <- if (!is.null(llm$provider)) {
     sas2r:::llm_provider_spec(llm$provider)$credential_envs
   } else character()
