@@ -17,7 +17,10 @@
   warning text preserves literal braces, and downstream agent context retains
   both dependency findings and component failures with secret redaction.
 - Custom adapter factories omit debugging source metadata during worker startup,
-  avoiding process-launch failures caused by oversized startup data.
+  avoiding process-launch failures caused by oversized source metadata. Oversized
+  remaining startup data now raises a configuration error with its size and
+  guidance to reduce captured settings or use one translation workflow. The
+  custom-adapter reconstruction contract is documented in the migration guide.
 
 # sas2r 0.5.0
 

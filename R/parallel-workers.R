@@ -127,6 +127,14 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
     list(recipes = recipes, configs = packet$configs,
       tested_capabilities = as.list(.llm_tested_capability_registry),
       rejected_capabilities = as.list(.llm_rejected_capabilities)), NULL)))
+  # Use a conservative ceiling for this single encoded environment value.
+  # Reject the whole oversized packet; source metadata is already stripped above.
+  startup_bytes <- nchar(env[["SAS2R_WORKER_ADAPTERS"]], type = "bytes")
+  if (startup_bytes > 100000L) cli::cli_abort(c(
+    "Parallel worker startup data is too large ({startup_bytes} bytes; limit 100000 bytes).",
+    "i" = "Reduce captured values in parallel_factory or provider configuration.",
+    "i" = "Alternatively, set max_parallel_translations = 1 (migration.max_parallel_translations: 1 in _sas2r.yml)."
+  ), class = "sas2r_parallel_config_error")
   snapshot <- packet$state
   snapshot$paths$component_revisions <- file.path(dir, "components")
   # Attempt execution remains in one lane, using the established smoke layout.

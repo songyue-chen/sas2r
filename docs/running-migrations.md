@@ -471,6 +471,21 @@ for the AI provider, so more than one task can make progress on the same CPU.
 Start with one, then compare two on your study. Check elapsed time, memory use
 and provider limits before increasing it further. Custom AI connections that
 cannot run in a separate R process use one worker and report the reason.
+
+If you supply your own `sas2r_llm` adapter, set `attr(llm, "parallel_factory")`
+to a function that takes no arguments and returns a fresh adapter. Each worker
+calls it in a new R process. The factory must be self-contained: objects that
+exist only in the calling session's global environment are not transported.
+Capture the small settings it needs in its own closure, and access package
+functions through their installed namespaces. Keep captured state small. The
+combined encoded startup data (adapter factories, provider configuration and
+capability settings) has a conservative limit of **100,000 bytes per worker**.
+Exceeding it stops that worker's launch with a configuration error showing the
+size and the remedy: reduce captured settings or use `max_parallel_translations = 1`.
+This limit is on adapter startup data, not the SAS programs or study datasets.
+Without a reconstruction factory, the custom adapter uses one workflow and
+reports the reason.
+
 For the supplied ellmer connections, parallel mode requires **ellmer 0.5.0 or
 newer** and `llm.max_tries: 1` (the
 default); older ellmer installations visibly use one workflow. If both

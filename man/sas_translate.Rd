@@ -54,7 +54,12 @@ Output overrides are retained in the returned project for reuse.}
 
 \item{agent_evidence}{Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".}
 
-\item{llm}{Optional \code{sas2r_llm} instance for agent-assisted translation, review, and repair.}
+\item{llm}{Optional \code{sas2r_llm} instance for agent-assisted translation, review, and repair.
+For parallel execution, a custom adapter needs a self-contained, zero-argument
+function in \code{attr(llm, "parallel_factory")} that returns a fresh adapter.
+Without a factory, execution uses one workflow and reports why. Capture only small
+settings: caller-global objects are not transported, and the combined encoded
+adapter startup data is limited to 100,000 bytes per worker.}
 
 \item{budget_usd}{Dollar threshold for LLM spend. Defaults to Inf (unlimited).}
 

@@ -37,6 +37,11 @@
 #'   Output overrides are retained in the returned project for reuse.
 #' @param agent_evidence Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".
 #' @param llm Optional `sas2r_llm` instance for agent-assisted translation, review, and repair.
+#'   For parallel execution, a custom adapter needs a self-contained, zero-argument
+#'   function in `attr(llm, "parallel_factory")` that returns a fresh adapter.
+#'   Without a factory, execution uses one workflow and reports why. Capture only small
+#'   settings: caller-global objects are not transported, and the combined encoded
+#'   adapter startup data is limited to 100,000 bytes per worker.
 #' @param budget_usd Dollar threshold for LLM spend. Defaults to Inf (unlimited).
 #' @param budget_mode Dollar enforcement mode: "stop", "observe", "soft", or "strict". Defaults to "stop".
 #' @param pricing_source Cost provenance source ("catalog", "adapter", "organization", "external"). Defaults to "catalog".
