@@ -101,6 +101,27 @@ test_that("disabled execution and interrupted attempts are distinguished from ex
   expect_match(outcome$reason, "connection lost", fixed = TRUE)
 })
 
+test_that("histories without reviews retain the correct outstanding component names", {
+  fx <- repair_workflow_fixture(n = 4L, failures = integer())
+  state <- fx$state
+  for (cid in c("p01", "p03")) {
+    state$histories[[cid]] <- record_completed_review(state$histories[[cid]], verdict = "repair_required")
+  }
+  # A history before its first review is normalized by the authoritative reader.
+  state$histories$p02 <- new_component_evidence_history("p02", state$selected_revisions$p02$binding)
+  expect_identical(component_review_verdict(state$histories$p02), "review_unavailable")
+  write_migration_report(state)
+  report <- read_json_record(state$paths$report_json)
+  expect_identical(report$component_evidence$p02$review_status, "review_unavailable")
+  expect_identical(report$component_evidence$p03$review_status, "repair_required")
+  expected <- "Separate outstanding static reviews (not proof these paths executed): p01, p02, p03"
+  pending <- report$outcome$details[startsWith(report$outcome$details, "Separate outstanding static reviews")]
+  expect_identical(unname(unlist(pending)), expected)
+  for (path in c(state$paths$start_here, file.path(state$paths$logs, "run-outcome.log"))) {
+    expect_match(paste(readLines(path), collapse = "\n"), expected, fixed = TRUE)
+  }
+})
+
 test_that("retained selections and prior-run repairs do not imply current-run success", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   state <- fx$state

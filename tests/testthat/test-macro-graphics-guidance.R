@@ -56,12 +56,26 @@ test_that("the shipped plot example sends source-defined whiskers to the rendere
 
 test_that("native graphics guidance reaches template definitions and callers in all roles", {
   for (source in c("proc template; define statgraph example; begingraph; endgraph; end; run;",
-                   "ods pdf file='plot.pdf'; proc sgrender data=work.summary template=example; run; ods pdf close;")) {
+                   "ods pdf file='plot.pdf'; proc sgrender data=work.summary template=example; run; ods pdf close;",
+                   "proc sgplot data=work.summary; scatter x=x y=y; run;",
+                   "proc sgpanel data=work.summary; panelby group; scatter x=x y=y; run;",
+                   "ods html; proc sgscatter data=work.summary; compare x=x y=y; run;",
+                   "ods rtf; proc gplot data=work.summary; plot y*x; run;",
+                   "proc gchart data=work.summary; vbar group; run;",
+                   "proc boxplot data=work.summary; plot y*group; run;",
+                   "ods graphics on;")) {
     for (role in c("translator", "reviewer", "fixer")) {
       text <- render_agent_skills(route_agent_skills(list(agent = role, flags = skill_flags_from_sas(source))))
       expect_match(text, "sas-native-graphics", fixed = TRUE)
       expect_match(text, "caller must capture and use it", fixed = TRUE)
       expect_match(text, "read_dependency_context", fixed = TRUE)
+    }
+  }
+  for (source in c("ods pdf file='listing.pdf'; proc print data=work.listing; run; ods pdf close;",
+                   "ods pdf file='table.pdf'; proc report data=work.summary; run; ods pdf close;")) {
+    for (role in c("translator", "reviewer", "fixer")) {
+      text <- render_agent_skills(route_agent_skills(list(agent = role, flags = skill_flags_from_sas(source))))
+      expect_false(grepl("sas-native-graphics", text, fixed = TRUE))
     }
   }
   code <- skill_example_code("sas-native-graphics")

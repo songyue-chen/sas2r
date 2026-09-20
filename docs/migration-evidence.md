@@ -261,17 +261,21 @@ stay unknown and do not grant additional automatic revisits. Other incompatible
 checkpoints regenerate with an explicit reason.
 
 For a compatible checkpoint, completed reviews additionally require the same
-review request context. Changed helper documentation, rulebook content or
-installed dependency facts can therefore trigger a fresh review of retained
-translations. Reviews saved without a request identity are refreshed with an
+review request context. Changed helper documentation, rulebook content,
+installed dependency facts or selected dependency/consumer code can therefore
+trigger a fresh review of retained translations, with additional model calls.
+Reviews saved without a request identity are refreshed with an
 explicit progress reason. Attempt log locations and execution IDs are excluded
 from the static reviewer packet; their observed errors and log content still
 participate in review identity. Full paths remain in local execution records.
 
 Shared worker prompts, skills, policy and runtime helper code also participate
 in the checkpoint identity. Changes to them can regenerate translations, not
-just reviews. Version 0.4.5 includes a shared policy change. A package version
-number alone does not invalidate a checkpoint.
+just reviews. The native-graphics changes in 0.5.1 update the shared policy,
+skill catalogue and default package list. Checkpoints saved before these
+changes, including by earlier 0.5.1 builds, are invalidated and translations
+can regenerate with fresh model calls. A package version number alone does
+not invalidate a checkpoint.
 
 ## Checking figure content
 

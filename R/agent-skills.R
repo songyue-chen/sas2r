@@ -529,7 +529,7 @@ skill_flags_from_sas <- function(sas_text) {
   if (grepl("\\bretain\\b", x)) flags <- c(flags, "order_dependent")
   if (grepl("%|\\b(symputx?|symget)\\s*\\(", x)) flags <- c(flags, "macro_execution")
   if (grepl("\\bproc\\s+sort\\b", x)) flags <- c(flags, "order_dependent")
-  if (grepl("\\b(define\\s+statgraph|proc\\s+(sgrender|sgplot|sgpanel)|ods\\s+(pdf|graphics))\\b", x)) {
+  if (grepl("\\b(define\\s+statgraph|proc\\s+(sgrender|sgplot|sgpanel|sgscatter|gplot|gchart|boxplot)|ods\\s+graphics)\\b", x)) {
     flags <- c(flags, "native_graphics")
   }
   if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {

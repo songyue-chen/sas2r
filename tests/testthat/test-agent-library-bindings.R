@@ -59,3 +59,57 @@ test_that("a contradictory path is corrected before the generated consumer execu
     paste(vapply(request$messages, `[[`, "", "content"), collapse = "\n"), "")
   expect_true(any(grepl("preflight selected", messages, fixed = TRUE)))
 })
+
+test_that("the assignment check uses autoexec reference bindings", {
+  root <- withr::local_tempdir()
+  lib <- file.path(root, "analysis"); dir.create(lib)
+  writeLines(sprintf('libname analysis %s;', deparse(lib)), file.path(root, "autoexec.sas"))
+  writeLines('data work.out; set analysis.derived; run;', file.path(root, "consumer.sas"))
+  project <- sas_project(root)
+  bindings <- component_library_bindings(project, "consumer")
+  expect_true(nrow(bindings) > 0L)
+  expect_true(all(bindings$kind == "reference" & bindings$status == "bound"))
+  expect_length(check_component_library_assignments(sprintf('sas2r_libname_assign("analysis", %s)',
+    deparse(lib)), project, "consumer"), 0L)
+  expect_match(check_component_library_assignments('sas2r_libname_assign("analysis", "wrong")',
+    project, "consumer"), "preflight selected", fixed = TRUE)
+})
+
+test_that("conditional source bindings do not justify rejecting a literal assignment", {
+  root <- withr::local_tempdir()
+  lib <- file.path(root, "conditional"); dir.create(lib)
+  source <- file.path(root, "consumer.sas")
+  writeLines(c('%macro never_called;', sprintf('libname analysis %s;', deparse(lib)),
+    '%mend;', 'data work.out; set analysis.derived; run;'), source)
+  project <- sas_project(source)
+  bindings <- component_library_bindings(project, "consumer")
+  expect_true(any(bindings$status == "conditionally_bound"))
+  expect_length(check_component_library_assignments('sas2r_libname_assign("analysis", "another")',
+    project, "consumer"), 0L)
+})
+
+test_that("ordinary reads and writes do not resolve assignment bindings", {
+  root <- withr::local_tempdir()
+  source <- file.path(root, "consumer.sas")
+  writeLines('data work.out; x=1; run;', source)
+  project <- sas_project(source)
+  testthat::local_mocked_bindings(effective_librefs = function(project) stop("unexpected registry walk"))
+  code <- 'x <- lib_read("raw", "input"); lib_write(x, "work", "out")'
+  expect_length(check_component_library_assignments(code, project, "consumer"), 0L)
+})
+
+test_that("assignment bindings follow the authoritative resolver when availability changes", {
+  root <- withr::local_tempdir()
+  fallback <- file.path(root, "configured"); dir.create(fallback)
+  source_path <- file.path(root, "later")
+  source <- file.path(root, "consumer.sas")
+  writeLines(c(sprintf('libname analysis %s;', deparse(source_path)),
+    'data work.out; set analysis.derived; run;'), source)
+  project <- sas_project(source, config = list(libraries = list(analysis = fallback)))
+  code <- sprintf('sas2r_libname_assign("analysis", %s)', deparse(source_path))
+  expect_match(check_component_library_assignments(code, project, "consumer"), "preflight selected", fixed = TRUE)
+  dir.create(source_path)
+  # The same registry now resolves the accessible source directory; a memoized
+  # projection would retain the earlier configured fallback incorrectly.
+  expect_length(check_component_library_assignments(code, project, "consumer"), 0L)
+})

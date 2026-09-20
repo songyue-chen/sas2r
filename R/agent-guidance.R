@@ -42,9 +42,10 @@ direct_component_dependencies <- function(graph, component_id, downstream = FALS
 # Code-only context shared by all three roles. Neighbour identifiers come from
 # the graph; R bodies come from the selected revision snapshot, never outputs.
 agent_dependency_bodies <- function(project, component_id, selected_revisions = list(),
-                                    graph = project$graph) {
+                                    graph = project$graph, requested = NULL) {
   ids <- unique(c(direct_component_dependencies(graph, component_id),
     direct_component_dependencies(graph, component_id, downstream = TRUE)))
+  if (!is.null(requested)) ids <- intersect(ids, requested)
   stats::setNames(lapply(ids, function(cid) list(
     sas = component_source_text(graph, cid),
     r = selected_revisions[[cid]]$r_code %||% "",
@@ -54,7 +55,8 @@ agent_dependency_bodies <- function(project, component_id, selected_revisions = 
 
 read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
   bodies <- agent_dependency_bodies(ctx$project, ctx$component_id,
-    ctx$selected_revisions %||% list(), ctx$graph %||% ctx$project$graph)
+    ctx$selected_revisions %||% list(), ctx$graph %||% ctx$project$graph,
+    requested = component_id)
   body <- bodies[[component_id]]
   if (is.null(body)) return(list(error = "not_a_direct_dependency_or_consumer"))
   code <- body[[language]]
@@ -80,6 +82,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
       min(6000L, floor(packet_limit / 3L))) projections <- utils::head(projections, -1L)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
   available_bodies <- agent_dependency_bodies(project, component_id, selected_revisions, graph)
+  additional_consumers <- setdiff(names(available_bodies), deps)
   bodies <- available_bodies[deps]
   calls <- r_call_names(selected_revisions[[component_id]]$r_code %||% "")
   called <- vapply(bodies, function(b) b$symbol %in% calls, logical(1))
@@ -102,7 +105,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     paste(names(environment$versions), "allowed by mechanical lint; installed version:", environment$versions),
     "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.",
     "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Direct dependencies and consumers are readable.",
-    paste("Additional downstream consumer IDs:", paste(utils::head(setdiff(names(available_bodies), deps), 32L), collapse = ", ")),
+    if (length(additional_consumers)) paste("Additional downstream consumer IDs:", paste(utils::head(additional_consumers, 32L), collapse = ", ")),
     render_source_projections(projections))
   params <- macro$parameters
   if (!is.null(params) && nrow(params)) for (i in utils::head(seq_len(nrow(params)), 32L)) {

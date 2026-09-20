@@ -8,9 +8,10 @@ component_library_bindings <- function(project, component_id) {
 }
 
 check_component_library_assignments <- function(code, project, component_id) {
+  expressions <- tryCatch(parse(text = code), error = function(e) expression())
+  if (!"sas2r_libname_assign" %in% all.names(expressions, unique = TRUE)) return(character())
   bindings <- component_library_bindings(project, component_id)
   if (is.null(bindings) || !nrow(bindings)) return(character())
-  expressions <- tryCatch(parse(text = code), error = function(e) expression())
   errors <- character()
   env <- new.env(parent = emptyenv())
   env$.sas2r_execution_root <- project$libref_registry$project_root

@@ -15,7 +15,14 @@ test_that("all roles can retrieve a late dependency's complete source and select
   expect_match(tail, "sas truncated")
   expect_match(tail, "r truncated")
   expect_match(tail, "available characters:")
+  expect_false(grepl("Additional downstream consumer IDs:", guidance$text, fixed = TRUE))
   ctx <- list(project = project, component_id = "main", selected_revisions = selected)
+  source_reads <- character()
+  read_source <- component_source_text
+  testthat::local_mocked_bindings(component_source_text = function(graph, component_id) {
+    source_reads <<- c(source_reads, component_id)
+    read_source(graph, component_id)
+  })
   for (role in c("translator", "reviewer", "fixer")) {
     tools <- build_tools(load_agent_specs()[[role]], ctx)
     expect_false(any(c("read_dataset_preview", "read_comparison_report") %in% names(tools)))
@@ -34,7 +41,11 @@ test_that("all roles can retrieve a late dependency's complete source and select
       expected <- if (language == "sas") component_source_text(project$graph, "macro__z_template") else selected$macro__z_template$r_code
       expect_identical(paste0(code, collapse = ""), expected)
     }
+    expect_error(tools$read_dependency_context$call(list(component_id = "macro__z_template", language = "R")),
+      class = "sas2r_tool_arguments_error")
   }
+  expect_true(length(source_reads) > 1L)
+  expect_identical(unique(source_reads), "macro__z_template")
   # Code not yet selected is unavailable, even though its SAS body is present.
   ctx$selected_revisions <- list()
   expect_identical(read_dependency_context(ctx, "macro__z_template", "r")$status, "unavailable")
@@ -51,6 +62,8 @@ test_that("consumer context is available without changing the macro's dependenci
   fx <- list(project = project, revisions = list(macro__check = list(revision_id = "r2", r_code = "check <- function() 1")))
   selected <- c(fx$revisions, list(main = list(revision_id = "r3", r_code = "answer <- check()")))
   ctx <- list(project = fx$project, component_id = "macro__check", selected_revisions = selected)
+  expect_match(build_agent_guidance(fx$project, "macro__check", selected_revisions = selected)$text,
+    "Additional downstream consumer IDs: main", fixed = TRUE)
   expect_identical(read_dependency_context(ctx, "main", "r")$code, "answer <- check()")
   old <- build_agent_guidance(fx$project, "macro__check", selected_revisions = selected)$identity
   selected$main$r_code <- "answer <- check() + 1"
