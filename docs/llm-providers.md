@@ -502,25 +502,26 @@ budget:
 In `observe` mode, requests execute without a dollar limit while all token dimensions, timestamps, and cost provenances are logged.
 
 ### Optional Enforceable Limits
-Every ceiling defaults to `Inf`. An unset ceiling is not a safe default -- it is
-no ceiling at all:
+Every ceiling defaults to `Inf`: without one, nothing stops a run. The examples
+keep every limit commented out so a run finishes without interruption. Uncomment
+the ones you want, knowing the run stops when that limit is reached:
 ```yaml
-budget:
-  mode: soft                            # observe | soft | strict
-  max_usd: 10.00
-  max_retries: 2                        # sas2r-level retries (see note below)
-  # max_calls: 700                      # total requests; about 40 per program or macro
-  # max_tool_calls: 700                 # total tool executions; about 40 per program or macro
-  # max_wall_time: 14400                # seconds, whole run; leave unset to finish uninterrupted
-  max_output_tokens: 393216             # per-request admission ceiling; must be
-                                        # >= llm.max_output_tokens when both are set
-  max_request_bytes: 1048576
-  max_request_chars: 500000
-  max_input_tokens: 128000
+# budget:                               # uncomment to enforce limits; the run stops when one is reached
+#   mode: soft                          # observe | soft | strict
+#   max_usd: 10.00                      # halts new requests once recorded spend reaches this
+#   max_retries: 2                      # sas2r-level retries (see note below)
+#   max_calls: 700                      # total requests; about 40 per program or macro
+#   max_tool_calls: 700                 # total tool executions; about 40 per program or macro
+#   max_wall_time: 14400                # seconds, whole run
+#   max_output_tokens: 393216           # per-request admission ceiling; must be
+#                                       # >= llm.max_output_tokens when both are set
+#   max_request_bytes: 1048576
+#   max_request_chars: 500000
+#   max_input_tokens: 128000
 ```
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
-- **Ceilings:** leave `max_calls`, `max_tool_calls` and `max_wall_time` unset for study runs so translation finishes without interruption. If you need them, size them from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
+- **Ceilings:** every limit is commented out by default so translation finishes without interruption. Uncomment a limit to enforce it; the run stops when it is reached. Size call and tool ceilings from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
 
 > **Dollar enforcement requires known cost or usable pricing.** Unknown cost
 > cannot be treated as zero or used to certify a dollar limit. Strict mode needs

@@ -115,8 +115,9 @@ Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemi
 Flash or another provider, replace the `llm:` block with its complete
 [provider profile](docs/llm-providers.md#2-configuration-examples-_sas2ryml).
 
-Leave `budget:` unset for a study run: the default observe mode records usage
-without stopping requests, so translation finishes without interruption. The
+Every `budget:` limit is commented out by default: observe mode records usage
+without stopping requests, so translation finishes without interruption.
+Uncomment a limit only if you want the run to stop when it is reached. The
 code style keys `dialect` and `allowlist` are described in
 [code style and packages](docs/running-migrations.md#code-style-and-packages).
 
@@ -152,10 +153,11 @@ result <- sas_translate(
   max_bundle_repairs_per_component = 2, # bundle repairs per component
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
-  # usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
-  # Leave these ceilings unset so the run finishes without interruption; size
-  # them from the study if you need them: about 40 requests and 40 tool calls
-  # per program or macro. Cap spend with budget_usd instead.
+  # Optional limits, commented out by default. Uncomment to enforce them; the
+  # run stops when any limit is reached. Size call and tool ceilings from the
+  # study: about 40 requests and 40 tool calls per program or macro.
+  # , budget_usd = 10
+  # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
 
 # What you get back
@@ -171,13 +173,13 @@ cat(sas_code(result, 1))
 sas_write(result, "r_production/")
 ```
 
-By default a run records usage without stopping: observe mode, no request, tool
-or wall-time ceilings. Keep it that way for a study run so translation finishes
-without interruption, and cap spend with `budget_usd` if you need a limit. If
-you do set `max_calls`, `max_tool_calls` or `max_wall_time`, size them from the
-study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component. `usage_limits = list(max_calls = 0)` remains the way
-to forbid provider calls entirely. For scale, a 17-component study used about
-340 requests, 390 tool executions and an hour with four workers.
+Every limit is commented out by default: a run records usage in observe mode
+and finishes without interruption. Uncomment `budget_usd` or `usage_limits` to
+enforce a limit, knowing that the run stops when it is reached. Size call and
+tool ceilings from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component. For scale, a 17-component
+study used about 340 requests, 390 tool executions and an hour with four
+workers. `usage_limits = list(max_calls = 0)` remains the way to forbid provider
+calls entirely.
 
 ## Reading the results
 

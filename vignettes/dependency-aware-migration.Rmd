@@ -150,9 +150,11 @@ result <- sas_translate(
   max_program_repair_rounds = 1L,
   max_bundle_repairs_per_component = 2L,
   max_bundle_repair_rounds = NULL
-  # usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
-  # Leave these ceilings unset so the run finishes without interruption; about
-  # 40 requests and 40 tool calls per program or macro if you set them.
+  # Optional limits, commented out by default. Uncomment to enforce them; the
+  # run stops when any limit is reached (about 40 requests and 40 tool calls
+  # per program or macro).
+  # , budget_usd = 10
+  # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
 
 # Inspect the result object
@@ -187,10 +189,11 @@ Passing or deferred smoke results can be reused when their full context matches;
 full-bundle execution and output checks use fresh attempts. Parallel checkpoints
 distinguish drafts from components that have completed immediate processing, and
 save final reviews individually. Repair and recorded revisit counts survive
-resume. The usage ledger remains cumulative across resumed runs. Leave
-`max_calls`, `max_tool_calls` and `max_wall_time` unset so a run finishes without
-interruption; if you cap requests, allow about 40 per program or macro.
-Unknown-cost calls must not be read as zero spend.
+resume. The usage ledger remains cumulative across resumed runs. Every limit is
+commented out by default so a run finishes without interruption; uncomment
+`budget_usd` or a `usage_limits` ceiling only if you want the run to stop when it
+is reached, allowing about 40 requests per program or macro. Unknown-cost calls
+must not be read as zero spend.
 
 ### Four Canonical Bundle Statuses
 

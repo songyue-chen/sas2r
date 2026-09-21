@@ -13,10 +13,10 @@
   tidyverse package calls against base data-frame operations. Prompt, policy
   and skill changes invalidate resume checkpoints saved by earlier versions.
 
-- The quickstart and guides no longer set `max_calls = 20`. They recommend
-  leaving request, tool and wall-time ceilings unset so a run finishes without
-  interruption, give per-component sizing from observed runs for anyone who
-  needs ceilings, and show `max_parallel_translations` in the run examples.
+- The quickstart and guides no longer set `max_calls = 20`. Every budget limit
+  in the examples is commented out so a run finishes without interruption, with
+  a note that uncommenting a limit stops the run when it is reached, sizing from
+  observed runs, and `max_parallel_translations` shown in the run examples.
 
 # sas2r 0.5.2
 

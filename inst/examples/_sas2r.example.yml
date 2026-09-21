@@ -173,20 +173,21 @@ llm:
 # 7. Usage Budget & Policy (Optional)
 # ------------------------------------------------------------------------------
 # Default is mode: observe, max_usd: Inf (audits usage without stopping calls).
-# Strict dollar budgets reserve worst-case request costs, not actual charges.
-# Larger allowances need sufficient shared budget for concurrent requests.
-# Leave max_calls, max_tool_calls and max_wall_time unset so a study run
-# finishes without interruption. If you set them, size them from the study:
-# about 40 requests and 40 tool executions per program or macro.
+# Every limit below is commented out so a study run finishes without
+# interruption. Uncomment a limit to enforce it; the run stops when it is
+# reached. Strict dollar budgets reserve worst-case request costs, not actual
+# charges, and larger allowances need sufficient shared budget for concurrent
+# requests. Size call and tool ceilings from the study: about 40 requests and
+# 40 tool executions per program or macro.
 # budget:
-#   mode: observe                       # observe | soft | strict
+#   mode: soft                          # observe | soft | strict
+#   max_usd: 5.00                       # halts new requests once recorded spend reaches this
+#   max_retries: 2                      # sas2r-level; see llm.max_tries
+#   max_calls: 700                      # about 40 per program or macro
+#   max_tool_calls: 700                 # about 40 per program or macro
+#   max_wall_time: 14400                # denies new calls after this time; does not interrupt an in-flight request
 #   max_output_tokens: 393216           # per-request admission ceiling; must be
 #                                       # >= llm.max_output_tokens when both are set
-#   max_usd: 5.00
-#   max_retries: 2                      # sas2r-level; see llm.max_tries
-#   # max_calls: 700                    # about 40 per program or macro
-#   # max_tool_calls: 700               # about 40 per program or macro
-#   # max_wall_time: 14400              # denies new calls after this time; does not interrupt an in-flight request
 
 # ------------------------------------------------------------------------------
 # 8. Concurrent Translation Workflows
