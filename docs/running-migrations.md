@@ -437,8 +437,12 @@ preserving repair counts. Unrecorded historical revisit counts remain unknown;
 resume does not grant a new automatic revisit allowance. Other incompatible
 checkpoints regenerate. Progress reports the reason when a checkpoint cannot be reused.
 
-Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
-`usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are
+Every limit is commented out in the examples by default, so a run records usage
+in observe mode and finishes without interruption. Uncomment `budget_usd` or a
+`usage_limits` ceiling only if you want the run to stop when it is reached. If
+you do, size it from the usage summary of a completed run: requests and tool
+executions per program or macro vary by model, reasoning setting and study.
+`usage_limits = list(max_calls = 0)` prevents provider requests entirely. Limits and usage are
 reported explicitly; the usage ledger is cumulative across resumed runs.
 See `?sas_translate` and the [migration evidence guide](migration-evidence.md)
 for the complete limits and reuse contract.
@@ -446,14 +450,8 @@ for the complete limits and reuse contract.
 ## Parallel translation (opt-in)
 
 Set how many SAS programs or called macros can be processed at the same time
-in `_sas2r.yml`:
-
-```yaml
-migration:
-  max_parallel_translations: 2
-```
-
-Or override it for one run with `sas_translate("study", max_parallel_translations = 2)`.
+with the `sas_translate()` argument, for example
+`sas_translate("study", max_parallel_translations = 2)`.
 The default is **1**. A value of **2** allows up to two program-or-macro
 translation workflows at once, including their review and repair steps. It does
 not start two translators, two reviewers and two fixers all at once. A **worker**

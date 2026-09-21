@@ -112,18 +112,23 @@ Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemi
 Flash or another provider, replace the `llm:` block with its complete
 [provider profile](docs/llm-providers.md#2-configuration-examples-_sas2ryml).
 
+Every `budget:` limit is commented out by default: observe mode records usage
+without stopping requests, so translation finishes without interruption.
+Uncomment a limit only if you want the run to stop when it is reached. The
+code style keys `dialect` and `allowlist` are described in
+[code style and packages](docs/running-migrations.md#code-style-and-packages).
+
 ### 3. Check the setup offline
 
 <!-- sas2r-example: offline readme-preflight -->
 ```r
 library(sas2r)
 check <- sas_preflight(
-  "programs/", config = "_sas2r.yml", out_dir = "migration_output",
-  usage_limits = list(max_calls = 20)
+  "programs/", config = "_sas2r.yml", out_dir = "migration_output"
 )
 print(check)
 check$inputs       # availability and producer-order status
-check$budget       # effective limits; no model calls are made
+check$budget       # effective limits; preflight makes no model calls
 ```
 
 Preflight checks the source setup without model calls or reading dataset contents.
@@ -139,12 +144,17 @@ library(sas2r)
 result <- sas_translate(
   path = check$project,            # reuse the unchanged source scan
   out_dir = "migration_output",
-  usage_limits = list(max_calls = 20),
+  max_parallel_translations = 1,   # programs or macros translated at once; see below
   execute = TRUE,                  # actually run the translated programs
   max_program_repair_rounds = 1,   # immediate repair attempts per program
   max_bundle_repairs_per_component = 2, # bundle repairs per component
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
+  # Optional limits, commented out by default. Uncomment to enforce them; the
+  # run stops when any limit is reached. Requests and tool calls per program
+  # vary by model and study: size ceilings from a completed run's usage summary.
+  # , budget_usd = 10
+  # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
 
 # What you get back
@@ -159,6 +169,16 @@ cat(sas_code(result, 1))
 # Export the selected code, generated outputs, reports, and run guide
 sas_write(result, "r_production/")
 ```
+
+Every limit is commented out by default: a run records usage in observe mode
+and finishes without interruption. Uncomment `budget_usd` or `usage_limits` to
+enforce a limit, knowing that the run stops when it is reached. How many
+requests and tool calls a program or macro needs varies by model, reasoning
+setting and study, so size ceilings from the usage summary of a completed run
+rather than from a rule of thumb. As one labelled example, a 17-component
+study with GPT-5.6 Luna at high reasoning used about 340 requests, 390 tool
+executions and an hour with four workers. `usage_limits = list(max_calls = 0)`
+remains the way to forbid provider calls entirely.
 
 ## Reading the results
 
@@ -191,11 +211,13 @@ updates, while the final outcome and saved reports remain available. See
 
 ## Parallel translation (opt-in)
 
-The default is one program or called macro at a time. To allow up to two:
+The default is one program or called macro at a time. To allow up to two, pass
+the argument to `sas_translate()`:
 
-```yaml
-migration:
-  max_parallel_translations: 2
+<!-- sas2r-example: network parallel -->
+```r
+result <- sas_translate(path = check$project, out_dir = "migration_output",
+                        max_parallel_translations = 2)
 ```
 
 A *worker* is an R process handling an assigned translation or review task.
@@ -259,9 +281,9 @@ window, to give reasoning and complete R code room to finish.
 - With the documented DeepSeek connector, omit a top-level `reasoning_effort`
   and use `capabilities.reasoning_effort: unsupported`, as in the quickstart.
   This retains server-default thinking; it does not switch reasoning off.
-- Start with `migration.max_parallel_translations: 1`, then try `2` with the
-  same programs and checks. Increase further only when provider quotas and
-  available memory permit.
+- Start with `max_parallel_translations = 1` in `sas_translate()`, then try `2`
+  with the same programs and checks. Increase further only when provider quotas
+  and available memory permit.
 - If you set `budget.max_output_tokens`, keep it at least as large as
   `llm.max_output_tokens`. Strict dollar budgets reserve worst-case costs before
   requests; larger ceilings may need more budget, especially with parallel work.
@@ -376,6 +398,9 @@ run one at a time and 40 minutes can be shared perfectly. Even with no extra
 overhead, two workers would take **40 minutes**, and four **30 minutes**.
 This is an example, not a measured sas2r benchmark. Compare elapsed time and
 output checks on the same representative study before increasing the setting.
+One observed point: a 17-component study took 79 minutes with four workers on
+sas2r 0.5.1 and 59 minutes on 0.5.2 with GPT-5.6 Luna at high reasoning; other
+models and studies differ.
 
 ### What should I do when a run is blocked or a comparison fails?
 

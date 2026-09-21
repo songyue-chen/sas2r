@@ -101,12 +101,8 @@ at one concurrent translation and choose a reasoning/tool-capable model that
 fits local memory. GitHub Models is
 retired and is not recommended for new configurations.
 
-For **every provider**, establish a checked baseline at:
-
-```yaml
-migration:
-  max_parallel_translations: 1
-```
+For **every provider**, establish a checked baseline at
+`max_parallel_translations = 1` in `sas_translate()`.
 
 Then evaluate `2` concurrent program-or-macro workflows on the same inputs and
 settings. Raise to `3` or `4` only when quality checks, endpoint quotas and memory
@@ -502,24 +498,26 @@ budget:
 In `observe` mode, requests execute without a dollar limit while all token dimensions, timestamps, and cost provenances are logged.
 
 ### Optional Enforceable Limits
-Every ceiling defaults to `Inf`. An unset ceiling is not a safe default -- it is
-no ceiling at all:
+Every ceiling defaults to `Inf`: without one, nothing stops a run. The examples
+keep every limit commented out so a run finishes without interruption. Uncomment
+the ones you want, knowing the run stops when that limit is reached:
 ```yaml
-budget:
-  mode: soft                            # observe | soft | strict
-  max_usd: 10.00
-  max_calls: 50                         # total requests
-  max_retries: 2                        # sas2r-level retries (see note below)
-  max_tool_calls: 500                   # total tool executions across the run
-  max_wall_time: 7200                   # seconds, whole run
-  max_output_tokens: 393216             # per-request admission ceiling; must be
-                                        # >= llm.max_output_tokens when both are set
-  max_request_bytes: 1048576
-  max_request_chars: 500000
-  max_input_tokens: 128000
+# budget:                               # uncomment to enforce limits; the run stops when one is reached
+#   mode: soft                          # observe | soft | strict
+#   max_usd: 10.00                      # halts new requests once recorded spend reaches this
+#   max_retries: 2                      # sas2r-level retries (see note below)
+#   max_calls: 700                      # total requests; varies by model and study
+#   max_tool_calls: 700                 # total tool executions; varies by model and study
+#   max_wall_time: 14400                # seconds, whole run
+#   max_output_tokens: 393216           # per-request admission ceiling; must be
+#                                       # >= llm.max_output_tokens when both are set
+#   max_request_bytes: 1048576
+#   max_request_chars: 500000
+#   max_input_tokens: 128000
 ```
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
+- **Ceilings:** every limit is commented out by default so translation finishes without interruption. Uncomment a limit to enforce it; the run stops when it is reached. Requests and tool executions per program or macro vary by model, reasoning setting and study; size ceilings from a completed run's usage summary (the report's Resource Usage section).
 
 > **Dollar enforcement requires known cost or usable pricing.** Unknown cost
 > cannot be treated as zero or used to certify a dollar limit. Strict mode needs
@@ -661,7 +659,7 @@ to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults t
 single long model response can exceed the timeout and fail mid-stream with
 `sas2r_llm_timeout`. Increasing `max_tries` adds
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
-Values above 1 require `migration.max_parallel_translations: 1`; incompatible
+Values above 1 require `max_parallel_translations = 1`; incompatible
 effective settings raise a startup configuration error.
 
 ```yaml

@@ -13,6 +13,13 @@
   tidyverse package calls against base data-frame operations. Prompt, policy
   and skill changes invalidate resume checkpoints saved by earlier versions.
 
+- The quickstart and guides no longer set `max_calls = 20`. Every budget limit
+  in the examples is commented out so a run finishes without interruption, with
+  a note that uncommenting a limit stops the run when it is reached, that usage
+  per program varies by model and study, and `max_parallel_translations` shown
+  in the run examples as the `sas_translate()` argument rather than a
+  `migration:` configuration block.
+
 # sas2r 0.5.2
 
 - Authoring, review and repair can retrieve paged SAS and selected R dependency

@@ -173,26 +173,31 @@ llm:
 # 7. Usage Budget & Policy (Optional)
 # ------------------------------------------------------------------------------
 # Default is mode: observe, max_usd: Inf (audits usage without stopping calls).
-# Strict dollar budgets reserve worst-case request costs, not actual charges.
-# Larger allowances need sufficient shared budget for concurrent requests.
+# Every limit below is commented out so a study run finishes without
+# interruption. Uncomment a limit to enforce it; the run stops when it is
+# reached. Strict dollar budgets reserve worst-case request costs, not actual
+# charges, and larger allowances need sufficient shared budget for concurrent
+# requests. Requests and tool executions per program vary by model and study;
+# size ceilings from a completed run's usage summary.
 # budget:
-#   mode: observe                       # observe | soft | strict
-#   max_calls: 50
+#   mode: soft                          # observe | soft | strict
+#   max_usd: 5.00                       # halts new requests once recorded spend reaches this
+#   max_retries: 2                      # sas2r-level; see llm.max_tries
+#   max_calls: 700                      # varies by model and study
+#   max_tool_calls: 700                 # varies by model and study
+#   max_wall_time: 14400                # denies new calls after this time; does not interrupt an in-flight request
 #   max_output_tokens: 393216           # per-request admission ceiling; must be
 #                                       # >= llm.max_output_tokens when both are set
-#   max_usd: 5.00
-#   max_retries: 2                      # sas2r-level; see llm.max_tries
-#   max_tool_calls: 500
-#   max_wall_time: 7200                 # denies new calls after this time; does not interrupt an in-flight request
 
 # ------------------------------------------------------------------------------
 # 8. Concurrent Translation Workflows
 # ------------------------------------------------------------------------------
-# Counts whole program-or-macro workflows, including their review and repair.
+# Set with the sas_translate() argument max_parallel_translations (default 1).
+# It counts whole program-or-macro workflows, including their review and repair.
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
-migration:
-  max_parallel_translations: 1
+# migration:
+#   max_parallel_translations: 1
 
 # ------------------------------------------------------------------------------
 # Code style. dialect: tidyverse (the default) tells the translator and fixer
