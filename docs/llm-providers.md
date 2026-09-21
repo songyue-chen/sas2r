@@ -508,10 +508,10 @@ no ceiling at all:
 budget:
   mode: soft                            # observe | soft | strict
   max_usd: 10.00
-  max_calls: 50                         # total requests
   max_retries: 2                        # sas2r-level retries (see note below)
-  max_tool_calls: 500                   # total tool executions across the run
-  max_wall_time: 7200                   # seconds, whole run
+  # max_calls: 700                      # total requests; about 40 per program or macro
+  # max_tool_calls: 700                 # total tool executions; about 40 per program or macro
+  # max_wall_time: 14400                # seconds, whole run; leave unset to finish uninterrupted
   max_output_tokens: 393216             # per-request admission ceiling; must be
                                         # >= llm.max_output_tokens when both are set
   max_request_bytes: 1048576
@@ -520,6 +520,7 @@ budget:
 ```
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
+- **Ceilings:** leave `max_calls`, `max_tool_calls` and `max_wall_time` unset for study runs so translation finishes without interruption. If you need them, size them from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
 
 > **Dollar enforcement requires known cost or usable pricing.** Unknown cost
 > cannot be treated as zero or used to certify a dollar limit. Strict mode needs

@@ -437,8 +437,10 @@ preserving repair counts. Unrecorded historical revisit counts remain unknown;
 resume does not grant a new automatic revisit allowance. Other incompatible
 checkpoints regenerate. Progress reports the reason when a checkpoint cannot be reused.
 
-Use `usage_limits = list(max_calls = 20)` to cap provider requests, or
-`usage_limits = list(max_calls = 0)` to prevent them. Limits and usage are
+Leave `max_calls`, `max_tool_calls` and `max_wall_time` unset so a run finishes
+without interruption; the default observe mode records usage without stopping
+requests. If you do set ceilings, the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
+`usage_limits = list(max_calls = 0)` prevents provider requests entirely. Limits and usage are
 reported explicitly; the usage ledger is cumulative across resumed runs.
 See `?sas_translate` and the [migration evidence guide](migration-evidence.md)
 for the complete limits and reuse contract.

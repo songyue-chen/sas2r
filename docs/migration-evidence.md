@@ -219,7 +219,10 @@ The Markdown report and printed result expose these same counts.
 `usage` includes elapsed seconds, provider calls, known/billed/estimated spend,
 unknown-cost calls, and the effective limits. Unknown cost is not zero spend.
 Configure non-dollar ceilings using, for example,
-`usage_limits = list(max_calls = 10, max_request_bytes = 100000)`.
+`usage_limits = list(max_request_bytes = 100000)`. Leave `max_calls`,
+`max_tool_calls` and `max_wall_time` unset for study runs so translation
+finishes without interruption; if you set them, allow about 40 requests and 40
+tool executions per program or macro.
 `usage_limits = list(max_calls = 0)` prevents all provider requests.
 The accepted names are documented in `?sas_translate`; misspellings fail.
 

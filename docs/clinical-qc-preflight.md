@@ -37,7 +37,7 @@ check <- sas_preflight(
   study, out_dir = file.path(study, "migration"),
   config = list(libraries = list(raw = "raw", adam = "adam")),
   outputs = outputs, budget_usd = 5,
-  usage_limits = list(max_calls = 20, max_request_bytes = 200000)
+  usage_limits = list(max_request_bytes = 200000)
 )
 print(check)
 check$libraries

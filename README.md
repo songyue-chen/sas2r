@@ -106,11 +106,19 @@ llm:                  # a recommended Flash starting profile
     reasoning_effort: unsupported # connector cannot set effort; server thinking stays on
   timeout_seconds: 1800
   max_tries: 1
+
+migration:            # programs or macros translated at once (default 1)
+  max_parallel_translations: 1
 ```
 
 Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemini
 Flash or another provider, replace the `llm:` block with its complete
 [provider profile](docs/llm-providers.md#2-configuration-examples-_sas2ryml).
+
+Leave `budget:` unset for a study run: the default observe mode records usage
+without stopping requests, so translation finishes without interruption. The
+code style keys `dialect` and `allowlist` are described in
+[code style and packages](docs/running-migrations.md#code-style-and-packages).
 
 ### 3. Check the setup offline
 
@@ -118,12 +126,11 @@ Flash or another provider, replace the `llm:` block with its complete
 ```r
 library(sas2r)
 check <- sas_preflight(
-  "programs/", config = "_sas2r.yml", out_dir = "migration_output",
-  usage_limits = list(max_calls = 20)
+  "programs/", config = "_sas2r.yml", out_dir = "migration_output"
 )
 print(check)
 check$inputs       # availability and producer-order status
-check$budget       # effective limits; no model calls are made
+check$budget       # effective limits; preflight makes no model calls
 ```
 
 Preflight checks the source setup without model calls or reading dataset contents.
@@ -139,12 +146,16 @@ library(sas2r)
 result <- sas_translate(
   path = check$project,            # reuse the unchanged source scan
   out_dir = "migration_output",
-  usage_limits = list(max_calls = 20),
+  max_parallel_translations = 1,   # programs or macros translated at once; see below
   execute = TRUE,                  # actually run the translated programs
   max_program_repair_rounds = 1,   # immediate repair attempts per program
   max_bundle_repairs_per_component = 2, # bundle repairs per component
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
+  # usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
+  # Leave these ceilings unset so the run finishes without interruption; size
+  # them from the study if you need them: about 40 requests and 40 tool calls
+  # per program or macro. Cap spend with budget_usd instead.
 )
 
 # What you get back
@@ -159,6 +170,14 @@ cat(sas_code(result, 1))
 # Export the selected code, generated outputs, reports, and run guide
 sas_write(result, "r_production/")
 ```
+
+By default a run records usage without stopping: observe mode, no request, tool
+or wall-time ceilings. Keep it that way for a study run so translation finishes
+without interruption, and cap spend with `budget_usd` if you need a limit. If
+you do set `max_calls`, `max_tool_calls` or `max_wall_time`, size them from the
+study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component. `usage_limits = list(max_calls = 0)` remains the way
+to forbid provider calls entirely. For scale, a 17-component study used about
+340 requests, 390 tool executions and an hour with four workers.
 
 ## Reading the results
 
@@ -376,6 +395,9 @@ run one at a time and 40 minutes can be shared perfectly. Even with no extra
 overhead, two workers would take **40 minutes**, and four **30 minutes**.
 This is an example, not a measured sas2r benchmark. Compare elapsed time and
 output checks on the same representative study before increasing the setting.
+One observed point: a 17-component study took 79 minutes with four workers on
+sas2r 0.5.1 and 59 minutes on 0.5.2 with the same model, about 14 worker-minutes
+and 20 provider requests per component.
 
 ### What should I do when a run is blocked or a comparison fails?
 
