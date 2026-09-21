@@ -25,8 +25,11 @@ a returned drawing function or explicit specification with a working consumer
 can be appropriate. The caller must capture and use it; calling a function that
 merely returns unused metadata does not implement template registration.
 
-Use permitted packages: graphics, grDevices and grid are available in the
-default package list; ggplot2 is an option only when separately permitted.
+Use permitted packages: prefer ggplot2 when it is allowlisted and installed,
+drawing the source-supplied statistics with ggplot2::geom_boxplot(stat = "identity")
+or the matching geom rather than recomputing them; graphics, grDevices and grid
+remain available and are the fallback when a ggplot2 layer cannot express the
+required drawing.
 Do not assume a plotting function's default calculations match SAS. Apply the
 statistical-defaults guidance to quartiles, whiskers, notches, weights and
 outliers. Supply computed statistics directly when required. The absence of a

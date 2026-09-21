@@ -316,8 +316,8 @@ test_that("unknown tools are reported to the model, not crashed on", {
 
 test_that("prompts render placeholders and exchanges are logged", {
   dir <- withr::local_tempdir()
-  p <- render_prompt("translator.md", list(dialect = "tidyverse"))
-  expect_match(p, "tidyverse")
+  p <- render_prompt("translator.md", list(style = render_style_guidance(list(dialect = "tidyverse"))))
+  expect_match(p, "tidyverse first", fixed = TRUE)
   expect_false(grepl("\\{\\{", p))
   run_agent(spec_min(), mock_llm(list(good)), list(), "unit", log_dir = dir)
   expect_true(file.exists(file.path(dir, "llm_log.jsonl")))

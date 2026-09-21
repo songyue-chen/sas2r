@@ -1,3 +1,18 @@
+# sas2r 0.5.3
+
+- The translator, macro translator and fixer prefer allowlisted, installed
+  tidyverse packages whenever their functions express the SAS behavior
+  faithfully, and use base R or the bundle helpers otherwise; that fallback is
+  not a review finding. `dialect: tidyverse` is the default, `dialect: base`
+  reverses the preference. The default package list adds ggplot2, stringr,
+  forcats, purrr, lubridate and tibble; packages that are allowlisted but not
+  installed are named as unusable. A routed `tidyverse-idioms` skill maps SAS
+  constructs to the preferred functions with their SAS caveats, and the
+  graphics guidance prefers ggplot2 drawing source-supplied statistics.
+- The translation report carries an advisory style observation counting
+  tidyverse package calls against base data-frame operations. Prompt, policy
+  and skill changes invalidate resume checkpoints saved by earlier versions.
+
 # sas2r 0.5.2
 
 - Authoring, review and repair can retrieve paged SAS and selected R dependency

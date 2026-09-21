@@ -184,7 +184,8 @@ fix_program_revision <- function(
       build_agent_guidance(project, component_id, contract, selected_revisions, config = config,
         priority_dependencies = bundle$failed_component_id %||% bundle$condition$component_id %||% character(),
         include_consumers = identical(mode, "bundle"))$text, sep = "\n"),
-    allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", ")
+    allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
+    style = render_style_guidance(config)
   )
 
   # Dependency retrieval exposes source and selected code, never runtime data.

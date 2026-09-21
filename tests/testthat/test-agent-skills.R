@@ -1,8 +1,8 @@
 test_that("installed package skills validate with stable hashes", {
   skills <- sas2r:::agent_skill_catalog()
   expect_setequal(names(skills),
-                  c("sas-missing-sort-semantics",
-                    "sas-dataset-row-alignment", "sas-statistical-defaults", "sas-macro-execution", "sas-native-graphics"))
+                  c("sas-missing-sort-semantics", "sas-dataset-row-alignment", "sas-statistical-defaults",
+                    "sas-macro-execution", "sas-native-graphics", "tidyverse-idioms"))
   expect_true(all(vapply(skills, function(x)
     grepl("^[a-f0-9]{64}$", x$content_hash), logical(1))))
   expect_true(all(vapply(skills, function(x)
@@ -649,7 +649,7 @@ test_that("the fixer keeps source tools and the allowlist without comparison evi
   # Reference differences cannot route skills or enter the prompt.
   expect_no_match(sys_txt, "sas-dataset-row-alignment")
   # The allowlist reaches the prompt (fixer default).
-  expect_match(sys_txt, "dplyr, tidyr, haven")
+  expect_match(sys_txt, paste(normalize_package_allowlist(), collapse = ", "), fixed = TRUE)
   expect_no_match(sys_txt, report$report_id, fixed = TRUE)
 
   find_tool <- function(nm) {

@@ -99,10 +99,11 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
       kind = kind, subject = subject, value = value)
     id
   }
+  versions <- environment$versions
   text <- c(paste("Source context identity:", scope),
-    "Package facts observed in the local execution environment (installation is not semantic support):",
-    paste("R:", environment$r_version),
-    paste(names(environment$versions), "allowed by mechanical lint; installed version:", environment$versions),
+    paste0("Allowlisted packages with observed versions (lint allows them; installation is not semantic support): R ",
+      environment$r_version, "; ", paste(names(versions),
+        ifelse(versions == "unknown", "not installed", versions), collapse = ", "), "."),
     "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.",
     "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Direct dependencies and consumers are readable.",
     if (length(additional_consumers)) paste("Additional downstream consumer IDs:", paste(utils::head(additional_consumers, 32L), collapse = ", ")),

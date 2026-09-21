@@ -217,6 +217,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   bundle_execution <- bundle_execution_report(state, attempt_records)
 
   # 1. Construct JSON report payload
+  style_observation <- migration_style_observation(state$selected_revisions %||% list())
   report_payload <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     run_id = run_id,
@@ -244,6 +245,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
       saved_deliverables = state$saved_outputs %||% list()
     ),
     coverage = coverage,
+    style_observation = style_observation,
     output_assessments = output_assessments,
     component_evidence = component_evidence_list,
     bundle_execution = bundle_execution,
@@ -275,6 +277,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     paste0("- **Run ID:** `", run_id, "`"),
     paste0("- **Timestamp:** `", report_payload$created_at, "`"),
     migration_environment_lines(state$environment),
+    migration_style_line(style_observation),
     "",
     migration_outcome_lines(report_payload$outcome),
     "",

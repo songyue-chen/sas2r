@@ -469,7 +469,7 @@ sas_config <- function(path = NULL, start = ".") {
                        else character()
   autoexec <- if (is.null(raw$environment$autoexec)) character()
               else as.character(raw$environment$autoexec)
-  structure(list(
+  config <- structure(list(
     libraries = normalize_library_config(raw$libraries, src),
     macro_search_path = config_rebase_paths(macro_search_path, src),
     include_roots = config_rebase_paths(include_roots, src),
@@ -484,6 +484,11 @@ sas_config <- function(path = NULL, start = ".") {
     source = src,
     raw = raw
   ), class = "sas2r_config")
+  # Style keys are optional scalars: present only when the file sets them, so
+  # a file without them keeps the package defaults and the same field names.
+  if (!is.null(raw$dialect)) config$dialect <- as.character(unlist(raw$dialect))[1L]
+  if (!is.null(raw$allowlist)) config$allowlist <- normalize_package_allowlist(raw$allowlist)
+  config
 }
 
 #' @export

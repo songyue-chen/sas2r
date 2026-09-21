@@ -147,7 +147,7 @@ translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
   ctx <- list(agent_role = "translator", project = project, unit_stmts = ctxp$us,
               schemas = infer_schemas(project), config = config,
               macro_index = macro_index, skill_catalog = catalog)
-  vars <- list(dialect = config$dialect %||% "tidyverse",
+  vars <- list(style = render_style_guidance(config),
                allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
                unit = format_sas_statements(ctxp$us$text),
                context = paste(ctxp$packet, render_macro_interface(macro_contract), sep = "\n"),
@@ -799,7 +799,7 @@ generate_program_revision <- function(
     )
 
     prompt_vars <- list(
-      dialect = config$dialect %||% "tidyverse",
+      style = render_style_guidance(config),
       allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
       unit = ctx$sas_text,
       context = ctx$context_packet,

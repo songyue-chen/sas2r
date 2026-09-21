@@ -195,6 +195,17 @@ migration:
   max_parallel_translations: 1
 
 # ------------------------------------------------------------------------------
+# Code style. dialect: tidyverse (the default) tells the translator and fixer
+# to prefer allowlisted, installed tidyverse packages whenever they express the
+# SAS behavior faithfully, and to use base R or the bundle helpers otherwise.
+# dialect: base prefers base R and the helpers. allowlist replaces the default
+# package list (base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate,
+# tibble, haven, stats, utils, graphics, grDevices, grid). Packages must be
+# installed where the bundle runs. The reviewer never grades style.
+dialect: tidyverse
+# allowlist: [base, dplyr, tidyr, ggplot2, haven, stats, utils, graphics, grDevices, grid]
+
+# ------------------------------------------------------------------------------
 # 9. Data & Model Privacy Boundary
 # ------------------------------------------------------------------------------
 # Models receive SAS/R code, input schema metadata, helper interfaces and errors.
