@@ -73,7 +73,7 @@ remotes::install_github("songyue-chen/sas2r")
 
 ### 2. Describe your study in `_sas2r.yml`
 
-Create one small file, `_sas2r.yml`, in your project directory. It says where your data lives, which outputs matter, and which AI model to use:
+Create one small file, `_sas2r.yml`, in your project directory. It says where your data lives, which outputs matter, and which AI model to use. The folder of SAS programs to translate is not part of it: you pass that folder, or a single `.sas` file, as the `path` argument in steps 3 and 4, with `recursive = TRUE` to include subfolders. Called macro folders are named under `macros`.
 
 ```yaml
 project: my_clinical_study
@@ -124,7 +124,8 @@ code style keys `dialect` and `allowlist` are described in
 ```r
 library(sas2r)
 check <- sas_preflight(
-  "programs/", config = "_sas2r.yml", out_dir = "migration_output"
+  "programs/",                     # the folder of SAS programs to translate
+  config = "_sas2r.yml", out_dir = "migration_output"
 )
 print(check)
 check$inputs       # availability and producer-order status
@@ -298,7 +299,9 @@ the token ceiling or timeout does not enable either. See the
 Use the [provider guide](docs/llm-providers.md) for complete connection profiles,
 model availability checks, output allowances, timeouts and tuning guidance.
 The [full configuration template](inst/examples/_sas2r.example.yml) lists the
-available study and model settings. Called macro folders are configured through
+available study and model settings. The program folder itself is the `path`
+argument of `sas_preflight()` and `sas_translate()`, not a configuration key.
+Called macro folders are configured through
 `macros.search_path`; see [macro setup and limitations](docs/running-migrations.md#called-macros-in-separate-folders).
 
 ## Privacy: What Your Model Provider Can Receive

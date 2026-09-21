@@ -4,6 +4,10 @@
 # All sections are optional. Relative paths are resolved relative to the
 # directory containing this configuration file.
 #
+# The SAS programs to translate are not listed here: pass their folder (or one
+# .sas file) as the path argument of sas_preflight() and sas_translate();
+# recursive = TRUE includes subfolders. Called macro folders go under macros.
+#
 # SOURCE AUTHORITY & PRECEDENCE:
 # 1. An accessible point-of-use source LIBNAME in SAS code is authoritative.
 # 2. Configured libraries fill an absent or unusable SAS source binding.
