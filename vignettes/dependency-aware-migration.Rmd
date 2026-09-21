@@ -88,17 +88,14 @@ llm:
   capabilities:
     tool_calling: native
     structured_output: fallback
-
-migration:
-  max_parallel_translations: 1
 ```
 
 `max_parallel_translations` counts concurrent program or macro workflows, including
 their reviews and repairs. It does not allocate one slot per agent role or per
 CPU. Establish a baseline at 1, then evaluate 2 against the same source, inputs
 and quality checks. Higher values depend on provider capacity and local memory;
-local execution and repair remain serial. The `sas_translate()` argument of the
-same name overrides configuration for one run. Parallel mode is opt-in while
+local execution and repair remain serial. Set it with the `sas_translate()`
+argument `max_parallel_translations`. Parallel mode is opt-in while
 live quality and performance validation remains outstanding.
 
 Gemini Flash and DeepSeek Flash are suggested starting points for evaluation;

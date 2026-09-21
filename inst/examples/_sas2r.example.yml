@@ -192,11 +192,12 @@ llm:
 # ------------------------------------------------------------------------------
 # 8. Concurrent Translation Workflows
 # ------------------------------------------------------------------------------
-# Counts whole program-or-macro workflows, including their review and repair.
+# Set with the sas_translate() argument max_parallel_translations (default 1).
+# It counts whole program-or-macro workflows, including their review and repair.
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
-migration:
-  max_parallel_translations: 1
+# migration:
+#   max_parallel_translations: 1
 
 # ------------------------------------------------------------------------------
 # Code style. dialect: tidyverse (the default) tells the translator and fixer

@@ -101,12 +101,8 @@ at one concurrent translation and choose a reasoning/tool-capable model that
 fits local memory. GitHub Models is
 retired and is not recommended for new configurations.
 
-For **every provider**, establish a checked baseline at:
-
-```yaml
-migration:
-  max_parallel_translations: 1
-```
+For **every provider**, establish a checked baseline at
+`max_parallel_translations = 1` in `sas_translate()`.
 
 Then evaluate `2` concurrent program-or-macro workflows on the same inputs and
 settings. Raise to `3` or `4` only when quality checks, endpoint quotas and memory
@@ -663,7 +659,7 @@ to 300 seconds, with `ellmer_max_tries` limiting HTTP attempts; sas2r defaults t
 single long model response can exceed the timeout and fail mid-stream with
 `sas2r_llm_timeout`. Increasing `max_tries` adds
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
-Values above 1 require `migration.max_parallel_translations: 1`; incompatible
+Values above 1 require `max_parallel_translations = 1`; incompatible
 effective settings raise a startup configuration error.
 
 ```yaml

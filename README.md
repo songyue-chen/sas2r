@@ -106,9 +106,6 @@ llm:                  # a recommended Flash starting profile
     reasoning_effort: unsupported # connector cannot set effort; server thinking stays on
   timeout_seconds: 1800
   max_tries: 1
-
-migration:            # programs or macros translated at once (default 1)
-  max_parallel_translations: 1
 ```
 
 Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemini
@@ -214,11 +211,13 @@ updates, while the final outcome and saved reports remain available. See
 
 ## Parallel translation (opt-in)
 
-The default is one program or called macro at a time. To allow up to two:
+The default is one program or called macro at a time. To allow up to two, pass
+the argument to `sas_translate()`:
 
-```yaml
-migration:
-  max_parallel_translations: 2
+<!-- sas2r-example: network parallel -->
+```r
+result <- sas_translate(path = check$project, out_dir = "migration_output",
+                        max_parallel_translations = 2)
 ```
 
 A *worker* is an R process handling an assigned translation or review task.
@@ -282,9 +281,9 @@ window, to give reasoning and complete R code room to finish.
 - With the documented DeepSeek connector, omit a top-level `reasoning_effort`
   and use `capabilities.reasoning_effort: unsupported`, as in the quickstart.
   This retains server-default thinking; it does not switch reasoning off.
-- Start with `migration.max_parallel_translations: 1`, then try `2` with the
-  same programs and checks. Increase further only when provider quotas and
-  available memory permit.
+- Start with `max_parallel_translations = 1` in `sas_translate()`, then try `2`
+  with the same programs and checks. Increase further only when provider quotas
+  and available memory permit.
 - If you set `budget.max_output_tokens`, keep it at least as large as
   `llm.max_output_tokens`. Strict dollar budgets reserve worst-case costs before
   requests; larger ceilings may need more budget, especially with parallel work.

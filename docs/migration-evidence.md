@@ -111,9 +111,9 @@ including `[]` for no dependencies and `["provider_id"]` for a single dependency
 
 ## Parallel coordination and evidence
 
-`migration.max_parallel_translations` defaults to 1 and limits simultaneous
-program or called-macro workflows. The matching `sas_translate()` argument
-overrides YAML. It does not count translator, reviewer and fixer roles
+The `sas_translate()` argument `max_parallel_translations` defaults to 1 and
+limits simultaneous program or called-macro workflows. It does not count
+translator, reviewer and fixer roles
 separately. See the [provider guide](llm-providers.md#recommended-starting-settings)
 for suggested model settings and gradual concurrency increases.
 
@@ -149,7 +149,7 @@ adapter without process reconstruction support, or ellmer older than 0.5.0,
 falls back to one workflow and reports why. Requesting parallel translation with
 `llm.max_tries` above 1 instead stops preflight and translation before provider
 calls. The error shows both effective settings and asks you to set either
-`llm.max_tries` or `migration.max_parallel_translations` to 1. Settings are not
+`llm.max_tries` or `max_parallel_translations` to 1. Settings are not
 changed automatically; function argument overrides are honored.
 
 Each process job keeps `job.json`, `stdout.log` and `stderr.log` under

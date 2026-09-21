@@ -61,9 +61,8 @@ these entry points; their explicit budget arguments determine the effective
 limits. Preflight displays planned locations; run and attempt IDs are assigned
 when translation starts.
 
-Preflight also reports `max_parallel_translations`, resolved from its explicit
-argument, then `migration.max_parallel_translations` in configuration, then the
-default of 1. It describes the requested workflow limit. Because preflight does
+Preflight also reports `max_parallel_translations`, from its explicit argument
+or the default of 1. It describes the requested workflow limit. Because preflight does
 not construct a model adapter or launch translation processes, it does not test
 parallel adapter support, measure available CPU/memory, or check provider quotas.
 The translation report records the effective concurrency and any fallback reason.
