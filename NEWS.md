@@ -15,8 +15,9 @@
 
 - The quickstart and guides no longer set `max_calls = 20`. Every budget limit
   in the examples is commented out so a run finishes without interruption, with
-  a note that uncommenting a limit stops the run when it is reached, sizing from
-  observed runs, and `max_parallel_translations` shown in the run examples.
+  a note that uncommenting a limit stops the run when it is reached, that usage
+  per program varies by model and study, and `max_parallel_translations` shown
+  in the run examples.
 
 # sas2r 0.5.2
 

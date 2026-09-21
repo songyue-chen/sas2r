@@ -177,14 +177,14 @@ llm:
 # interruption. Uncomment a limit to enforce it; the run stops when it is
 # reached. Strict dollar budgets reserve worst-case request costs, not actual
 # charges, and larger allowances need sufficient shared budget for concurrent
-# requests. Size call and tool ceilings from the study: about 40 requests and
-# 40 tool executions per program or macro.
+# requests. Requests and tool executions per program vary by model and study;
+# size ceilings from a completed run's usage summary.
 # budget:
 #   mode: soft                          # observe | soft | strict
 #   max_usd: 5.00                       # halts new requests once recorded spend reaches this
 #   max_retries: 2                      # sas2r-level; see llm.max_tries
-#   max_calls: 700                      # about 40 per program or macro
-#   max_tool_calls: 700                 # about 40 per program or macro
+#   max_calls: 700                      # varies by model and study
+#   max_tool_calls: 700                 # varies by model and study
 #   max_wall_time: 14400                # denies new calls after this time; does not interrupt an in-flight request
 #   max_output_tokens: 393216           # per-request admission ceiling; must be
 #                                       # >= llm.max_output_tokens when both are set

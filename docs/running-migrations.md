@@ -440,7 +440,8 @@ checkpoints regenerate. Progress reports the reason when a checkpoint cannot be 
 Every limit is commented out in the examples by default, so a run records usage
 in observe mode and finishes without interruption. Uncomment `budget_usd` or a
 `usage_limits` ceiling only if you want the run to stop when it is reached. If
-you do, the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
+you do, size it from the usage summary of a completed run: requests and tool
+executions per program or macro vary by model, reasoning setting and study.
 `usage_limits = list(max_calls = 0)` prevents provider requests entirely. Limits and usage are
 reported explicitly; the usage ledger is cumulative across resumed runs.
 See `?sas_translate` and the [migration evidence guide](migration-evidence.md)

@@ -154,8 +154,8 @@ result <- sas_translate(
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
   # Optional limits, commented out by default. Uncomment to enforce them; the
-  # run stops when any limit is reached. Size call and tool ceilings from the
-  # study: about 40 requests and 40 tool calls per program or macro.
+  # run stops when any limit is reached. Requests and tool calls per program
+  # vary by model and study: size ceilings from a completed run's usage summary.
   # , budget_usd = 10
   # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
@@ -175,11 +175,13 @@ sas_write(result, "r_production/")
 
 Every limit is commented out by default: a run records usage in observe mode
 and finishes without interruption. Uncomment `budget_usd` or `usage_limits` to
-enforce a limit, knowing that the run stops when it is reached. Size call and
-tool ceilings from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component. For scale, a 17-component
-study used about 340 requests, 390 tool executions and an hour with four
-workers. `usage_limits = list(max_calls = 0)` remains the way to forbid provider
-calls entirely.
+enforce a limit, knowing that the run stops when it is reached. How many
+requests and tool calls a program or macro needs varies by model, reasoning
+setting and study, so size ceilings from the usage summary of a completed run
+rather than from a rule of thumb. As one labelled example, a 17-component
+study with GPT-5.6 Luna at high reasoning used about 340 requests, 390 tool
+executions and an hour with four workers. `usage_limits = list(max_calls = 0)`
+remains the way to forbid provider calls entirely.
 
 ## Reading the results
 
@@ -398,8 +400,8 @@ overhead, two workers would take **40 minutes**, and four **30 minutes**.
 This is an example, not a measured sas2r benchmark. Compare elapsed time and
 output checks on the same representative study before increasing the setting.
 One observed point: a 17-component study took 79 minutes with four workers on
-sas2r 0.5.1 and 59 minutes on 0.5.2 with the same model, about 14 worker-minutes
-and 20 provider requests per component.
+sas2r 0.5.1 and 59 minutes on 0.5.2 with GPT-5.6 Luna at high reasoning; other
+models and studies differ.
 
 ### What should I do when a run is blocked or a comparison fails?
 

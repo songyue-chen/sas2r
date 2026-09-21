@@ -221,8 +221,8 @@ unknown-cost calls, and the effective limits. Unknown cost is not zero spend.
 Every limit is commented out in the examples by default so translation finishes
 without interruption. Uncomment `budget_usd` or a `usage_limits` ceiling such as
 `usage_limits = list(max_request_bytes = 100000)` only if you want the run to
-stop when it is reached; allow about 40 requests and 40 tool executions per
-program or macro.
+stop when it is reached; requests and tool executions per program or macro vary
+by model and study, so size a ceiling from a completed run's usage summary.
 `usage_limits = list(max_calls = 0)` prevents all provider requests.
 The accepted names are documented in `?sas_translate`; misspellings fail.
 

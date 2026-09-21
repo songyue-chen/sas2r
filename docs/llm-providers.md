@@ -510,8 +510,8 @@ the ones you want, knowing the run stops when that limit is reached:
 #   mode: soft                          # observe | soft | strict
 #   max_usd: 10.00                      # halts new requests once recorded spend reaches this
 #   max_retries: 2                      # sas2r-level retries (see note below)
-#   max_calls: 700                      # total requests; about 40 per program or macro
-#   max_tool_calls: 700                 # total tool executions; about 40 per program or macro
+#   max_calls: 700                      # total requests; varies by model and study
+#   max_tool_calls: 700                 # total tool executions; varies by model and study
 #   max_wall_time: 14400                # seconds, whole run
 #   max_output_tokens: 393216           # per-request admission ceiling; must be
 #                                       # >= llm.max_output_tokens when both are set
@@ -521,7 +521,7 @@ the ones you want, knowing the run stops when that limit is reached:
 ```
 - **`mode: soft`**: Halts subsequent requests once cumulative recorded spend reaches `max_usd`.
 - **`mode: strict`**: Enforces strict upfront output token reservations against locked organization rate cards.
-- **Ceilings:** every limit is commented out by default so translation finishes without interruption. Uncomment a limit to enforce it; the run stops when it is reached. Size call and tool ceilings from the study: the shipped roles use about 20 provider requests and 20 tool executions per program or macro before repair rounds (translation 4, review 13, repair 3), so allow 40 of each per component.
+- **Ceilings:** every limit is commented out by default so translation finishes without interruption. Uncomment a limit to enforce it; the run stops when it is reached. Requests and tool executions per program or macro vary by model, reasoning setting and study; size ceilings from a completed run's usage summary (the report's Resource Usage section).
 
 > **Dollar enforcement requires known cost or usable pricing.** Unknown cost
 > cannot be treated as zero or used to certify a dollar limit. Strict mode needs
