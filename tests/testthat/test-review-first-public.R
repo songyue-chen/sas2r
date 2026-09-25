@@ -45,7 +45,8 @@ test_that("public request limits prevent provider calls and validate configurati
                             llm = adapter$llm, usage_limits = stats::setNames(list(0), limit))
     expect_identical(adapter$calls$n, 0L, info = limit)
     expect_equal(result$usage[[limit]], 0, info = limit)
-    expect_identical(result$status, "needs_review")
+    # No translation can replace the deferred SAS unit after admission is refused.
+    expect_identical(result$status, "blocked")
   }
   expect_error(sas_translate(fx$source, usage_limits = list(max_call = 0)), class = "sas2r_budget_config_error")
   expect_error(sas_translate(fx$source, usage_limits = list(max_calls = -1)), class = "sas2r_budget_config_error")

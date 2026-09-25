@@ -56,6 +56,7 @@ test_that("PROC options share one tokenizer and APPEND can create its base", {
 })
 
 test_that("a bundle executes nested include modules once at their include sites", {
+  skip_if_not_installed("dplyr")
   root <- withr::local_tempdir()
   dir.create(file.path(root, "inc"))
   saveRDS(data.frame(x = 1), file.path(root, "src.rds"))

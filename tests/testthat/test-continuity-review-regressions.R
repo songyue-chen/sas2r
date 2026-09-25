@@ -109,6 +109,7 @@ test_that("a write failure inside a process worker component handler stays termi
 })
 
 test_that("supplying a reference before resume refreshes console JSON and HTML readiness", {
+  skip_if_not_installed("dplyr")
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   ref <- file.path(fx$root, "reference.rds")
   args <- list(path = fx$root, out_dir = file.path(fx$root, "out"), config = fx$state$config,

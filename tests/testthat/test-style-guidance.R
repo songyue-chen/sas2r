@@ -14,7 +14,11 @@ test_that("tidyverse style prefers allowlisted installed packages and keeps the 
     allowlist = c("base", "dplyr", "haven", "stats", "utils")))
   expect_length(text, 1L)
   expect_match(text, "tidyverse first", fixed = TRUE)
-  expect_match(text, "dplyr::* for", fixed = TRUE)
+  if (requireNamespace("dplyr", quietly = TRUE)) {
+    expect_match(text, "dplyr::* for", fixed = TRUE)
+  } else {
+    expect_match(text, "not installed here, so do not use: dplyr", fixed = TRUE)
+  }
   expect_false(grepl("ggplot2", text, fixed = TRUE))
   expect_match(text, "use base R or the bundle helpers", fixed = TRUE)
   expect_match(text, "not a defect", fixed = TRUE)

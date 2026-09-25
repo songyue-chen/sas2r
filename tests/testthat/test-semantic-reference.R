@@ -8,6 +8,7 @@ semantic_emit <- function(source) {
 
 
 test_that("semantic reference corpus preserves values or explicitly defers a whole unit", {
+  skip_if_not_installed("dplyr")
   root <- test_path("fixtures", "semantic-reference")
   cases <- jsonlite::read_json(file.path(root, "manifest.json"))
   for (case in cases) {
