@@ -43,6 +43,8 @@ AssistantTurn <- S7::new_class(
   "AssistantTurn",
   properties = list(
     contents = S7::class_list,
+    role = S7::new_property(S7::class_character, default = "assistant"),
+    cost = S7::new_property(S7::class_double, default = NA_real_),
     finish_reason = S7::class_character
   )
 )
@@ -202,7 +204,7 @@ make_chat <- function(provider, model, params = NULL, base_url = NULL,
           id = "auto_1", name = registered[[1]]$name, arguments = args
         )
         turns <<- c(turns, list(AssistantTurn(
-          contents = list(request), finish_reason = "tool"
+          contents = list(request), finish_reason = "tool", cost = 0.005
         )))
         result <- do.call(registered[[1]]$fun, args)
         turns <<- c(turns, list(UserTurn(
@@ -214,7 +216,7 @@ make_chat <- function(provider, model, params = NULL, base_url = NULL,
       }
       last <<- AssistantTurn(
         contents = list(ContentText(text = "gathered context")),
-        finish_reason = "success"
+        finish_reason = "success", cost = 0.005
       )
       turns <<- c(turns, list(last))
       "gathered context"
@@ -230,16 +232,23 @@ make_chat <- function(provider, model, params = NULL, base_url = NULL,
       }
       last <<- AssistantTurn(
         contents = list(ContentText(text = "structured")),
-        finish_reason = "success"
+        finish_reason = "success", cost = 0.005
       )
-      list(
-        r_code = "x <- 1", assumptions = list("none"), confidence = 0.9
-      )
+      turns <<- c(turns, list(UserTurn(contents = list(ContentText(text = prompt))), last))
+      if (grepl("side_effects", S7::prop(type, "text"), fixed = TRUE)) {
+        list(r_code = "x <- 1", summary = "translated unit", parameters = list(),
+          defaults = structure(list(), names = character()), reads = list(), writes = list(),
+          side_effects = list(), helper_use = list(), discovered_dependencies = list(),
+          suspected_dependencies = list(), affected_outputs = list(), uncertainty = list())
+      } else list(r_code = "x <- 1", assumptions = list("none"), confidence = 0.9)
     },
     get_tokens = function() list(input = 100, output = 25),
-    get_cost = function(include = "last") {
-      stopifnot(identical(include, "last"))
-      0.005
+    get_cost = function(include = c("all", "last")) {
+      include <- match.arg(include)
+      complete <- Filter(function(turn) S7::S7_inherits(turn, AssistantTurn), turns)
+      if (!length(complete)) return(0)
+      if (include == "last") S7::prop(complete[[length(complete)]], "cost") else
+        sum(vapply(complete, function(turn) S7::prop(turn, "cost"), numeric(1)))
     },
     get_turns = function(include_system_prompt = FALSE) {
       if (isTRUE(include_system_prompt)) return(turns)

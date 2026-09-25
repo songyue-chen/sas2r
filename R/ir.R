@@ -166,7 +166,7 @@ parse_data_step <- function(stmts) {
   if (!deterministic_names(inserted)) blocker(code$stmt_id[1L], "variable_list_or_identifier_deferred")
   datasets <- unlist(strsplit(c(inputs, outputs), ".", fixed = TRUE))
   if (!all(grepl("^[A-Za-z_][A-Za-z0-9_]{0,31}$", datasets)) ||
-      !deterministic_names(vapply(strsplit(outputs, ".", fixed = TRUE), tail, "", 1L))) blocker(code$stmt_id[1L], "dataset_identifier_deferred")
+      !deterministic_names(vapply(strsplit(outputs, ".", fixed = TRUE), utils::tail, "", 1L))) blocker(code$stmt_id[1L], "dataset_identifier_deferred")
   if (length(outputs) == 0L && length(blockers) == 0L) {
     blocker(code$stmt_id[1], "null_step_deferred")
   }

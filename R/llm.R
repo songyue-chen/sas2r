@@ -831,7 +831,7 @@ ELLMER_TABULATED_TOKEN_PROVENANCE <- "ellmer public get_tokens()"
 ELLMER_TURN_TOKEN_PROVENANCE <- "ellmer public Turn@tokens"
 ELLMER_TURN_JSON_USAGE_PROVENANCE <-
   "ellmer public AssistantTurn@json usage"
-ELLMER_COST_PROVENANCE <- "ellmer public get_cost(include = 'all') delta"
+ELLMER_COST_PROVENANCE <- "ellmer public Turn@cost (new complete turns)"
 
 # One public per-turn token record. ellmer's default `AssistantTurn@tokens` is
 # an unnamed `c(NA, NA, NA)`, while a provider-populated turn carries
@@ -1003,12 +1003,12 @@ ellmer_usage_provenance <- function(usage, cost) {
 }
 
 ellmer_cost <- function(chat) {
-  if (is.null(chat$get_cost) || !is.function(chat$get_cost)) return(NA_real_)
-  value <- tryCatch(
-    suppressWarnings(as.numeric(chat$get_cost(include = "all"))),
-    error = function(error) NA_real_
-  )
-  if (length(value) != 1L || is.na(value) || !is.finite(value)) NA_real_ else value
+  turns <- ellmer_counted_turns(chat)
+  if (!length(turns)) return(NA_real_)
+  values <- vapply(turns, function(turn) tryCatch(
+    nonnegative_number_or_na(ellmer_public_prop(turn, "cost")),
+    error = function(error) NA_real_), numeric(1))
+  if (anyNA(values)) NA_real_ else sum(values)
 }
 
 ellmer_finish_reason <- function(chat) {
@@ -1138,8 +1138,9 @@ ellmer_transport_request <- function(cfg, request, model, params) {
   # Only retained native turns carry usage from earlier phases. Neutral input
   # messages have no provider usage to subtract from this fresh chat.
   before_turns <- if (is.null(.ellmer_invocation$current$turns)) 0L else length(chat$get_turns())
-  before_cost <- if (before_turns == 0L) 0 else ellmer_cost(chat)
-  settled_cost <- before_cost
+  # Neutral replayed assistant turns have no observed cost. Only newly
+  # appended turns belong to this request, including every native tool turn.
+  before_cost_turns <- length(chat$get_turns())
   meter <- .usage_attempt_scope$native_meter
   structured <- identical(request$schema_mode, "native") && !is.null(request$output_schema)
   if (!is.null(meter) && is.function(chat$on_request_start) && is.function(chat$on_request_end)) {
@@ -1155,9 +1156,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     end_request <- function(turn) {
       raw <- list(type = "final", data = list())
       attr(raw, "usage") <- ellmer_usage(list(get_turns = function() list(turn)))
-      total_cost <- ellmer_cost(chat)
-      cost <- total_cost - settled_cost
-      settled_cost <<- total_cost
+      cost <- ellmer_cost(list(get_turns = function() list(turn)))
       if (!is.na(cost)) {
         attr(raw, "cost_usd") <- cost
         attr(raw, "cost_status") <- "catalog_estimate"
@@ -1217,7 +1216,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
   if (!is.null(.ellmer_invocation$current))
     .ellmer_invocation$current$turns <- chat$get_turns(include_system_prompt = TRUE)
   attr(raw, "usage") <- usage
-  cost <- ellmer_cost(chat) - before_cost
+  cost <- ellmer_cost(list(get_turns = function() turns[seq_along(turns) > before_cost_turns]))
   if (!is.na(cost)) {
     attr(raw, "cost_usd") <- cost
     attr(raw, "cost_status") <- "catalog_estimate"

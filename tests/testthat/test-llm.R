@@ -412,7 +412,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
   # The durable provenance names both public APIs that produced a number.
   expect_identical(
     result$direct_response$cost$provenance,
-    "ellmer public get_tokens() / ellmer public get_cost(include = 'all') delta"
+    "ellmer public get_tokens() / ellmer public Turn@cost (new complete turns)"
   )
   expect_identical(result$finish_reason, "success")
   expect_identical(result$two_phase$status, "ok")
@@ -670,7 +670,7 @@ test_that("usage falls back to public per-turn tokens when get_tokens fails", {
   )
   expect_identical(
     ellmer_usage_provenance(ellmer_usage(failing), 0.5),
-    "ellmer public Turn@tokens / ellmer public get_cost(include = 'all') delta"
+    "ellmer public Turn@tokens / ellmer public Turn@cost (new complete turns)"
   )
   expect_identical(
     ellmer_usage_provenance(ellmer_usage(failing), NA_real_),
