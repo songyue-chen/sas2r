@@ -158,8 +158,9 @@ test_that("checkpoint import preserves known allowances and unknown legacy revis
 test_that("an interrupted worker retains admitted usage and useful failure diagnostics", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   state <- check_component_revision(fx$state, "p01")
-  # Keep the mock request in flight until the parent deliberately kills it.
-  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = Inf)
+  # Leave a bounded interruption window after admission. Inf is not portable:
+  # Windows R converts the sleep duration to an integer number of milliseconds.
+  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 300)
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   pool <- parallel_new_pool(state)
