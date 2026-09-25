@@ -130,8 +130,11 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
   # Use a conservative ceiling for this single encoded environment value.
   # Reject the whole oversized packet; source metadata is already stripped above.
   startup_bytes <- nchar(env[["SAS2R_WORKER_ADAPTERS"]], type = "bytes")
-  if (startup_bytes > 100000L) cli::cli_abort(c(
-    "Parallel worker startup data is too large ({startup_bytes} bytes; limit 100000 bytes).",
+  # Windows permits 32,767 characters including the terminating NUL. This
+  # base64 packet is ASCII, so its byte and character lengths are identical.
+  startup_limit <- if (.Platform$OS.type == "windows") 32766L else 100000L
+  if (startup_bytes > startup_limit) cli::cli_abort(c(
+    "Parallel worker startup data is too large ({startup_bytes} bytes; limit {startup_limit} bytes).",
     "i" = "Reduce captured values in parallel_factory or provider configuration.",
     "i" = "Alternatively, set max_parallel_translations = 1 (migration.max_parallel_translations: 1 in _sas2r.yml)."
   ), class = "sas2r_parallel_config_error")

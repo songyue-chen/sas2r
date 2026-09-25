@@ -95,7 +95,10 @@ test_that("oversized captured adapter settings give an actionable error before w
     stopifnot(nzchar(provider_notes))
     mock_llm(list(review))
   }
-  environment(factory) <- list2env(list(provider_notes = strrep("x", 200000L),
+  # On Windows this fits the former 100,000-byte guard but exceeds the OS's
+  # per-variable limit after encoding, which previously failed inside the child.
+  note_length <- if (.Platform$OS.type == "windows") 25000L else 200000L
+  environment(factory) <- list2env(list(provider_notes = strrep("x", note_length),
     review = valid_program_review_response()), parent = asNamespace("sas2r"))
   adapter <- factory()
   attr(adapter, "parallel_factory") <- factory
@@ -105,7 +108,8 @@ test_that("oversized captured adapter settings give an actionable error before w
   error <- tryCatch(run_program_pipeline(state, execute = FALSE), error = identity)
   expect_s3_class(error, "sas2r_parallel_config_error")
   message <- conditionMessage(error)
-  expect_match(message, "[0-9]+ bytes; limit 100000 bytes")
+  limit <- if (.Platform$OS.type == "windows") "32766" else "100000"
+  expect_match(message, paste0("[0-9]+ bytes; limit ", limit, " bytes"))
   for (text in c("captured", "provider configuration", "max_parallel_translations = 1"))
     expect_match(message, text, fixed = TRUE)
   expect_identical(state$usage_budget$request_count, 0L)

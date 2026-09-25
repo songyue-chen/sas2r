@@ -1,5 +1,8 @@
 # sas2r 0.5.4
 
+- Reject oversized parallel-worker configuration before launch using the
+  Windows environment-variable limit, with the existing serial-run alternative.
+
 - Include identity anchors reject Windows drive roots consistently with Unix
   filesystem roots. Path assertions and generated-code fixtures work on Windows.
 
