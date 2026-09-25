@@ -31,9 +31,9 @@ jobs:
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
         if: matrix.manual
-      - name: Install PDF manual fonts
+      - name: Install PDF manual fonts and indexer
         if: matrix.manual
-        run: tlmgr install courier inconsolata
+        run: tlmgr install courier inconsolata makeindex
       - name: Verify indexed PDF manual toolchain
         if: matrix.manual
         run: R CMD Rd2pdf --no-preview --internals --force --output="$RUNNER_TEMP/sas2r-manual.pdf" .
