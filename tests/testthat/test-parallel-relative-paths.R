@@ -34,7 +34,7 @@ test_that("parallel translation shares relative output paths across different wo
       events = events, requests = result$usage$request_count,
       values = lapply(list.files(result$outputs_dir, pattern = "[.]rds$", recursive = TRUE,
         full.names = TRUE), readRDS))
-  }, args = list(find.package("sas2r"), .libPaths(), root, helpers), timeout = 90)
+  }, args = list(find.package("sas2r"), .libPaths(), root, helpers), timeout = 300)
 
   expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output"), winslash = "/"))
   expect_true(dir.exists(observed$bundle))

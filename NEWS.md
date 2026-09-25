@@ -1,5 +1,10 @@
 # sas2r 0.5.4
 
+- README links to repository-only guides and the license use public URLs in
+  the source archive. Symbolic-link tests skip cleanly when the operating system
+  cannot create links, and worker tests allow for slower startup without
+  changing production timeouts or weakening their accounting assertions.
+
 - Reject oversized parallel-worker configuration before launch using the
   Windows environment-variable limit, with the existing serial-run alternative.
 

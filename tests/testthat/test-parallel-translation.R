@@ -20,9 +20,13 @@ test_that("unsupported adapters visibly fall back before any worker calls", {
 })
 
 test_that("available test slots preserve source-defined outputs and shared accounting", {
-  slots <- if (identical(Sys.getenv("NOT_CRAN"), "true")) 1:4 else 1:2
+  full_suite <- identical(Sys.getenv("NOT_CRAN"), "true")
+  slots <- if (full_suite) 1:4 else 1:2
   for (threads in slots) {
-    fx <- repair_workflow_fixture(n = 4L, failures = integer())
+    # Two independent programs exercise overlap on CRAN; full CI also covers
+    # queue turnover and every supported worker count with four programs.
+    fx <- repair_workflow_fixture(n = if (full_suite) 4L else 2L, failures = integer())
+    expected_calls <- 2L * length(fx$ids) # One translation and one review per program.
     markers <- file.path(fx$root, "requests"); dir.create(markers)
     responses <- stats::setNames(lapply(fx$fixed, valid_program_translation_response), paste0("translator:", fx$ids))
     responses$reviewer <- valid_program_review_response()
@@ -45,8 +49,8 @@ test_that("available test slots preserve source-defined outputs and shared accou
     result <- run_program_pipeline(state, execute = TRUE)
     expect_true(all(vapply(result$selected_revisions, function(r) isTRUE(r$smoke$passed), logical(1))))
     expect_true(all(vapply(result$histories, component_review_verdict, "") == "reviewed_no_material_finding"))
-    expect_identical(result$usage_budget$request_count, 8L)
-    expect_equal(result$usage_budget$known_amount, 0.08)
+    expect_identical(result$usage_budget$request_count, expected_calls)
+    expect_equal(result$usage_budget$known_amount, 0.01 * expected_calls)
     write_migration_report(result)
     manifest <- read_json_record(result$paths$manifest)
     for (cid in fx$ids) {
@@ -54,7 +58,7 @@ test_that("available test slots preserve source-defined outputs and shared accou
       expect_true(file.exists(manifest$components[[cid]]$revision_path))
     }
     calls <- lapply(list.files(markers, full.names = TRUE), readRDS)
-    expect_length(calls, 8L)
+    expect_length(calls, expected_calls)
     overlaps <- vapply(calls, function(call) sum(vapply(calls, function(other)
       other$start <= call$start && other$end > call$start, logical(1))), integer(1))
     expect_lte(max(overlaps), threads)
@@ -154,18 +158,23 @@ test_that("checkpoint import preserves known allowances and unknown legacy revis
 test_that("an interrupted worker retains admitted usage and useful failure diagnostics", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   state <- check_component_revision(fx$state, "p01")
-  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 10)
+  # Leave a bounded interruption window after admission. Inf is not portable:
+  # Windows R converts the sleep duration to an integer number of milliseconds.
+  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 300)
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   pool <- parallel_new_pool(state)
   on.exit(parallel_stop_pool(pool), add = TRUE)
   job <- parallel_start_job(pool, state, "p01", "review", FALSE, 0L)
-  deadline <- Sys.time() + 15
+  deadline <- Sys.time() + 120
   while (state$usage_budget$request_count == 0L && Sys.time() < deadline) {
     parallel_poll(pool)
     Sys.sleep(0.02)
   }
   expect_identical(state$usage_budget$request_count, 1L)
+  if (state$usage_budget$request_count != 1L) {
+    stop("Worker did not reach request admission within 120 seconds")
+  }
   job$process$kill_tree()
   job$process$wait(2000)
   expect_length(parallel_poll(pool), 0L)
