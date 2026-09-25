@@ -5,6 +5,13 @@ public translation, review, repair, resume, export, dependency, output-validatio
 and one/two-worker execution cases. They require no SAS installation, provider
 credentials, paid requests, or fixture-package installation.
 
+The independent-program concurrency fixture uses two programs on CRAN, one per
+available worker, with exact request/cost accounting, real overlap, and complete
+output-value assertions. Full CI uses four programs across one to four workers
+to additionally cover queue turnover. Other dependency and failure cases remain
+in the CRAN profile. Symbolic-link scenarios skip only when the OS cannot create
+the link; worker tests wait for actual request admission before interruption.
+
 The `installed-tests` and `no-sas-tarball` CI jobs use `NOT_CRAN=true` and run
 the complete test suite against installed packages. This includes:
 

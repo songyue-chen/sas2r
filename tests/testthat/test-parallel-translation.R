@@ -20,9 +20,13 @@ test_that("unsupported adapters visibly fall back before any worker calls", {
 })
 
 test_that("available test slots preserve source-defined outputs and shared accounting", {
-  slots <- if (identical(Sys.getenv("NOT_CRAN"), "true")) 1:4 else 1:2
+  full_suite <- identical(Sys.getenv("NOT_CRAN"), "true")
+  slots <- if (full_suite) 1:4 else 1:2
   for (threads in slots) {
-    fx <- repair_workflow_fixture(n = 4L, failures = integer())
+    # Two independent programs exercise overlap on CRAN; full CI also covers
+    # queue turnover and every supported worker count with four programs.
+    fx <- repair_workflow_fixture(n = if (full_suite) 4L else 2L, failures = integer())
+    expected_calls <- 2L * length(fx$ids) # One translation and one review per program.
     markers <- file.path(fx$root, "requests"); dir.create(markers)
     responses <- stats::setNames(lapply(fx$fixed, valid_program_translation_response), paste0("translator:", fx$ids))
     responses$reviewer <- valid_program_review_response()
@@ -45,8 +49,8 @@ test_that("available test slots preserve source-defined outputs and shared accou
     result <- run_program_pipeline(state, execute = TRUE)
     expect_true(all(vapply(result$selected_revisions, function(r) isTRUE(r$smoke$passed), logical(1))))
     expect_true(all(vapply(result$histories, component_review_verdict, "") == "reviewed_no_material_finding"))
-    expect_identical(result$usage_budget$request_count, 8L)
-    expect_equal(result$usage_budget$known_amount, 0.08)
+    expect_identical(result$usage_budget$request_count, expected_calls)
+    expect_equal(result$usage_budget$known_amount, 0.01 * expected_calls)
     write_migration_report(result)
     manifest <- read_json_record(result$paths$manifest)
     for (cid in fx$ids) {
@@ -54,7 +58,7 @@ test_that("available test slots preserve source-defined outputs and shared accou
       expect_true(file.exists(manifest$components[[cid]]$revision_path))
     }
     calls <- lapply(list.files(markers, full.names = TRUE), readRDS)
-    expect_length(calls, 8L)
+    expect_length(calls, expected_calls)
     overlaps <- vapply(calls, function(call) sum(vapply(calls, function(other)
       other$start <= call$start && other$end > call$start, logical(1))), integer(1))
     expect_lte(max(overlaps), threads)
