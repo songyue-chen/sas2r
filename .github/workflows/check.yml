@@ -37,6 +37,7 @@ jobs:
             any::rcmdcheck
       - name: Build source archive
         run: R CMD build .
+        shell: bash
       - name: Check source archive
         run: |
           # Full PDF manuals are checked on Linux release and devel. The
