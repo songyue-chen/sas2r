@@ -188,9 +188,10 @@ read_attempt_record <- function(attempt_dir) {
 #' Build a hash manifest of configured inputs
 #'
 #' @param project A `sas2r_project`, `sas2r_migration_state`, or directory/list.
-#' @return A named list of file hashes for all files in configured input libraries.
+#' @param metadata_only Use size and modification time for inexpensive smoke checks.
+#' @return A named list of file hashes (or metadata) for configured input files.
 #' @noRd
-input_hash_manifest <- function(project) {
+input_hash_manifest <- function(project, metadata_only = FALSE) {
   if (is.null(project)) return(list())
 
   # Extract project if state was passed
@@ -224,16 +225,25 @@ input_hash_manifest <- function(project) {
     }
   }
 
+  excluded <- normalizePath(if (is.list(p)) p$input_manifest_exclude %||% character() else character(), winslash = "/", mustWork = FALSE)
+  # A generated output tree may sit below a library, but cannot contain the
+  # library itself: excluding that tree would erase all source evidence.
+  for (root in lib_roots) if (length(excluded) && any(root == excluded | startsWith(root, paste0(excluded, "/"))))
+    cli::cli_abort("Input library {.path {root}} lies inside the generated output root; choose a separate output directory", class = "sas2r_config_error")
   manifest <- list()
   for (lib in names(lib_roots)) {
     root <- lib_roots[[lib]]
     files <- list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE)
     files <- sort(files, method = "radix")
     for (f in files) {
-      if (file.info(f)$isdir) next
+      info <- file.info(f)
+      if (info$isdir) next
+      resolved <- normalizePath(f, winslash = "/", mustWork = TRUE)
+      if (length(excluded) && any(resolved == excluded | startsWith(resolved, paste0(excluded, "/")))) next
       rel <- substring(f, nchar(root) + 2L)
       key <- paste0(lib, "/", rel)
-      h <- tryCatch(as.character(cli::hash_file_sha256(f)), error = function(e) "")
+      h <- if (metadata_only) list(size = info$size, mtime = as.numeric(info$mtime)) else
+        tryCatch(as.character(cli::hash_file_sha256(f)), error = function(e) "")
       manifest[[key]] <- h
     }
   }

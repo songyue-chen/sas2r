@@ -149,6 +149,7 @@ worker_prompt_hash <- function(role, project_dir = NULL, prompt = NULL, schema =
 
   migration_hash(list(
     role = role,
+    prompt_layout = "policy-and-delimited-data-v2",
     yaml = yaml_text,
     prompt = prompt_text,
     prompt_macro = if (!is.null(spec$prompt_macro)) {

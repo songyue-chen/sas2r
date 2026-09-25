@@ -54,7 +54,11 @@ materialize_user_bundle <- function(source_dir, destination, project = NULL) {
       '  old_dir <- setwd(tlf_dir)',
       '  on.exit(setwd(old_dir), add = TRUE)',
       paste0('  programs <- ', paste(deparse(unname(programs)), collapse = "\n")),
-      '  for (program in programs) sys.source(file.path(root, program), envir = env)',
+      '  registry_seed <- env$.sas2r_registry',
+      '  for (program in programs) {',
+      '    env$.sas2r_registry <- registry_seed',
+      '    sys.source(file.path(root, program), envir = env)',
+      '  }',
       '})'
     ), file.path(destination, "run.R"))
     write_bundle_guide(project, destination)

@@ -604,7 +604,7 @@ test_that("a three-level include chain marks the deepest module too", {
   }
   expect_true(any(grepl("UNREACHABLE MODULE",
                         readLines(file.path(out, "c.R"), warn = FALSE))))
-  # The driver itself is untouched: it is an entry point and translates as ever.
+  # The driver itself is untouched: it is an entry point and is conservatively deferred because its syntax is unsupported.
   drv <- tr$manifest[basename(tr$manifest$file) == "driver.sas", ]
   expect_true(all(drv$tier == "stub"))
 })

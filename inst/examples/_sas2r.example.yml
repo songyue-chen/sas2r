@@ -49,6 +49,8 @@ outputs:
   tlfs:
     - outputs/table1.pdf
     - outputs/figure1.pdf
+  # Optional inferred artifacts stay visible but do not gate readiness:
+  # optional: [outputs/debug.txt]
 
 # ------------------------------------------------------------------------------
 # 3. Macro Search Path
@@ -202,6 +204,8 @@ llm:
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
 #   max_parallel_translations: 1
+#   smoke_timeout: 60       # seconds for a component smoke check
+#   bundle_timeout: 120     # seconds for the whole study; increase for larger data
 
 # ------------------------------------------------------------------------------
 # Code style. dialect: tidyverse (the default) tells the translator and fixer

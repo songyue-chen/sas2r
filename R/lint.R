@@ -33,6 +33,10 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas2r_resolve_registry", "sas2r_assignment_path")
 
 
+SAS2R_PROTECTED_HELPERS <- c("lib_write", "lib_read", "sas2r_lib_member_file",
+  "sas2r_registry_env", "sas2r_lib_member_path", "sas2r_source_include",
+  "sas2r_libname_assign", "sas2r_assignment_path", "lib_delete")
+
 BANNED_FUNCTIONS <- c("system", "system2", "shell", "download.file", "url",
                       "unlink", "file.remove", "Sys.setenv", "source",
                       "eval", "parse", "library", "require", "quit", "q")
@@ -153,6 +157,9 @@ lint_r_code <- function(code,
       ""
     }
     plain <- sub("^.*::", "", fname)
+    if (plain %in% c("<-", "=") && length(e) == 3L && is.name(e[[2L]]) &&
+        as.character(e[[2L]]) %in% SAS2R_PROTECTED_HELPERS)
+      add("error", "protected_runtime_helper", paste("Cannot redefine", as.character(e[[2L]])))
     direct_io <- plain %in% c("readRDS", "readLines", "read.csv", "read.csv2",
       "read.table", "read.delim", "read.delim2", "scan", "load", "file",
       "file.exists", "list.files", "dir") || startsWith(fname, "haven::read_")
@@ -239,11 +246,8 @@ lint_helper_patch <- function(content, allowlist = NULL) {
   trusted <- parse(file = template, keep.source = FALSE)
   changed <- Filter(function(expr) !any(vapply(as.list(trusted),
     function(stock) identical(expr, stock), logical(1))), as.list(parsed))
-  protected <- c("sas2r_lib_member_path", "sas2r_source_include", "sas2r_libname_assign", "sas2r_assignment_path", "lib_delete")
+
   results <- lapply(changed, function(expr) {
-    if (is.call(expr) && length(expr) == 3L && as.character(expr[[1L]])[1L] %in% c("<-", "=") &&
-        as.character(expr[[2L]])[1L] %in% protected)
-      return(tibble::tibble(level = "error", kind = "protected_runtime_helper", detail = paste("Cannot redefine", as.character(expr[[2L]])[1L])))
     lint <- lint_r_code(paste(deparse(expr), collapse = "\n"), allowlist = allowlist)
     if (nrow(lint)) {
       name <- if (is.call(expr) && length(expr) == 3L && is.name(expr[[1L]]) &&

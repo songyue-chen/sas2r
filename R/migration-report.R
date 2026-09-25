@@ -198,7 +198,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
 
   # Input hashes
   input_hashes <- tryCatch(
-    input_hash_manifest(state$project %||% state),
+    state$selected_attempt$input_hashes_after %||% state$input_manifest %||% input_hash_manifest(state$project %||% state),
     error = function(e) list()
   )
 

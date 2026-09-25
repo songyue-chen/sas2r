@@ -251,7 +251,7 @@ split_macro_statement <- function(txt, l_start, l_end, positions) {
   tok <- regmatches(txt, regexpr("^%?[A-Za-z_][A-Za-z0-9_]*", txt))
   tibble::tibble(
     text = txt,
-    first_token = if (length(tok)) tolower(tok) else "",
+    first_token = if (identical(tolower(tok), "%inc")) "%include" else if (length(tok)) tolower(tok) else "",
     type = "code",
     line_start = l_start,
     line_end = l_end,

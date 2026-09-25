@@ -62,7 +62,7 @@ validate_output_overrides <- function(overrides) {
   }
 
   if (is.list(overrides)) {
-    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles")
+    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles", "optional")
     unknown <- setdiff(names(overrides), allowed)
     if (length(unknown) > 0L) {
       cli::cli_abort(
@@ -89,6 +89,10 @@ validate_output_overrides <- function(overrides) {
         )
       }
     }
+
+    if (!is.null(overrides$optional) && (!is.character(overrides$optional) ||
+        anyNA(overrides$optional) || any(!nzchar(overrides$optional))))
+      cli::cli_abort("outputs$optional must be a character vector of target names", class = "sas2r_output_contract_error")
 
     validate_reference_paths(overrides$references, "outputs$references")
     if (!is.null(overrides$references)) overrides$references <- normalize_target_mapping(overrides$references, "outputs$references")
@@ -220,6 +224,10 @@ merge_output_overrides <- function(contracts, overrides = NULL) {
     }
   }
 
+  if (is.list(overrides) && length(overrides$optional)) {
+    optional <- names(normalize_target_mapping(stats::setNames(as.list(overrides$optional), overrides$optional), "outputs$optional"))
+    for (i in seq_along(records)) if (records[[i]]$target_key %in% optional) records[[i]]$required <- FALSE
+  }
   if (length(records) == 0L) return(empty_output_contracts())
 
   target_keys <- vapply(records, `[[`, character(1), "target_key")

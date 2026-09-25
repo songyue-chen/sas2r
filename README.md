@@ -152,9 +152,10 @@ result <- sas_translate(
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
   # Optional limits, commented out by default. Uncomment to enforce them; the
-  # run stops when any limit is reached. Requests and tool calls per program
+  # run stops admitting requests when a limit is reached. Requests and tool calls per program
   # vary by model and study: size ceilings from a completed run's usage summary.
-  # , budget_usd = 10
+  # Catalog costs are estimates; an in-flight request may exceed the threshold.
+  # , budget_usd = 10, budget_mode = "soft"
   # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
 

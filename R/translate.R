@@ -210,6 +210,7 @@ sas_translate <- function(
     NULL
   }
 
+  validate_ellmer_budget(resolved_llm, budget)
   stage <- "initialize"
   # 8. Initialize migration state
   state <- new_migration_state(
@@ -459,7 +460,8 @@ print.sas2r_translation <- function(x, ...) {
 #' @param x A `sas2r_translation` object.
 #' @param dir Target directory path to write translated files.
 #' @param overwrite Replace an existing sas2r export. Non-export directories
-#'   must be empty. Replacing an export removes its previous contents.
+#'   must be empty. Replacing an export updates only its previously listed files;
+#'   unrelated files are preserved and conflicting new paths are refused.
 #' @return The target directory path, invisibly.
 #' @examples
 #' sas_dir <- file.path(tempdir(), "sas2r-write-example")
@@ -479,7 +481,33 @@ sas_write <- function(x, dir, overwrite = FALSE) {
   if (dir.exists(dir) && length(list.files(dir, all.files = TRUE, no.. = TRUE))) {
     if (!isTRUE(overwrite) || !file.exists(file.path(dir, ".sas2r-export")))
       cli::cli_abort("Destination is not empty; choose an empty directory or use overwrite = TRUE for a previous sas2r export", class = "sas2r_export_exists")
-    unlink(list.files(dir, full.names = TRUE, all.files = TRUE, no.. = TRUE), recursive = TRUE)
+    manifest <- tryCatch(read_json_record(file.path(dir, ".sas2r-export")), error = function(e) NULL)
+    if (is.null(manifest$files)) cli::cli_abort(
+      "This older export has no file inventory; choose a new empty destination", class = "sas2r_export_exists")
+    staged <- tempfile("sas2r-export-")
+    on.exit(unlink(staged, recursive = TRUE), add = TRUE)
+    sas_write(x, staged)
+    next_files <- read_json_record(file.path(staged, ".sas2r-export"))$files
+    existing <- list.files(dir, recursive = TRUE, all.files = TRUE, no.. = TRUE)
+    conflicts <- intersect(setdiff(existing, manifest$files), next_files)
+    parents <- unique(unlist(lapply(next_files, function(path) {
+      dirs <- character()
+      while (dirname(path) != ".") { path <- dirname(path); dirs <- c(dirs, path) }
+      dirs
+    })))
+    conflicts <- unique(c(conflicts, parents[file.exists(file.path(dir, parents)) & !dir.exists(file.path(dir, parents))],
+      next_files[dir.exists(file.path(dir, next_files))]))
+    if (length(conflicts)) cli::cli_abort("Export conflicts with unrelated destination paths: {.val {conflicts}}", class = "sas2r_export_exists")
+    # Remove files, never recursively remove directories a person may have used.
+    owned <- file.path(dir, manifest$files)
+    unlink(owned[!dir.exists(owned)])
+    for (file in c(next_files, ".sas2r-export")) {
+      target <- file.path(dir, file)
+      dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
+      if (!file.copy(file.path(staged, file), target, overwrite = TRUE))
+        cli::cli_abort("Could not export {.file {target}}", class = "sas2r_write_failed")
+    }
+    return(invisible(dir))
   }
   if (x$status %in% c("blocked", "needs_review")) {
     cli::cli_warn(
@@ -490,7 +518,6 @@ sas_write <- function(x, dir, overwrite = FALSE) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
 
   materialize_user_bundle(x$bundle_dir, dir, project = x$project)
-  writeLines("sas2r exported bundle", file.path(dir, ".sas2r-export"))
   inventory <- if (!is.null(x$outputs_dir)) attempt_output_hashes(x$outputs_dir) else list()
   if (length(inventory)) copy_output_inventory(x$outputs_dir, file.path(dir, "saved-outputs"), inventory)
 
@@ -505,6 +532,8 @@ sas_write <- function(x, dir, overwrite = FALSE) {
     file.copy(x$report_json_path, file.path(state_dir, "report.json"), overwrite = TRUE)
   }
 
+  atomic_write_json(list(files = list.files(dir, recursive = TRUE, all.files = TRUE, no.. = TRUE)),
+    file.path(dir, ".sas2r-export"))
   invisible(dir)
 }
 

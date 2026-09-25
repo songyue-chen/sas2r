@@ -112,7 +112,7 @@
     "dots": true
   },
   "sas_missing": {
-    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
+    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\nCharacter conditions convert to numeric; nonnumeric text is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
     "dots": false
   },
   "sas_put": {
@@ -136,7 +136,7 @@
     "dots": true
   },
   "sas_true": {
-    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
+    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\nCharacter conditions convert to numeric; nonnumeric text is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
     "dots": false
   },
   "split_ds": {

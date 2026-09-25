@@ -47,10 +47,14 @@ recorded_dataset_output <- function(attempt, dataset) {
 
 non_translation_runtime_reason <- function(state, cid, condition) {
   if (any(grepl("timeout", condition$class %||% character(), fixed = TRUE)))
-    return("execution_timeout; no translation defect established")
+    return(paste0("execution_timeout; ", condition$timeout_setting %||% "migration.bundle_timeout", " = ",
+      condition$timeout_seconds %||% state$config$migration$bundle_timeout %||% 120,
+      " seconds. Increase this setting for a longer run; no translation defect established"))
   dataset <- missing_source_dataset(state, cid, condition)
   if (!is.null(dataset) && !length(source_output_writers(state, dataset)))
     return(paste("source_input_unavailable:", dataset))
+  if (isTRUE(condition$input_changed))
+    return("source_inputs_changed_since_run_initialization; restore the inputs or start a new run")
   NULL
 }
 

@@ -8,7 +8,7 @@ test_that("dataset evidence never borrows another library's member", {
   expect_true(is.na(find_attempt_candidate_file(contract, attempt)))
   expect_false(assess_dataset_target(contract, attempt)$passed)
   saveRDS(data.frame(id = 1), file.path(dir, "adam", "adsl.rds"))
-  expect_equal(find_attempt_candidate_file(contract, attempt), normalizePath(file.path(dir, "adam", "adsl.rds")))
+  expect_equal(find_attempt_candidate_file(contract, attempt), normalizePath(file.path(dir, "adam", "adsl.rds"), winslash = "/"))
   file.create(file.path(dir, "adam", "adsl.xpt"))
   expect_true(is.na(find_attempt_candidate_file(contract, attempt)))
 })
@@ -164,7 +164,7 @@ test_that("recorded runtime bindings survive selection and override stale locati
   selected <- select_attempt(paths, attempt, list(status = "needs_review"))
   expect_identical(selected$output_dirs$adam, dynamic)
   contract <- list(kind = "dataset", logical_name = "adam.adsl", target_key = "adam.adsl")
-  expect_equal(find_attempt_candidate_file(contract, selected), normalizePath(file.path(dynamic, "adsl.rds")))
+  expect_equal(find_attempt_candidate_file(contract, selected), normalizePath(file.path(dynamic, "adsl.rds"), winslash = "/"))
 })
 
 test_that("YAML budgets and execution timeouts reach the effective public configuration", {
@@ -210,8 +210,10 @@ test_that("decimal rounding covers the review's SAS examples", {
 
 test_that("execution children omit provider secrets and report input mutation", {
   withr::local_envvar(OPENAI_API_KEY = "synthetic-review-key")
+  startup <- withr::local_tempfile()
+  file.create(startup)
   child_key <- callr::r(function() Sys.getenv("OPENAI_API_KEY"),
-    env = execution_process_env(), user_profile = FALSE, system_profile = FALSE)
+    env = execution_process_env(startup), user_profile = FALSE, system_profile = FALSE)
   expect_identical(child_key, "")
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   input <- file.path(fx$root, "inputs", "input.rds")

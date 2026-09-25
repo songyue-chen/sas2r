@@ -1,13 +1,16 @@
 test_that("inconclusive focused reviews cannot weaken clean helper consumers", {
   for (verdict in c("review_unavailable", "repair_required")) {
     fx <- repair_workflow_fixture(n = 2L, failures = integer())
+    fx$state <- stage_workflow_revision(fx$state, "p01",
+      sub("x$value + 1", "sas_sum(x$value, 1)", fx$fixed$p01, fixed = TRUE),
+      "reviewed_no_material_finding")
     fx$state <- stage_workflow_revision(fx$state, "p02", "x <- lib_read('raw', 'input')",
                                       "reviewed_no_material_finding")
     ref <- file.path(fx$root, "reference.rds")
     saveRDS(data.frame(id = 1:2, value = 91:92), ref)
     fx$state$comparison_rules <- list(references = list(work.out1 = ref))
     old_path <- fx$state$runtime$helpers
-    helper <- 'lib_read <- function(libref, member, ...) data.frame(value = 99)'
+    helper <- 'sas_sum <- function(...) 99'
     fx$state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(
       code = fx$fixed$p02, bundle_helper_patch = list(path = "sas2r-helpers.R",
         content = helper, reason = "repair helper")))
@@ -16,7 +19,7 @@ test_that("inconclusive focused reviews cannot weaken clean helper consumers", {
       if (grepl("Focused source review", text, fixed = TRUE))
         return(valid_program_review_response(verdict = verdict))
       if (req$component_id == "p01") return(material_review_response(
-        sas_evidence = "value = value + 1", r_evidence = "helper adds 99 on every input read"))
+        sas_evidence = "value = value + 1", r_evidence = "shared sum helper replaces the source addition with 99"))
       valid_program_review_response()
     })
     result <- run_bundle_pipeline(fx$state)

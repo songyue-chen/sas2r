@@ -245,7 +245,7 @@ sas_display <- function(x) {
 sas_missing <- function(x) is.na(x) | (is.character(x) & !is.na(x) & grepl("^ *$", x))
 
 sas_true <- function(x) {
-  if (is.character(x)) return(!sas_missing(x))
+  if (is.character(x)) x <- suppressWarnings(as.numeric(trimws(x)))
   !is.na(x) & x != 0
 }
 

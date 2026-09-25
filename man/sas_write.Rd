@@ -12,7 +12,8 @@ sas_write(x, dir, overwrite = FALSE)
 \item{dir}{Target directory path to write translated files.}
 
 \item{overwrite}{Replace an existing sas2r export. Non-export directories
-must be empty. Replacing an export removes its previous contents.}
+must be empty. Replacing an export updates only its previously listed files;
+unrelated files are preserved and conflicting new paths are refused.}
 }
 \value{
 The target directory path, invisibly.

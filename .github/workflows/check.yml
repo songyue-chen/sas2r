@@ -24,6 +24,7 @@ jobs:
       _R_CHECK_CRAN_INCOMING_CHECK_FILE_URIS_: "true"
       # Use TinyTeX directly instead of the host's texi2dvi shell driver.
       R_TEXI2DVICMD: "emulation"
+      SAS2R_WORKER_FAILURE_LOG_DIR: ${{ github.workspace }}/worker-failure-logs
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
@@ -68,6 +69,12 @@ jobs:
         with:
           name: check-${{ matrix.os }}-${{ matrix.r }}
           path: check
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: worker-failures-${{ matrix.os }}-${{ matrix.r }}
+          path: worker-failure-logs
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && matrix.r == 'release'
         with:

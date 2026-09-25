@@ -38,8 +38,9 @@ check <- sas_preflight(
   config = list(libraries = list(raw = "raw", adam = "adam")),
   outputs = outputs
   # Optional limits, commented out by default. Uncomment to enforce them; the
-  # run stops when one is reached.
-  # , budget_usd = 5, usage_limits = list(max_request_bytes = 200000)
+  # run stops admitting requests when a limit is reached.
+  # Catalog costs are estimates; an in-flight request may exceed the threshold.
+  # , budget_usd = 5, budget_mode = "soft", usage_limits = list(max_request_bytes = 200000)
 )
 print(check)
 check$libraries

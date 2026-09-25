@@ -357,6 +357,7 @@ sas_display <- function(x) {
 #'
 #' Character missing is NA or all spaces. Numeric missing is NA (including
 #' tagged missing values). A missing or zero numeric condition is false.
+#' Character conditions convert to numeric; nonnumeric text is false.
 #' @param x A vector.
 #' @return A logical vector with no missing values.
 #' @family runtime helpers
@@ -369,6 +370,6 @@ sas_missing <- function(x) is.na(x) | (is.character(x) & !is.na(x) & grepl("^ *$
 #' @rdname sas_missing
 #' @export
 sas_true <- function(x) {
-  if (is.character(x)) return(!sas_missing(x))
+  if (is.character(x)) x <- suppressWarnings(as.numeric(trimws(x)))
   !is.na(x) & x != 0
 }

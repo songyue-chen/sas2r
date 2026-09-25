@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.3"
+SCAN_CACHE_SCHEMA_VERSION <- "4.4"
 
 # Cache source parsing within this R session without writing into input trees.
 project_cache_dir <- function(root) {
@@ -661,7 +661,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     stmt_id = integer(), text = character(), first_token = character(),
     type = character(), line_start = integer(), line_end = integer(),
     unit_id = integer(), unit_type = character(), file = character(),
-    origin = character()
+    origin = character(), macro_control = logical()
   ))
 
   comments <- fast_bind(comments_list, tibble::tibble(

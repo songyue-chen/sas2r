@@ -381,7 +381,7 @@ failure_class <- function(error) {
     return("sas2r_llm_invalid_schema")
   }
   if ((!is.na(status_code) && (status_code == 408L || status_code >= 500L)) ||
-      inherits(error, "curl_error") || grepl("connection (reset|refused|failed)|could not resolve host", message))
+      inherits(error, c("curl_error", "httr2_failure")) || grepl("connection (reset|refused|failed)|could not resolve host", message))
     return("sas2r_llm_transport_error")
   "sas2r_llm_error"
 }

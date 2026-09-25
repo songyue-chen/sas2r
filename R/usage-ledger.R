@@ -1310,11 +1310,7 @@ attempt_llm_request <- function(request, llm, usage_budget = NULL,
         usage_budget, subrequest, params
       )
       if (inherits(effective_error, "condition")) stop(effective_error)
-      if (isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && length(subrequest$tools) &&
-          !ellmer_has_request_callbacks() && (identical(usage_budget$mode, "strict") ||
-          any(vapply(c("max_input_tokens", "max_output_tokens", "max_request_bytes", "max_request_chars"),
-            function(name) is.finite(usage_budget[[name]] %||% Inf), logical(1)))))
-        cli::cli_abort("This ellmer version cannot enforce strict or finite token/byte limits across tool turns; update ellmer to a version with request callbacks", class = "sas2r_budget_unmeterable")
+      if (length(subrequest$tools)) validate_ellmer_budget(llm, usage_budget)
       subcontext <- context
       if (subattempt > 1L) {
         subrequest$request_id <- new_request_id()
@@ -1736,4 +1732,14 @@ run_with_budget <- function(llm, mode = "observe", max_usd = Inf,
   if (inherits(error, "condition")) stop(error)
   finalize_usage_run(budget, response$status %||% "completed")
   response
+}
+
+# Call once at migration startup, and for direct requests outside that pipeline.
+validate_ellmer_budget <- function(llm, budget) {
+  limited <- identical(budget$mode, "strict") || any(vapply(
+    setdiff(usage_limit_names(), "max_usd"),
+    function(name) is.finite(budget[[name]] %||% Inf), logical(1)))
+  if (isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && limited && !ellmer_has_request_callbacks())
+    cli::cli_abort("This ellmer version cannot enforce strict or finite request limits across tool turns; update ellmer to a version with request callbacks", class = "sas2r_budget_unmeterable")
+  invisible(NULL)
 }

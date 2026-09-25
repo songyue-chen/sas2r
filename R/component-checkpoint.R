@@ -110,13 +110,13 @@ smoke_component_revision <- function(state, component_id, execute = TRUE) {
     state$selected_revisions, execute = execute)
   plan$population_specs <- source_population_specs(state$project, c(plan$dependency_prefix, component_id))
   ids <- c(plan$dependency_prefix, component_id)
-  inputs <- input_hash_manifest(state$project)
+  inputs <- input_hash_manifest(state$project, metadata_only = TRUE)
   formats <- state$runtime$formats %||% file.path(dirname(state$runtime$helpers), "_sas2r_formats.R")
   context_key <- migration_hash(list(
     plan = plan[setdiff(names(plan), "selected_revisions")],
     programs = lapply(state$selected_revisions[ids], revision_code),
     helper = runtime_helper_code(state$runtime),
-    inputs = inputs,
+    inputs = list(content = state$input_manifest, metadata = inputs),
     libraries = state$project$config$libraries,
     formats = if (file.exists(formats)) readLines(formats, warn = FALSE) else NULL,
     R = as.character(getRversion())))
@@ -143,7 +143,7 @@ smoke_component_revision <- function(state, component_id, execute = TRUE) {
     dir <- state[["attempt"]]$attempt_dir %||%
       if (!is.null(state$paths$smoke_tests)) file.path(state$paths$smoke_tests, "smoke_attempt_001") else tempdir()
     smoke_state <- state
-    smoke_state$input_manifest <- inputs
+    smoke_state$input_metadata <- inputs
     prepared <- prepare_program_smoke(smoke_state, plan, dir)
     result <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir,
       timeout = state$config$migration$smoke_timeout %||% 60)

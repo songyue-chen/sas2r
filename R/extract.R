@@ -117,13 +117,13 @@ extract_includes <- function(stmts) {
   }
   rows <- lapply(seq_along(idx), function(k) {
     m <- regmatches(txt_vec[k],
-      regexec("^%include\\s+(['\"])(.*?)\\1", txt_vec[k], ignore.case = TRUE, perl = TRUE))[[1]]
+      regexec("^%(?:include|inc)\\s+(['\"])(.*?)\\1", txt_vec[k], ignore.case = TRUE, perl = TRUE))[[1]]
     if (length(m) >= 3L && m[1] != "") {
       rest <- trimws(sub(m[1], "", txt_vec[k], fixed = TRUE))
-      if (grepl("[\"']", rest)) list(target = trimws(sub("^%include\\s+", "", txt_vec[k], ignore.case = TRUE)), quoted = FALSE, line = line_vec[k])
+      if (grepl("[\"']", rest)) list(target = trimws(sub("^%(?:include|inc)\\s+", "", txt_vec[k], ignore.case = TRUE, perl = TRUE)), quoted = FALSE, line = line_vec[k])
       else list(target = m[3], quoted = TRUE, line = line_vec[k])
     } else {
-      rest <- trimws(sub("^%include\\s+", "", txt_vec[k], ignore.case = TRUE))
+      rest <- trimws(sub("^%(?:include|inc)\\s+", "", txt_vec[k], ignore.case = TRUE, perl = TRUE))
       list(target = rest, quoted = FALSE, line = line_vec[k])
     }
   })

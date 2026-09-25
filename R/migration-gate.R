@@ -726,11 +726,13 @@ assess_final_outputs <- function(
       res <- target_results[[c_row$target_key]] %||% if (identical(kind, "tlf")) {
         assess_tlf_target(c_row, attempt, comparison_rules = comparison_rules)
       } else if (identical(kind, "file")) {
+        candidate <- find_attempt_candidate_file(c_row, attempt)
+        exists <- !is.na(candidate) && file.exists(candidate)
         output_assessment(c_row$target_id, c_row$target_key, "file", isTRUE(c_row$required),
-          FALSE, "unassessed_file", FALSE, FALSE, FALSE,
+          FALSE, if (exists) "unassessed_file" else "missing_candidate", FALSE, FALSE, FALSE,
           list(file_contract = list(name = "file_contract", passed = FALSE,
-            details = "Flat-file content assessment is not implemented; manual review is required")),
-          list(), find_attempt_candidate_file(c_row, attempt), c_row$reference_path)
+            details = if (exists) "File exists; content requires manual review" else "Required file was not produced")),
+          list(), candidate, c_row$reference_path)
       } else {
         assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules, project = project)
       }
@@ -754,7 +756,7 @@ assess_final_outputs <- function(
         if (!isTRUE(res$passed)) {
           all_req_passed <- FALSE
           if (identical(res$status, "missing_candidate")) any_target_missing <- TRUE
-          else if (!identical(res$status, "not_executed")) any_target_failed <- TRUE
+          else if (!res$status %in% c("not_executed", "unassessed_file")) any_target_failed <- TRUE
         }
         if (isTRUE(res$has_reference) && isTRUE(res$reference_passed)) {
           has_reference_evaluated <- TRUE
@@ -864,10 +866,13 @@ assess_final_outputs <- function(
   unknown_lineage <- !is.null(graph) && any(vapply(names(assessed_targets), function(key)
     isTRUE(assessed_targets[[key]]$required) &&
       !length(lineage_summaries[[key]]$upstream_components), logical(1)))
+  unknown_lineage_targets <- if (unknown_lineage) names(assessed_targets)[vapply(names(assessed_targets), function(key)
+    isTRUE(assessed_targets[[key]]$required) && !length(lineage_summaries[[key]]$upstream_components), logical(1))] else character()
   if (unknown_lineage) lineage_blockers <- unique(c(lineage_blockers, "unknown_output_lineage"))
 
   overall_lineage <- list(
     upstream_components = all_lineage_cids,
+    unknown_output_targets = unknown_lineage_targets,
     review_unavailable = has_lineage_review_unavail,
     has_review_only = has_lineage_review_only,
     is_blocked = has_lineage_review_unavail || length(lineage_blockers) > 0L,
@@ -940,7 +945,7 @@ derive_bundle_status <- function(assessment) {
       t_status <- t$status %||% (if (t_passed) "passed" else "failed")
 
       if (req) {
-        if (t_status %in% c("needs_review", "unresolved_target", "not_executed")) {
+        if (t_status %in% c("needs_review", "unresolved_target", "not_executed", "unassessed_file")) {
           any_target_needs_review = TRUE
           all_required_passed = FALSE
         } else if (t_status %in% c("missing_candidate", "unreadable")) {

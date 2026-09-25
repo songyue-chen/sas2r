@@ -1,5 +1,11 @@
 # sas2r 0.5.4
 
+- Review fixes preserve agent instructions, isolate per-program library bindings,
+  distinguish manual flat-file review from missing outputs, and preserve unrelated
+  files when replacing an export. Execution timeout settings are documented.
+- Standalone bundles now require `cli` (hashing) and `vctrs` (exact grouping),
+  in addition to the packages listed in their generated README.
+
 - Readiness now includes every scheduled component, untranslated code and
   unknown output lineage. Dataset evidence must match the requested library
   and member; ambiguous files cannot satisfy a target.

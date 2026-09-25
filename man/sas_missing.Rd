@@ -18,6 +18,7 @@ A logical vector with no missing values.
 \description{
 Character missing is NA or all spaces. Numeric missing is NA (including
 tagged missing values). A missing or zero numeric condition is false.
+Character conditions convert to numeric; nonnumeric text is false.
 }
 \examples{
 sas_missing(c("", " ", NA, "A"))

@@ -41,6 +41,7 @@ new_migration_state <- function(
   )
   paths <- init_migration_paths(out_dir, run_id = budget$run_id)
 
+  p$input_manifest_exclude <- paths$root
   baseline <- sas_transpile(p, paths$staging)
   plan <- plan %||% translation_plan(p, p$config$outputs)
   graph <- plan$graph
@@ -1001,6 +1002,18 @@ run_bundle_pipeline <- function(
     NULL
   } else {
     stop_reason %||% latest_diagnosis %||% "Bundle outputs or execution did not satisfy gate requirements"
+  }
+
+  final_assessment <- selected_assessment %||% latest_assessment
+  if (identical(final_status, "needs_review")) {
+    unknown <- final_assessment$lineage_evidence$unknown_output_targets
+    manual <- names(Filter(function(target) isTRUE(target$required) && identical(target$status, "unassessed_file"), final_assessment$targets))
+    if (length(c(unknown, manual))) status_reason <- paste(c(
+      if (length(unknown)) paste0("unknown_output_lineage: ", paste(unknown, collapse = ", "),
+        ". Review the source producer and translated write; automatic runtime attribution is not available."),
+      if (length(manual)) paste0("unassessed_file: ", paste(manual, collapse = ", "),
+        ". Review file contents against the source/reference; existence alone is not validation.")
+    ), collapse = " ")
   }
 
   res <- list(
