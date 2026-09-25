@@ -21,7 +21,7 @@ test_that("merge route captures in= flags and by", {
     "data m; merge a (in=ina) b (in=inb); by k; if ina and not inb; run;"))
   expect_identical(ir$route, "merge")
   expect_identical(ir$by, "k")
-  expect_identical(ir$in_flags, c(a = "ina", b = "inb"))
+  expect_identical(ir$in_flags, c(work.a = "ina", work.b = "inb"))
   expect_identical(vapply(ir$steps, `[[`, "", "kind"), "merge_filter")
 })
 

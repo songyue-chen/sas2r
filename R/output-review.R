@@ -204,6 +204,7 @@ diff_aligned_cells <- function(ref_norm, cand_norm, pairs,
                                selected_keys = character(),
                                max_examples = OUTPUT_EVIDENCE_MAX_EXAMPLES,
                                details_cap = 0L) {
+  validate_comparison_profile(profile)
   # summarize_column_differences() reports folded names; the cell loop indexes
   # the frames by those names, so the frames must be folded too. Folding is
   # idempotent for a frame normalize_output_frame() already produced.
@@ -270,7 +271,7 @@ diff_aligned_cells <- function(ref_norm, cand_norm, pairs,
 
       has_explicit_rel <- !is.null(profile$overrides[[tolower(v)]]$rel)
       rel_tol <- if (has_explicit_rel) tol$rel else if (k == "numeric") tol$rel else 0.0
-      eq <- num_equal(bn, cn, tol$abs, rel_tol)
+      eq <- num_equal(bn, cn, if (k == "numeric" || !is.null(profile$overrides[[tolower(v)]]$abs)) tol$abs else 0, rel_tol)
 
       if (profile$na_tags != "ignore" && (anyNA(b) || anyNA(c_))) {
         tags_ok <- na_tags_match(b, c_)
@@ -508,7 +509,7 @@ comparison_report_serialized_bytes <- function(report) {
   tryCatch(
     {
       json <- jsonlite::toJSON(unclass(report), auto_unbox = TRUE,
-                               dataframe = "rows", null = "null")
+                               dataframe = "rows", null = "null", digits = NA)
       sum(nchar(as.character(json), type = "bytes"))
     },
     error = function(e) Inf
@@ -878,6 +879,8 @@ compare_aligned_outputs <- function(reference, candidate, target,
                                     hashes = list(),
                                     resource_state = "complete",
                                     max_examples = OUTPUT_EVIDENCE_MAX_EXAMPLES) {
+  validate_comparison_profile(profile)
+  max_examples <- min(max_examples, OUTPUT_EVIDENCE_MAX_EXAMPLES)
   ref_norm <- normalize_output_frame(reference, profile = profile)
   cand_norm <- normalize_output_frame(candidate, profile = profile)
 
@@ -904,11 +907,7 @@ compare_aligned_outputs <- function(reference, candidate, target,
     as.character(cli::hash_sha256(paste(row_signatures(cand_norm), collapse = "\n")))
   }
   prof_h <- hashes$profile %||% {
-    as.character(cli::hash_sha256(paste(
-      profile$version, profile$tol_abs, profile$tol_rel,
-      profile$padding, profile$na_tags, profile$sas_null_equals_na,
-      sep = "::"
-    )))
+    migration_hash(unclass(profile))
   }
 
   hashes$reference <- ref_h

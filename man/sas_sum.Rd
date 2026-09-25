@@ -27,7 +27,7 @@ sas_sum(c(1, NA, 2), c(1, NA, NA))
 sas_mean(c(1, NA, 3), c(3, NA, NA))
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
@@ -43,6 +43,7 @@ Other runtime helpers:
 \code{\link{sas_if_else}()},
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()}
 }

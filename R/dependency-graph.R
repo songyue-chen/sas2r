@@ -803,36 +803,36 @@ stable_dependency_schedule <- function(graph) {
 #' @param component_id The component ID to compute dependencies for.
 #' @return A character vector of all upstream component IDs that this component depends on.
 #' @noRd
+.dependency_cache <- new.env(parent = emptyenv())
+dependency_index <- function(graph) {
+  key <- graph[c("nodes", "edges")]
+  if (identical(.dependency_cache$key, key)) return(.dependency_cache$index)
+  nodes <- graph$nodes[!graph$nodes$type %in% c("external_input", "final_output", "unresolved_dependency"), ]
+  map <- stats::setNames(nodes$component_id, nodes$node_id)
+  ids <- unique(nodes$component_id)
+  providers <- stats::setNames(rep(list(character()), length(ids)), ids)
+  edges <- graph$edges
+  if (nrow(edges)) {
+    from <- unname(map[edges$from]); to <- unname(map[edges$to])
+    valid <- !is.na(from) & !is.na(to) & from != to
+    groups <- split(from[valid], to[valid])
+    providers[names(groups)] <- lapply(groups, unique)
+  }
+  schedule <- tryCatch(stable_dependency_schedule(graph)$component_id, error = function(e) ids)
+  index <- list(providers = providers, schedule = schedule, closures = new.env(parent = emptyenv()))
+  .dependency_cache$key <- key
+  .dependency_cache$index <- index
+  index
+}
+
 dependency_closure <- function(graph, component_id) {
   if (is.null(graph) || is.null(graph$nodes) || is.null(graph$edges) || nrow(graph$nodes) == 0L) {
     return(character())
   }
-  sched_nodes <- graph$nodes[!graph$nodes$type %in% c("external_input", "final_output", "unresolved_dependency"), ]
-  if (nrow(sched_nodes) == 0L) return(character())
-  node_to_comp <- stats::setNames(sched_nodes$component_id, sched_nodes$node_id)
-  cids <- unique(sched_nodes$component_id)
-
-  if (!component_id %in% cids) return(character())
-
-  # Build direct provider map for all components
-  direct_providers <- stats::setNames(vector("list", length(cids)), cids)
-  for (cid in cids) direct_providers[[cid]] <- character()
-
-  if (nrow(graph$edges) > 0L) {
-    valid_edges <- graph$edges[graph$edges$from %in% names(node_to_comp) & graph$edges$to %in% names(node_to_comp), ]
-    if (nrow(valid_edges) > 0L) {
-      from_c <- unname(node_to_comp[valid_edges$from])
-      to_c <- unname(node_to_comp[valid_edges$to])
-      for (i in seq_len(nrow(valid_edges))) {
-        u <- from_c[i]
-        v <- to_c[i]
-        if (!identical(u, v)) {
-          direct_providers[[v]] <- unique(c(direct_providers[[v]], u))
-        }
-      }
-    }
-  }
-
+  index <- dependency_index(graph)
+  if (!component_id %in% names(index$providers)) return(character())
+  if (exists(component_id, index$closures, inherits = FALSE)) return(index$closures[[component_id]])
+  direct_providers <- index$providers
   # Breadth-first / fixpoint traversal of all upstream ancestors
   visited <- character()
   queue <- direct_providers[[component_id]] %||% character()
@@ -849,22 +849,9 @@ dependency_closure <- function(graph, component_id) {
     }
   }
 
-  if (length(visited) == 0L) return(character())
-
-  sched <- tryCatch(stable_dependency_schedule(graph), error = function(e) NULL)
-  if (!is.null(sched) && nrow(sched) > 0L) {
-    ordered_cids <- sched$component_id[sched$component_id %in% visited]
-    return(unique(ordered_cids))
-  }
-
-  # Fallback ordering by original index
-  comp_orig_idx <- stats::setNames(vector("integer", length(cids)), cids)
-  for (cid in cids) {
-    sub_nodes <- sched_nodes[sched_nodes$component_id == cid, ]
-    min_idx <- suppressWarnings(min(sub_nodes$original_index, na.rm = TRUE))
-    comp_orig_idx[[cid]] <- if (is.finite(min_idx)) as.integer(min_idx) else as.integer(match(cid, cids))
-  }
-  visited[order(unname(comp_orig_idx[visited]))]
+  result <- unique(index$schedule[index$schedule %in% visited])
+  index$closures[[component_id]] <- result
+  result
 }
 
 #' Compute closure hashes for components

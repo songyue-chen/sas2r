@@ -21,6 +21,7 @@ Imports:
     callr,
     cli (>= 3.4),
     clue,
+    filelock,
     haven,
     jsonlite,
     stats,
@@ -30,7 +31,7 @@ Imports:
     yaml
 Suggests:
     diffdf,
-    dplyr,
+    dplyr (>= 1.1.0),
     ellmer (>= 0.4.2),
     ggplot2,
     knitr,

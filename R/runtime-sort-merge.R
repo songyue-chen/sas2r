@@ -26,6 +26,11 @@ sas_sort <- function(df, by, descending = character(), ...) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
     x <- df[[idx]]
+    if (is.character(x)) {
+      x <- sub(" +$", "", x)
+      x[x == "" & !is.na(x)] <- NA_character_
+      x <- match(x, sort(unique(x), method = "radix", na.last = NA))
+    }
     desc <- tolower(v) %in% tolower(descending)
     if (desc) {
       rank(-xtfrm(x), na.last = TRUE, ties.method = "min")
@@ -66,8 +71,8 @@ sas_sort <- function(df, by, descending = character(), ...) {
 #' sas_merge(events, subjects, by = "id", keep = "left") # three events remain
 #' @export
 sas_merge <- function(a, b, by,
-                      keep = c("both", "left", "right", "left_only",
-                               "right_only", "full"), ...) {
+                      keep = c("full", "both", "left", "right", "left_only",
+                               "right_only"), ...) {
   keep <- match.arg(keep)
   dup_a <- anyDuplicated(a[by]) > 0L
   dup_b <- anyDuplicated(b[by]) > 0L
@@ -83,8 +88,20 @@ sas_merge <- function(a, b, by,
          call. = FALSE)
   }
   a_cols <- names(a); b_cols <- names(b)
-  a$.in_a <- TRUE; b$.in_b <- TRUE
-  m <- merge(a, b, by = by, all = TRUE, suffixes = c(".sas2r_a", ""))
+  a$.in_a <- rep(TRUE, nrow(a)); b$.in_b <- rep(TRUE, nrow(b))
+  key_id <- ".sas2r_merge_key"
+  while (key_id %in% c(names(a), names(b))) key_id <- paste0(key_id, "_")
+  ids <- vctrs::vec_group_id(rbind(a[by], b[by]))
+  a[[key_id]] <- ids[seq_len(nrow(a))]
+  b[[key_id]] <- ids[nrow(a) + seq_len(nrow(b))]
+  m <- merge(a, b, by = key_id, all = TRUE, suffixes = c(".sas2r_a", ""))
+  for (v in by) {
+    missing_right <- is.na(m$.in_b)
+    m[[v]][missing_right] <- m[[paste0(v, ".sas2r_a")]][missing_right]
+    m[[paste0(v, ".sas2r_a")]] <- NULL
+  }
+  m[[key_id]] <- NULL
+  a[[key_id]] <- NULL; b[[key_id]] <- NULL
   # SAS overlap rule: the later dataset's value wins where both contribute
   for (v in setdiff(intersect(names(a), names(b)), c(by, ".in_a", ".in_b"))) {
     left <- m[[paste0(v, ".sas2r_a")]]

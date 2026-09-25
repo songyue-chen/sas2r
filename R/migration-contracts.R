@@ -98,6 +98,7 @@ migration_paths <- function(out_dir, run_id = NULL) {
   bundle <- file.path(run_root, "bundle")
   list(
     root = root,
+    run_id = run_id,
     state = state,
     run_root = run_root,
     graph = file.path(state, "graph.json"),

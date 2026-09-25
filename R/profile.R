@@ -29,7 +29,9 @@ effective_tol <- function(profile, var) {
 #' Every equivalence judgement the comparator makes is parameterized here
 #' and nowhere else. Defaults implement the accepted SAS-to-R tolerance
 #' rules: SAS null == NA, special missings reported, trailing padding
-#' cosmetic, combined absolute + relative numeric tolerance.
+#' cosmetic, absolute numeric tolerance of 1e-8 and no relative tolerance.
+#' Equality uses abs(x-y) <= abs + rel * max(abs(x), abs(y));
+#' relative tolerance can be enabled explicitly for measured quantities.
 #'
 #' @param abs Absolute numeric tolerance (scalar >= 0).
 #' @param rel Relative numeric tolerance (scalar >= 0).
@@ -52,7 +54,7 @@ effective_tol <- function(profile, var) {
 #' compare_profile(overrides = list(aval = list(abs = 1e-6)),
 #'                 keys = c("usubjid", "paramcd"))
 #' @export
-compare_profile <- function(abs = 1e-8, rel = 1e-8,
+compare_profile <- function(abs = 1e-8, rel = 0,
                             sas_null_equals_na = TRUE,
                             na_tags = c("report", "ignore", "strict"),
                             padding = c("cosmetic", "strict"),
@@ -64,10 +66,10 @@ compare_profile <- function(abs = 1e-8, rel = 1e-8,
   if (is.character(rel) && length(rel) == 1L && !is.na(suppressWarnings(as.numeric(rel)))) {
     rel <- as.numeric(rel)
   }
-  if (!is.numeric(abs) || length(abs) != 1L || is.na(abs) || abs < 0) {
+  if (!is.numeric(abs) || length(abs) != 1L || !is.finite(abs) || abs < 0) {
     cli::cli_abort("{.arg abs} must be a single non-negative number.")
   }
-  if (!is.numeric(rel) || length(rel) != 1L || is.na(rel) || rel < 0) {
+  if (!is.numeric(rel) || length(rel) != 1L || !is.finite(rel) || rel < 0) {
     cli::cli_abort("{.arg rel} must be a single non-negative number.")
   }
   if (!is.logical(sas_null_equals_na) || length(sas_null_equals_na) != 1L || is.na(sas_null_equals_na)) {
@@ -99,12 +101,12 @@ compare_profile <- function(abs = 1e-8, rel = 1e-8,
       }
       overrides[[v]] <- ov
       if ("abs" %in% names(ov)) {
-        if (!is.numeric(ov$abs) || length(ov$abs) != 1L || is.na(ov$abs) || ov$abs < 0) {
+        if (!is.numeric(ov$abs) || length(ov$abs) != 1L || !is.finite(ov$abs) || ov$abs < 0) {
           cli::cli_abort("Override {.arg abs} for variable {.val {v}} must be a single non-negative number.")
         }
       }
       if ("rel" %in% names(ov)) {
-        if (!is.numeric(ov$rel) || length(ov$rel) != 1L || is.na(ov$rel) || ov$rel < 0) {
+        if (!is.numeric(ov$rel) || length(ov$rel) != 1L || !is.finite(ov$rel) || ov$rel < 0) {
           cli::cli_abort("Override {.arg rel} for variable {.val {v}} must be a single non-negative number.")
         }
       }
@@ -135,3 +137,10 @@ print.sas2r_profile <- function(x, ...) {
   invisible(x)
 }
 
+
+validate_comparison_profile <- function(profile) {
+  if (!inherits(profile, "sas2r_profile")) {
+    cli::cli_abort("profile must be created by compare_profile().", class = "sas2r_invalid_argument")
+  }
+  invisible(profile)
+}

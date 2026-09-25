@@ -47,8 +47,6 @@ cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
 class(cfg)
 names(cfg$libraries)
 
-\dontrun{
-# With no argument, _sas2r.yml is discovered by searching upwards.
-cfg <- sas_config(start = "path/to/study")
-}
+# With no explicit file, search from a known project directory.
+cfg <- sas_config(start = system.file("examples", "demo_project", package = "sas2r"))
 }

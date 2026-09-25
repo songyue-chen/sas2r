@@ -12,5 +12,5 @@ min: sas_min
 max: sas_max
 sum: sas_sum
 mean: sas_mean
-missing: is.na
+missing: sas_missing
 put: sas_put

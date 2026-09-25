@@ -59,7 +59,7 @@ extract_librefs <- function(stmts) {
   rows <- lapply(seq_along(idx), function(k) {
     m <- regmatches(txt_vec[k], regexec(
       "^libname\\s+([A-Za-z_]\\w*)\\s+(?:([A-Za-z_]\\w*)\\s+)?(['\"])(.*?)\\3",
-      txt_vec[k], ignore.case = TRUE))[[1]]
+      txt_vec[k], ignore.case = TRUE, perl = TRUE))[[1]]
     if (length(m) >= 5L && m[1] != "") {
       return(list(libref = tolower(m[2]), action = "assign",
                   engine = tolower(m[3]), path_expression = m[5],
@@ -117,9 +117,11 @@ extract_includes <- function(stmts) {
   }
   rows <- lapply(seq_along(idx), function(k) {
     m <- regmatches(txt_vec[k],
-      regexec("^%include\\s+(['\"])(.*?)\\1", txt_vec[k], ignore.case = TRUE))[[1]]
+      regexec("^%include\\s+(['\"])(.*?)\\1", txt_vec[k], ignore.case = TRUE, perl = TRUE))[[1]]
     if (length(m) >= 3L && m[1] != "") {
-      list(target = m[3], quoted = TRUE, line = line_vec[k])
+      rest <- trimws(sub(m[1], "", txt_vec[k], fixed = TRUE))
+      if (grepl("[\"']", rest)) list(target = trimws(sub("^%include\\s+", "", txt_vec[k], ignore.case = TRUE)), quoted = FALSE, line = line_vec[k])
+      else list(target = m[3], quoted = TRUE, line = line_vec[k])
     } else {
       rest <- trimws(sub("^%include\\s+", "", txt_vec[k], ignore.case = TRUE))
       list(target = rest, quoted = FALSE, line = line_vec[k])
@@ -321,7 +323,7 @@ extract_filerefs <- function(stmts) {
     for (k in seq_len(nrow(fr))) {
       m <- regmatches(fr$text[k], regexec(
         "^filename\\s+([A-Za-z_]\\w*)\\s+(['\"])(.*?)\\2",
-        fr$text[k], ignore.case = TRUE))[[1]]
+        fr$text[k], ignore.case = TRUE, perl = TRUE))[[1]]
       if (length(m) >= 4L && m[1] != "") filerefs[[tolower(m[2])]] <- m[4]
     }
   }

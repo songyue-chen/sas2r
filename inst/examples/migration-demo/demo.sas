@@ -1,4 +1,4 @@
-%let plotds = input_ds;
+%let plotds = raw.input_ds;
 
 data work.stg1;
   set &plotds;

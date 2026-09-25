@@ -6,12 +6,6 @@
 
 #' Canonical bundle status enum
 #' @noRd
-BUNDLE_STATUSES <- c(
-  "blocked",
-  "needs_review",
-  "migration_ready",
-  "validated"
-)
 
 #' Locate an output target candidate file within an attempt directory structure
 #'
@@ -49,41 +43,19 @@ find_attempt_candidate_file <- function(contract, attempt) {
   l_name <- gsub("\\\\", "/", trimws(as.character(l_name)))
 
   if (kind == "dataset") {
-    libref <- sub("\\..*$", "", l_name)
-    stem <- sub("^.*\\.", "", l_name)
-    if (!nzchar(stem)) stem <- tools::file_path_sans_ext(basename(t_key))
-
+    parts <- strsplit(tolower(l_name), ".", fixed = TRUE)[[1L]]
+    if (length(parts) != 2L || any(!nzchar(parts))) return(NA_character_)
+    libref <- parts[1L]; stem <- parts[2L]
     exts <- c("rds", "xpt", "sas7bdat")
-
-    # Direct candidate checks in search roots
-    for (sdir in search_dirs) {
-      for (ext in exts) {
-        cands <- c(
-          file.path(sdir, libref, paste0(stem, ".", ext)),
-          file.path(sdir, paste0(stem, ".", ext)),
-          file.path(sdir, paste0(l_name, ".", ext)),
-          file.path(sdir, paste0(libref, ".", stem, ".", ext))
-        )
-        for (cand in cands) {
-          if (file.exists(cand) && !file.info(cand)$isdir) {
-            return(normalizePath(cand, winslash = "/", mustWork = FALSE))
-          }
-        }
-      }
-    }
-
-    # Recursive search within attempt directories (excluding bundle and logs)
-    for (sdir in search_dirs) {
-      all_f <- list.files(sdir, recursive = TRUE, full.names = TRUE)
-      for (ext in exts) {
-        pattern <- paste0("(?i)(^|/)", stem, "\\.", ext, "$")
-        hits <- all_f[grepl(pattern, all_f)]
-        hits <- hits[!grepl("/bundle/|/logs/", hits)]
-        if (length(hits) > 0L) {
-          return(normalizePath(hits[1L], winslash = "/", mustWork = FALSE))
-        }
-      }
-    }
+    # The runner records the final LIBNAME bindings, including rebindings.
+    # A same-named WORK or other-library member never satisfies this target.
+    bound_dir <- if (is.list(attempt)) attempt$output_dirs[[libref]] else NULL
+    roots <- if (length(bound_dir)) bound_dir else file.path(c(outputs_dir, attempt_dir), libref)
+    candidates <- unique(unlist(lapply(roots, function(root)
+      file.path(root, paste0(stem, ".", exts))), use.names = FALSE))
+    candidates <- candidates[file.exists(candidates) & !dir.exists(candidates)]
+    if (length(candidates) == 1L) return(normalizePath(candidates, winslash = "/", mustWork = TRUE))
+    return(NA_character_)
   } else {
     # TLF target
     for (sdir in search_dirs) {
@@ -140,7 +112,7 @@ unresolved_output_assessment <- function(contract) {
     candidate_path = NA_character_, reference_path = NA_character_)
 }
 
-assess_dataset_target <- function(contract, attempt, comparison_rules = list()) {
+assess_dataset_target <- function(contract, attempt, comparison_rules = list(), project = NULL) {
   unresolved <- unresolved_output_assessment(contract)
   if (!is.null(unresolved)) return(unresolved)
   t_id <- if (is.data.frame(contract)) contract$target_id[1L] else contract$target_id %||% ""
@@ -198,7 +170,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
       name = "candidate_exists",
       passed = TRUE,
       details = "Candidate file exists",
-      path = cand_path
+      path = cand_path, sha256 = unname(cli::hash_file_sha256(cand_path))
     )
 
     # Read candidate dataset
@@ -258,6 +230,11 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
   if (has_ref) {
     checks$reference_exists <- reference_file_check(ref_path)
     if (isTRUE(checks$reference_exists$passed)) {
+      checks$reference_identity <- list(name = "reference_identity",
+        passed = is.na(cand_path) || !identical(normalizePath(ref_path), normalizePath(cand_path, mustWork = FALSE)),
+        details = "Reference and candidate must be distinct files",
+        sha256 = unname(cli::hash_file_sha256(ref_path)),
+        size = unname(file.info(ref_path)$size), mtime = as.character(file.info(ref_path)$mtime))
 
       ref_ext <- tolower(tools::file_ext(ref_path))
       ref_data <- tryCatch(
@@ -296,16 +273,19 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
         # reorder or duplicate-key permutation is no longer a wall of
         # positional cell mismatches.
         comp_res <- tryCatch(
-          compare_datasets_aligned(ref_data, cand_data, profile = prof, keys = keys),
-          error = function(e) NULL
+          compare_datasets_aligned(ref_data, cand_data, profile = prof, keys = keys,
+            context = if (!is.null(project)) build_output_alignment_context(list(
+              logical_dataset = l_name, contributing_unit_ids = unique(project$statements$unit_id)), project) else NULL),
+          error = identity
         )
 
-        if (!is.null(comp_res)) {
+        if (!inherits(comp_res, "error")) {
           ref_passed <- isTRUE(comp_res$passed)
           checks$reference_comparison <- list(
             name = "reference_comparison",
             passed = ref_passed,
-            details = if (ref_passed) "Comparison passed within tolerance" else "Differences observed",
+            details = if (ref_passed) "Comparison passed within tolerance" else
+              paste("Differences observed; alignment:", comp_res$structure$alignment_resource_state %||% "complete"),
             summary = comp_res$summary
           )
           diffs$mismatches <- comp_res$details
@@ -321,7 +301,7 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list()) 
           checks$reference_comparison <- list(
             name = "reference_comparison",
             passed = FALSE,
-            details = "compare_datasets failed"
+            details = paste("Comparison failed:", conditionMessage(comp_res))
           )
         }
       }
@@ -701,7 +681,8 @@ assess_final_outputs <- function(
   graph = NULL,
   evidence_histories = list(),
   comparison_rules = list(),
-  target_results = NULL
+  target_results = NULL,
+  project = NULL
 ) {
   # Normalize contracts to a data frame or empty contracts
   contract_df <- if (inherits(contracts, "sas2r_output_contracts") || is.data.frame(contracts)) {
@@ -744,8 +725,14 @@ assess_final_outputs <- function(
 
       res <- target_results[[c_row$target_key]] %||% if (identical(kind, "tlf")) {
         assess_tlf_target(c_row, attempt, comparison_rules = comparison_rules)
+      } else if (identical(kind, "file")) {
+        output_assessment(c_row$target_id, c_row$target_key, "file", isTRUE(c_row$required),
+          FALSE, "unassessed_file", FALSE, FALSE, FALSE,
+          list(file_contract = list(name = "file_contract", passed = FALSE,
+            details = "Flat-file content assessment is not implemented; manual review is required")),
+          list(), find_attempt_candidate_file(c_row, attempt), c_row$reference_path)
       } else {
-        assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules)
+        assess_dataset_target(c_row, attempt, comparison_rules = comparison_rules, project = project)
       }
 
       # A target whose producer was deferred in this attempt was not executed.
@@ -862,29 +849,22 @@ assess_final_outputs <- function(
     }
   }
 
-  # Re-evaluate overall lineage status based on updated histories
+  # Static lineage attributes target evidence; it cannot exempt a scheduled
+  # component from review (macro-generated output names may have no edge).
+  scheduled <- unique(c(names(updated_histories), attempt$execution_order))
   has_lineage_review_unavail <- FALSE
   has_lineage_review_only <- FALSE
   lineage_blockers <- character()
-  for (t_key in names(assessed_targets)) {
-    tgt_res <- assessed_targets[[t_key]]
-    if (isTRUE(tgt_res$required)) {
-      lin_cids <- lineage_summaries[[t_key]]$upstream_components %||% character()
-      for (cid in lin_cids) {
-        h <- updated_histories[[cid]]
-        if (!is.null(h)) {
-          ev <- current_component_evidence(h)
-          lineage_blockers <- unique(c(lineage_blockers, ev$blockers))
-          if (isTRUE(ev$review_unavailable)) {
-            has_lineage_review_unavail <- TRUE
-          }
-          if (identical(ev$level, "reviewed_only")) {
-            has_lineage_review_only <- TRUE
-          }
-        }
-      }
-    }
+  for (cid in scheduled) {
+    ev <- current_component_evidence(updated_histories[[cid]])
+    lineage_blockers <- unique(c(lineage_blockers, ev$blockers))
+    has_lineage_review_unavail <- has_lineage_review_unavail || is.null(ev$level) || isTRUE(ev$review_unavailable)
+    has_lineage_review_only <- has_lineage_review_only || identical(ev$level, "reviewed_only")
   }
+  unknown_lineage <- !is.null(graph) && any(vapply(names(assessed_targets), function(key)
+    isTRUE(assessed_targets[[key]]$required) &&
+      !length(lineage_summaries[[key]]$upstream_components), logical(1)))
+  if (unknown_lineage) lineage_blockers <- unique(c(lineage_blockers, "unknown_output_lineage"))
 
   overall_lineage <- list(
     upstream_components = all_lineage_cids,
@@ -989,7 +969,7 @@ derive_bundle_status <- function(assessment) {
   }
 
   # 2. Check for needs_review conditions
-  if (exec_deferred) {
+  if (exec_deferred || !length(targets)) {
     return("needs_review")
   }
   # A partial attempt executed only part of the configured pipeline. It can

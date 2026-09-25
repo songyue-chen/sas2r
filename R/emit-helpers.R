@@ -568,3 +568,19 @@ emit_lib_writes <- function(var_name, outputs) {
     sprintf('lib_write(%s, "%s", "%s")', var_name, op[["lib"]], op[["member"]])
   }, character(1))
 }
+
+
+# Only ordinary, syntactic SAS names can be inserted as unquoted R names.
+deterministic_names <- function(names) {
+  all(!is.na(names) & grepl("^[A-Za-z_][A-Za-z0-9_]{0,31}$", names) &
+    make.names(names) == names)
+}
+
+proc_options_supported <- function(text, proc, assignments, bare = character()) {
+  text <- sub(paste0("^proc\\s+", proc, "\\b"), "", text, ignore.case = TRUE)
+  for (key in assignments) text <- gsub(paste0("\\b", key,
+    "\\s*=\\s*[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?\\b"), "", text,
+    ignore.case = TRUE, perl = TRUE)
+  tokens <- strsplit(trimws(text), "\\s+")[[1L]]
+  all(tolower(tokens[nzchar(tokens)]) %in% bare)
+}

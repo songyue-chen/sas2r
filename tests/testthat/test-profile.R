@@ -1,7 +1,7 @@
 test_that("defaults encode the accepted tolerance rules", {
   p <- compare_profile()
   expect_s3_class(p, "sas2r_profile")
-  expect_identical(p$numeric, list(abs = 1e-8, rel = 1e-8))
+  expect_identical(p$numeric, list(abs = 1e-8, rel = 0))
   expect_true(p$sas_null_equals_na)
   expect_identical(p$na_tags, "report")
   expect_identical(p$padding, "cosmetic")

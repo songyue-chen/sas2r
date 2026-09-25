@@ -174,7 +174,7 @@ rules:
     classification: known_divergence
     sas_default: "MISSING recognizes numeric missing values, special numeric missings, and blank character values."
     r_default: "is.na recognizes R missing values but does not treat a blank string as missing."
-    strategy: is.na
+    strategy: sas_missing
     implementation_status: implemented_unverified
     risk: high
     scope: "Direct MISSING dispatch; blank strings and SAS special missing values remain divergent."

@@ -1,4 +1,12 @@
 {
+  "$<-.sas2r_dataset": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
+  "[[<-.sas2r_dataset": {
+    "text": "Every program sas2r translates calls a small runtime -- lib_read(),\nlib_write(), sas_sort(), sas_merge(), chr_cmp(), the format\nmachinery and the rest. Since sas2r 0.2.0 that runtime is exported package\ncode with a help page per helper, and every bundle still carries its\nown copy as sas2r-helpers.R, rendered from the same source files\n(R/runtime-*.R) so the two are identical function for function. A\nbundle always loads its own copy: its behavior depends only on its own\ncontents, never on which sas2r is installed. That is what lets a\ntranslated program run without sas2r installed.\n\nThe vignette vignette(\"runtime-helpers\", package = \"sas2r\") explains how\nto run programs, how to use the runtime interactively, and the stability\npolicy behind it.",
+    "dots": false
+  },
   "apply_format": {
     "text": "apply_format() applies a compiled format catalog entry (as written to a\nbundle's _sas2r_formats.R): exact values first, then ranges (each a\nlist with lo, hi, label), then other for anything unmatched.\nMissing input stays missing unless the format defines other. sas_put()\nis PUT(x, fmt.) and does the same.\n\nArguments:\nx: The vector to format.\nfmt: A compiled format: a list with any of values (a named\ncharacter vector), ranges, and other; NULL formats as character.\n\nReturns:\nA character vector.\n\nExamples:\nsex <- list(values = c(M = \"Male\", F = \"Female\"), other = \"Unknown\")\napply_format(c(\"M\", \"F\", \"X\", NA), sex)\nage <- list(ranges = list(list(lo = 0, hi = 17, label = \"<18\"),\n                          list(lo = 18, hi = 200, label = \"18+\")))\nsas_put(c(5, 40, NA), age)",
     "dots": false
@@ -72,7 +80,7 @@
     "dots": false
   },
   "sas_compress": {
-    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved literally, including ] and -. SAS modifiers are unsupported. sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
     "dots": false
   },
   "sas_display": {
@@ -84,7 +92,7 @@
     "dots": false
   },
   "sas_length": {
-    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved literally, including ] and -. SAS modifiers are unsupported. sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
     "dots": false
   },
   "sas_max": {
@@ -103,6 +111,10 @@
     "text": "Row-wise across the arguments, ignoring missing values; an observation\nwhose arguments are all missing yields missing, and a single argument\npasses through elementwise -- SAS MIN(x) is never a column aggregate.\n\nArguments:\n...: Numeric vectors, recycled to a common length.\n\nReturns:\nA numeric vector of that length.\n\nExamples:\nsas_min(c(1, NA, 3), c(2, NA, 1))\nsas_max(c(1, NA, 3), c(2, NA, 1))",
     "dots": true
   },
+  "sas_missing": {
+    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
+    "dots": false
+  },
   "sas_put": {
     "text": "apply_format() applies a compiled format catalog entry (as written to a\nbundle's _sas2r_formats.R): exact values first, then ranges (each a\nlist with lo, hi, label), then other for anything unmatched.\nMissing input stays missing unless the format defines other. sas_put()\nis PUT(x, fmt.) and does the same.\n\nArguments:\nx: The vector to format.\nfmt: A compiled format: a list with any of values (a named\ncharacter vector), ranges, and other; NULL formats as character.\n\nReturns:\nA character vector.\n\nExamples:\nsex <- list(values = c(M = \"Male\", F = \"Female\"), other = \"Unknown\")\napply_format(c(\"M\", \"F\", \"X\", NA), sex)\nage <- list(ranges = list(list(lo = 0, hi = 17, label = \"<18\"),\n                          list(lo = 18, hi = 200, label = \"18+\")))\nsas_put(c(5, 40, NA), age)",
     "dots": false
@@ -116,12 +128,16 @@
     "dots": false
   },
   "sas_substr": {
-    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved (chars is used as a regular-expression character class, so a ]\nor - in the list needs escaping). sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
+    "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved literally, including ] and -. SAS modifiers are unsupported. sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
     "dots": false
   },
   "sas_sum": {
     "text": "SAS SUM() and MEAN() are row-wise across their arguments: each\nobservation gets the sum or mean of its non-missing arguments, and only an\nobservation whose arguments are all missing yields missing. Column\naggregation (PROC MEANS, PROC SQL) is emitted inline by those emitters\nand never routed through these.\n\nArguments:\n...: Numeric vectors, recycled to a common length.\n\nReturns:\nA numeric vector of that length.\n\nExamples:\nsas_sum(c(1, NA, 2), c(1, NA, NA))\nsas_mean(c(1, NA, 3), c(3, NA, NA))",
     "dots": true
+  },
+  "sas_true": {
+    "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
+    "dots": false
   },
   "split_ds": {
     "text": "This internal helper is available in a generated bundle's runtime.\nUse the returned names exactly; it returns a character vector, not a list.\nAccessing an absent name with [[ raises an error, rather than returning NULL.\n\nArguments:\nds: A character scalar such as \"source.measurements\" or \"measurements\".\nmacro_vars: Named character vector of macro variables to substitute\nbefore splitting, without the leading ampersand in each name.\n\nReturns:\nA named character vector of length two, with elements lib and\nmember. A one-level name uses lib = \"work\". There is no libref element.\n\nExamples:\nsplit_ds <- getFromNamespace(\"split_ds\", \"sas2r\")\nparts <- split_ds(\"source.measurements\")\nparts[[\"lib\"]]     # \"source\"\nparts[[\"member\"]]  # \"measurements\"\nsplit_ds(\"measurements\") # c(lib = \"work\", member = \"measurements\")",

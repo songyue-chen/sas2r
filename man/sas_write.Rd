@@ -4,12 +4,15 @@
 \alias{sas_write}
 \title{Write translated code artifacts and outputs to a destination directory}
 \usage{
-sas_write(x, dir)
+sas_write(x, dir, overwrite = FALSE)
 }
 \arguments{
 \item{x}{A \code{sas2r_translation} object.}
 
 \item{dir}{Target directory path to write translated files.}
+
+\item{overwrite}{Replace an existing sas2r export. Non-export directories
+must be empty. Replacing an export removes its previous contents.}
 }
 \value{
 The target directory path, invisibly.

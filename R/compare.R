@@ -45,9 +45,10 @@ format_cell_value <- function(x) {
 #' @export
 compare_datasets <- function(base, comp, profile = compare_profile(),
                              keys = profile$keys) {
+  validate_comparison_profile(profile)
   al <- align_columns(base, comp)
   if (!is.null(keys)) keys <- tolower(keys)
-  mk <- match_rows(al$base, al$comp, keys)
+  mk <- match_rows(normalize_output_frame(al$base, profile), normalize_output_frame(al$comp, profile), keys)
   compare_datasets_impl(
     al = al, profile = profile, keys = keys,
     pairing = list(
@@ -79,7 +80,8 @@ compare_datasets <- function(base, comp, profile = compare_profile(),
 #'   `alignment_resource_state`.
 #' @noRd
 compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
-                                     keys = NULL) {
+                                     keys = NULL, context = NULL) {
+  validate_comparison_profile(profile)
   al <- align_columns(base, comp)
   if (!is.null(keys)) {
     keys <- tolower(keys)
@@ -94,7 +96,7 @@ compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
 
   ref_eng <- normalize_output_frame(al$base, profile = profile)
   cand_eng <- normalize_output_frame(al$comp, profile = profile)
-  ctx <- if (length(keys)) {
+  ctx <- context %||% if (length(keys)) {
     list(
       by = character(),
       sort = list(vars = character(), descending = logical()),
@@ -149,7 +151,7 @@ compare_datasets_impl <- function(al, profile, keys, pairing) {
 
   cell_vars <- setdiff(al$common, c(al$kind_mismatch$var, unsupported_vars))
 
-  cosmetic <- list()
+  cosmetic <- if (length(al$name_case)) list(tibble::tibble(var = al$name_case, kind = "name_case", n = 1L)) else list()
 
   # attribute comparison on original columns
   for (v in al$common) {
@@ -202,7 +204,8 @@ compare_datasets_impl <- function(al, profile, keys, pairing) {
   structural_bad <- length(al$only_base) + length(al$only_comp) +
     nrow(al$kind_mismatch) + nrow(unsupported_kinds) +
     pairing$rows_only_base + pairing$rows_only_comp
-  ok <- n_value_mismatch == 0L && structural_bad == 0L
+  ok <- n_value_mismatch == 0L && structural_bad == 0L &&
+    !(isTRUE(pairing$structure_extras$order$meaningful) && !isTRUE(pairing$structure_extras$order$order_equivalent))
 
   summary <- tibble::tibble(
     metric = c("rows_base", "rows_comp", "rows_matched", "rows_only_base",

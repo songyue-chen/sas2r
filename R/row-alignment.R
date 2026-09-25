@@ -561,55 +561,20 @@ match_row_multisets <- function(ref_norm, cand_norm,
   sig_ref <- row_signatures(sub_ref)
   sig_cand <- row_signatures(sub_cand)
 
-  ref_by_sig <- split(ref_rows, sig_ref)
-  cand_by_sig <- split(cand_rows, sig_cand)
-
-  all_sigs <- union(names(ref_by_sig), names(cand_by_sig))
-
-  matched_ref <- integer()
-  matched_cand <- integer()
-  resid_ref <- integer()
-  resid_cand <- integer()
-
-  for (s in all_sigs) {
-    r_idx <- ref_by_sig[[s]]
-    c_idx <- cand_by_sig[[s]]
-
-    n_r <- length(r_idx)
-    n_c <- length(c_idx)
-
-    if (n_r > 0L && n_c > 0L) {
-      k <- min(n_r, n_c)
-      matched_ref <- c(matched_ref, r_idx[seq_len(k)])
-      matched_cand <- c(matched_cand, c_idx[seq_len(k)])
-      if (n_r > k) {
-        resid_ref <- c(resid_ref, r_idx[(k + 1L):n_r])
-      }
-      if (n_c > k) {
-        resid_cand <- c(resid_cand, c_idx[(k + 1L):n_c])
-      }
-    } else if (n_r > 0L) {
-      resid_ref <- c(resid_ref, r_idx)
-    } else if (n_c > 0L) {
-      resid_cand <- c(resid_cand, c_idx)
-    }
+  occurrence <- function(signatures) {
+    group <- match(signatures, unique(signatures))
+    order <- order(group, method = "radix")
+    counts <- integer(length(group))
+    counts[order] <- sequence(tabulate(group))
+    counts
   }
-
-  if (length(matched_ref) > 0L) {
-    o <- order(matched_ref, matched_cand)
-    pairs <- tibble::tibble(
-      reference_row = as.integer(matched_ref[o]),
-      candidate_row = as.integer(matched_cand[o])
-    )
-  } else {
-    pairs <- tibble::tibble(reference_row = integer(), candidate_row = integer())
-  }
-
-  list(
-    pairs = pairs,
-    ref_residuals = as.integer(sort(resid_ref)),
-    cand_residuals = as.integer(sort(resid_cand))
-  )
+  reference <- data.frame(signature = sig_ref, occurrence = occurrence(sig_ref))
+  candidate <- data.frame(signature = sig_cand, occurrence = occurrence(sig_cand))
+  matched <- vctrs::vec_match(reference, candidate)
+  have <- which(!is.na(matched))
+  used <- matched[have]
+  list(pairs = tibble::tibble(reference_row = ref_rows[have], candidate_row = cand_rows[used]),
+       ref_residuals = ref_rows[is.na(matched)], cand_residuals = cand_rows[setdiff(seq_along(cand_rows), used)])
 }
 
 #' Bounded minimum-cost residual assignment via LSAP
@@ -650,6 +615,20 @@ minimum_cost_residual_pairs <- function(ref_norm, cand_norm,
       ambiguous_groups = empty_ambig,
       resource_state = "complete"
     ))
+  }
+
+  # Large residual sets need no quadratic assignment if sorted complete rows
+  # can already be paired within the declared comparison profile.
+  if (n_r == n_c && n_r > cap) {
+    columns <- intersect(cols %||% names(ref_norm), intersect(names(ref_norm), names(cand_norm)))
+    if (length(columns)) {
+      order_rows <- function(df, rows) rows[do.call(order, c(unname(as.list(df[rows, columns, drop = FALSE])), list(na.last = TRUE, method = "radix")))]
+      pairs <- tibble::tibble(reference_row = order_rows(ref_norm, ref_residuals), candidate_row = order_rows(cand_norm, cand_residuals))
+      differences <- diff_aligned_cells(ref_norm[columns], cand_norm[columns], pairs, profile = profile)
+      if (sum(differences$vars$n_mismatch) == 0L) return(list(pairs = pairs,
+        only_reference = integer(), only_candidate = integer(), ambiguous = FALSE,
+        ambiguous_groups = empty_ambig, resource_state = "complete"))
+    }
   }
 
   if (max(n_r, n_c) > cap) {
@@ -1018,6 +997,8 @@ analyze_output_order <- function(reference, candidate, pairs, context = NULL) {
     ))
   }
 
+  vars <- tolower(vars)
+  names(reference) <- tolower(names(reference)); names(candidate) <- tolower(names(candidate))
   if (length(vars) == 0L || !all(vars %in% names(reference)) || !all(vars %in% names(candidate))) {
     reason <- if (meaningful) "insufficient_evidence" else "incidental_reorder"
     return(list(
@@ -1180,6 +1161,7 @@ align_output_rows <- function(reference, candidate, context = NULL,
   selected_key_names <- character()
   first_valid_key <- NULL
   first_valid_key_names <- character()
+  best_groups <- -1L
 
   for (cand in candidate_descriptors) {
     v <- validate_alignment_key(ref_norm, cand_norm, cand$keys,
@@ -1199,9 +1181,13 @@ align_output_rows <- function(reference, candidate, context = NULL,
       selected_key_names <- cand$keys
     }
 
-    if (is.null(first_valid_key) && !v$reason %in% c("empty_keys", "missing_columns", "type_mismatch")) {
-      first_valid_key <- cand
-      first_valid_key_names <- cand$keys
+    if (!v$reason %in% c("empty_keys", "missing_columns", "type_mismatch")) {
+      groups <- min(length(unique(row_signatures(ref_norm[cand$keys]))), length(unique(row_signatures(cand_norm[cand$keys]))))
+      if (groups > best_groups) {
+        first_valid_key <- cand
+        first_valid_key_names <- cand$keys
+        best_groups <- groups
+      }
     }
   }
 

@@ -127,7 +127,7 @@ test_that("actual subprocess diagnostics reach the fixer without data previews",
   smoke <- run_program_smoke(plan, list(), withr::local_tempdir())
   fixer <- recording_fixer(function(req) valid_program_fix_response(evidence_ids = req$evidence_ids))
   fix_program_revision(fx$revision, smoke = smoke, llm = fixer)
-  prompt <- paste(vapply(fixer$requests()[[1]]$messages, `[[`, character(1), "content"), collapse = "\n")
+  prompt <- request_task_text(fixer$requests()[[1]])
   expect_match(prompt, "missing required column: outcome", fixed = TRUE)
   expect_match(prompt, smoke$stderr_path, fixed = TRUE)
   expect_match(prompt, '"exit_status": 1', fixed = TRUE)
@@ -148,8 +148,8 @@ test_that("an invalid equality operator reaches the fixer with its documented re
   fixer <- recording_fixer(function(req) valid_program_fix_response(evidence_ids = req$evidence_ids))
   fix_program_revision(fx$revision, smoke = smoke, llm = fixer)
   request <- fixer$requests()[[1L]]
-  expect_match(request$messages[[1L]]$content, 'op = "=="', fixed = TRUE)
-  prompt <- paste(vapply(request$messages, `[[`, character(1), "content"), collapse = "\n")
+  expect_match(request_task_text(request), 'op = "=="', fixed = TRUE)
+  prompt <- request_task_text(request)
   expect_match(prompt, "chr_cmp: op must be NULL", fixed = TRUE)
 })
 
@@ -182,7 +182,7 @@ test_that("fixer corrects one mechanically invalid answer with the exact error a
     expect_identical(fixed$status, "ok")
     expect_identical(purposes, c("program_fix", "mechanical_retry"))
     expect_identical(budget$request_count, 2L)
-    prompt <- paste(vapply(llm$requests()[[2L]]$messages, `[[`, "", "content"), collapse = "\n")
+    prompt <- request_task_text(llm$requests()[[2L]])
     expect_match(prompt, bad, fixed = TRUE)
     expect_match(prompt, "parse_error|lint_error")
     expect_match(prompt, "Smoke Execution Failure", fixed = TRUE)

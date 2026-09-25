@@ -132,7 +132,7 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
   startup_bytes <- nchar(env[["SAS2R_WORKER_ADAPTERS"]], type = "bytes")
   # Windows permits 32,767 characters including the terminating NUL. This
   # base64 packet is ASCII, so its byte and character lengths are identical.
-  startup_limit <- if (.Platform$OS.type == "windows") 32766L else 100000L
+  startup_limit <- if (.Platform$OS.type == "windows") 32766L - nchar("SAS2R_WORKER_ADAPTERS=") else 100000L
   if (startup_bytes > startup_limit) cli::cli_abort(c(
     "Parallel worker startup data is too large ({startup_bytes} bytes; limit {startup_limit} bytes).",
     "i" = "Reduce captured values in parallel_factory or provider configuration.",
@@ -146,7 +146,10 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
     .libPaths(libpath)
     if (file.exists(file.path(package_path, "Meta", "package.rds"))) {
       loadNamespace("sas2r", lib.loc = dirname(package_path))
-    } else pkgload::load_all(package_path, quiet = TRUE)
+    } else {
+      if (!requireNamespace("pkgload", quietly = TRUE)) stop("Development workers require pkgload")
+      pkgload::load_all(package_path, quiet = TRUE)
+    }
     get("parallel_worker_main", asNamespace("sas2r"))(
       snapshot, policy, dir, cid, kind, execute, repair_cap)
   }, args = list(package_path, .libPaths(), snapshot,
@@ -210,13 +213,16 @@ parallel_worker_main <- function(state, policy, dir, cid, kind, execute, repair_
     ids <- names(state[[field]])
     ids[!vapply(ids, function(id) identical(before[[field]][[id]], state[[field]][[id]]), logical(1))]
   }
+  diagnostics <- state$diagnostics[changed("diagnostics")]
+  if (length(diagnostics$rejected_repairs)) diagnostics$rejected_repairs <- diagnostics$rejected_repairs[
+    seq_along(diagnostics$rejected_repairs) > length(before$diagnostics$rejected_repairs)]
   list(component_id = cid, kind = kind,
     revisions = state$selected_revisions[changed("selected_revisions")],
     histories = state$histories[changed("histories")],
     runtime = if (!identical(before$runtime, state$runtime)) state$runtime else NULL,
     repair_counts = state$repair_counts,
     events = state$events[seq_along(state$events) > length(before$events)],
-    diagnostics = state$diagnostics[changed("diagnostics")], review = review,
+    diagnostics = diagnostics, review = review,
     dependency_findings = parallel_dependency_findings(state, cid), rpc_ms = client$rpc_ms,
     initial_review = initial_review)
 }
@@ -432,7 +438,11 @@ parallel_apply_result <- function(state, result) {
   for (cid in names(result$repair_counts)) state$repair_counts[[cid]] <-
     max(state$repair_counts[[cid]] %||% 0L, result$repair_counts[[cid]])
   state$events <- c(state$events, result$events)
-  if (length(result$diagnostics)) state$diagnostics <- utils::modifyList(state$diagnostics %||% list(), result$diagnostics)
+  if (length(result$diagnostics$rejected_repairs)) {
+    state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, result$diagnostics$rejected_repairs)
+    result$diagnostics$rejected_repairs <- NULL
+  }
+  if (length(result$diagnostics)) state$diagnostics[names(result$diagnostics)] <- result$diagnostics
   state <- sync_dependency_context(state)
   if (!is.null(result$assignment)) parallel_job_record(result$assignment, "accepted")
   state$active_revision <- state$selected_revisions[[result$component_id]]$revision_id

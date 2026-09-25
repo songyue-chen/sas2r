@@ -296,6 +296,7 @@ test_that("withheld parameters travel on the response, distinct from downgrades"
 })
 
 test_that("configured model parameters are carried onto the llm object", {
+  skip_if_not_installed("ellmer")
   # `llm: reasoning_effort:` was an accepted config key that nothing read: the
   # value was validated, then silently discarded before the runner saw it.
   llm <- ellmer_llm(list(
@@ -412,6 +413,7 @@ test_that("transport constraints apply after per-tier capability resolution", {
 })
 
 test_that("ellmer responses report the effective transport-constrained hash", {
+  skip_if_not_installed("ellmer")
   model <- paste0("capability-provenance-", basename(tempfile()))
   cfg <- list(
     provider = "openai", model = model, auth_mode = "api_key",
@@ -441,6 +443,7 @@ test_that("ellmer responses report the effective transport-constrained hash", {
 })
 
 test_that("ellmer retry hashes preserve transport and runtime provenance", {
+  skip_if_not_installed("ellmer")
   model <- paste0("capability-retry-provenance-", basename(tempfile()))
   cfg <- list(
     provider = "openai", model = model, auth_mode = "api_key",

@@ -156,6 +156,12 @@ normalize_llm_config <- function(config) {
     )
   }
 
+  for (field in c("max_output_tokens", "temperature")) {
+    value <- config[[field]] %||% config$model_parameters[[field]]
+    if (!is.null(value) && (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
+        value < 0 || (field == "max_output_tokens" && (value < 1 || value != floor(value)))))
+      llm_config_abort("{field} must be a finite non-negative number (positive integer for max_output_tokens)")
+  }
   config$provider <- tolower(llm_scalar_string(config$provider, "provider", TRUE))
   spec <- llm_provider_spec(config$provider)
   wrong_provider <- setdiff(

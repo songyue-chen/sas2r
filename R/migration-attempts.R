@@ -92,6 +92,7 @@ init_attempt <- function(paths, kind = "smoke", parent_attempt_id = NULL, sequen
   record <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     attempt_id = attempt_id,
+    run_id = paths$run_id,
     kind = kind,
     sequence = sequence,
     parent_attempt_id = parent_attempt_id,
@@ -420,7 +421,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     )
   }
 
-  status_str <- if (is.list(assessment)) (assessment$status %||% "migration_ready") else as.character(assessment)
+  status_str <- if (is.list(assessment)) (assessment$status %||% "blocked") else as.character(assessment)
 
   sel_path <- if (is.list(paths) && !is.null(paths$selected)) {
     paths$selected
@@ -438,6 +439,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     )
   }
 
+  if (!is.null(candidate$run_id) && !identical(prev_rec$run_id, candidate$run_id)) prev_rec <- NULL
   if (!is.null(prev_rec)) {
     reasons <- source_history_regressions(prev_rec$assessment$evidence_histories,
                                            assessment$evidence_histories)
@@ -466,11 +468,13 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
   sel_rec <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     attempt_id = candidate$attempt_id,
+    run_id = candidate$run_id,
     selected_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     status = status_str,
     assessment = assessment,
     attempt_dir = candidate$attempt_dir,
     outputs_dir = candidate$outputs_dir,
+    output_dirs = candidate$output_dirs %||% list(),
     output_hashes = candidate$output_hashes %||% list(),
     execution_order = candidate$execution_order,
     execution_passed = isTRUE(candidate$passed),

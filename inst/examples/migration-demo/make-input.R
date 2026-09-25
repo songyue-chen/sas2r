@@ -19,7 +19,7 @@ if (is.na(script_dir) || !nzchar(script_dir)) {
 target_dir <- if (length(args) > 0L) {
   args[[1L]]
 } else {
-  file.path(script_dir, "data")
+  file.path(getwd(), "data")
 }
 
 dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)

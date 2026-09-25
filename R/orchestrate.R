@@ -749,6 +749,7 @@ run_bundle_pipeline <- function(
     attempt_rec <- if (isTRUE(execute)) {
       run_bundle_attempt(
         state = state,
+        timeout = state$config$migration$bundle_timeout %||% 120,
         sequence = attempt_seq,
         parent_attempt_id = if (!is.null(latest_attempt)) latest_attempt$attempt_id else NULL
       )
@@ -763,8 +764,8 @@ run_bundle_pipeline <- function(
         reason = "execute_disabled",
         execution_order = if (!is.null(state$graph)) build_bundle_execution_plan(state$graph)$execution_order else character(),
         executed_component_ids = character(0),
-        input_hashes_before = input_hash_manifest(state$project %||% state),
-        input_hashes_after = input_hash_manifest(state$project %||% state),
+        input_hashes_before = state$input_manifest %||% input_hash_manifest(state$project %||% state),
+        input_hashes_after = state$input_manifest %||% input_hash_manifest(state$project %||% state),
         output_hashes = list()
       )
     }
@@ -784,6 +785,7 @@ run_bundle_pipeline <- function(
       contracts = state$output_contracts %||% empty_output_contracts(),
       attempt = attempt_rec,
       graph = state$graph,
+      project = state$project,
       evidence_histories = state$histories,
       comparison_rules = state$comparison_rules %||% state$config$comparison_rules %||% list()
     )
@@ -805,7 +807,7 @@ run_bundle_pipeline <- function(
         assessment <- assess_final_outputs(state$output_contracts %||% empty_output_contracts(),
           attempt_rec, state$graph, state$histories,
           state$comparison_rules %||% state$config$comparison_rules %||% list(),
-          target_results = assessment$targets)
+          target_results = assessment$targets, project = state$project)
         state$histories <- assessment$evidence_histories
       }
     }
@@ -861,6 +863,8 @@ run_bundle_pipeline <- function(
         signal_bundle_event("bundle_previous_selection_retained", round = round,
           reason = paste0(previous$attempt_id, " at ", previous$attempt_dir, "; ", conditionMessage(cand_selection)))
       }
+    } else if (inherits(cand_selection, "error")) {
+      stop(cand_selection)
     }
 
     # Record attempt in summary

@@ -3,6 +3,8 @@
 \name{sas2r_runtime}
 \alias{sas2r_runtime}
 \alias{sas2r_helpers}
+\alias{$<-.sas2r_dataset}
+\alias{[[<-.sas2r_dataset}
 \title{The runtime every translated program carries}
 \description{
 Every program sas2r translates calls a small runtime -- \code{\link[=lib_read]{lib_read()}},
@@ -53,7 +55,7 @@ resolve column names case-insensitively.}
 \code{\link[=sas_mean]{sas_mean()}}, \code{\link[=sas_min]{sas_min()}} and \code{\link[=sas_max]{sas_max()}}, \code{\link[=sas_round]{sas_round()}},
 \code{\link[=sas_length]{sas_length()}}, \code{\link[=sas_substr]{sas_substr()}}, \code{\link[=sas_compress]{sas_compress()}}, \code{\link[=sas_display]{sas_display()}}; and
 two operators the package defines but does not export: \code{a \%notin\% b}
-(\verb{NOT IN} with SAS missing semantics -- a missing \code{a} is in no list;
+(\verb{NOT IN} with SAS missing semantics -- missing values match missing values in the list;
 character comparison ignores trailing blanks) and \code{a \%+\% b} (\code{||}
 concatenation where a missing operand contributes nothing rather than
 \code{"NA"}; SAS pads fixed-width operands, this does not).}

@@ -55,16 +55,12 @@ macro_call_scan <- function(units) {
     unverified <- integer()
     # These compilation-time quoting spans are literal for dependency lookup.
     # Runtime unquoting can reactivate their contents and is deferred below.
-    processed <- integer()
-    repeat {
-      quotes <- gregexpr("%(?:nrstr|str|unquote)\\s*\\(", visible_text(paste(clean, collapse = "")),
-                         ignore.case = TRUE, perl = TRUE)[[1L]]
-      lengths <- attr(quotes, "match.length")
-      remaining <- which(quotes > 0L & !quotes %in% processed)
-      if (!length(remaining)) break
-      k <- remaining[1L]
+    quotes <- gregexpr("%(?:nrstr|str|unquote)\\s*\\(", visible_text(raw),
+                       ignore.case = TRUE, perl = TRUE)[[1L]]
+    lengths <- attr(quotes, "match.length")
+    for (k in which(quotes > 0L)) {
       pos <- quotes[k]
-      processed <- c(processed, pos)
+      if (clean[pos] != "%") next
       name <- tolower(sub("^%([a-z]+).*", "\\1", substr(raw, pos, pos + lengths[k] - 1L),
                           ignore.case = TRUE))
       open <- pos + lengths[k] - 1L

@@ -320,13 +320,11 @@ append_usage_record <- function(budget, record, redactor = NULL) {
     json <- jsonlite::toJSON(
       record, auto_unbox = TRUE, null = "null", na = "null", digits = NA
     )
-    existing <- if (file.exists(path)) {
-      readLines(path, warn = FALSE)
-    } else character()
-    atomic_write_file(
-      function(file) writeLines(c(existing, json), file, useBytes = TRUE),
-      path, pattern = "usage_"
-    )
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    lock <- filelock::lock(paste0(path, ".lock"), timeout = 10000)
+    if (is.null(lock)) cli::cli_abort("Usage ledger is busy", class = "sas2r_usage_ledger_error")
+    tryCatch(cat(as.character(json), "\n", file = path, append = TRUE, sep = ""),
+             finally = filelock::unlock(lock))
   }
   budget$records[[length(budget$records) + 1L]] <- record
   invisible(record)
@@ -384,9 +382,9 @@ reconstruct_usage_budget <- function(budget, records) {
     budget$reserved_amount <- budget$reserved_amount + amount
     abandoned <- any(vapply(records, function(event) identical(event$record_type, "request_abandoned") &&
       identical(event$request_id, record$request_id), logical(1)))
+    budget$unknown_count <- budget$unknown_count + 1L
     if (abandoned) {
       budget$reservations[[record$request_id]]$abandoned <- TRUE
-      budget$unknown_count <- budget$unknown_count + 1L
     }
   }
   tool_events <- Filter(function(record) {
@@ -1258,6 +1256,8 @@ attempt_llm_request <- function(request, llm, usage_budget = NULL,
   adapter_identity <- attr(llm, "auth_context", exact = TRUE)
   if (!is.list(adapter_identity)) adapter_identity <- list()
   request_redactor <- llm_audit_redactor(llm)
+  previous_redactor <- usage_budget$active_redactor
+  on.exit(usage_budget$active_redactor <- previous_redactor, add = TRUE)
   usage_budget$active_redactor <- request_redactor
   context <- utils::modifyList(list(
     provider = llm$provider %||% "unknown",
@@ -1310,6 +1310,11 @@ attempt_llm_request <- function(request, llm, usage_budget = NULL,
         usage_budget, subrequest, params
       )
       if (inherits(effective_error, "condition")) stop(effective_error)
+      if (isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && length(subrequest$tools) &&
+          !ellmer_has_request_callbacks() && (identical(usage_budget$mode, "strict") ||
+          any(vapply(c("max_input_tokens", "max_output_tokens", "max_request_bytes", "max_request_chars"),
+            function(name) is.finite(usage_budget[[name]] %||% Inf), logical(1)))))
+        cli::cli_abort("This ellmer version cannot enforce strict or finite token/byte limits across tool turns; update ellmer to a version with request callbacks", class = "sas2r_budget_unmeterable")
       subcontext <- context
       if (subattempt > 1L) {
         subrequest$request_id <- new_request_id()
@@ -1707,7 +1712,7 @@ finalize_usage_run <- function(budget, terminal_status = "completed") {
     unknown_cost_count = budget$unknown_count,
     remaining_reservations = budget$reserved_amount,
     cumulative_amount = budget$known_amount,
-    cost_unknown = budget$unknown_count > 0L || budget$reserved_amount > 0,
+    cost_unknown = budget$unknown_count > 0L || length(budget$reservations) > 0L,
     terminal_status = terminal_status,
     finished_at = usage_timestamp()
   )

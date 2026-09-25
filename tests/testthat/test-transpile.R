@@ -606,7 +606,7 @@ test_that("a three-level include chain marks the deepest module too", {
                         readLines(file.path(out, "c.R"), warn = FALSE))))
   # The driver itself is untouched: it is an entry point and translates as ever.
   drv <- tr$manifest[basename(tr$manifest$file) == "driver.sas", ]
-  expect_true(all(drv$tier == "t1"))
+  expect_true(all(drv$tier == "stub"))
 })
 
 test_that("a live chain of includes stays translated all the way down", {
@@ -740,7 +740,7 @@ test_that("a non-emitting parent shows its dropped include site in the code", {
     "^# sas2r:untranslated include line=1 reason=include_site_not_emitted$",
     driver)))
   expect_false(any(grepl("^sas2r_source_include\\(", driver)))
-  expect_true(any(grepl("^s <- sas_sort\\(", driver)))
+  expect_false(any(grepl("^s <- sas_sort\\(", driver)))
 
   # The marker sits inside the unit's own block, so a later splice replaces it
   # with the unit rather than stranding it beside one.

@@ -412,7 +412,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
   # The durable provenance names both public APIs that produced a number.
   expect_identical(
     result$direct_response$cost$provenance,
-    "ellmer public get_tokens() / ellmer public get_cost(include = 'last')"
+    "ellmer public get_tokens() / ellmer public get_cost(include = 'all') delta"
   )
   expect_identical(result$finish_reason, "success")
   expect_identical(result$two_phase$status, "ok")
@@ -670,7 +670,7 @@ test_that("usage falls back to public per-turn tokens when get_tokens fails", {
   )
   expect_identical(
     ellmer_usage_provenance(ellmer_usage(failing), 0.5),
-    "ellmer public Turn@tokens / ellmer public get_cost(include = 'last')"
+    "ellmer public Turn@tokens / ellmer public get_cost(include = 'all') delta"
   )
   expect_identical(
     ellmer_usage_provenance(ellmer_usage(failing), NA_real_),
@@ -1086,7 +1086,7 @@ test_that("sas_llm_probe retries transport errors only", {
   calls <- 0L
   transient_llm <- new_llm(function(...) {
     calls <<- calls + 1L
-    if (calls == 1L) stop("temporary transport failure")
+    if (calls == 1L) stop(structure(list(message = "temporary transport failure"), class = c("sas2r_llm_transport_error", "error", "condition")))
     list(type = "final", data = list(ok = TRUE))
   }, provider = "mock")
   expect_true(sas_llm_probe(transient_llm, max_retries = 2L, log_dir = log_dir))

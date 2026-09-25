@@ -47,7 +47,7 @@ test_that("if_assign on an existing variable preserves prior values", {
     u[u$unit_type == "data_step", ]
   })
   em <- emit_data_step(ir)
-  expect_match(em$code, "mutate\\(flag = sas_if_else\\(\\(!is.na\\(age\\) & age >= 65\\), 'Y', flag\\)\\)")
+  expect_match(em$code, "mutate\\(flag = sas_if_else\\(\\(!is.na\\(age\\) & age >= 65\\), \"Y\", flag\\)\\)")
 })
 
 test_that("non-work output emits lib_write", {

@@ -353,9 +353,14 @@ validate_parallel_retry_settings <- function(max_parallel_translations, max_trie
 normalize_migration_config <- function(config) {
   config <- config %||% list()
   if (!is.list(config)) cli::cli_abort("migration must be a mapping", class = "sas2r_config_error")
-  # Other migration keys were historically accepted but inactive.
-  # Only this setting gains execution meaning.
-  list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]))
+  timeout <- function(name, default) {
+    value <- config[[name]] %||% default
+    if (!is.numeric(value) || length(value) != 1L || !is.finite(value) || value <= 0)
+      cli::cli_abort("{name} must be a finite positive number of seconds", class = "sas2r_config_error")
+    value
+  }
+  list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
+       smoke_timeout = timeout("smoke_timeout", 60), bundle_timeout = timeout("bundle_timeout", 120))
 }
 
 normalize_project_config <- function(config, root) {
@@ -430,16 +435,14 @@ find_config <- function(start = ".") {
 #' class(cfg)
 #' names(cfg$libraries)
 #'
-#' \dontrun{
-#' # With no argument, _sas2r.yml is discovered by searching upwards.
-#' cfg <- sas_config(start = "path/to/study")
-#' }
+#' # With no explicit file, search from a known project directory.
+#' cfg <- sas_config(start = system.file("examples", "demo_project", package = "sas2r"))
 #' @export
 sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)
   raw <- list()
   if (!is.na(src)) {
-    lines <- readLines(src, warn = FALSE)
+    lines <- readLines(src, warn = FALSE, encoding = "UTF-8")
     content <- lines[!grepl("^\\s*(#.*)?$|^%", lines)]
     starts <- which(grepl("^---($|[[:space:]])", content))
     if (length(starts) > 1L || (length(starts) && starts[1L] != 1L)) {
@@ -454,8 +457,7 @@ sas_config <- function(path = NULL, start = ".") {
     unknown <- setdiff(names(raw), KNOWN_CONFIG_KEYS)
     if (length(unknown)) {
       msg <- paste0("Unknown config key", if (length(unknown) > 1) "s" else "", " in {.file {src}}: {.val {unknown}}")
-      cli::cli_warn(msg)
-      raw <- raw[intersect(names(raw), KNOWN_CONFIG_KEYS)]
+      cli::cli_abort(msg, class = "sas2r_config_error")
     }
   }
   llm <- if (is.null(raw$llm)) NULL else normalize_llm_config(raw$llm)

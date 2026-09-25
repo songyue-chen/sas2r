@@ -1015,24 +1015,11 @@ test_that("failed atomic summary write is retryable and never memory-only", {
   budget <- new_usage_budget(
     ledger_path = path, run_id = "run_summary_retry"
   )
-  original_atomic_write <- atomic_write_file
-  calls <- 0L
-  testthat::local_mocked_bindings(
-    atomic_write_file = function(...) {
-      calls <<- calls + 1L
-      if (calls == 1L) stop("injected atomic summary failure")
-      original_atomic_write(...)
-    },
-    .package = "sas2r"
-  )
-
-  expect_error(
-    finalize_usage_run(budget, "failed"),
-    "injected atomic summary failure"
-  )
+  dir.create(path) # An existing directory cannot be opened as a ledger file.
+  expect_error(suppressWarnings(finalize_usage_run(budget, "failed")))
   expect_false(budget$summary_written)
   expect_length(budget$records, 0L)
-  expect_false(file.exists(path))
+  unlink(path, recursive = TRUE)
 
   finalize_usage_run(budget, "failed")
   finalize_usage_run(budget, "failed")

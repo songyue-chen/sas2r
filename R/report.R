@@ -40,7 +40,7 @@ write_comparison_report <- function(x, file = NULL, base_label = "SAS (base)",
   if (inherits(x, "sas2r_comparison_report")) {
     validate_comparison_report(x)
     if (is.null(file)) {
-      root_dir <- dir %||% ".sas2r"
+      root_dir <- dir %||% file.path(tempdir(), "sas2r")
       out_dir <- file.path(root_dir, "output-review", run_id)
       dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
       if (.Platform$OS.type == "unix") {
@@ -57,13 +57,14 @@ write_comparison_report <- function(x, file = NULL, base_label = "SAS (base)",
       }
     }
 
-    json_str <- jsonlite::toJSON(unclass(x), auto_unbox = TRUE, pretty = TRUE, dataframe = "rows")
+    json_str <- jsonlite::toJSON(unclass(x), auto_unbox = TRUE, pretty = TRUE, dataframe = "rows", digits = NA)
     tmp_file <- tempfile(pattern = "comp_report_", tmpdir = dirname(file))
     writeLines(as.character(json_str), tmp_file)
     if (.Platform$OS.type == "unix") {
       tryCatch(Sys.chmod(tmp_file, mode = "0600"), error = function(e) NULL)
     }
-    file.rename(tmp_file, file)
+    on.exit(unlink(tmp_file), add = TRUE)
+    if (!file.rename(tmp_file, file)) cli::cli_abort("Failed to write comparison report: {.file {file}}")
     return(invisible(file))
   }
 

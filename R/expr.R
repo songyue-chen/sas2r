@@ -1,3 +1,13 @@
+# SAS bare conditions need a missing/zero check; predicates already return truth values.
+sas_truth_call <- function(node) {
+  if (is.call(node)) {
+    fn <- as.character(node[[1L]])[1L]
+    if (fn == "(") { node[[2L]] <- sas_truth_call(node[[2L]]); return(node) }
+    if (fn %in% c("<", "<=", ">", ">=", "==", "!=", "&", "|", "!", "%in%", "%notin%", "is.na", "sas_missing", "chr_cmp", "sas_true")) return(node)
+  }
+  substitute(sas_true(X), list(X = node))
+}
+
 tokenize_expr <- function(txt) {
   pat <- paste0(
     "('([^']|'')*')|(\"([^\"]|\"\")*\")",
@@ -23,7 +33,11 @@ translate_expr <- function(txt) {
   for (i in seq_along(toks)) {
     t <- toks[i]; tl <- tolower(t)
     nxt <- if (i < length(toks)) toks[i + 1] else ""
-    if (grepl("^['\"]", t)) out[i] <- t
+    if (grepl("^['\"]", t)) {
+      quote <- substr(t, 1L, 1L)
+      value <- gsub(paste0(quote, quote), quote, substr(t, 2L, nchar(t) - 1L), fixed = TRUE)
+      out[i] <- deparse(value)
+    }
     # A bare . is the SAS numeric missing literal; NA_real_ keeps the column
     # numeric, and wrap_missing routes comparisons against it through chr_cmp.
     else if (t == ".") out[i] <- "NA_real_"
@@ -168,6 +182,10 @@ wrap_missing <- function(r_expr, vars) {
   transform_node <- function(node) {
     if (!is.call(node)) return(node)
     fn <- as.character(node[[1]])[1]
+    if (fn %in% c("!", "&", "|")) {
+      for (i in seq_along(node)[-1L]) node[[i]] <- sas_truth_call(transform_node(node[[i]]))
+      return(node)
+    }
     if (fn %in% c("%in%", "%notin%")) {
       lhs <- transform_node(node[[2]])
       rhs <- transform_node(node[[3]])
@@ -293,7 +311,7 @@ expr_vars <- function(txt, r_expr = NULL) {
 sas_value_to_r <- function(text) {
   tx <- tidy_expr(translate_expr(text))
   e <- parse(text = tx)[[1L]]
-  predicates <- c("<", "<=", ">", ">=", "==", "!=", "&", "|", "!", "%in%", "%notin%", "is.na")
+  predicates <- c("<", "<=", ">", ">=", "==", "!=", "&", "|", "!", "%in%", "%notin%", "is.na", "sas_missing")
   is_predicate <- function(node) {
     if (!is.call(node)) return(FALSE)
     fn <- as.character(node[[1L]])[1L]

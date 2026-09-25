@@ -14,7 +14,7 @@ test_that("twenty components and repeated helper edits coalesce earlier reviews"
   calls <- list()
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
     calls[[length(calls) + 1L]] <<- list(component = req$component_id, stage = stage)
-    prompt <- paste(vapply(req$messages, `[[`, "", "content"), collapse = "\n")
+    prompt <- request_task_text(req)
     if (grepl("translation fault", prompt, fixed = TRUE)) {
       material_review_response(sas_evidence = "source writes a dataset", r_evidence = "R stops before writing")
     } else valid_program_review_response()
@@ -184,7 +184,7 @@ test_that("checkpoint requests exclude local runtime and reference answers", {
   state$config$comparison_rules <- list(answer = "PRIVATE_REFERENCE_VALUE")
   state <- finalize_component_reviews(state)
   request <- state$reviewer_llm$requests()[[1]]
-  prompt <- paste(vapply(request$messages, `[[`, "", "content"), collapse = "\n")
+  prompt <- request_task_text(request)
   expect_false(grepl("PRIVATE_RUNTIME|PRIVATE_REFERENCE", prompt))
   expect_false(any(c("read_comparison_report", "read_dataset_preview") %in% names(request$tools)))
   expect_match(prompt, fx$fixed$p01, fixed = TRUE)

@@ -1,14 +1,14 @@
 tr <- function(x) tidy_expr(translate_expr(x))
 
 test_that("operators and word forms translate", {
-  expect_identical(tr("sex = 'M' and age ge 65"), "sex == 'M' & age >= 65")
-  expect_identical(tr("trt ^= 'PLACEBO'"), "trt != 'PLACEBO'")
+  expect_identical(tr("sex = 'M' and age ge 65"), "sex == \"M\" & age >= 65")
+  expect_identical(tr("trt ^= 'PLACEBO'"), "trt != \"PLACEBO\"")
   expect_identical(tr("not ( x lt 5 )"), "!(x < 5)")
   expect_identical(tr("a || b"), "a %+% b")
 })
 
 test_that("functions map through the rulebook; in-lists become c()", {
-  expect_identical(tr("upcase(sex) = 'M'"), "toupper(sex) == 'M'")
+  expect_identical(tr("upcase(sex) = 'M'"), "toupper(sex) == \"M\"")
   expect_identical(tr("visit in (1, 2)"), "visit %in% c(1, 2)")
   expect_identical(tr("sum(a, b)"), "sas_sum(a, b)")
 })
@@ -72,8 +72,8 @@ test_that("SAS space-delimited IN lists become comma-separated R vectors", {
   expect_identical(tidy_expr(translate_expr("x in (1, 2 3)")), "x %in% c(1, 2, 3)")
 
   # A quoted element containing a space is one element, not two.
-  expect_identical(tidy_expr(translate_expr("x in ('A B' 'C')")), "x %in% c('A B', 'C')")
-  expect_identical(tidy_expr(translate_expr("x in ('DIABP')")), "x %in% c('DIABP')")
+  expect_identical(tidy_expr(translate_expr("x in ('A B' 'C')")), "x %in% c(\"A B\", \"C\")")
+  expect_identical(tidy_expr(translate_expr("x in ('DIABP')")), "x %in% c(\"DIABP\")")
 
   # The real WPCT clause parses end to end.
   real <- tidy_expr(translate_expr("(paramcd in ('DIABP') and atptn in (815 817))"))
@@ -122,7 +122,7 @@ test_that("unmapped SAS functions refuse instead of binding to base R", {
 })
 
 test_that("variable tokens fold to lowercase like SAS name resolution", {
-  expect_identical(tr("AVAL > 10 and Sex = 'M'"), "aval > 10 & sex == 'M'")
+  expect_identical(tr("AVAL > 10 and Sex = 'M'"), "aval > 10 & sex == \"M\"")
   # Mapped functions keep their R target's spelling; only bare names fold.
   expect_identical(tr("UPCASE(Sex)"), "toupper(sex)")
 })

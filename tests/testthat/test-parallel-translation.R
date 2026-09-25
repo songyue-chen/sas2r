@@ -1,3 +1,6 @@
+# The installed-tests CI job runs this full process integration matrix.
+skip_on_cran()
+
 test_that("thread configuration is explicit, validated, and not semantic review evidence", {
   expect_identical(normalize_migration_config(NULL)$max_parallel_translations, 1L)
   for (bad in list(0, -1, 1.5, Inf, NA_real_, TRUE, "2", c(1, 2)))

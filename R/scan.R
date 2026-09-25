@@ -1,3 +1,11 @@
+read_sas_source <- function(path) {
+  text <- readLines(path, warn = FALSE, encoding = "UTF-8")
+  valid <- iconv(text, from = "UTF-8", to = "UTF-8")
+  if (anyNA(valid)) cli::cli_abort("Source {.path {path}} has invalid UTF-8 at line {which(is.na(valid))[1L]}; convert it from its original encoding to UTF-8 before translation", class = "sas2r_source_encoding_error")
+  if (length(valid)) valid[1L] <- sub("^\ufeff", "", valid[1L])
+  valid
+}
+
 DL_TOKENS <- c("datalines", "cards", "datalines4", "cards4", "parmcards", "parmcards4")
 
 #' Classify every character of SAS source code

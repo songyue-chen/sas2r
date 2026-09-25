@@ -6,14 +6,15 @@
 # nothing instead of "NA".
 # NOTE: SAS || pads fixed-width operands; %+% does not. If source code relies on padded concatenation, review output widths.
 `%+%` <- function(a, b) {
-  paste0(ifelse(is.na(a), "", a), ifelse(is.na(b), "", b))
+  paste0(ifelse(is.na(a), "", sas_display(a)), ifelse(is.na(b), "", sas_display(b)))
 }
 
 # SAS . not in (1, 2) is TRUE; NA %in% c(1, 2) is FALSE, so !(NA %in% ...) is TRUE
 `%notin%` <- function(a, b) {
   if (is.character(a) || is.character(b)) {
-    a <- if (is.character(a)) sub("\\s+$", "", a) else a
-    b <- if (is.character(b)) sub("\\s+$", "", b) else b
+    a <- if (is.character(a)) sub(" +$", "", a) else a
+    b <- if (is.character(b)) sub(" +$", "", b) else b
+    a[is.na(a)] <- ""; b[is.na(b)] <- ""
   }
   !(a %in% b)
 }
@@ -50,9 +51,11 @@ chr_cmp <- function(a, b, op = NULL) {
   }
   if (missing(op) || is.null(op)) {
     if (is.character(a) || is.character(b)) {
-      strip <- function(x) sub("\\s+$", "", x)
+      strip <- function(x) sub(" +$", "", x)
       a_chr <- strip(as.character(a))
       b_chr <- strip(as.character(b))
+      levels <- sort(unique(c(a_chr, b_chr)), method = "radix", na.last = NA)
+      a_rank <- match(a_chr, levels); b_rank <- match(b_chr, levels)
       a_na <- is.na(a) | a_chr == ""
       b_na <- is.na(b) | b_chr == ""
 
@@ -66,8 +69,8 @@ chr_cmp <- function(a, b, op = NULL) {
       res[only_a_na] <- -1L
       res[only_b_na] <- 1L
       if (any(neither_na)) {
-        lt <- a_chr < b_chr
-        gt <- a_chr > b_chr
+        lt <- a_rank < b_rank
+        gt <- a_rank > b_rank
         res[neither_na & lt] <- -1L
         res[neither_na & gt] <- 1L
         res[neither_na & !lt & !gt] <- 0L
@@ -86,9 +89,11 @@ chr_cmp <- function(a, b, op = NULL) {
     }
   }
   if (is.character(a) || is.character(b)) {
-    strip <- function(x) sub("\\s+$", "", x)
+    strip <- function(x) sub(" +$", "", x)
     a_chr <- strip(as.character(a))
     b_chr <- strip(as.character(b))
+    levels <- sort(unique(c(a_chr, b_chr)), method = "radix", na.last = NA)
+    a_rank <- match(a_chr, levels); b_rank <- match(b_chr, levels)
     a_na <- is.na(a) | a_chr == ""
     b_na <- is.na(b) | b_chr == ""
 
@@ -112,10 +117,10 @@ chr_cmp <- function(a, b, op = NULL) {
       cmp <- switch(op,
         "==" = a_chr == b_chr,
         "!=" = a_chr != b_chr,
-        "<"  = a_chr < b_chr,
-        "<=" = a_chr <= b_chr,
-        ">"  = a_chr > b_chr,
-        ">=" = a_chr >= b_chr
+        "<"  = a_rank < b_rank,
+        "<=" = a_rank <= b_rank,
+        ">"  = a_rank > b_rank,
+        ">=" = a_rank >= b_rank
       )
       res[neither_na] <- cmp[neither_na]
     }
@@ -203,15 +208,20 @@ sas_mean <- function(...) {
 #' sas_round(12.345, 0.01)
 #' @export
 sas_round <- function(x, unit = 1) {
-  # SAS rounds half away from zero; R's round() is banker's rounding.
-  sign(x) * floor(abs(x) / unit + 0.5) * unit
+  if (any(!is.na(unit) & (!is.finite(unit) | unit <= 0)))
+    stop("sas_round: rounding units must be positive and finite; nonpositive units are unsupported", call. = FALSE)
+  q <- abs(x) / unit
+  q <- ifelse(is.finite(q) & q < 1e15, signif(q, 15), q)
+  rounded <- ifelse(q >= 2^52, q, floor(q + 0.5))
+  inverse <- 1 / unit
+  decimal <- rep_len(is.finite(inverse) & abs(inverse - round(inverse)) < 1e-9, length(q))
+  sign(x) * ifelse(decimal, rounded / round(inverse), rounded * unit)
 }
 
 #' SAS character functions
 #'
 #' `sas_compress()` is `COMPRESS`: every character listed in `chars` is
-#' removed (`chars` is used as a regular-expression character class, so a `]`
-#' or `-` in the list needs escaping). `sas_substr()` is `SUBSTR`; a `NULL`
+#' removed literally, including `]` and `-`. SAS modifiers are unsupported. `sas_substr()` is `SUBSTR`; a `NULL`
 #' `len` reads to the end of the string. `sas_length()` is `LENGTH`: trailing
 #' blanks do not count, and a missing or blank value has length 1, as in SAS.
 #'
@@ -226,7 +236,11 @@ sas_round <- function(x, unit = 1) {
 #' sas_substr("abcdef", 2, 3)
 #' sas_length(c("abc  ", "", NA))
 #' @export
-sas_compress <- function(x, chars = " ") gsub(paste0("[", chars, "]"), "", x)
+sas_compress <- function(x, chars = " ") {
+  x <- as.character(x)
+  for (char in unique(strsplit(chars, "", fixed = TRUE)[[1L]])) x <- gsub(char, "", x, fixed = TRUE)
+  x
+}
 
 #' @rdname sas_compress
 #' @export
@@ -275,10 +289,10 @@ sas_max <- function(...) {
 #' @export
 sas_length <- function(x) {
   if (is.character(x)) {
-    s <- sub("\\s+$", "", x)
+    s <- sub(" +$", "", x)
     ifelse(is.na(s) | s == "", 1L, nchar(s))
   } else {
-    ifelse(is.na(x), 1L, nchar(as.character(x)))
+    rep.int(12L, length(x))
   }
 }
 
@@ -330,11 +344,31 @@ sas_display <- function(x) {
     na_idx <- is.na(x)
     out[na_idx] <- "."
     if (any(!na_idx)) {
-      out[!na_idx] <- format(x[!na_idx], trim = TRUE, scientific = FALSE)
+      out[!na_idx] <- vapply(x[!na_idx], function(value) format(value, digits = 12, trim = TRUE, scientific = FALSE), "")
     }
   } else {
     out <- as.character(x)
     out[is.na(x)] <- ""
   }
   out
+}
+
+#' SAS missing values and Boolean conditions
+#'
+#' Character missing is NA or all spaces. Numeric missing is NA (including
+#' tagged missing values). A missing or zero numeric condition is false.
+#' @param x A vector.
+#' @return A logical vector with no missing values.
+#' @family runtime helpers
+#' @examples
+#' sas_missing(c("", " ", NA, "A"))
+#' sas_true(c(NA, 0, 1, -1))
+#' @export
+sas_missing <- function(x) is.na(x) | (is.character(x) & !is.na(x) & grepl("^ *$", x))
+
+#' @rdname sas_missing
+#' @export
+sas_true <- function(x) {
+  if (is.character(x)) return(!sas_missing(x))
+  !is.na(x) & x != 0
 }

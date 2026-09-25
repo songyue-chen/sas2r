@@ -18,7 +18,7 @@ discover_called_macros <- function(statements, defs, config, root) {
       file <- include_normalize_path(resolved$source[i])
       name <- resolved$name[i]
       if (is.null(parsed[[file]])) {
-        units <- sas_units(sas_statements(paste(readLines(file, warn = FALSE), collapse = "\n"),
+        units <- sas_units(sas_statements(paste(read_sas_source(file), collapse = "\n"),
                                          source_file = file))
         units$file <- rep(file, nrow(units))
         parsed[[file]] <- list(units = units, defs = extract_macro_defs(units))

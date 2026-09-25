@@ -38,13 +38,13 @@ test_that("all roles and callers receive the same source macro interface", {
   revision <- list(component_id = cid, revision_id = "r1", contract = behavioral,
     r_code = 'summarize <- function(input="", blank="", n=2) input')
   llm <- recording_reviewer(function(request) {
-    expect_match(request$messages[[1L]]$content, header, fixed = TRUE)
+    expect_match(request_task_text(request), header, fixed = TRUE)
     valid_program_review_response()
   })
   review_program_revision(revision, list(project = p), llm = llm,
                           paths = init_migration_paths(withr::local_tempdir()))
   fixer <- recording_fixer(function(request) {
-    expect_match(request$messages[[1L]]$content, header, fixed = TRUE)
+    expect_match(request_task_text(request), header, fixed = TRUE)
     valid_program_fix_response(code = revision$r_code)
   })
   fix_program_revision(revision, project = p, llm = fixer,
@@ -165,12 +165,12 @@ test_that("mechanically invalid revisions go to repair before independent review
   sequence <- character()
   state$reviewer_llm <- recording_reviewer(function(request) {
     sequence <<- c(sequence, "review")
-    expect_false(grepl("out <- (", request$messages[[1]]$content, fixed = TRUE))
+    expect_false(grepl("out <- (", request_task_text(request), fixed = TRUE))
     valid_program_review_response()
   })
   state$fixer_llm <- recording_fixer(function(request) {
     sequence <<- c(sequence, "fix")
-    expect_match(request$messages[[1]]$content, "parse", ignore.case = TRUE)
+    expect_match(request_task_text(request), "parse", ignore.case = TRUE)
     valid_program_fix_response(code = "lib_write(data.frame(x=1), 'work', 'out')")
   })
   result <- process_program_component(state, "calc", execute = TRUE, max_program_repair_rounds = 1L)

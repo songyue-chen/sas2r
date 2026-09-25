@@ -709,7 +709,7 @@ comparison <- compare_datasets(
   base = haven::read_xpt("data/reference/adsl.xpt"),
   comp = readRDS(file.path(result$outputs_dir, "datasets", "adam", "adsl.rds")),
   keys = c("STUDYID", "USUBJID"),
-  profile = compare_profile(abs = 1e-8, rel = 1e-8)
+  profile = compare_profile(abs = 1e-8, rel = 0)
 )
 passed(comparison)
 write_comparison_report(comparison, file = "adsl-comparison.md")

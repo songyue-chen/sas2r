@@ -127,7 +127,9 @@ macro_parameter_equals <- function(chars, mask, start, end) {
 normalize_macro_default <- function(source) {
   if (!nzchar(source)) return(known_macro_default("", "character"))
   if (grepl("^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)$", source, perl = TRUE)) {
-    return(known_macro_default(as.numeric(source), "numeric"))
+    value <- as.numeric(source)
+    if (identical(as.character(value), source)) return(known_macro_default(value, "numeric"))
+    return(known_macro_default(source, "character"))
   }
   if (is_simple_sas_quoted_literal(source)) {
     return(known_macro_default(decode_simple_sas_quoted_literal(source), "character"))

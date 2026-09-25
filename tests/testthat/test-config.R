@@ -47,10 +47,10 @@ test_that("SAS2R_CONFIG env var wins over discovery", {
                    normalizePath("/s", winslash = "/", mustWork = FALSE))
 })
 
-test_that("unknown top-level keys warn but do not fail", {
+test_that("unknown top-level keys fail before settings can be silently lost", {
   dir <- withr::local_tempdir()
   writeLines("bananas: true", file.path(dir, "_sas2r.yml"))
-  expect_warning(sas_config(start = dir), "bananas")
+  expect_error(sas_config(start = dir), "bananas", class = "sas2r_config_error")
 })
 
 test_that("0-byte config file returns raw = list()", {

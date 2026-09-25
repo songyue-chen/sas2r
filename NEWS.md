@@ -1,5 +1,23 @@
 # sas2r 0.5.4
 
+- Readiness now includes every scheduled component, untranslated code and
+  unknown output lineage. Dataset evidence must match the requested library
+  and member; ambiguous files cannot satisfy a target.
+- Unsupported PROC options, macro control flow and variable-list syntax are
+  deferred intact. Correct SAS missing/truth handling, decimal rounding,
+  character ordering, formats, MERGE keys and case-insensitive replacement.
+- Numeric comparison defaults to absolute tolerance only; relative tolerance
+  is opt-in. Apply source ordering and date/time policies during output checks.
+- Apply configured budgets and execution timeouts, retain per-request usage,
+  separate source task data from system instructions, and limit credential
+  inheritance and raw execution diagnostics sent to agents. Generated R still
+  requires external isolation when it is untrusted.
+- Preserve usable revisions on resume, scope selection to the current run,
+  and refuse concurrent writes to one output directory. Exports require an
+  empty destination or explicit replacement of a previous sas2r export.
+- Speed up dependency closures, exact row matching, macro scans and ledger
+  appends. Test installations without optional dependencies in CI.
+
 - README links to repository-only guides and the license use public URLs in
   the source archive. Symbolic-link tests skip cleanly when the operating system
   cannot create links, and worker tests allow for slower startup without

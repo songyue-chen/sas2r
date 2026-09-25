@@ -1,3 +1,6 @@
+# The installed-tests CI job runs this full process integration matrix.
+skip_on_cran()
+
 # Acceptance test suite for SAS-to-R migration pipeline
 # Covers:
 # - explicit graph order (provider before consumer)
@@ -246,7 +249,7 @@ test_that("ACCEPTANCE: immediate review/repair loop invokes reviewer first and f
   expect_true(length(res$repair_history) >= 0L)
 })
 
-test_that("ACCEPTANCE: final-output gating verifies candidate datasets and TLF files before granting migration_ready", {
+test_that("ACCEPTANCE: generated outputs without source lineage still require review", {
   skip_if_not_installed("dplyr")
   tmp <- withr::local_tempdir()
   in_dir <- file.path(tmp, "data", "adam")
@@ -290,7 +293,7 @@ test_that("ACCEPTANCE: final-output gating verifies candidate datasets and TLF f
 
   res <- sas_translate(sas_file, config = cfg_file, out_dir = file.path(tmp, "out"), llm = mock, execute = TRUE)
   expect_s3_class(res, "sas2r_translation")
-  expect_identical(res$status, "migration_ready")
+  expect_identical(res$status, "needs_review")
 })
 
 test_that("ACCEPTANCE: zero false-ready seeded defects across full execution pipeline", {

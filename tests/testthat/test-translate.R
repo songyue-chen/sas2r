@@ -29,7 +29,7 @@ test_that("sas_translate with execute = FALSE leaves outputs_dir NULL", {
   res <- sas_translate(f, out_dir = out, execute = FALSE)
 
   expect_s3_class(res, "sas2r_translation")
-  expect_identical(res$status, "needs_review")
+  expect_identical(res$status, "blocked")
   expect_null(res$outputs_dir)
   expect_true(dir.exists(res$bundle_dir))
 })
@@ -65,7 +65,7 @@ test_that("print.sas2r_translation formats status and paths", {
   res <- sas_translate(f, out_dir = out, execute = FALSE)
 
   txt <- paste(capture.output(print(res)), collapse = "\n")
-  expect_match(txt, "status: needs_review", ignore.case = TRUE)
+  expect_match(txt, "status: blocked", ignore.case = TRUE)
   expect_match(txt, "bundle:")
   expect_false(grepl("parity", txt, ignore.case = TRUE))
 })

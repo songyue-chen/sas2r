@@ -4,7 +4,8 @@ bundle_execution_report <- function(state, attempts = resume_migration_attempts(
   records <- attempts$completed_attempts
   records <- Filter(function(r) identical(r$kind, "bundle"), records)
   if (length(records)) records <- records[order(vapply(records, function(r) as.integer(r$sequence), 1L))]
-  helper <- state$runtime$helpers
+  helper <- if (!is.null(state$bundle_dir))
+    file.path(state$bundle_dir, "runtime", "sas2r-helpers.R") else state$runtime$helpers
   helper_hash <- if (!is.null(helper) && file.exists(helper)) unname(cli::hash_file_sha256(helper)) else NULL
   ids <- unique(c(state$schedule$component_id, names(state$selected_revisions)))
   stats::setNames(lapply(ids, function(cid) {

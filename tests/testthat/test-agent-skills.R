@@ -645,7 +645,7 @@ test_that("the fixer keeps source tools and the allowlist without comparison evi
   )
 
   req <- captured[[1L]]$request
-  sys_txt <- req$messages[[1L]]$content
+  sys_txt <- request_task_text(req)
   # Reference differences cannot route skills or enter the prompt.
   expect_no_match(sys_txt, "sas-dataset-row-alignment")
   # The allowlist reaches the prompt (fixer default).

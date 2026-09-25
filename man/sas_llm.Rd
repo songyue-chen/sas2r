@@ -16,7 +16,8 @@ A \code{sas2r_llm} adapter.
 \description{
 The supported way to obtain the \code{llm} argument that \code{\link[=sas_translate]{sas_translate()}} accepts.
 The adapter is backed by public \code{ellmer} APIs for one of the twelve registered provider
-ids; credentials stay with \code{ellmer} and are never read or stored by sas2r.
+ids. Credential values may be held in memory by adapters and redactors.
+Keep adapters private; reports redact registered secret values.
 Constructing an adapter contacts no network -- use \code{\link[=sas_llm_probe]{sas_llm_probe()}} to
 validate connectivity and model capabilities, and \code{\link[=sas_llm_models]{sas_llm_models()}} to see
 the inventory visible to the configured identity.

@@ -40,6 +40,8 @@ parse_data_step <- function(stmts) {
 
   txt_all <- paste(code$text, collapse = " ")
   masked_all <- mask_strings(txt_all, keep_double = TRUE)
+  if (grepl("\\bnot\\s+[^ (]+\\s*(?:=|<|>|eq\\b|ne\\b|lt\\b|gt\\b|le\\b|ge\\b)",
+      masked_all, ignore.case = TRUE, perl = TRUE)) blocker(code$stmt_id[1L], "not_precedence_deferred")
   if (grepl("(%[A-Za-z_]|&[A-Za-z_])", masked_all)) {
     blocker(code$stmt_id[1], "macro_residue")
   }
@@ -91,7 +93,7 @@ parse_data_step <- function(stmts) {
           if (length(g) >= 2L && nzchar(g[2])) {
             ds <- norm_ds(g[2])
             inputs <- c(inputs, ds)
-            nm <- split_ds(ds)[["member"]]
+            nm <- ds
             in_flags[nm] <- if (length(g) >= 3L && nzchar(g[3])) tolower(g[3]) else NA_character_
 
           }
@@ -128,6 +130,9 @@ parse_data_step <- function(stmts) {
       step(id, ln, "drop", vars = tolower(strsplit(trimws(
         sub("^drop(\\s+|$)", "", txt, ignore.case = TRUE)), "\\s+")[[1]]))
     } else if (tok == "rename") {
+      remainder <- sub("^rename\\s+", "", txt, ignore.case = TRUE)
+      remainder <- gsub("[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*[A-Za-z_][A-Za-z0-9_]*", "", remainder)
+      if (nzchar(trimws(remainder))) blocker(id, "rename_variable_list_deferred")
       prs <- regmatches(txt, gregexpr("([A-Za-z_]\\w*)\\s*=\\s*([A-Za-z_]\\w*)",
                                       txt))[[1]]
       if (length(prs) == 0L) {
@@ -157,6 +162,11 @@ parse_data_step <- function(stmts) {
     }
   }
 
+  inserted <- c(by, unlist(lapply(steps, function(s) c(s$vars, s$var, as.character(s$pairs)))))
+  if (!deterministic_names(inserted)) blocker(code$stmt_id[1L], "variable_list_or_identifier_deferred")
+  datasets <- unlist(strsplit(c(inputs, outputs), ".", fixed = TRUE))
+  if (!all(grepl("^[A-Za-z_][A-Za-z0-9_]{0,31}$", datasets)) ||
+      !deterministic_names(vapply(strsplit(outputs, ".", fixed = TRUE), tail, "", 1L))) blocker(code$stmt_id[1L], "dataset_identifier_deferred")
   if (length(outputs) == 0L && length(blockers) == 0L) {
     blocker(code$stmt_id[1], "null_step_deferred")
   }

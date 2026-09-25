@@ -35,7 +35,7 @@ search_docs_impl <- function(ctx) {
         grepl(p, tolower(s$text), perl = TRUE), logical(1)))
       if (bad) quarantined <- quarantined + 1L
       else keep[[length(keep) + 1L]] <- list(file = basename(s$file),
-                                             text = s$text)
+                                             text = substr(s$text, 1L, 8000L), truncated = nchar(s$text) > 8000L)
     }
     list(untrusted = TRUE, snippets = keep, quarantined = quarantined)
   }

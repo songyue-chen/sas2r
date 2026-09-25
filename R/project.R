@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.2"
+SCAN_CACHE_SCHEMA_VERSION <- "4.3"
 
 # Cache source parsing within this R session without writing into input trees.
 project_cache_dir <- function(root) {
@@ -291,7 +291,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     scanned_parent_occ[[length(scanned_parent_occ) + 1L]] <-
       item$parent_occurrence_id %||% NA_character_
 
-    raw_text <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    raw_text <- paste(read_sas_source(f), collapse = "\n")
     hit <- NULL
     if (cache) {
       h <- paste0("v", SCAN_CACHE_SCHEMA_VERSION, "_", cli::hash_md5(raw_text))
@@ -889,7 +889,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   source_hashes <- if (length(files) > 0L) {
     vapply(files, function(f) {
       if (file.exists(f)) {
-        txt <- paste(readLines(f, warn = FALSE), collapse = "\n")
+        txt <- paste(read_sas_source(f), collapse = "\n")
         migration_hash(txt)
       } else {
         migration_hash("")

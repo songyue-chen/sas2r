@@ -85,7 +85,7 @@ test_that("called macros generate reusable files and execute through the public 
   llm <- new_llm(function(request, audit_context = list()) {
     id <- audit_context$component_id
     if (id == "macro__scale") {
-      expect_false(grepl("never_needed", request$messages[[1L]]$content, fixed = TRUE))
+      expect_false(grepl("never_needed", request_task_text(request), fixed = TRUE))
     }
     response <- if (audit_context$role == "reviewer") {
       reviewed <<- c(reviewed, id)
@@ -99,7 +99,7 @@ test_that("called macros generate reusable files and execute through the public 
         second = "lib_write(data.frame(x = add(value = 4)), 'work', 'second')",
         stop(paste("Unexpected translation:", id)))
       if (id %in% c("first", "second")) {
-        expect_match(request$messages[[1L]]$content, "call add; loaded by autoexec.R", fixed = TRUE)
+        expect_match(request_task_text(request), "call add; loaded by autoexec.R", fixed = TRUE)
       }
       valid_program_translation_response(code = code,
         helper_use = if (id == "macro__add") "scale" else character())
@@ -261,7 +261,7 @@ test_that("unavailable macros produce drafts and actionable warnings", {
   for (source in c("%not_in_library;", "%&name;")) {
     writeLines(source, file)
     result <- sas_translate(file, out_dir = file.path(root, "out"), execute = FALSE)
-    expect_identical(result$status, "needs_review")
+    expect_identical(result$status, "blocked")
     expect_true(length(result$diagnostics$readiness$warnings) > 0L)
     expect_match(paste(readiness_warning_lines(result$diagnostics$readiness), collapse = " "),
       "macros.search_path", fixed = TRUE)

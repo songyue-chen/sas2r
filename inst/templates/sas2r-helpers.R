@@ -11,14 +11,15 @@
 # nothing instead of "NA".
 # NOTE: SAS || pads fixed-width operands; %+% does not. If source code relies on padded concatenation, review output widths.
 `%+%` <- function(a, b) {
-  paste0(ifelse(is.na(a), "", a), ifelse(is.na(b), "", b))
+  paste0(ifelse(is.na(a), "", sas_display(a)), ifelse(is.na(b), "", sas_display(b)))
 }
 
 # SAS . not in (1, 2) is TRUE; NA %in% c(1, 2) is FALSE, so !(NA %in% ...) is TRUE
 `%notin%` <- function(a, b) {
   if (is.character(a) || is.character(b)) {
-    a <- if (is.character(a)) sub("\\s+$", "", a) else a
-    b <- if (is.character(b)) sub("\\s+$", "", b) else b
+    a <- if (is.character(a)) sub(" +$", "", a) else a
+    b <- if (is.character(b)) sub(" +$", "", b) else b
+    a[is.na(a)] <- ""; b[is.na(b)] <- ""
   }
   !(a %in% b)
 }
@@ -31,9 +32,11 @@ chr_cmp <- function(a, b, op = NULL) {
   }
   if (missing(op) || is.null(op)) {
     if (is.character(a) || is.character(b)) {
-      strip <- function(x) sub("\\s+$", "", x)
+      strip <- function(x) sub(" +$", "", x)
       a_chr <- strip(as.character(a))
       b_chr <- strip(as.character(b))
+      levels <- sort(unique(c(a_chr, b_chr)), method = "radix", na.last = NA)
+      a_rank <- match(a_chr, levels); b_rank <- match(b_chr, levels)
       a_na <- is.na(a) | a_chr == ""
       b_na <- is.na(b) | b_chr == ""
 
@@ -47,8 +50,8 @@ chr_cmp <- function(a, b, op = NULL) {
       res[only_a_na] <- -1L
       res[only_b_na] <- 1L
       if (any(neither_na)) {
-        lt <- a_chr < b_chr
-        gt <- a_chr > b_chr
+        lt <- a_rank < b_rank
+        gt <- a_rank > b_rank
         res[neither_na & lt] <- -1L
         res[neither_na & gt] <- 1L
         res[neither_na & !lt & !gt] <- 0L
@@ -67,9 +70,11 @@ chr_cmp <- function(a, b, op = NULL) {
     }
   }
   if (is.character(a) || is.character(b)) {
-    strip <- function(x) sub("\\s+$", "", x)
+    strip <- function(x) sub(" +$", "", x)
     a_chr <- strip(as.character(a))
     b_chr <- strip(as.character(b))
+    levels <- sort(unique(c(a_chr, b_chr)), method = "radix", na.last = NA)
+    a_rank <- match(a_chr, levels); b_rank <- match(b_chr, levels)
     a_na <- is.na(a) | a_chr == ""
     b_na <- is.na(b) | b_chr == ""
 
@@ -93,10 +98,10 @@ chr_cmp <- function(a, b, op = NULL) {
       cmp <- switch(op,
         "==" = a_chr == b_chr,
         "!=" = a_chr != b_chr,
-        "<"  = a_chr < b_chr,
-        "<=" = a_chr <= b_chr,
-        ">"  = a_chr > b_chr,
-        ">=" = a_chr >= b_chr
+        "<"  = a_rank < b_rank,
+        "<=" = a_rank <= b_rank,
+        ">"  = a_rank > b_rank,
+        ">=" = a_rank >= b_rank
       )
       res[neither_na] <- cmp[neither_na]
     }
@@ -154,11 +159,21 @@ sas_mean <- function(...) {
 }
 
 sas_round <- function(x, unit = 1) {
-  # SAS rounds half away from zero; R's round() is banker's rounding.
-  sign(x) * floor(abs(x) / unit + 0.5) * unit
+  if (any(!is.na(unit) & (!is.finite(unit) | unit <= 0)))
+    stop("sas_round: rounding units must be positive and finite; nonpositive units are unsupported", call. = FALSE)
+  q <- abs(x) / unit
+  q <- ifelse(is.finite(q) & q < 1e15, signif(q, 15), q)
+  rounded <- ifelse(q >= 2^52, q, floor(q + 0.5))
+  inverse <- 1 / unit
+  decimal <- rep_len(is.finite(inverse) & abs(inverse - round(inverse)) < 1e-9, length(q))
+  sign(x) * ifelse(decimal, rounded / round(inverse), rounded * unit)
 }
 
-sas_compress <- function(x, chars = " ") gsub(paste0("[", chars, "]"), "", x)
+sas_compress <- function(x, chars = " ") {
+  x <- as.character(x)
+  for (char in unique(strsplit(chars, "", fixed = TRUE)[[1L]])) x <- gsub(char, "", x, fixed = TRUE)
+  x
+}
 
 sas_substr <- function(x, pos, len = NULL) {
   if (is.null(len)) substr(x, pos, nchar(x))
@@ -188,10 +203,10 @@ sas_max <- function(...) {
 
 sas_length <- function(x) {
   if (is.character(x)) {
-    s <- sub("\\s+$", "", x)
+    s <- sub(" +$", "", x)
     ifelse(is.na(s) | s == "", 1L, nchar(s))
   } else {
-    ifelse(is.na(x), 1L, nchar(as.character(x)))
+    rep.int(12L, length(x))
   }
 }
 
@@ -218,13 +233,20 @@ sas_display <- function(x) {
     na_idx <- is.na(x)
     out[na_idx] <- "."
     if (any(!na_idx)) {
-      out[!na_idx] <- format(x[!na_idx], trim = TRUE, scientific = FALSE)
+      out[!na_idx] <- vapply(x[!na_idx], function(value) format(value, digits = 12, trim = TRUE, scientific = FALSE), "")
     }
   } else {
     out <- as.character(x)
     out[is.na(x)] <- ""
   }
   out
+}
+
+sas_missing <- function(x) is.na(x) | (is.character(x) & !is.na(x) & grepl("^ *$", x))
+
+sas_true <- function(x) {
+  if (is.character(x)) return(!sas_missing(x))
+  !is.na(x) & x != 0
 }
 
 # Runtime helpers: librefs and data access. Part of the runtime every
@@ -302,7 +324,7 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
       write_path <- bindings[[idx]]$write_path
     } else {
       root <- get(".sas2r_output_root", envir = env, inherits = FALSE)
-      write_path <- file.path(root, "libraries", paste0(key, "_", length(bindings) + 1L))
+      write_path <- file.path(root, "libraries", paste0(key, "_", substr(cli::hash_sha256(read_path), 1L, 16L)))
     }
   } else {
     write_path <- sas2r_assignment_path(write_path, env)
@@ -335,7 +357,7 @@ sas2r_assignment_path <- function(path, env) {
 sas2r_libname_clear <- function(libref) {
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)
-  registry[[tolower(libref)]] <- NULL
+  if (identical(tolower(libref), "_all_")) registry <- list() else registry[[tolower(libref)]] <- NULL
   assign(".sas2r_registry", registry, envir = env)
   invisible(NULL)
 }
@@ -374,12 +396,18 @@ sas2r_lib_member_path <- function(dir, member, ext) {
 
 sas2r_lib_member_file <- function(reg, member) {
   sas2r_lib_member_path("", member, "")
-  dirs <- unique(c(if (!is.null(reg$write_path)) reg$write_path else reg$path,
-                   if (!is.null(reg$read_path)) reg$read_path else reg$path))
-  for (dir in dirs[!is.na(dirs) & nzchar(dirs)]) {
-    for (type in c("rds", "sas7bdat", "xpt")) {
-      path <- sas2r_lib_member_path(dir, member, paste0(".", type))
-      if (file.exists(path) && !dir.exists(path)) return(list(type = type, path = path))
+  write_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
+  read_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
+  locations <- list(list(path = write_dir, types = unique(c(reg$write, "rds", "sas7bdat", "xpt"))),
+                    list(path = read_dir, types = unique(c(reg$engine, "rds", "sas7bdat", "xpt"))))
+  for (location in locations) {
+    if (is.null(location$path) || is.na(location$path) || !nzchar(location$path)) next
+    files <- list.files(location$path, full.names = TRUE)
+    files <- files[!dir.exists(files)]
+    for (type in location$types) {
+      hits <- files[tolower(basename(files)) == paste0(tolower(member), ".", type)]
+      if (length(hits) > 1L) stop("Ambiguous dataset member: ", member, call. = FALSE)
+      if (length(hits)) return(list(type = type, path = hits[[1L]]))
     }
   }
   NULL
@@ -437,6 +465,20 @@ sas2r_fold_names <- function(df) {
   if (is.character(i) && length(i) == 1L) {
     idx <- match(tolower(i), tolower(names(x)))
     if (!is.na(idx)) return(x[[idx]])
+  }
+  NextMethod()
+}
+
+`$<-.sas2r_dataset` <- function(x, name, value) {
+  idx <- match(tolower(name), tolower(names(x)))
+  if (!is.na(idx)) name <- names(x)[idx]
+  NextMethod()
+}
+
+`[[<-.sas2r_dataset` <- function(x, i, value) {
+  if (is.character(i) && length(i) == 1L) {
+    idx <- match(tolower(i), tolower(names(x)))
+    if (!is.na(idx)) i <- names(x)[idx]
   }
   NextMethod()
 }
@@ -537,9 +579,13 @@ lib_write <- function(df, libref, member, ...) {
   }
   dir.create(w_dir, showWarnings = FALSE, recursive = TRUE)
   fmt <- if (is.null(reg$write)) "rds" else reg$write
-  if (fmt == "rds") saveRDS(df, sas2r_lib_member_path(w_dir, member, ".rds"))
-  else if (fmt == "xpt") haven::write_xpt(df, sas2r_lib_member_path(w_dir, member, ".xpt"))
-  else stop("Unsupported write format: ", fmt, call. = FALSE)
+  df <- as.data.frame(df)
+  if (!fmt %in% c("rds", "xpt")) stop("Unsupported write format: ", fmt, call. = FALSE)
+  target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
+  pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
+  on.exit(unlink(pending), add = TRUE)
+  if (fmt == "rds") saveRDS(df, pending) else haven::write_xpt(df, pending)
+  if (!file.rename(pending, target)) stop("Could not replace dataset member: ", target, call. = FALSE)
   invisible(df)
 }
 
@@ -596,6 +642,11 @@ sas_sort <- function(df, by, descending = character(), ...) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
     x <- df[[idx]]
+    if (is.character(x)) {
+      x <- sub(" +$", "", x)
+      x[x == "" & !is.na(x)] <- NA_character_
+      x <- match(x, sort(unique(x), method = "radix", na.last = NA))
+    }
     desc <- tolower(v) %in% tolower(descending)
     if (desc) {
       rank(-xtfrm(x), na.last = TRUE, ties.method = "min")
@@ -608,8 +659,8 @@ sas_sort <- function(df, by, descending = character(), ...) {
 }
 
 sas_merge <- function(a, b, by,
-                      keep = c("both", "left", "right", "left_only",
-                               "right_only", "full"), ...) {
+                      keep = c("full", "both", "left", "right", "left_only",
+                               "right_only"), ...) {
   keep <- match.arg(keep)
   dup_a <- anyDuplicated(a[by]) > 0L
   dup_b <- anyDuplicated(b[by]) > 0L
@@ -625,8 +676,20 @@ sas_merge <- function(a, b, by,
          call. = FALSE)
   }
   a_cols <- names(a); b_cols <- names(b)
-  a$.in_a <- TRUE; b$.in_b <- TRUE
-  m <- merge(a, b, by = by, all = TRUE, suffixes = c(".sas2r_a", ""))
+  a$.in_a <- rep(TRUE, nrow(a)); b$.in_b <- rep(TRUE, nrow(b))
+  key_id <- ".sas2r_merge_key"
+  while (key_id %in% c(names(a), names(b))) key_id <- paste0(key_id, "_")
+  ids <- vctrs::vec_group_id(rbind(a[by], b[by]))
+  a[[key_id]] <- ids[seq_len(nrow(a))]
+  b[[key_id]] <- ids[nrow(a) + seq_len(nrow(b))]
+  m <- merge(a, b, by = key_id, all = TRUE, suffixes = c(".sas2r_a", ""))
+  for (v in by) {
+    missing_right <- is.na(m$.in_b)
+    m[[v]][missing_right] <- m[[paste0(v, ".sas2r_a")]][missing_right]
+    m[[paste0(v, ".sas2r_a")]] <- NULL
+  }
+  m[[key_id]] <- NULL
+  a[[key_id]] <- NULL; b[[key_id]] <- NULL
   # SAS overlap rule: the later dataset's value wins where both contribute
   for (v in setdiff(intersect(names(a), names(b)), c(by, ".in_a", ".in_b"))) {
     left <- m[[paste0(v, ".sas2r_a")]]
@@ -658,15 +721,29 @@ apply_format <- function(x, fmt) {
   }
   key <- if (is.numeric(x)) vapply(x, fmt_key, character(1)) else as.character(x)
   out <- if (!is.null(fmt$other)) rep(fmt$other, length(x)) else key
-  hit <- !is.na(x) & key %in% names(fmt$values)
-  out[hit] <- unname(fmt$values[key[hit]])
+  names_key <- names(fmt$values)
+  if (is.numeric(x)) {
+    numeric_keys <- suppressWarnings(as.numeric(names_key))
+    matched <- match(x, numeric_keys)
+    # Only the ordinary SAS missing key represents an NA numeric input.
+    matched[is.na(x)] <- match(".", names_key)
+  } else {
+    key <- sub(" +$", "", key)
+    key[is.na(key)] <- ""
+    matched <- match(key, sub(" +$", "", names_key))
+  }
+  hit <- !is.na(matched)
+  out[hit] <- unname(fmt$values[matched[hit]])
   if (!is.null(fmt$ranges)) {
     for (r in fmt$ranges) {
-      inr <- !is.na(x) & x >= r$lo & x <= r$hi & !hit
+      lower <- if (isTRUE(r$lo_excl)) x > r$lo else x >= r$lo
+      upper <- if (isTRUE(r$hi_excl)) x < r$hi else x <= r$hi
+      inr <- !is.na(x) & lower & upper & !hit
       out[inr] <- r$label
+      hit <- hit | inr
     }
   }
-  out[is.na(x) & is.null(fmt$other)] <- NA_character_
+  out[is.na(x) & !hit & is.null(fmt$other)] <- NA_character_
   out
 }
 

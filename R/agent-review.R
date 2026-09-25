@@ -361,7 +361,7 @@ review_program_revision <- function(
       context$priority_dependencies %||% review_context_dependencies(history %||% context$history))))
   review_scope <- if (length(context$focus_outputs) && !isTRUE(context$full_review)) "focused" else "full"
   phase <- context$phase %||% "program"
-  diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution) else NULL
+  diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution, policy = context$config$agent_evidence %||% "code_only") else NULL
   if (!is.null(diagnostics)) {
     # Static review uses observations, not their per-attempt storage locations.
     # Retain the original records and fixer diagnostics for navigation/debugging.
@@ -527,7 +527,7 @@ review_program_revision <- function(
     reason <- if (nzchar(err_msg)) err_msg else as.character(agent_res$status %||% "review_unavailable")[1L]
   }
 
-  review_id <- paste0("revw_", substr(migration_hash(list(component_id, revision_id, verdict, Sys.time(), stats::runif(1))), 1L, 16L))
+  review_id <- paste0("revw_", substr(migration_hash(list(component_id, revision_id, verdict, Sys.time(), tempfile("review-"))), 1L, 16L))
 
   if (!is.null(history_obj)) {
     if (identical(verdict, "review_unavailable")) {

@@ -53,6 +53,7 @@ normalize_col <- function(x) {
 #' @return A list with `base`, `comp`, `common`, `only_base`, `only_comp`, and `kind_mismatch`.
 #' @noRd
 align_columns <- function(base, comp) {
+  original_base_names <- names(base); original_comp_names <- names(comp)
   bn <- tolower(names(base))
   cn <- tolower(names(comp))
 
@@ -77,6 +78,7 @@ align_columns <- function(base, comp) {
   list(
     base = base,
     comp = comp,
+    name_case = bn[bn %in% cn & original_base_names != original_comp_names[match(bn, cn)]],
     common = common,
     only_base = setdiff(bn, cn),
     only_comp = setdiff(cn, bn),

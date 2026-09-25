@@ -11,6 +11,7 @@
 #' @noRd
 redact_secrets <- function(x) {
   if (is.null(x)) return(NULL)
+  x <- redact_llm_secrets(x)
   if (is.character(x)) {
     # Redact common LLM API keys and bearer tokens
     x <- gsub("sk-[A-Za-z0-9_-]{20,}", "[REDACTED_API_KEY]", x)

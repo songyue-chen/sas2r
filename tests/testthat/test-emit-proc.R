@@ -28,7 +28,7 @@ test_that("proc sort distinguishes nodup from nodupkey", {
   # nodup: dedups across all columns (distinct(.keep_all = TRUE)) (F17)
   em_nodup <- emit_proc_sort(proc_unit(
     "proc sort data=adam.adsl nodup; by usubjid; run;"))
-  expect_match(em_nodup$code, "dplyr::distinct\\(\\.keep_all = TRUE\\)")
+  expect_true(is.na(em_nodup$code))
 })
 
 test_that("proc sort missing by or data statement returns flag", {

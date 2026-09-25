@@ -19,6 +19,7 @@ test_that("migration demo executes from local RDS input and produces dataset and
   # Run make-input.R in temp_demo
   make_input_script <- file.path(temp_demo, "make-input.R")
   expect_true(file.exists(make_input_script))
+  withr::local_dir(temp_demo)
   source(make_input_script, local = new.env())
 
   input_rds <- file.path(temp_demo, "data", "input_ds.rds")
@@ -28,7 +29,7 @@ test_that("migration demo executes from local RDS input and produces dataset and
   demo_r_code <- paste(
     "# Generated R code for migration demo",
     "plotds_name <- 'input_ds'",
-    "stg1 <- lib_read('adam', plotds_name)",
+    "stg1 <- lib_read('raw', plotds_name)",
     "stg1$AVAL_FLAG <- ifelse(is.na(stg1$AVAL), 'MISSING', 'RECORDED')",
     "lib_write(stg1, 'work', 'stg1')",
     "",

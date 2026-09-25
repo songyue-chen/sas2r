@@ -1,6 +1,3 @@
-if (!exists("%||%", mode = "function")) {
-  `%||%` <- function(a, b) if (is.null(a)) b else a
-}
 
 new_llm_audit_redactor <- function(redaction_secrets = character()) {
   known_secrets <- llm_credential_secret_values(redaction_secrets)
@@ -834,7 +831,7 @@ ELLMER_TABULATED_TOKEN_PROVENANCE <- "ellmer public get_tokens()"
 ELLMER_TURN_TOKEN_PROVENANCE <- "ellmer public Turn@tokens"
 ELLMER_TURN_JSON_USAGE_PROVENANCE <-
   "ellmer public AssistantTurn@json usage"
-ELLMER_COST_PROVENANCE <- "ellmer public get_cost(include = 'last')"
+ELLMER_COST_PROVENANCE <- "ellmer public get_cost(include = 'all') delta"
 
 # One public per-turn token record. ellmer's default `AssistantTurn@tokens` is
 # an unnamed `c(NA, NA, NA)`, while a provider-populated turn carries
@@ -1008,7 +1005,7 @@ ellmer_usage_provenance <- function(usage, cost) {
 ellmer_cost <- function(chat) {
   if (is.null(chat$get_cost) || !is.function(chat$get_cost)) return(NA_real_)
   value <- tryCatch(
-    suppressWarnings(as.numeric(chat$get_cost(include = "last"))),
+    suppressWarnings(as.numeric(chat$get_cost(include = "all"))),
     error = function(error) NA_real_
   )
   if (length(value) != 1L || is.na(value) || !is.finite(value)) NA_real_ else value
@@ -1141,6 +1138,8 @@ ellmer_transport_request <- function(cfg, request, model, params) {
   # Only retained native turns carry usage from earlier phases. Neutral input
   # messages have no provider usage to subtract from this fresh chat.
   before_turns <- if (is.null(.ellmer_invocation$current$turns)) 0L else length(chat$get_turns())
+  before_cost <- if (before_turns == 0L) 0 else ellmer_cost(chat)
+  settled_cost <- before_cost
   meter <- .usage_attempt_scope$native_meter
   structured <- identical(request$schema_mode, "native") && !is.null(request$output_schema)
   if (!is.null(meter) && is.function(chat$on_request_start) && is.function(chat$on_request_end)) {
@@ -1156,7 +1155,9 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     end_request <- function(turn) {
       raw <- list(type = "final", data = list())
       attr(raw, "usage") <- ellmer_usage(list(get_turns = function() list(turn)))
-      cost <- ellmer_cost(chat)
+      total_cost <- ellmer_cost(chat)
+      cost <- total_cost - settled_cost
+      settled_cost <<- total_cost
       if (!is.na(cost)) {
         attr(raw, "cost_usd") <- cost
         attr(raw, "cost_status") <- "catalog_estimate"
@@ -1200,8 +1201,6 @@ ellmer_transport_request <- function(cfg, request, model, params) {
       parsed <- strict_json_list(value, strip_markdown_fences = TRUE)
       if (is.null(parsed)) {
         list(type = "final", data = list(raw = value, parse_error = TRUE))
-      } else if (!is.null(parsed$type) && !is.null(parsed$data)) {
-        parsed
       } else {
         list(type = "final", data = parsed)
       }
@@ -1218,7 +1217,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
   if (!is.null(.ellmer_invocation$current))
     .ellmer_invocation$current$turns <- chat$get_turns(include_system_prompt = TRUE)
   attr(raw, "usage") <- usage
-  cost <- ellmer_cost(chat)
+  cost <- ellmer_cost(chat) - before_cost
   if (!is.na(cost)) {
     attr(raw, "cost_usd") <- cost
     attr(raw, "cost_status") <- "catalog_estimate"
@@ -1323,7 +1322,8 @@ ellmer_llm <- function(cfg) {
 #'
 #' The supported way to obtain the `llm` argument that [sas_translate()] accepts.
 #' The adapter is backed by public `ellmer` APIs for one of the twelve registered provider
-#' ids; credentials stay with `ellmer` and are never read or stored by sas2r.
+#' ids. Credential values may be held in memory by adapters and redactors.
+#' Keep adapters private; reports redact registered secret values.
 #' Constructing an adapter contacts no network -- use [sas_llm_probe()] to
 #' validate connectivity and model capabilities, and [sas_llm_models()] to see
 #' the inventory visible to the configured identity.
@@ -1363,7 +1363,7 @@ probe_failure_condition <- function(error, auth_context = NULL,
   semantic_reason <- error$reason %||% NULL
   access_reclassifiable <- inherits(error, c(
     "sas2r_llm_authentication_error", "sas2r_llm_permission_denied",
-    "sas2r_llm_transport_error"
+    "sas2r_llm_transport_error", "sas2r_llm_error"
   )) && (is.null(recognized_llm_failure_reason(error)) ||
          isTRUE(attr(error, "sas2r_private_reason_synthesized")))
   generic <- !any(startsWith(classes, "sas2r_"))
@@ -1776,7 +1776,7 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
 #' is configured, otherwise 32. It does not perform the negative control used by
 #' automatic translation startup to detect ignored reasoning settings, and does
 #' not populate that startup cache. The
-#' probe never launches an interactive browser or device login: a missing or
+#' probe may invoke provider-managed authentication, including device login. A missing or
 #' expired ambient session raises a classed condition naming the command to
 #' run instead.
 #'

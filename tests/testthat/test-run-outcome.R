@@ -90,7 +90,8 @@ test_that("disabled execution and interrupted attempts are distinguished from ex
   writeLines("data work.out; x=1; run;", file.path(root, "p.sas"))
   result <- sas_translate(root, out_dir = file.path(root, "out"), execute = FALSE)
   report <- read_json_record(result$report_json_path)
-  expect_identical(report$outcome$severity, "warning")
+  # This unsupported DATA step still contains an untranslated marker.
+  expect_identical(report$outcome$severity, "error")
   expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)
   expect_match(report$outcome$stages[["Bundle execution"]], "execution disabled", fixed = TRUE)
 

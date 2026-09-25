@@ -3,7 +3,7 @@ libraries:
     path: data
     engine: rds
     write: rds
-  work:
+  raw:
     path: data
     engine: rds
     write: rds

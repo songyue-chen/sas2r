@@ -397,7 +397,7 @@ test_that("program-level review routes ordering skills and gets a working tool c
   )
 
   expect_true(length(captured) > 0L)
-  sys_txt <- captured[[1L]]$messages[[1L]]$content
+  sys_txt <- request_task_text(captured[[1L]])
   expect_match(sys_txt, "sas-missing-sort-semantics")
 
   # query_project_graph must answer from the project lineage, not emptiness.

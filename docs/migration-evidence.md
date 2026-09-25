@@ -105,7 +105,7 @@ Each run has a timestamp-first folder directly in the output directory. Attempts
 In `manifest.json`, every component's `dependencies` field is a JSON array,
 including `[]` for no dependencies and `["provider_id"]` for a single dependency.
 
-- Source inputs are never mutated (protected by copy-on-write library registries).
+- Library writes are redirected to attempt directories. Input hashes are checked after execution; changes fail the run. Generated R still runs with local filesystem and network access. Use operating-system isolation for untrusted code.
 - Attempt outputs, logs, and `record.json` are captured atomically.
 - Deterministic selection ensures newer attempts are selected only if they improve upon or maintain previous pass criteria without regressions.
 
@@ -306,7 +306,7 @@ including WORK, named libraries, and TLFs, under their relative paths:
 The selected attempt's file inventory also drives reports and export.
 
 `sas_write(result, "delivery")` writes the selected code and runtime, all generated
-files, reports, `outputs-manifest.json`, a dependency/input guide, and `run.R` (renamed if a source program already uses that name; see `run-order.json`).
+files, reports, a dependency/input guide, and `run.R` (renamed if a source program already uses that name; see `run-order.json`).
 It rebuilds `autoexec.R` so generated library outputs belong to the destination.
 After moving the folder, run `Rscript run.R` from it, or in R use
 `source("run.R", chdir = TRUE)`. Programs run in dependency order; included modules

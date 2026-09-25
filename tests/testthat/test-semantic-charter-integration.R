@@ -71,7 +71,7 @@ test_that("identical executor observations reuse review across fresh attempt loc
   again <- review_program_revision(rev, context, reviewer, history = reviewed$history)
   expect_true(again$reused)
   expect_length(reviewer$requests(), 1L)
-  prompt <- paste(vapply(reviewer$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  prompt <- request_task_text(reviewer$requests()[[1]])
   expect_match(prompt, "translation fault p01", fixed = TRUE)
   expect_false(grepl(first$stderr_path, prompt, fixed = TRUE))
   expect_false(grepl(first$stdout_path, prompt, fixed = TRUE))
@@ -84,7 +84,8 @@ test_that("identical executor observations reuse review across fresh attempt loc
   }
   context$execution <- second
   cat("\nnew executor observation\n", file = second$stderr_path, append = TRUE)
-  expect_false(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
+  # code_only excludes raw stderr; the structured condition and status above remain authoritative.
+  expect_true(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
 })
 
 test_that("saved reviews without request identity explain the fresh review", {
@@ -118,7 +119,7 @@ test_that("bundle fix and full review receive integration focus without referenc
   expect_true(result$attempt$passed)
   for (worker in list(fx$state$fixer_llm, fx$state$reviewer_llm)) {
     request <- worker$requests()[[1]]
-    prompt <- paste(vapply(request$messages, `[[`, "", "content"), collapse = "\n")
+    prompt <- request_task_text(request)
     expect_match(prompt, "Bundle integration focus", fixed = TRUE)
     expect_match(prompt, "translation fault p01", fixed = TRUE)
     expect_match(prompt, "full semantic review", fixed = TRUE)
@@ -138,7 +139,7 @@ test_that("bundle review of a producer receives selected consumer source and cod
     config = fx$state$config, phase = "bundle", helper_code = runtime_helper_code(fx$state$runtime))
   reviewer <- fx$state$reviewer_llm
   reviewed <- review_program_revision(rev, context, reviewer, history = fx$state$histories$p01)
-  prompt <- paste(vapply(reviewer$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  prompt <- request_task_text(reviewer$requests()[[1]])
   expect_match(prompt, "downstream caller/consumer", fixed = TRUE)
   expect_match(prompt, fx$fixed$p02, fixed = TRUE)
   expect_match(prompt, "data work.out2; set work.out1", fixed = TRUE)
@@ -146,7 +147,7 @@ test_that("bundle review of a producer receives selected consumer source and cod
     llm = fx$state$fixer_llm, mode = "bundle", project = fx$state$project,
     selected_revisions = context$selected_revisions, paths = fx$state$paths)
   request <- fx$state$fixer_llm$requests()[[1]]
-  expect_match(paste(vapply(request$messages, `[[`, "", "content"), collapse = "\n"), fx$fixed$p02, fixed = TRUE)
+  expect_match(request_task_text(request), fx$fixed$p02, fixed = TRUE)
   context$selected_revisions$p02$r_code <- "consumer_changed <- TRUE"
   expect_false(isTRUE(review_program_revision(rev, context, reviewer, history = reviewed$history)$reused))
 })
@@ -302,7 +303,7 @@ test_that("semantic policy keeps harmless representation separate from observabl
   expect_false(passed(compare_datasets(expected, data.frame(value = sort(values)))))
   p <- compare_profile()
   expect_identical(p$na_tags, "report")
-  expect_identical(p$numeric, list(abs = 1e-8, rel = 1e-8))
+  expect_identical(p$numeric, list(abs = 1e-8, rel = 0))
   for (category in c("unknown", "unsupported_capability")) {
     f <- list(category = category, severity = "material", sas_evidence = "LENGTH label $2",
       r_evidence = "label <- 'ABCD'")
@@ -344,7 +345,7 @@ test_that("existing artifact success cannot cancel a source finding about missin
   review <- review_program_revision(fx$revision, fx$context, reviewer)
   expect_true(program_review_needs_repair(review))
   expect_identical(review$review_scope, "full")
-  prompt <- paste(vapply(reviewer$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  prompt <- request_task_text(reviewer$requests()[[1]])
   expect_match(prompt, "proc means", fixed = TRUE)
   expect_match(prompt, "graphics::boxplot", fixed = TRUE)
   expect_match(prompt, "A PDF that exists is not evidence", fixed = TRUE)

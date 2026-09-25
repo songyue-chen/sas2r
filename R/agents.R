@@ -151,6 +151,11 @@ worker_prompt_hash <- function(role, project_dir = NULL, prompt = NULL, schema =
     role = role,
     yaml = yaml_text,
     prompt = prompt_text,
+    prompt_macro = if (!is.null(spec$prompt_macro)) {
+      macro_path <- spec$prompt_macro
+      if (!file.exists(macro_path)) macro_path <- system.file("prompts", macro_path, package = "sas2r")
+      if (file.exists(macro_path)) paste(readLines(macro_path, warn = FALSE), collapse = "\n") else ""
+    } else NULL,
     schema = schema_obj
   ))
 }
