@@ -19,6 +19,8 @@ jobs:
     env:
       NOT_CRAN: "false"
       _R_CHECK_LIMIT_CORES_: "true"
+      # Use TinyTeX directly instead of the host's texi2dvi shell driver.
+      R_TEXI2DVICMD: "emulation"
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
@@ -32,6 +34,9 @@ jobs:
       - name: Install PDF manual fonts
         if: matrix.manual
         run: tlmgr install courier inconsolata
+      - name: Verify indexed PDF manual toolchain
+        if: matrix.manual
+        run: R CMD Rd2pdf --no-preview --internals --force --output="$RUNNER_TEMP/sas2r-manual.pdf" .
       - name: Install HTML manual validator
         if: matrix.manual
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tidy
