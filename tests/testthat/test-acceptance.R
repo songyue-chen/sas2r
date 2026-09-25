@@ -294,6 +294,7 @@ test_that("ACCEPTANCE: final-output gating verifies candidate datasets and TLF f
 })
 
 test_that("ACCEPTANCE: zero false-ready seeded defects across full execution pipeline", {
+  withr::local_options(sas2r.agent_backoff_base = 0) # Mock retries need no wall-clock delay.
   skip_if_not_installed("dplyr")
   tmp <- withr::local_tempdir()
   in_dir <- file.path(tmp, "data", "adam")

@@ -1,4 +1,5 @@
 test_that("all roles can retrieve a late dependency's complete source and selected R", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   root <- withr::local_tempdir()
   dir.create(file.path(root, "macros"))
   names <- c(paste0("a", 1:4), "z_template")

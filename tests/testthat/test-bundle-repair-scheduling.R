@@ -1,4 +1,5 @@
 test_that("twenty dependent scripts can repair three newly exposed blockers by default", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   fx <- repair_workflow_fixture(n = 20L, failures = c(5L, 12L, 18L), chain = TRUE)
   result <- run_bundle_pipeline(fx$state)
   expect_identical(result$status, "migration_ready")

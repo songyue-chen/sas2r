@@ -1,7 +1,8 @@
 # sas2r 0.5.4
 
 - Assert the expected export and lint-repair warnings in regression tests.
-  Use smaller repeated-work fixtures on CRAN while retaining the full cases in CI.
+  Run extended process-heavy integration scenarios in CI, retain representative
+  CRAN coverage, and remove unnecessary wall-clock waits from mock retry tests.
 
 - Source parsing and macro-index caches now use session-temporary storage,
   leaving input projects unchanged even when translation uses default outputs.

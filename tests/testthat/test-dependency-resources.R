@@ -70,6 +70,7 @@ test_that("metadata context keeps unsupported behavior visible to the existing r
 })
 
 test_that("environment observations reach bundle execution while required outputs are checked", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
   source <- file.path(fx$root, "p01.sas")
   writeLines(c('libname raw "&INPUT_LOCATION";',
@@ -113,6 +114,7 @@ test_that("recognizing metadata does not bypass execution failures", {
 })
 
 test_that("resume reassesses old dependency blocks and retains genuine ones", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   for (finding in c("SASHELP.VEXTFL", "work.missing")) {
     fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
     state <- fx$state

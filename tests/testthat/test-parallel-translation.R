@@ -195,6 +195,7 @@ test_that("a crashed reviewer preserves accounting and continues remaining revie
 })
 
 test_that("a crashed translator preserves completed sibling drafts for resume", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   fx <- repair_workflow_fixture(n = 3L, failures = integer())
   state <- fx$state
   state$selected_revisions <- state$histories <- list()
@@ -226,6 +227,7 @@ test_that("a crashed translator preserves completed sibling drafts for resume", 
 })
 
 test_that("helper repair rollback preserves other selected programs with parallel drafts", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   fx <- repair_workflow_fixture(n = 2L, failures = 1L)
   state <- stage_workflow_revision(fx$state, "p02",
     sub("x$value + 1", "shift(x$value)", fx$fixed$p02, fixed = TRUE), "reviewed_no_material_finding")

@@ -22,6 +22,7 @@ test_that("review is independent and fixer is evidence grounded", {
 })
 
 test_that("review_program_revision persists immutable review and records review_unavailable on exhausted failure", {
+  withr::local_options(sas2r.agent_backoff_base = 0) # Keep every retry; omit the mock transport wait.
   fx <- review_fix_fixture()
 
   # 1. Successful review persists immutable review record bound to component binding
