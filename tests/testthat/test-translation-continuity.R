@@ -1,5 +1,7 @@
 test_that("missing data and source permit drafts in sequential and parallel runs", {
   for (workers in c(1L, 2L)) for (execute in c(FALSE, TRUE)) {
+    # CRAN covers serial drafting and parallel execution; CI runs the full cross-product.
+    if (!identical(Sys.getenv("NOT_CRAN"), "true") && execute != (workers == 2L)) next
     fx <- repair_workflow_fixture(n = 3L, failures = integer(), chain = TRUE)
     writeLines(c('%include "unavailable.sas";', '%unavailable_macro();',
       'data work.out1; set missing.input; retain marker 1; run;'), file.path(fx$root, "p01.sas"))

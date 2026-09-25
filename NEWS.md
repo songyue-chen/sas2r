@@ -1,3 +1,17 @@
+# sas2r 0.5.4
+
+- Assert the expected export and lint-repair warnings in regression tests.
+  Use smaller repeated-work fixtures on CRAN while retaining the full cases in CI.
+
+- Source parsing and macro-index caches now use session-temporary storage,
+  leaving input projects unchanged even when translation uses default outputs.
+- Final outcomes and report locations use suppressible R messages. Combine
+  `options(sas2r.progress = FALSE)` with `suppressMessages()` for quiet runs;
+  returned results and saved diagnostics remain available.
+- CRAN checks limit concurrency tests to two workers and omit the integration
+  test that installs a bundled adapter fixture; GitHub CI retains that coverage.
+- Package metadata and platform checks are prepared for an initial CRAN release.
+
 # sas2r 0.5.3
 
 - The translator, macro translator and fixer prefer allowlisted, installed

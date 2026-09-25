@@ -60,8 +60,8 @@ test_that("translation honors overrides and permits either valid configuration",
     max_parallel_translations = 4L, execute = FALSE), class = "sas2r_parallel_config_error")
   cfg$llm$max_tries <- 1L
   parallel <- sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
-    max_parallel_translations = 4L, execute = FALSE)
-  expect_identical(parallel$diagnostics$parallel$effective, 4L)
+    max_parallel_translations = 2L, execute = FALSE)
+  expect_identical(parallel$diagnostics$parallel$effective, 2L)
   expect_identical(parallel$diagnostics$parallel$backend, "callr")
 })
 
@@ -83,9 +83,10 @@ test_that("explicit adapters use their own retry settings and cannot silently do
 
   # Unused YAML retry settings must not reject an explicit replacement adapter.
   cfg$llm$max_tries <- 2L
+  cfg$migration$max_parallel_translations <- 2L
   result <- sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
     llm = parallel_test_llm(list(reviewer = valid_program_review_response())), execute = FALSE)
-  expect_identical(result$diagnostics$parallel$effective, 4L)
+  expect_identical(result$diagnostics$parallel$effective, 2L)
 })
 
 test_that("oversized captured adapter settings give an actionable error before worker launch", {

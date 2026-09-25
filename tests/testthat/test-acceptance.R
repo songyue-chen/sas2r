@@ -35,7 +35,7 @@ test_that("ACCEPTANCE: dependency-aware pipeline produces reports and an export"
   expect_true(file.exists(x$report_json_path))
 
   dest <- withr::local_tempdir()
-  res_write <- sas_write(x, dest)
+  expect_warning(res_write <- sas_write(x, dest), class = "sas2r_unverified_write")
   expect_identical(res_write, dest)
 })
 

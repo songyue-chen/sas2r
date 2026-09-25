@@ -83,7 +83,7 @@ test_that("environment observations reach bundle execution while required output
     reviewer = valid_program_review_response())
   result <- sas_translate(fx$root, out_dir = file.path(fx$root, "public-run"),
     config = fx$state$config, llm = parallel_test_llm(responses),
-    max_parallel_translations = 4L, max_program_repair_rounds = 0L,
+    max_parallel_translations = 2L, max_program_repair_rounds = 0L,
     max_bundle_repair_rounds = 0L, outputs = "work.out2")
   expect_length(result$diagnostics$dependency_findings, 0L)
   expect_identical(result$status, "migration_ready")

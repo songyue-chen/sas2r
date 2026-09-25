@@ -19,8 +19,9 @@ test_that("unsupported adapters visibly fall back before any worker calls", {
   expect_identical(result$effective, 1L)
 })
 
-test_that("1, 2, 3 and 4 slots preserve source-defined outputs and shared accounting", {
-  for (threads in 1:4) {
+test_that("available test slots preserve source-defined outputs and shared accounting", {
+  slots <- if (identical(Sys.getenv("NOT_CRAN"), "true")) 1:4 else 1:2
+  for (threads in slots) {
     fx <- repair_workflow_fixture(n = 4L, failures = integer())
     markers <- file.path(fx$root, "requests"); dir.create(markers)
     responses <- stats::setNames(lapply(fx$fixed, valid_program_translation_response), paste0("translator:", fx$ids))
@@ -63,7 +64,7 @@ test_that("dependency chain settles its producer before dispatching a consumer",
   state <- fx$state
   llm <- parallel_test_llm(list(reviewer = valid_program_review_response()))
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
-  state$parallel <- resolve_parallel_execution(state, 4L)
+  state$parallel <- resolve_parallel_execution(state, 2L)
   events <- list()
   result <- withCallingHandlers(run_program_pipeline(state), sas2r_progress = function(event) {
     events[[length(events) + 1L]] <<- list(event = event$event, cid = event$component_id, classes = class(event))
@@ -87,7 +88,7 @@ test_that("concurrent workers share one request ceiling and attribute each invoc
   state <- fx$state
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$usage_budget <- new_usage_budget(max_calls = 2L)
-  state$parallel <- resolve_parallel_execution(state, 4L)
+  state$parallel <- resolve_parallel_execution(state, 2L)
   for (cid in fx$ids) state <- check_component_revision(state, cid)
   result <- finalize_parallel_component_reviews(state)
   expect_identical(result$usage_budget$request_count, 2L)
@@ -251,7 +252,7 @@ test_that("dependency uncertainty permits drafts while deferring execution", {
   state$selected_revisions$p01$contract$suspected_dependencies <- "work.missing"
   llm <- parallel_test_llm(list(reviewer = valid_program_review_response()))
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
-  state$parallel <- resolve_parallel_execution(state, 3L)
+  state$parallel <- resolve_parallel_execution(state, 2L)
   result <- run_program_pipeline(state, execute = FALSE)
   expect_identical(result$component_stage$p01, "settled")
   expect_match(component_execution_reasons(result, "p01"), "work.missing", fixed = TRUE)
@@ -336,7 +337,7 @@ test_that("a join waits for both producers and retains complete source-defined v
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$baseline$manifest$tier <- "stub"
   state$baseline$manifest$reason <- "agent_translation_required"
-  state$parallel <- resolve_parallel_execution(state, 3L)
+  state$parallel <- resolve_parallel_execution(state, 2L)
   settled <- character()
   result <- withCallingHandlers(run_program_pipeline(state), sas2r_progress = function(event) {
     if (identical(event$event, "program_smoke_passed")) settled <<- union(settled, event$component_id)

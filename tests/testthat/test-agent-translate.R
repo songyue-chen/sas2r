@@ -34,9 +34,10 @@ test_that("lint-failing output retries with feedback then fails visibly", {
   tr <- sas_transpile(p, withr::local_tempdir())
   stub_id <- tr$manifest$unit_id[tr$manifest$tier == "stub"][1]
   bad <- good_translation("system('rm -rf /')")
-  r <- translate_stub_unit(stub_id, p, tr, load_agent_specs(),
+  expect_warning(r <- translate_stub_unit(stub_id, p, tr, load_agent_specs(),
                            mock_llm(list(bad, bad)),
-                           config = list(), log_dir = withr::local_tempdir())
+                           config = list(), log_dir = withr::local_tempdir()),
+                 class = "sas2r_lint_repair")
   expect_identical(r$status, "llm_lint_failed")
 })
 

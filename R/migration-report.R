@@ -513,7 +513,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   dir.create(paths$logs, recursive = TRUE, showWarnings = FALSE)
   writeLines(outcome_lines, file.path(paths$logs, "run-outcome.log"))
   if (isTRUE(emit_outcome)) {
-    cli::cat_line(outcome_lines, file = stderr())
+    message(paste(outcome_lines, collapse = "\n"))
     flush(stderr())
   }
   invisible(paths$report_md)

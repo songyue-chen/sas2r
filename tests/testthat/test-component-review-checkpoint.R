@@ -1,6 +1,8 @@
-test_that("twenty components and repeated helper edits coalesce earlier reviews", {
-  repairs <- c(6L, 12L, 18L)
-  fx <- repair_workflow_fixture(n = 20L, failures = repairs)
+test_that("repeated helper edits across many components coalesce earlier reviews", {
+  # Keep all three invalidation waves on CRAN; CI also exercises the larger graph.
+  n <- if (identical(Sys.getenv("NOT_CRAN"), "true")) 20L else 8L
+  repairs <- if (n == 20L) c(6L, 12L, 18L) else c(2L, 4L, 6L)
+  fx <- repair_workflow_fixture(n = n, failures = repairs)
   revisions <- fx$state$selected_revisions
   fx$state$selected_revisions <- fx$state$histories <- list()
   # Exercise the agent translation path, including its real binding creation,
@@ -26,7 +28,7 @@ test_that("twenty components and repeated helper edits coalesce earlier reviews"
       if (identical(e$event, "component_review_checkpoint_started")) stage <<- "checkpoint"
     })
   immediate <- table(vapply(Filter(function(x) x$stage == "component", calls), `[[`, "", "component"))
-  expected <- stats::setNames(rep(1L, 20L), fx$ids)
+  expected <- stats::setNames(rep(1L, n), fx$ids)
   expected[repairs] <- 2L
   expect_equal(as.integer(immediate[fx$ids]), unname(expected))
   final <- table(vapply(Filter(function(x) x$stage == "checkpoint", calls), `[[`, "", "component"))

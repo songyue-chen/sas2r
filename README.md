@@ -207,7 +207,9 @@ same source programs, inputs and analysis definitions.
 
 Use `resume = TRUE` to reuse compatible saved work; repair counts and recorded
 spending are retained. `options(sas2r.progress = FALSE)` hides routine console
-updates, while the final outcome and saved reports remain available. See
+updates; also wrap the call in `suppressMessages()` to hide the final summary
+and report locations. Returned results and saved reports remain available. Source
+parsing caches use session-temporary storage and do not modify input projects. See
 [logs, repairs and resume](docs/running-migrations.md#reading-the-progress-log).
 
 ## Parallel translation (opt-in)

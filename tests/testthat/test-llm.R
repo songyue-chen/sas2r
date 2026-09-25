@@ -398,6 +398,7 @@ test_that("sas_llm_probe does not retry definitive nonanswers and writes durable
 })
 
 test_that("real S7 adapter fixture runs in an isolated ellmer library", {
+  skip_on_cran() # Installs a bundled fixture; the installed-tests CI job runs it.
   skip_if_not_installed("S7")
   result <- run_isolated_ellmer_s7(
     test_path("..", "fixtures", "ellmer-s7")

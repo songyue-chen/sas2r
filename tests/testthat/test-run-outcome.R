@@ -18,7 +18,7 @@ test_that("a continuing parallel run names warnings and reports skipped bundle w
   withr::local_options(sas2r.progress = TRUE)
   output <- capture.output(result <- withCallingHandlers(sas_translate(
     fx$root, out_dir = file.path(fx$root, "public-run"), config = fx$state$config,
-    llm = parallel_test_llm(responses), max_parallel_translations = 4L,
+    llm = parallel_test_llm(responses), max_parallel_translations = 2L,
     max_program_repair_rounds = 1L, max_bundle_repair_rounds = 1L,
     outputs = c("work.out2", "work.out3")),
     sas2r_progress = function(event) events[[length(events) + 1L]] <<- event), type = "message")

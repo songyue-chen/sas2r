@@ -98,7 +98,7 @@ test_that("scan cache drops entries superseded by source edits", {
   root <- withr::local_tempdir()
   file <- review_source(root, "data out; x=1; run;")
   sas_project(file, cache = TRUE)
-  path <- file.path(root, ".sas2r", "scan_cache.rds")
+  path <- file.path(project_cache_dir(root), "scan_cache.rds")
   first <- names(readRDS(path))
   writeLines("data out; x=2; run;", file)
   sas_project(file, cache = TRUE)

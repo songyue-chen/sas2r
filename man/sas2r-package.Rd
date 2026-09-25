@@ -4,9 +4,17 @@
 \name{sas2r-package}
 \alias{sas2r}
 \alias{sas2r-package}
-\title{sas2r: Translate SAS Programs to R with Dependency-Aware Migration}
+\title{sas2r: Translate 'SAS' Programs to R with Dependency-Aware Migration}
 \description{
-Translates SAS programs and projects to R using dependency-aware orchestration, program smoke execution, and final-output evidence. Deterministic and offline by default; optional agent review and repair send bounded excerpts to a configured 'ellmer' provider only when one is supplied.
+Translates 'SAS' programs and projects into R code, orders connected programs by their dependencies, and executes generated code. Compares generated datasets with supplied reference outputs and reports unresolved translation and validation findings. Rule-based translation works offline without a 'SAS' installation. Optional language model translation, review, and repair use a user-configured provider through 'ellmer' and may require an account and API credentials.
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/songyue-chen/sas2r}
+  \item Report bugs at \url{https://github.com/songyue-chen/sas2r/issues}
+}
+
 }
 \author{
 Songyue Chen

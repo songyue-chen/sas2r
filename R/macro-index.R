@@ -64,7 +64,7 @@ build_macro_index <- function(dirs, cache_dir = NULL) {
                                  line_start = integer(), line_end = integer()))
 }
 
-#' The project's configured macro index, on the shared cache
+#' The project's configured macro index, on the shared session cache
 #'
 #' One recipe for every agent path: resolve `macro_search_path` against the
 #' project directory and build (or reuse) the cached index. `NULL` when there
@@ -85,7 +85,7 @@ project_macro_index <- function(project, config = list()) {
     character()
   }
   tryCatch(
-    build_macro_index(dirs, cache_dir = file.path(project$project_dir, ".sas2r")),
+    build_macro_index(dirs, cache_dir = project_cache_dir(project$project_dir)),
     error = function(e) NULL
   )
 }
