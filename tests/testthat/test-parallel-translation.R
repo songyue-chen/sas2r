@@ -26,7 +26,16 @@ test_that("available test slots preserve source-defined outputs and shared accou
     markers <- file.path(fx$root, "requests"); dir.create(markers)
     responses <- stats::setNames(lapply(fx$fixed, valid_program_translation_response), paste0("translator:", fx$ids))
     responses$reviewer <- valid_program_review_response()
-    llm <- parallel_test_llm(responses, delay = 0.3, marker_dir = markers)
+    barrier <- NULL
+    if (threads > 1L) {
+      arrival_dir <- file.path(fx$root, "translator-arrivals")
+      dir.create(arrival_dir)
+      # Worker startup is slower than a mock call on some Windows runners.
+      # Synchronize the first wave instead of depending on startup timing.
+      barrier <- list(dir = arrival_dir, count = threads)
+    }
+    llm <- parallel_test_llm(responses, delay = 0.3, marker_dir = markers,
+      translator_barrier = barrier)
     state <- fx$state
     state$selected_revisions <- state$histories <- list()
     state$baseline$manifest$tier <- "stub"
