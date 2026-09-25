@@ -134,10 +134,12 @@ test_that("source content identity still detects equal-metadata changes", {
   root <- withr::local_tempdir()
   path <- file.path(root, "input.txt")
   writeLines("AAAA", path)
+  # Use a timestamp Windows can restore exactly, without subsecond rounding.
+  mtime <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+  Sys.setFileTime(path, mtime)
   p <- list(libraries = list(raw = root))
   full <- input_hash_manifest(p)
   metadata <- input_hash_manifest(p, metadata_only = TRUE)
-  mtime <- file.info(path)$mtime
   writeLines("BBBB", path)
   Sys.setFileTime(path, mtime)
   expect_identical(input_hash_manifest(p, metadata_only = TRUE), metadata)
