@@ -704,28 +704,18 @@ test_that("occurrence identity refuses a non-scalar path argument", {
                class = "sas2r_include_identity_no_root")
 })
 
-test_that("an anchor directory that would prefix-match every path is refused", {
+test_that("a filesystem root cannot serve as an include identity anchor", {
   root <- withr::local_tempdir()
-  # add() receives the post-as_dir() value, and as_dir() always appends a
-  # trailing "/" when its normalized input lacks one, so the degenerate case
-  # that actually reaches add() is never the bare "" the old comment named --
-  # it is "/", which passes nzchar() just as well and, because every scanned
-  # file's canonical path is itself absolute, prefix-matches every one of them.
-  # A configured include root of "/" is the direct way to construct it.
-  expect_error(include_identity_anchors(root, include_roots = "/"))
-  # a project root of "/" reaches add() the same way, with no include_roots
-  # involved at all
-  expect_error(include_identity_anchors("/"))
-  # an autoexec file directly at the filesystem root is the third route in:
-  # dirname() of it is "/"
-  expect_error(include_identity_anchors(root, autoexec = "/autoexec.sas"))
+  filesystem_root <- normalizePath("/", winslash = "/")
+  expect_error(include_identity_anchors(root, include_roots = filesystem_root))
+  expect_error(include_identity_anchors(filesystem_root))
+  expect_error(include_identity_anchors(root,
+    autoexec = paste0(filesystem_root, "autoexec.sas")))
+  expect_error(include_identity_anchors("C:/"))
 
-  # confirms what "prefix-matches every path" means concretely: left
-  # unrefused, this anchor would silently fold every absolute parent file into
-  # the configured-include-root anchor, discarding the machine-independence
-  # the whole frame exists to provide
-  bad_anchors <- list(list(dir = "/", prefix = "<include-root:1>/"))
-  expect_identical(include_identity_parent("/x/y.sas", bad_anchors),
+  # An unrefused root would fold every path on that filesystem into one anchor.
+  bad_anchors <- list(list(dir = filesystem_root, prefix = "<include-root:1>/"))
+  expect_identical(include_identity_parent(paste0(filesystem_root, "x/y.sas"), bad_anchors),
                    "<include-root:1>/x/y.sas")
 })
 

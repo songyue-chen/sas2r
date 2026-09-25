@@ -71,6 +71,12 @@ unit_order <- function(lineage, unit_ids) {
 # under an older version are simply never looked up again.
 SCAN_CACHE_SCHEMA_VERSION <- "4.2"
 
+# Cache source parsing within this R session without writing into input trees.
+project_cache_dir <- function(root) {
+  root <- normalizePath(root, winslash = "/", mustWork = FALSE)
+  file.path(tempdir(), "sas2r-cache", cli::hash_md5(root))
+}
+
 # Attach retained source comments to the translation units that own their
 # private character spans. Comments between units belong to the next unit;
 # comments after the last unit (or in a comment-only file) remain unattached.
@@ -147,7 +153,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   is_dir <- dir.exists(path)
   root <- project_input_root(path)
 
-  cache_file <- file.path(root, ".sas2r", "scan_cache.rds")
+  cache_file <- file.path(project_cache_dir(root), "scan_cache.rds")
   scan_cache <- if (cache && file.exists(cache_file)) {
     res <- tryCatch(readRDS(cache_file), error = function(e) list())
     if (!is.list(res)) list() else res

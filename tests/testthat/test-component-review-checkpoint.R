@@ -1,4 +1,5 @@
 test_that("twenty components and repeated helper edits coalesce earlier reviews", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   repairs <- c(6L, 12L, 18L)
   fx <- repair_workflow_fixture(n = 20L, failures = repairs)
   revisions <- fx$state$selected_revisions

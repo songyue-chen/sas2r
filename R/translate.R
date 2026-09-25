@@ -18,6 +18,9 @@
 #' @param path Path to a SAS file or directory containing SAS files, or a `sas2r_project`.
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
 #'   Relative paths resolve from the calling working directory before workers start.
+#'   Source parsing caches use the R session's temporary directory, not the input
+#'   project. To silence routine console output, set `options(sas2r.progress = FALSE)`
+#'   and wrap the call in `suppressMessages()`; saved reports remain available.
 #' @param config Optional configuration list, YAML path, or `sas2r_config` object.
 #'   With a reused project, a plain list replaces only its supplied top-level
 #'   fields; omitted fields inherit, and explicit `NULL` resets a field. A YAML
@@ -329,9 +332,9 @@ sas_translate <- function(
     "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
   ))
 
-  cli::cat_line("Start here: ", paths$start_here)
-  cli::cat_line("Bundle: ", bundle_dir)
-  if (!is.null(outputs_dir)) cli::cat_line("Saved outputs: ", outputs_dir)
+  message("Start here: ", paths$start_here)
+  message("Bundle: ", bundle_dir)
+  if (!is.null(outputs_dir)) message("Saved outputs: ", outputs_dir)
 
   # 14. Return canonical sas2r_translation object
   structure(
@@ -374,9 +377,9 @@ sas_translate <- function(
       }
       state$bundle_dir <- if (dir.exists(paths$bundle)) paths$bundle else NULL
       write_migration_report(state, emit_outcome = TRUE)
-      cli::cat_line("Blocked run: ", paths$start_here)
+      message("Blocked run: ", paths$start_here)
     }, error = function(report_error) {
-      cli::cat_line("Could not write run report: ", conditionMessage(report_error))
+      message("Could not write run report: ", conditionMessage(report_error))
     })
     stop(error)
   })

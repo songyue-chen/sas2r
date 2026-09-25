@@ -70,6 +70,7 @@ test_that("metadata context keeps unsupported behavior visible to the existing r
 })
 
 test_that("environment observations reach bundle execution while required outputs are checked", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
   source <- file.path(fx$root, "p01.sas")
   writeLines(c('libname raw "&INPUT_LOCATION";',
@@ -83,7 +84,7 @@ test_that("environment observations reach bundle execution while required output
     reviewer = valid_program_review_response())
   result <- sas_translate(fx$root, out_dir = file.path(fx$root, "public-run"),
     config = fx$state$config, llm = parallel_test_llm(responses),
-    max_parallel_translations = 4L, max_program_repair_rounds = 0L,
+    max_parallel_translations = 2L, max_program_repair_rounds = 0L,
     max_bundle_repair_rounds = 0L, outputs = "work.out2")
   expect_length(result$diagnostics$dependency_findings, 0L)
   expect_identical(result$status, "migration_ready")
@@ -113,6 +114,7 @@ test_that("recognizing metadata does not bypass execution failures", {
 })
 
 test_that("resume reassesses old dependency blocks and retains genuine ones", {
+  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
   for (finding in c("SASHELP.VEXTFL", "work.missing")) {
     fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
     state <- fx$state

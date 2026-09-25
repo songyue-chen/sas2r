@@ -227,6 +227,7 @@ test_that("paths inside the bundle are written relative, outside absolute, and a
 
   # The source data moves; the person edits one line of autoexec.R.
   moved_data <- file.path(withr::local_tempdir(), "adam_v2"); dir.create(moved_data)
+  moved_data <- canonical(moved_data)
   file.copy(file.path(data_dir, "adsl.rds"), moved_data)
   unlink(file.path(data_dir, "adsl.rds"))
   lines <- readLines(file.path(out, "autoexec.R"), warn = FALSE)

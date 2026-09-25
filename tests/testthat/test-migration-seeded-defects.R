@@ -241,6 +241,7 @@ test_that("seeded defect 5: missing TLF destination does not receive migration_r
 })
 
 test_that("seeded defect 6: review-unavailable output-lineage code with no later runtime coverage does not receive migration_ready", {
+  withr::local_options(sas2r.agent_backoff_base = 0) # Mock retries need no wall-clock delay.
   tmp <- withr::local_tempdir()
   sas_file <- file.path(tmp, "06_review_unavail.sas")
   writeLines(c(

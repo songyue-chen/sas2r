@@ -23,7 +23,7 @@ test_that("parallel translation shares relative output paths across different wo
     result <- withCallingHandlers(sas2r::sas_translate("programs", out_dir = "migration_output",
       config = list(), llm = fixtures$parallel_test_llm(responses, delay = 0.2),
       outputs = c("work.out1", "work.out2"),
-      max_parallel_translations = 4L, max_program_repair_rounds = 0L,
+      max_parallel_translations = 2L, max_program_repair_rounds = 0L,
       max_bundle_repair_rounds = 0L, execute = TRUE),
       sas2r_progress = function(event) {
         events[[length(events) + 1L]] <<- list(event = event$event, agent = event$agent,
@@ -36,13 +36,13 @@ test_that("parallel translation shares relative output paths across different wo
         full.names = TRUE), readRDS))
   }, args = list(find.package("sas2r"), .libPaths(), root, helpers), timeout = 90)
 
-  expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output")))
+  expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output"), winslash = "/"))
   expect_true(dir.exists(observed$bundle))
   expect_true(file.exists(observed$report))
   report <- read_json_record(observed$report)
   expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED", fixed = TRUE)
   expect_length(report$diagnostics$execution_deferred, 0L)
-  expect_identical(observed$parallel$effective, 4L)
+  expect_identical(observed$parallel$effective, 2L)
   expect_gte(observed$parallel$observed$peak_workers, 2L)
   started <- Filter(function(event) identical(event$event, "agent_started") &&
     identical(event$agent, "translator"), observed$events)

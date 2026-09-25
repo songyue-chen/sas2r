@@ -1,5 +1,9 @@
 # Public regressions from the 2026-09-11 review. Provider calls are observable
 # counters, so a plausible status can never substitute for proving reuse/limits.
+# Extended public-workflow regressions run in both installed-package CI jobs.
+# CRAN retains the smaller public API cases in test-acceptance.R and feature tests.
+skip_on_cran()
+
 counted_review_llm <- function(responses) {
   adapter <- mock_llm(responses)
   calls <- new.env(parent = emptyenv())

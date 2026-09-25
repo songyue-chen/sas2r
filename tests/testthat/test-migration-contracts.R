@@ -42,7 +42,8 @@ test_that("init_migration_paths creates required directories and returns path li
   expect_true(dir.exists(paths$state))
   expect_true(dir.exists(paths$component_revisions))
   expect_true(dir.exists(paths$bundle_attempts))
-  expect_identical(paths$root, td)
+  expect_identical(normalizePath(paths$root, winslash = "/"),
+                   normalizePath(td, winslash = "/"))
 })
 
 test_that("atomic_write_json and read_json_record handle persistence safely", {

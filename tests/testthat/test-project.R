@@ -182,7 +182,8 @@ test_that("explicit config replaces discovery and loaded configs can be edited",
   expect_identical(p$config$include_roots, character())
   loaded <- sas_config(file.path(dir, "_sas2r.yml"))
   loaded$dialect <- "custom_dialect"
-  expect_identical(sas_project(dir, config = loaded)$config$include_roots, "/path/from/yaml")
+  expect_identical(sas_project(dir, config = loaded)$config$include_roots,
+                   normalizePath("/path/from/yaml", winslash = "/", mustWork = FALSE))
   expect_identical(p$config$dialect, "custom_dialect")
 })
 

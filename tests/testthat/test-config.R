@@ -43,7 +43,8 @@ test_that("SAS2R_CONFIG env var wins over discovery", {
   withr::local_envvar(SAS2R_CONFIG = explicit)
   cfg <- sas_config(start = dir)
   expect_identical(cfg$source, explicit)
-  expect_identical(cfg$libraries$sdtm$path, "/s")
+  expect_identical(cfg$libraries$sdtm$path,
+                   normalizePath("/s", winslash = "/", mustWork = FALSE))
 })
 
 test_that("unknown top-level keys warn but do not fail", {
@@ -397,7 +398,9 @@ test_that("one directory gets one spelling whichever configured group names it",
   base <- withr::local_tempdir()
   real <- file.path(base, "real"); dir.create(real)
   link <- file.path(base, "link")
-  skip_if_not(suppressWarnings(file.symlink(real, link)), "no symlink support")
+  # R can create directory symlinks on Windows but cannot reliably unlink them.
+  link_directory <- if (.Platform$OS.type == "windows") Sys.junction else file.symlink
+  skip_if_not(suppressWarnings(link_directory(real, link)), "no directory-link support")
   writeLines(c("libraries:", "  adam: data/adam",
                "includes:", "  roots:", "    - data/adam"),
              file.path(link, "_sas2r.yml"))

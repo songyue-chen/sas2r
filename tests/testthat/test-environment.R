@@ -22,7 +22,8 @@ test_that("autoexec seeds librefs and session-compiled macros", {
 
 test_that("options sasautos extends the macro search path with provenance", {
   p <- env_project()
-  expect_true("/org/macros" %in% p$config$macro_search_path)
+  expect_true(normalizePath("/org/macros", winslash = "/", mustWork = FALSE) %in%
+                p$config$macro_search_path)
   expect_true("sasautos_from_environment" %in% p$flags$kind)
 })
 
@@ -43,6 +44,7 @@ test_that("options sasautos supports single unparenthesized path", {
   writeLines("options sasautos='/single/macro/dir';", file.path(dir, "autoexec.sas"))
   writeLines("data w1; set work.a; run;", file.path(dir, "a.sas"))
   p <- sas_project(dir)
-  expect_true("/single/macro/dir" %in% p$config$macro_search_path)
+  expect_true(normalizePath("/single/macro/dir", winslash = "/", mustWork = FALSE) %in%
+                p$config$macro_search_path)
   expect_true("sasautos_from_environment" %in% p$flags$kind)
 })

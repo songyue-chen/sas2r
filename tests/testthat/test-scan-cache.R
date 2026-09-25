@@ -2,7 +2,8 @@ test_that("warm scans reuse the cache and produce identical projects", {
   dir <- withr::local_tempdir()
   writeLines("data a; set w.b; run;", file.path(dir, "a.sas"))
   p1 <- sas_project(dir, cache = TRUE)
-  expect_true(file.exists(file.path(dir, ".sas2r", "scan_cache.rds")))
+  expect_true(file.exists(file.path(project_cache_dir(dir), "scan_cache.rds")))
+  expect_false(dir.exists(file.path(dir, ".sas2r")))
   p2 <- sas_project(dir, cache = TRUE)
   expect_identical(p1$units, p2$units)
   expect_identical(p1$lineage, p2$lineage)
@@ -40,7 +41,7 @@ test_that("warm scan genuinely reads from cache file", {
   dir <- withr::local_tempdir()
   writeLines("data a; x = 1; run;", file.path(dir, "a.sas"))
   p1 <- sas_project(dir, cache = TRUE)
-  cfile <- file.path(dir, ".sas2r", "scan_cache.rds")
+  cfile <- file.path(project_cache_dir(dir), "scan_cache.rds")
   expect_true(file.exists(cfile))
 
   # Mutate cached label to verify the warm scan hit path actually reads the cache

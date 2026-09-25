@@ -70,7 +70,7 @@ test_that("accessible source LIBNAME wins over configured fallback", {
   ref <- p$lineage[p$lineage$dataset == "adam.adsl", ]
   binding <- resolve_libref_at(p$libref_registry, "adam", ref$file, ref$line)
   expect_identical(binding$selection_origin, "source")
-  expect_identical(binding$selected_path, normalizePath(source_lib))
+  expect_identical(binding$selected_path, normalizePath(source_lib, winslash = "/"))
 })
 
 test_that("unavailable source uses config but accessible missing member does not", {
@@ -95,8 +95,8 @@ test_that("one included file keeps distinct root-program libref contexts", {
   b <- resolve_libref_at(p$libref_registry, "adam", f$include_file, 1L,
                          root_program = f$program_b,
                          occurrence_id = f$occurrence_b)
-  expect_identical(a$selected_path, normalizePath(f$library_a))
-  expect_identical(b$selected_path, normalizePath(f$library_b))
+  expect_identical(a$selected_path, normalizePath(f$library_a, winslash = "/"))
+  expect_identical(b$selected_path, normalizePath(f$library_b, winslash = "/"))
   expect_error(resolve_libref_at(p$libref_registry, "adam",
                                  f$include_file, 1L),
                class = "sas2r_ambiguous_libref")
@@ -118,7 +118,7 @@ test_that("an accessible directory wins even when the member is absent", {
   expect_false(file.exists(file.path(source_lib, "adsl.sas7bdat")))
   expect_identical(binding$selection_origin, "source")
   expect_identical(binding$status, "bound")
-  expect_identical(binding$selected_path, normalizePath(source_lib))
+  expect_identical(binding$selected_path, normalizePath(source_lib, winslash = "/"))
   expect_identical(binding$fallback_reason, NA_character_)
 })
 
@@ -138,7 +138,7 @@ test_that("a macro-valued or engine-unsupported source path falls back with a re
   remote_bound <- resolve_libref_at(p$libref_registry, "sdtm",
                                     file.path(root, "p.sas"), 4L)
   expect_identical(macro_bound$fallback_reason, "source_path_unresolved_macro")
-  expect_identical(macro_bound$selected_path, normalizePath(fallback))
+  expect_identical(macro_bound$selected_path, normalizePath(fallback, winslash = "/"))
   expect_identical(remote_bound$fallback_reason, "source_engine_unsupported")
   expect_identical(remote_bound$selection_origin, "configured_fallback")
 })
@@ -160,7 +160,7 @@ test_that("a cleared libref falls back to configuration from the clear onward", 
                             file.path(root, "p.sas"), 4L)
   expect_identical(early$action, "assign")
   expect_identical(early$selection_origin, "source")
-  expect_identical(early$selected_path, normalizePath(source_lib))
+  expect_identical(early$selected_path, normalizePath(source_lib, winslash = "/"))
   expect_identical(late$action, "clear")
   expect_identical(late$selection_origin, "configured_fallback")
   expect_identical(late$fallback_reason, "source_binding_cleared")
@@ -178,7 +178,7 @@ test_that("one root program's binding never leaks into another root program", {
   a <- resolve_libref_at(p$libref_registry, "adam", file.path(root, "a.sas"), 2L)
   b <- resolve_libref_at(p$libref_registry, "adam", file.path(root, "b.sas"), 1L)
   expect_identical(a$selection_origin, "source")
-  expect_identical(a$selected_path, normalizePath(lib_a))
+  expect_identical(a$selected_path, normalizePath(lib_a, winslash = "/"))
   expect_identical(b$selection_origin, "none")
   expect_identical(b$status, "unbound")
   expect_identical(b$selected_path, NA_character_)
@@ -195,7 +195,7 @@ test_that("autoexec bindings are a prologue to every root program", {
     binding <- resolve_libref_at(p$libref_registry, "adam",
                                  file.path(root, prog), 1L)
     expect_identical(binding$selection_origin, "source")
-    expect_identical(binding$selected_path, normalizePath(lib))
+    expect_identical(binding$selected_path, normalizePath(lib, winslash = "/"))
   }
   # The prologue executes inside each root program's own context, so the two
   # effective bindings are distinct records even though they select one path.
@@ -321,10 +321,10 @@ test_that("libname _all_ clear unbinds a libref it never names", {
                              file.path(root, "p.sas"), 2L)
   late <- resolve_libref_at(p$libref_registry, "adam",
                             file.path(root, "p.sas"), 4L)
-  expect_identical(early$selected_path, normalizePath(source_lib))
+  expect_identical(early$selected_path, normalizePath(source_lib, winslash = "/"))
   expect_identical(late$action, "clear")
   expect_identical(late$fallback_reason, "source_binding_cleared")
-  expect_identical(late$selected_path, normalizePath(fallback))
+  expect_identical(late$selected_path, normalizePath(fallback, winslash = "/"))
 })
 
 test_that("a geometric include fan-out is truncated and reported, not walked", {
@@ -381,14 +381,14 @@ test_that("a binding made inside an included file takes effect at its site", {
                               file.path(root, "p.sas"), 2L)
   after <- resolve_libref_at(p$libref_registry, "adam",
                              file.path(root, "p.sas"), 4L)
-  expect_identical(before$selected_path, normalizePath(outer))
-  expect_identical(after$selected_path, normalizePath(inner))
+  expect_identical(before$selected_path, normalizePath(outer, winslash = "/"))
+  expect_identical(after$selected_path, normalizePath(inner, winslash = "/"))
 
   # inside the included file its own binding is already in force, and the
   # record names the include occurrence it executed under
   within <- resolve_libref_at(p$libref_registry, "adam",
                               file.path(root, "inc.sas"), 1L)
-  expect_identical(within$selected_path, normalizePath(inner))
+  expect_identical(within$selected_path, normalizePath(inner, winslash = "/"))
   expect_identical(within$include_occurrence_id,
                    p$include_graph$occurrences$occurrence_id[1])
   # the outer binding, made in the root program, carries no occurrence
@@ -627,7 +627,9 @@ test_that("a symlinked library resolves to its canonical directory", {
   root <- withr::local_tempdir()
   real <- file.path(root, "real-adam"); dir.create(real)
   link <- file.path(root, "link-adam")
-  skip_if_not(suppressWarnings(file.symlink(real, link)), "no symlink support")
+  # R can create directory symlinks on Windows but cannot reliably unlink them.
+  link_directory <- if (.Platform$OS.type == "windows") Sys.junction else file.symlink
+  skip_if_not(suppressWarnings(link_directory(real, link)), "no directory-link support")
   writeLines(c(sprintf("libname adam '%s';", link),
                "data work.x; set adam.adsl; run;"), file.path(root, "p.sas"))
   p <- sas_project(file.path(root, "p.sas"))

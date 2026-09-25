@@ -1,15 +1,24 @@
 # Explicit fresh-process factory: no captured test harness or parent budget.
 parallel_test_llm <- function(responses, delay = 0.1, marker_dir = NULL, crash_component = NULL,
-                              write_failure_component = NULL) {
+                              write_failure_component = NULL, translator_barrier = NULL) {
   env <- list2env(list(responses = responses, delay = delay, marker_dir = marker_dir,
-    crash_component = crash_component, write_failure_component = write_failure_component),
+    crash_component = crash_component, write_failure_component = write_failure_component,
+    translator_barrier = translator_barrier),
     parent = asNamespace("sas2r"))
   factory <- function() {
     new_llm(function(request, audit_context = list()) {
       started <- as.numeric(Sys.time())
+      role <- audit_context$agent %||% audit_context$purpose
+      if (identical(role, "translator") && !is.null(translator_barrier)) {
+        file.create(file.path(translator_barrier$dir, audit_context$component_id))
+        deadline <- Sys.time() + 30
+        while (length(list.files(translator_barrier$dir)) < translator_barrier$count) {
+          if (Sys.time() >= deadline) stop("parallel test translators did not reach the barrier")
+          Sys.sleep(0.02)
+        }
+      }
       Sys.sleep(if (length(delay) > 1L) delay[[audit_context$component_id]] else delay)
       if (identical(audit_context$component_id, crash_component)) quit(save = "no", status = 7L)
-      role <- audit_context$agent %||% audit_context$purpose
       if (identical(role, "fixer") && identical(audit_context$component_id, write_failure_component) &&
           !is.null(.parallel_worker$client)) {
         # Inject a callback failure when the successful fixer response is
