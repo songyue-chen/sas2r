@@ -36,7 +36,7 @@ test_that("parallel translation shares relative output paths across different wo
         full.names = TRUE), readRDS))
   }, args = list(find.package("sas2r"), .libPaths(), root, helpers), timeout = 90)
 
-  expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output")))
+  expect_identical(observed$out_dir, normalizePath(file.path(root, "migration_output"), winslash = "/"))
   expect_true(dir.exists(observed$bundle))
   expect_true(file.exists(observed$report))
   report <- read_json_record(observed$report)

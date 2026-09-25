@@ -1,5 +1,8 @@
 # sas2r 0.5.4
 
+- Include identity anchors reject Windows drive roots consistently with Unix
+  filesystem roots. Path assertions and generated-code fixtures work on Windows.
+
 - Assert the expected export and lint-repair warnings in regression tests.
   Run extended process-heavy integration scenarios in CI, retain representative
   CRAN coverage, and remove unnecessary wall-clock waits from mock retry tests.

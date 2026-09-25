@@ -116,7 +116,7 @@ test_that("macro contract validation checks R formals without executing code", {
   sentinel <- withr::local_tempfile()
   never_run <- sprintf(
     "beta <- function(input = '', dataset = 'adsl', count = 2, label = 'ready', dynamic = NULL) { writeLines('executed', %s) }",
-    shQuote(sentinel)
+    deparse(sentinel)
   )
   result <- validate_macro_contract(never_run, contract)
   expect_true(result$pass)

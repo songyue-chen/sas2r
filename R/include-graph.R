@@ -320,20 +320,13 @@ include_identity_anchors <- function(project_root, include_roots = character(),
   }
   anchors <- list()
   add <- function(dir, prefix) {
-    # Checked where anchors are made rather than re-tested on every lookup: an
-    # empty directory would prefix-match every path and so capture the whole
-    # project into whichever anchor held it. `dir` is the post-as_dir() value,
-    # and as_dir() always appends a trailing "/" when its normalized input
-    # lacks one, so its shortest possible output is "/", never "" -- nzchar()
-    # alone cannot see that. "/" is exactly as dangerous as "": every scanned
-    # file's canonical path is itself absolute, so a "/" anchor prefix-matches
-    # all of them too. A configured include root of "/", a project root of
-    # "/", or an autoexec file directly at the filesystem root all reach this
-    # with dir == "/".
+    # A filesystem-wide anchor erases meaningful project-relative identity.
+    # Normalization yields "/" on Unix and a drive root such as "C:/" on Windows.
     stopifnot(
       "an anchor directory must be a non-empty path" =
         length(dir) == 1L && !is.na(dir) && nzchar(dir),
-      "an anchor directory must not be the filesystem root" = dir != "/"
+      "an anchor directory must not be the filesystem root" =
+        !grepl("^([A-Za-z]:)?/$", dir)
     )
     anchors[[length(anchors) + 1L]] <<- list(dir = dir, prefix = prefix)
   }
