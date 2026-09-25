@@ -648,7 +648,8 @@ test_that("a symlink escaping the project root is named against its target", {
   root <- withr::local_tempdir()
   outside <- withr::local_tempdir()
   writeLines("data b; run;", file.path(outside, "b.sas"))
-  linked <- file.symlink(file.path(outside, "b.sas"), file.path(root, "b.sas"))
+  linked <- suppressWarnings(file.symlink(file.path(outside, "b.sas"),
+                                         file.path(root, "b.sas")))
   skip_if_not(linked, "symbolic links are unavailable on this platform")
 
   # documented, deliberate: include_normalize_path() resolves the symlink before

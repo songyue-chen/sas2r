@@ -39,8 +39,9 @@ test_that("output-review config requires at least one r_libraries root when enab
 test_that("symlink escape is rejected before a candidate is readable", {
   root <- withr::local_tempdir(); outside <- withr::local_tempdir()
   saveRDS(data.frame(id = 1), file.path(outside, "secret.rds"))
-  expect_true(file.symlink(file.path(outside, "secret.rds"),
-                           file.path(root, "escaped.rds")))
+  linked <- suppressWarnings(file.symlink(file.path(outside, "secret.rds"),
+                                         file.path(root, "escaped.rds")))
+  skip_if_not(linked, "symbolic links are unavailable on this platform")
   expect_error(
     sas2r:::confine_evidence_path(file.path(root, "escaped.rds"), root),
     class = "sas2r_evidence_path_escape"

@@ -237,7 +237,7 @@ test_that("an autocall file symlink resolves to its scanned definition", {
   writeLines("%macro add(value=1); %eval(&value+1); %mend;", external)
   link <- file.path(root, "macros", "add.sas")
   unlink(link)
-  skip_if_not(file.symlink(external, link), "symlinks unavailable")
+  skip_if_not(suppressWarnings(file.symlink(external, link)), "symlinks unavailable")
   p <- sas_project(file.path(root, "programs"))
   edges <- p$graph$edges[p$graph$edges$type == "calls_macro", ]
   providers <- p$graph$nodes[p$graph$nodes$node_id %in% edges$from, ]

@@ -154,18 +154,22 @@ test_that("checkpoint import preserves known allowances and unknown legacy revis
 test_that("an interrupted worker retains admitted usage and useful failure diagnostics", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   state <- check_component_revision(fx$state, "p01")
-  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 10)
+  # Keep the mock request in flight until the parent deliberately kills it.
+  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = Inf)
   state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
   state$parallel <- resolve_parallel_execution(state, 2L)
   pool <- parallel_new_pool(state)
   on.exit(parallel_stop_pool(pool), add = TRUE)
   job <- parallel_start_job(pool, state, "p01", "review", FALSE, 0L)
-  deadline <- Sys.time() + 15
+  deadline <- Sys.time() + 120
   while (state$usage_budget$request_count == 0L && Sys.time() < deadline) {
     parallel_poll(pool)
     Sys.sleep(0.02)
   }
   expect_identical(state$usage_budget$request_count, 1L)
+  if (state$usage_budget$request_count != 1L) {
+    stop("Worker did not reach request admission within 120 seconds")
+  }
   job$process$kill_tree()
   job$process$wait(2000)
   expect_length(parallel_poll(pool), 0L)
