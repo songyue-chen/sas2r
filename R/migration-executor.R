@@ -355,36 +355,36 @@ run_program_smoke <- function(
 
   smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call) {
     # Initialize fresh environment
-    rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
+    execution_env <- new.env(parent = globalenv())
 
     if (!is.null(autoexec_file) && nzchar(autoexec_file) && file.exists(autoexec_file)) {
-      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
+      sys.source(autoexec_file, envir = execution_env, chdir = TRUE)
     } else {
       if (!is.null(registry_file) && nzchar(registry_file) && file.exists(registry_file)) {
-        sys.source(registry_file, envir = globalenv())
+        sys.source(registry_file, envir = execution_env)
       }
       if (!is.null(helpers_file) && nzchar(helpers_file) && file.exists(helpers_file)) {
-        sys.source(helpers_file, envir = globalenv())
+        sys.source(helpers_file, envir = execution_env)
       }
       if (!is.null(formats_file) && nzchar(formats_file) && file.exists(formats_file)) {
-        sys.source(formats_file, envir = globalenv())
+        sys.source(formats_file, envir = execution_env)
       }
     }
 
-    registry_seed <- get0(".sas2r_registry", envir = globalenv(), inherits = FALSE)
+    registry_seed <- get0(".sas2r_registry", envir = execution_env, inherits = FALSE)
     executed_components <- character()
     executed_calls <- character()
     current <- component_id
     population_checks <- list()
     execute_component <- function(id, code) {
       current <<- id
-      if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = globalenv())
-      observer <- observe_population(population_specs[[id]], globalenv())
+      if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
+      observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
         population_checks[[id]] <<- observer$finish()
         observer$restore()
       })
-      eval(parse(text = code), envir = globalenv())
+      eval(parse(text = code), envir = execution_env)
     }
 
     tryCatch({
@@ -809,7 +809,7 @@ run_bundle_attempt <- function(
   stderr_path <- normalizePath(file.path(logs_dir, "bundle_stderr.log"), winslash = "/", mustWork = FALSE)
 
   bundle_runner_fn <- function(bundle_dir, execution_order, program_files, population_specs, observe_population) {
-    rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
+    execution_env <- new.env(parent = globalenv())
 
     # The bundle's own autoexec.R loads the runtime, exactly as a program
     # launched by a person would; an older bundle without one is loaded by hand.
@@ -819,20 +819,20 @@ run_bundle_attempt <- function(
     formats_file <- file.path(bundle_dir, "_sas2r_formats.R")
 
     if (file.exists(autoexec_file)) {
-      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
+      sys.source(autoexec_file, envir = execution_env, chdir = TRUE)
     } else {
-      if (file.exists(reg_file)) sys.source(reg_file, envir = globalenv())
-      if (file.exists(helpers_file)) sys.source(helpers_file, envir = globalenv())
-      if (file.exists(formats_file)) sys.source(formats_file, envir = globalenv())
+      if (file.exists(reg_file)) sys.source(reg_file, envir = execution_env)
+      if (file.exists(helpers_file)) sys.source(helpers_file, envir = execution_env)
+      if (file.exists(formats_file)) sys.source(formats_file, envir = execution_env)
     }
 
-    registry_seed <- get(".sas2r_registry", envir = globalenv())
+    registry_seed <- get(".sas2r_registry", envir = execution_env)
     output_dirs <- lapply(registry_seed, function(binding) binding$write_path)
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
     population_checks <- list()
     for (item in execution_order) {
-      assign(".sas2r_registry", registry_seed, envir = globalenv())
+      assign(".sas2r_registry", registry_seed, envir = execution_env)
       writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
       candidates <- c(
         file.path(bundle_dir, program_files[[item]]),
@@ -848,16 +848,16 @@ run_bundle_attempt <- function(
       }
 
       if (!is.na(target_file) && file.exists(target_file)) {
-        observer <- observe_population(population_specs[[item]], globalenv())
+        observer <- observe_population(population_specs[[item]], execution_env)
         tryCatch({
-          sys.source(target_file, envir = globalenv())
+          sys.source(target_file, envir = execution_env)
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
             population_checks = population_checks), auto_unbox = TRUE), status_file)
         })
-        bindings <- get(".sas2r_registry", envir = globalenv())
+        bindings <- get(".sas2r_registry", envir = execution_env)
         for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))
         executed <- c(executed, item)
         writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)

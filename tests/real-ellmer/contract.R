@@ -861,7 +861,7 @@ wire_history_positions <- function(request) {
   }
   c(
     original_user = first_position(function(item) contains_pair(item, "role", "user") &&
-      any(startsWith(as.character(unlist(item)), "translate\n\nTask data follows as JSON."))),
+      contains_value(item, "translate")),
     assistant_tool_request = first_position(function(item) {
       (contains_pair(item, "role", "assistant") &&
          contains_field(item, "tool_calls")) ||
