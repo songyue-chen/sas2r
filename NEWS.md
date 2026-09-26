@@ -12,6 +12,9 @@
 - Review fixes retain external-input blockers after unmodeled effects, preserve
   dataset versions across simple setup macros, group ordered producer events,
   scale ordered smoke timeouts per replayed root and clarify replay costs.
+- Retain uncertain literal permanent outputs from invoked macros in declared
+  order, without hiding unrelated missing inputs. Preflight explains shorter
+  bundle limits, budget admission and incomplete diagnosis responses.
 
 # sas2r 0.5.5
 

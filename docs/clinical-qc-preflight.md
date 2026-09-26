@@ -259,6 +259,9 @@ the configured `llm.max_output_tokens` allowance (4,096 when absent), and a
 preflight does not silently shrink an explicitly larger generation allowance. Existing
 usage and budget limits also apply. A custom adapter retains its own transport
 contract. Known configured secrets are redacted; useful paths remain visible.
+The 120-second ceiling still applies with a large token allowance or high
+reasoning effort; more allowed tokens do not guarantee completion within that
+time. Diagnosis does not automatically extend the deadline or retry.
 
 `check$diagnosis` separates SAS-source corrections, configuration changes,
 missing resources, suspected sas2r bugs and undetermined causes. Advice includes
@@ -268,7 +271,9 @@ does not edit SAS code or submit issues. Inspect `check$diagnosis$advisory` for 
 full response and `check$diagnosis$usage` for request accounting. The request's
 allowance, response status and finish reason are retained in `$max_output_tokens`,
 `$response_status` and `$finish_reason`. Preflight announces the source context
-and provider before the attempt; `diagnose = "off"` disables it. The issue tracker
+and provider before budget admission; a rejected attempt sends nothing. Incomplete
+advice prints its finish reason and allowance so the programmer can review token
+and context limits. `diagnose = "off"` disables diagnosis. The issue tracker
 is public: review the draft and use a synthetic example without study source,
 identifiers or paths.
 

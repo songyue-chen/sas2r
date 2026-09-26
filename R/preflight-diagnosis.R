@@ -93,7 +93,7 @@ preflight_diagnosis <- function(check = NULL, config = NULL, budget = NULL,
       max_output_tokens = result$max_output_tokens,
       reasoning_effort = llm$model_parameters$reasoning_effort,
       temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)
-    cli::cli_inform("AI diagnosis request to {llm$provider}: bounded SAS statements, source paths and findings; no dataset contents. Use diagnose = \"off\" to disable.")
+    cli::cli_inform("AI diagnosis may send bounded SAS statements, source paths and findings to {llm$provider}, subject to budget admission; no dataset contents. Use diagnose = \"off\" to disable.")
     response <- attempt_llm_request(request, llm, usage_budget = budget,
       audit_context = list(purpose = "preflight_diagnosis", agent = "preflight_diagnosis"))
     result$finish_reason <- redact(response$finish_reason)
@@ -122,7 +122,12 @@ preflight_diagnosis <- function(check = NULL, config = NULL, budget = NULL,
 
 preflight_diagnosis_lines <- function(diagnosis) {
   if (is.null(diagnosis)) return(character())
-  if (diagnosis$status != "completed") return(diagnosis$reason %||% diagnosis$status)
+  if (diagnosis$status != "completed") return(c(
+    diagnosis$reason %||% diagnosis$status,
+    if (identical(diagnosis$response_status, "incomplete")) paste0(
+      "Finish reason: ", diagnosis$finish_reason %||% "unknown",
+      "; max_output_tokens = ", diagnosis$max_output_tokens, ". ",
+      "Review llm.max_output_tokens and the model's context limit, or use diagnose = \"off\".")))
   advice <- diagnosis$advisory
   c("AI preflight diagnosis (advisory; static findings remain unchanged):",
     advice$summary,

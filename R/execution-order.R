@@ -79,6 +79,47 @@ macro_preserves_datasets <- function(project, call) {
   TRUE
 }
 
+# Literal outputs of reachable resolved macros are possible writes, not known
+# producers. Resolve their libraries at the outer call site, where the macro
+# runs; do not promote the macro body into ordinary executable lineage.
+macro_possible_dataset_writes <- function(project) {
+  statements <- project$statements
+  resolution <- project$macros$resolution
+  defs <- project$macros$defs
+  if (!nrow(resolution) || !any(statements$unit_type == "macro_def" &
+      statements$first_token %in% dataset_candidate_tokens())) return(character())
+  visit <- function(calls, file, line, seen = integer()) {
+    writes <- character()
+    for (id in calls$call_id) {
+      call <- resolution[resolution$call_id == id, ]
+      if (nrow(call) != 1L || !call$status %in%
+          c("resolved_project", "resolved_path", "resolved_content")) next
+      def <- defs[defs$name == call$name & defs$file == call$source, ]
+      if (nrow(def) != 1L || def$unit_id %in% seen) next
+      body <- statements[statements$unit_id == def$unit_id, ]
+      datasets <- unique(unlist(lapply(seq_len(nrow(body)), function(i) {
+        token <- body$first_token[i]
+        refs <- dataset_statement_refs(body$text[i], token,
+          if (token == "data") "data_step" else "proc_step")
+        norm_ds(static_dataset_names(refs$creates))
+      }), use.names = FALSE))
+      datasets <- datasets[!startsWith(datasets, "work.")]
+      bindings <- libref_point_of_use_records(project$libref_registry,
+        sub("\\..*$", "", datasets), rep(file, length(datasets)), rep(line, length(datasets)))
+      for (i in seq_along(datasets)) {
+        binding <- bindings$records[[bindings$slot[i]]]
+        if (identical(binding$status, "bound"))
+          writes <- c(writes, paste(datasets[i], binding$selected_path, sep = "\r"))
+      }
+      writes <- c(writes, visit(extract_macro_calls(body), file, line, c(seen, def$unit_id)))
+    }
+    unique(writes)
+  }
+  calls <- extract_macro_calls(statements[statements$unit_type != "macro_def", ])
+  unique(unlist(lapply(seq_len(nrow(calls)), function(i)
+    visit(calls[i, ], calls$source_file[i], calls$line[i])), use.names = FALSE))
+}
+
 # Walk existing statements and resolved include sites in execution order.
 # No macro expansion: an unmodeled effect invalidates previous producer claims.
 # Occurrences remain separate so a reused include can consume different states.
@@ -91,7 +132,7 @@ ordered_dataset_producers <- function(project, paths, identity) {
   if (nrow(calls)) calls <- calls[!vapply(seq_len(nrow(calls)), function(i)
     macro_preserves_datasets(project, calls[i, ]), logical(1)), ]
   stateful <- startsWith(lineage$dataset, "work.") |
-    identity %in% identity[lineage$role == "creates"]
+    identity %in% c(identity[lineage$role == "creates"], macro_possible_dataset_writes(project))
   lineage_rows <- split(seq_len(nrow(lineage)), lineage$unit_id)
   current <- list()
   uncertain <- FALSE

@@ -107,7 +107,13 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
         if (any(inputs$status == "unresolved")) "Resolve input library bindings at the reported source locations; inspect $libraries.",
         if (any(references$status == "missing")) "Supply the configured SAS reference files or correct their paths; inspect $references.",
         if (any(unresolved)) "Resolve the reported include, macro, or dependency findings before execution.",
-        if (nrow(unsupported)) "Review deferred constructs; they require AI translation or manual implementation."
+        if (nrow(unsupported)) "Review deferred constructs; they require AI translation or manual implementation.",
+        if (!is.null(cfg$migration$execution_order) &&
+            cfg$migration$bundle_timeout < length(cfg$migration$execution_order) * cfg$migration$smoke_timeout)
+          paste0("migration.bundle_timeout = ", cfg$migration$bundle_timeout,
+            " seconds is below the final ordered smoke allowance of ",
+            length(cfg$migration$execution_order) * cfg$migration$smoke_timeout,
+            " seconds. Size both limits for measured study runtime; passing smoke checks does not ensure the bundle finishes within its limit.")
       ),
       notes = c("Static inspection only; datasets and generated programs were not executed.",
                 "Missing resources normally allow translation with warnings; affected execution remains unavailable.",
