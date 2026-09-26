@@ -205,6 +205,8 @@ llm:
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
+#   # Optional: all root programs, in one shared WORK session; paths relative here.
+#   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
 #   max_parallel_translations: 1
 #   smoke_timeout: 60       # seconds for a component smoke check
 #   bundle_timeout: 120     # seconds for the whole study; increase for larger data

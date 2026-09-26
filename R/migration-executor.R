@@ -187,9 +187,20 @@ build_program_smoke_plan <- function(
       component_id = component_id, waiting_on = unique(waiting_on)))
   }
 
+  included_modules <- character()
+  if (!is.null(graph$execution_order)) {
+    include_edges <- edges[edges$type == "includes" & edges$resolution == "resolved", ]
+    included_modules <- unique(nodes$component_id[match(include_edges$from, nodes$node_id)])
+    if (component_id %in% included_modules) return(list(
+      status = "deferred", reason = "included_caller_context_required",
+      component_id = component_id))
+    included_modules <- intersect(included_modules, deps)
+    deps <- setdiff(deps, included_modules)
+  }
   list(
     status = "runnable",
     component_id = component_id,
+    included_modules = included_modules,
     dependency_prefix = deps,
     call_site = call_site,
     selected_revisions = selected_revisions
@@ -209,17 +220,25 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   if (file.exists(formats)) file.copy(formats, file.path(dir, "_sas2r_formats.R"))
   libraries <- build_attempt_library_map(state$project, dir)
   write_autoexec(state$project, dir, library_map = libraries)
-  ids <- c(plan$dependency_prefix, plan$component_id)
+  execute_ids <- c(plan$dependency_prefix, plan$component_id)
+  ids <- unique(c(execute_ids, plan$included_modules))
   programs <- file.path(dir, "programs")
   dir.create(programs)
-  files <- file.path(programs, paste0(ids, ".R"))
-  for (i in seq_along(ids)) writeLines(revision_code(plan$selected_revisions[[ids[i]]]), files[i])
+  files <- stats::setNames(file.path(programs, paste0(ids, ".R")), ids)
+  for (id in plan$included_modules) {
+    file <- state$graph$nodes$source_file[match(id, state$graph$nodes$component_id)]
+    files[id] <- file.path(dir, canonical_include_staged_path(file, state$project$project_dir))
+  }
+  for (i in seq_along(ids)) {
+    dir.create(dirname(files[i]), recursive = TRUE, showWarnings = FALSE)
+    writeLines(revision_code(plan$selected_revisions[[ids[i]]]), files[i])
+  }
   replay <- file.path(dir, "run.R")
   writeLines(c(
     "# Partial component smoke replay; not a validated final bundle.",
     sprintf("setwd(%s)", encodeString(normalizePath(dir, winslash = "/"), quote = '\"')),
     'source("autoexec.R", chdir = TRUE)',
-    vapply(files, function(f) sprintf("source(%s)", encodeString(f, quote = '\"')), character(1)),
+    vapply(files[execute_ids], function(f) sprintf("source(%s)", encodeString(f, quote = '\"')), character(1)),
     plan$call_site %||% character()
   ), replay)
   plan$input_project <- state$project
@@ -731,6 +750,7 @@ build_bundle_execution_plan <- function(graph) {
     ordered_roots <- candidate_roots
   }
 
+  if (!is.null(g$execution_order)) ordered_roots <- g$execution_order
   included_modules <- setdiff(unique(nodes$component_id), ordered_roots)
 
   list(
@@ -781,6 +801,11 @@ run_bundle_attempt <- function(
   # outputs are assessed as not executed, never as produced or as missing.
   deferred <- state$diagnostics$deferred_components %||% list()
   deferred <- deferred[names(deferred) %in% plan$execution_order]
+  if (!is.null(state$graph$execution_order) && length(deferred)) {
+    first <- min(match(names(deferred), plan$execution_order))
+    for (id in plan$execution_order[seq.int(first, length(plan$execution_order))])
+      if (is.null(deferred[[id]])) deferred[[id]] <- "An earlier program in migration.execution_order is deferred."
+  }
   exec_order <- setdiff(plan$execution_order, names(deferred))
   scope <- list(execution_scope = if (length(deferred)) "partial" else "complete",
     deferred_component_ids = names(deferred) %||% character(), deferred_reasons = deferred)

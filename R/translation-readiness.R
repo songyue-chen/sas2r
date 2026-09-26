@@ -18,7 +18,7 @@ translation_readiness <- function(project, plan) {
       file = file, line = line, affected = affected, blocks_execution = blocks_execution, action = action)
   }
   nodes <- plan$graph$nodes
-  for (i in which(inputs$status %in% c("missing", "unresolved", "no_producer", "backward_dependency"))) {
+  for (i in which(inputs$status %in% c("missing", "unresolved", "no_producer", "deferred", "backward_dependency"))) {
     row <- inputs[i, ]
     components <- unique(nodes$component_id[nodes$source_file %in% row$file & nodes$component_id %in% ids])
     unavailable <- row$status %in% c("missing", "unresolved")

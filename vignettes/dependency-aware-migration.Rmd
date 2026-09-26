@@ -112,7 +112,7 @@ transport work and validation before these profiles are used for study migration
 library(sas2r)
 check <- sas_preflight("programs/",   # the folder of SAS programs to translate
                        config = "_sas2r.yml",
-                       out_dir = "migration_output")
+                       out_dir = "migration_output", diagnose = "off")
 print(check)
 check$libraries
 check$inputs
@@ -124,7 +124,12 @@ This reads source files and directory listings without model calls, dataset
 reads, program execution, or output writes. The program folder is the `path`
 argument, not a configuration key; a single `.sas` file also works, and
 `recursive = TRUE` includes subfolders. Reuse `check$project` for
-translation while sources remain unchanged.
+translation while sources remain unchanged. `migration.execution_order` can name
+all executable root programs in their intended shared-session order; each WORK
+read then uses the latest preceding completed write. Included programs execute
+at their call sites. When the order is omitted, dependency inference remains the
+default. With `diagnose = "auto"`, configured AI can suggest corrections for
+findings in one bounded request; advice never overrides static checks.
 Use `qc_profile()` with `outputs$profiles` and a named `profile` in each target's
 assertions to require labels, formats, types/order, keys, uniqueness, row counts,
 and per-variable reference tolerances. These checks add study requirements;

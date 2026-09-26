@@ -130,14 +130,18 @@ code style keys `dialect` and `allowlist` are described in
 library(sas2r)
 check <- sas_preflight(
   "programs/",                     # the folder of SAS programs to translate
-  config = "_sas2r.yml", out_dir = "migration_output"
+  config = "_sas2r.yml", out_dir = "migration_output", diagnose = "off"
 )
 print(check)
 check$inputs       # availability and producer-order status
 check$budget       # effective limits; preflight makes no model calls
 ```
 
-Preflight checks the source setup without model calls or reading dataset contents.
+With `diagnose = "off"`, preflight checks the source setup without model calls or reading dataset contents.
+The default `diagnose = "auto"` reports missing LLM configuration or uses one bounded
+request to suggest corrections for findings. Advice never clears static findings.
+To specify a shared-session program sequence, set `migration.execution_order`;
+see [execution order](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#explicit-execution-order).
 Review the findings: missing resources usually allow translation with warnings. See the [preflight guide](https://github.com/songyue-chen/sas2r/blob/main/docs/clinical-qc-preflight.md)
 for library paths, output requirements and QC profiles.
 

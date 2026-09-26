@@ -116,6 +116,52 @@ Cycles are warnings: drafts use stable source order inside a cycle, while execut
 waits for the dependency issue to be resolved. This draft order is not a claim
 that the programs can execute in that order.
 
+## Explicit execution order
+
+When the programmer already knows the program sequence, declare all executable
+root programs exactly once in `_sas2r.yml`:
+
+```yaml
+migration:
+  execution_order:
+    - programs/adsl.sas
+    - programs/adef.sas
+    - programs/adtte.sas
+```
+
+Paths are relative to the configuration file. With an in-memory configuration
+list they are relative to the scanned project directory. `path` and `recursive`
+still select the source scope; the order does not silently add or filter files.
+Missing, duplicate or out-of-scope entries produce a configuration error. List
+root programs only: startup, called macros and included modules retain their
+existing roles. Driver-file discovery and separate batch-session modes are not
+part of this option.
+
+The list governs root translation dependencies, component smoke replays and the
+final bundle. Roots wait for the preceding root even when parallel translation
+is enabled; independent helper translation can still use available workers.
+`check$pipeline$order_source` reports `configured` or `inferred`. Without this
+setting, existing dependency inference is unchanged. Changing an order on a
+previously scanned project requires rescanning the sources.
+
+Execution uses one shared WORK session. Each read sees the latest completed
+write of that dataset earlier in the declared sequence. For example, A creates
+`work.tmp`, B reads and replaces it, and C reads B's version. In
+`data work.tmp; set work.tmp; ...; run;`, the input is the version entering the
+step and the replacement becomes visible after the step. A future writer never
+supplies an earlier read. Permanent datasets also retain their resolved library
+identity when selecting preceding writes.
+
+Resolved literal includes are followed at their call sites, including repeated
+and nested includes, and are not independently executed again. Macro bodies
+continue through the existing macro discovery and translation interfaces.
+Order alone does not resolve arbitrary macro expansion, conditional writes or
+catalog mutations. Such effects invalidate affected static producer claims;
+preflight reports `deferred` when the current dataset state cannot be established.
+Later explicit writes can establish known state again. These advisory findings
+still need translation review and execution checks. If a root is deferred, its
+ordered successors are deferred from bundle execution too.
+
 ## Files and manual reruns
 
 Open `migration_output/<run_id>/START_HERE.html` first. It links the selected
@@ -503,8 +549,9 @@ reports the reason.
 For the supplied ellmer connections, parallel mode requires **ellmer 0.5.0 or
 newer** and `llm.max_tries: 1` (the
 default); older ellmer installations visibly use one workflow. If both
-`max_parallel_translations` and `llm.max_tries` exceed 1, preflight and translation
-stop before provider calls and explain which setting to change. Set `llm.max_tries`
+`max_parallel_translations` and `llm.max_tries` exceed 1, translation and offline
+preflight stop before provider calls and explain which setting to change.
+Automatic preflight diagnosis can make its single advisory request for this error. Set `llm.max_tries`
 to 1 for parallel translation, or `max_parallel_translations` to 1 for provider-level
 retries. Function argument overrides are applied before this check. The existing
 bounded agent retry policy still applies. With ellmer 0.5.0+, `max_calls` counts each request
