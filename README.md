@@ -336,8 +336,9 @@ study material; generated R is not a filesystem sandbox.
 
 Provide the SAS programs, called macros and include files, the input data
 locations, and the list of required outputs. Add matching SAS reference outputs
-if available. Use `_sas2r.yml` to describe the study, then run `sas_preflight()`
-to find setup problems before AI calls. See the [quickstart](#quickstart).
+if available. Use `_sas2r.yml` to describe the study, then run
+`sas_preflight(..., diagnose = "off")` to find setup problems before AI calls.
+See the [quickstart](#quickstart).
 
 ### Do I need SAS installed? Can I start without SAS reference outputs?
 

@@ -13,7 +13,7 @@ sas_config(path = NULL, start = ".")
 }
 \value{
 A \code{sas2r_config} object containing \code{libraries}, \code{macro_search_path},
-\code{include_roots}, optional normalized \code{llm}, \code{output_review}, \code{outputs}, \code{source}, and \code{raw}.
+\code{include_roots}, \code{migration}, optional normalized \code{llm}, \code{output_review}, \code{outputs}, \code{source}, and \code{raw}.
 }
 \description{
 Looks for \verb{_sas2r.yml} upward from \code{start}; the \code{SAS2R_CONFIG}
@@ -21,8 +21,8 @@ environment variable overrides discovery. No config file is the
 primary supported case: built-in defaults let a bare SAS script be
 scanned, assessed, and translated with no setup at all.
 Every relative configured path -- \code{libraries}, \code{macros.search_path},
-\code{includes.roots}, \code{environment.autoexec}, and output/comparison reference
-paths -- is resolved against the
+\code{includes.roots}, \code{environment.autoexec}, \code{migration.execution_order}, and
+output/comparison reference paths -- is resolved against the
 configuration file's own directory, never against the working directory:
 those roots reach \verb{\%include} occurrence identity, which must not depend on
 where the scan was launched from. One anchoring rule governs these paths, so a
@@ -39,6 +39,15 @@ the checkout.
 YAML boolean settings use \code{true} and \code{false}. Tokens such as \code{N},
 \code{Y}, \code{yes}, and \code{no} remain strings, preserving clinical metadata keys.
 Quote string metadata values that look numeric, such as SAS format \code{"8."}.
+
+\code{migration.execution_order} optionally lists every executable root program
+exactly once, in its intended order within one shared WORK session. Reads
+use the latest preceding completed write; a later writer cannot supply an
+earlier read. List roots only: called macros, startup and included files
+retain their existing roles. The list orders the scanned source scope;
+\code{path} and \code{recursive} in \code{\link[=sas_preflight]{sas_preflight()}} or \code{\link[=sas_translate]{sas_translate()}} still select
+that scope. Omitting the order retains inferred dependencies. Changing the
+order on a previously scanned project requires rescanning the sources.
 }
 \examples{
 # Read the demo project configuration shipped with the package.

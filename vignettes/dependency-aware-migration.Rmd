@@ -135,6 +135,46 @@ assertions to require labels, formats, types/order, keys, uniqueness, row counts
 and per-variable reference tolerances. These checks add study requirements;
 passing them alone does not establish SAS reference agreement.
 
+## Declare a shared-session program order
+
+This complete offline example inspects three programs. The second program reads
+the first version of `work.tmp`, then replaces it. The third reads that replacement.
+
+<!-- sas2r-example: offline vignette-execution-order -->
+```r
+ordered_study <- tempfile("sas2r-ordered-study-")
+dir.create(ordered_study)
+writeLines("data work.tmp; value=1; run;",
+           file.path(ordered_study, "create.sas"))
+writeLines("data work.tmp; set work.tmp; value=value+1; run;",
+           file.path(ordered_study, "replace.sas"))
+writeLines("data work.final; set work.tmp; run;",
+           file.path(ordered_study, "read.sas"))
+ordered_config <- list(migration = list(
+  execution_order = c("create.sas", "replace.sas", "read.sas")
+))
+ordered_check <- sas_preflight(ordered_study, config = ordered_config,
+                               diagnose = "off")
+ordered_check$pipeline$execution_order
+ordered_check$inputs[c("dataset", "status")]
+stopifnot(ordered_check$pipeline$order_source == "configured",
+          all(ordered_check$inputs$status == "generated"),
+          ordered_check$model_calls == 0L)
+unlink(ordered_study, recursive = TRUE)
+```
+
+For an R configuration list, these paths are relative to the scanned project
+directory. In YAML they are relative to the configuration file. List every root
+program exactly once; called macros, startup and includes keep their existing
+roles. The order does not change which files `path` and `recursive` select.
+Rescan the sources when changing an order on a previously scanned project.
+
+Explicit order applies to translation, smoke checks and final execution.
+Ordered roots translate sequentially, and smoke checks replay the preceding
+session. Unknown macro effects can still leave state deferred. A later writer
+does not make an earlier absent permanent input available. Omitting the order
+retains dependency inference.
+
 ## Running a Migration in R
 
 To migrate a single SAS script or an entire directory of SAS files, call `sas_translate()`:

@@ -420,8 +420,8 @@ find_config <- function(start = ".") {
 #' primary supported case: built-in defaults let a bare SAS script be
 #' scanned, assessed, and translated with no setup at all.
 #' Every relative configured path -- `libraries`, `macros.search_path`,
-#' `includes.roots`, `environment.autoexec`, and output/comparison reference
-#' paths -- is resolved against the
+#' `includes.roots`, `environment.autoexec`, `migration.execution_order`, and
+#' output/comparison reference paths -- is resolved against the
 #' configuration file's own directory, never against the working directory:
 #' those roots reach `%include` occurrence identity, which must not depend on
 #' where the scan was launched from. One anchoring rule governs these paths, so a
@@ -436,10 +436,19 @@ find_config <- function(start = ".") {
 #' @details YAML boolean settings use `true` and `false`. Tokens such as `N`,
 #'   `Y`, `yes`, and `no` remain strings, preserving clinical metadata keys.
 #'   Quote string metadata values that look numeric, such as SAS format `"8."`.
+#'
+#'   `migration.execution_order` optionally lists every executable root program
+#'   exactly once, in its intended order within one shared WORK session. Reads
+#'   use the latest preceding completed write; a later writer cannot supply an
+#'   earlier read. List roots only: called macros, startup and included files
+#'   retain their existing roles. The list orders the scanned source scope;
+#'   `path` and `recursive` in [sas_preflight()] or [sas_translate()] still select
+#'   that scope. Omitting the order retains inferred dependencies. Changing the
+#'   order on a previously scanned project requires rescanning the sources.
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
-#'   `include_roots`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
+#'   `include_roots`, `migration`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
 #' @examples
 #' # Read the demo project configuration shipped with the package.
 #' cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",

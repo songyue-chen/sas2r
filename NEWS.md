@@ -1,4 +1,4 @@
-# sas2r (development version)
+# sas2r 0.5.6
 
 - Add optional `migration.execution_order` for root programs sharing one WORK
   session. Planning, translation dependencies, smoke checks and final execution

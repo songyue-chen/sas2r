@@ -58,17 +58,18 @@ The example declares an AGE label requirement; preflight records that requiremen
 but does not inspect the data to check it. The migration output gate evaluates
 it on each candidate. `sas_translate(check$project, ...)` reuses the scan,
 configuration, and output requirements, including explicit `outputs` overrides.
-Supply the same budget arguments again. Run preflight on the source path if
+Supply the same call-specific budget arguments again. Run preflight on the source path if
 sources or library settings change; changing scan settings on an existing
-project is rejected with a rescan instruction. `config$budget` is not consumed by
-these entry points; their explicit budget arguments determine the effective
-limits. Preflight displays planned locations; run and attempt IDs are assigned
+project is rejected with a rescan instruction. Both entry points use configured
+`budget:` values as defaults; explicit budget arguments override the corresponding
+settings. Preflight displays planned locations; run and attempt IDs are assigned
 when translation starts.
 
 Preflight also reports `max_parallel_translations`, from its explicit argument
-or the default of 1. It describes the requested workflow limit. Because preflight does
-not construct a model adapter or launch translation processes, it does not test
+or `migration.max_parallel_translations` (default 1). It describes the requested
+workflow limit. Static planning does not launch translation processes, test live
 parallel adapter support, measure available CPU/memory, or check provider quotas.
+Automatic diagnosis may construct an adapter for its separate advisory request.
 The translation report records the effective concurrency and any fallback reason.
 If you override this value in the preflight call, supply the same override to
 `sas_translate()`; a call-specific preflight override does not change the project

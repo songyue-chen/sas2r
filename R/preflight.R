@@ -9,6 +9,19 @@
 #' Deterministic support findings are advisory: an AI translation may handle
 #' deferred constructs, and runtime checks can still defer supported shapes.
 #'
+#' @details With `diagnose = "auto"`, a configured model may receive bounded SAS
+#'   statements, source paths and findings, subject to budget admission; dataset
+#'   contents are not sent. Configured adapters use one transport attempt capped
+#'   at 120 seconds; custom supplied adapters retain their transport contract.
+#'   Advice can suggest source/configuration corrections or an issue draft for a
+#'   suspected sas2r bug. It does not edit sources or submit issues.
+#'
+#'   Configure `migration.execution_order` to inspect a declared shared-session
+#'   sequence; see [sas_config()]. `pipeline$order_source` reports `"configured"`
+#'   or `"inferred"`. A permanent input with no preceding known or possible
+#'   writer still receives the normal availability check, even if a later
+#'   program writes it. Unknown macro effects can leave dataset state deferred.
+#'
 #' @inheritParams sas_translate
 #' @param max_parallel_translations Concurrent component workflow limit used
 #'   when planning translation. Overrides `migration.max_parallel_translations`.
@@ -37,7 +50,7 @@
 #' @examples
 #' source <- tempfile(fileext = ".sas")
 #' writeLines("data out; set raw.dm; run;", source)
-#' check <- sas_preflight(source, usage_limits = list(max_calls = 20))
+#' check <- sas_preflight(source, diagnose = "off")
 #' check$inputs
 #' check$model_calls
 #' unlink(source)

@@ -1,4 +1,9 @@
-This is the first CRAN submission of sas2r, version 0.5.5.
+The current source version is 0.5.6. The notes below describe the previously
+submitted 0.5.5 archive; they are historical evidence, not validation of 0.5.6.
+
+## Previous submission: sas2r 0.5.5
+
+This was the first CRAN submission of sas2r, version 0.5.5.
 
 The package provides dependency-aware translation of SAS programs to R, execution of generated code, comparison with supplied reference datasets, and reporting of unresolved translation and validation findings. Rule-based translation works offline without a SAS installation. Optional language-model translation, review, and repair use a user-configured provider through ellmer and may require an account and API credentials.
 
