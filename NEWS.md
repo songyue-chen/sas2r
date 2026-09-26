@@ -1,3 +1,13 @@
+# sas2r 0.5.5
+
+- Document how to copy and run installed examples, correct the supported input
+  engines in the configuration reference, and move the incomplete scanner
+  project into test fixtures. Configuration help uses the installed migration demo.
+- Make demo input generation require an explicit destination or the demo working
+  directory. Align mocked PDF tables with their SAS sources and check their data.
+- Remove the PHUSE benchmark mode and manifest; retain the generic offline
+  acceptance checks. Repair the internal scan benchmark and its cache guidance.
+
 # sas2r 0.5.4
 
 - Explain missing required output contracts and manual review needs in run

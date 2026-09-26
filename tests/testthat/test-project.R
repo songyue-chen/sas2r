@@ -1,4 +1,4 @@
-demo <- function() system.file("examples", "demo_project", package = "sas2r")
+demo <- function() test_path("fixtures", "scanner-project")
 
 test_that("project scans all files and renumbers units globally", {
   p <- sas_project(demo())

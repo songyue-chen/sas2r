@@ -430,13 +430,13 @@ find_config <- function(start = ".") {
 #'   `include_roots`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
 #' @examples
 #' # Read the demo project configuration shipped with the package.
-#' cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
+#' cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",
 #'                               package = "sas2r"))
 #' class(cfg)
 #' names(cfg$libraries)
 #'
 #' # With no explicit file, search from a known project directory.
-#' cfg <- sas_config(start = system.file("examples", "demo_project", package = "sas2r"))
+#' cfg <- sas_config(start = system.file("examples", "migration-demo", package = "sas2r"))
 #' @export
 sas_config <- function(path = NULL, start = ".") {
   src <- if (!is.null(path)) path else find_config(start)

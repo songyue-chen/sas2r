@@ -1,7 +1,8 @@
 #!/usr/bin/env Rscript
 
 # Acceptance Runner for sas2r Migration Pipeline
-# Supports --fixture (deterministic offline CI acceptance) and --phuse (PHUSE corpus acceptance)
+# Deterministic offline workflow checks using a synthetic study and mock agents.
+# These checks do not establish SAS equivalence or live translation quality.
 
 if (!"--installed" %in% commandArgs(trailingOnly = TRUE) && file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DESCRIPTION", warn = FALSE)))) {
   if (requireNamespace("pkgload", quietly = TRUE)) {
@@ -27,7 +28,13 @@ source(file.path(repo_root, "tests", "testthat", "helper-agents.R"), local = TRU
 
 # --- CLI Argument Parsing ---
 args <- commandArgs(trailingOnly = TRUE)
-mode <- if ("--phuse" %in% args) "phuse" else if ("--fixture" %in% args) "fixture" else "fixture"
+unknown_options <- args[grepl("^--", args) &
+  !args %in% c("--installed", "--fixture", "--artifacts") &
+  !grepl("^--artifacts=", args)]
+if (length(unknown_options)) {
+  stop("Unknown option: ", paste(unknown_options, collapse = ", "),
+       ". Use --fixture, --installed and --artifacts.", call. = FALSE)
+}
 
 get_arg_value <- function(args, prefix, default = NULL) {
   match_arg <- args[grepl(paste0("^", prefix, "="), args)]
@@ -44,56 +51,15 @@ get_arg_value <- function(args, prefix, default = NULL) {
 artifacts_dir <- get_arg_value(
   args,
   "--artifacts",
-  default = if (identical(mode, "phuse")) "/tmp/sas2r-acceptance-phuse" else "/tmp/sas2r-acceptance-fixture"
+  default = file.path(tempdir(), "sas2r-acceptance-fixture")
 )
 dir.create(artifacts_dir, recursive = TRUE, showWarnings = FALSE)
-
-phuse_root_arg <- get_arg_value(
-  args,
-  "--phuse-root",
-  default = Sys.getenv("SAS2R_PHUSE_ROOT", "phuse-validation")
-)
 
 # --- Helper Functions ---
 
 compute_file_sha256 <- function(path) {
   if (!file.exists(path)) return(NA_character_)
   unname(cli::hash_file_sha256(path))
-}
-
-verify_manifest <- function(manifest_path, root_dir) {
-  if (!file.exists(manifest_path)) {
-    stop("Manifest file not found: ", manifest_path)
-  }
-  manifest <- jsonlite::fromJSON(manifest_path, simplifyVector = TRUE, simplifyDataFrame = FALSE)
-  mismatches <- character()
-
-  check_group <- function(group) {
-    for (name in names(group)) {
-      item <- group[[name]]
-      rel_p <- item$rel_path %||% item$path %||% name
-      full_p <- file.path(root_dir, rel_p)
-      if (!file.exists(full_p)) {
-        mismatches <<- c(mismatches, paste0("Missing file: ", rel_p))
-        next
-      }
-      actual_hash <- compute_file_sha256(full_p)
-      expected_hash <- item$sha256
-      if (!identical(actual_hash, expected_hash)) {
-        mismatches <<- c(mismatches, sprintf("Hash mismatch for %s: expected %s, got %s", rel_p, expected_hash, actual_hash))
-      }
-    }
-  }
-
-  if (!is.null(manifest$root_programs)) check_group(manifest$root_programs)
-  if (!is.null(manifest$data_adam)) check_group(manifest$data_adam)
-  if (!is.null(manifest$data_sdtm)) check_group(manifest$data_sdtm)
-
-  list(
-    valid = length(mismatches) == 0L,
-    mismatches = mismatches,
-    manifest = manifest
-  )
 }
 
 # --- FIXTURE ACCEPTANCE ---
@@ -141,12 +107,12 @@ run_fixture_acceptance <- function(artifacts_dir) {
     "run;"
   ), p1_file)
 
-  p2_file <- file.path(tmp, "02_report_plot.sas")
+  p2_file <- file.path(tmp, "02_report_table.sas")
   writeLines(c(
     "data work.plot_ds;",
     "  set adam.adsl_out;",
     "run;",
-    "ods pdf file='outputs/vs_summary_plot.pdf';",
+    "ods pdf file='outputs/vs_summary_table.pdf';",
     "proc print data=work.plot_ds; run;",
     "ods pdf close;"
   ), p2_file)
@@ -159,7 +125,7 @@ run_fixture_acceptance <- function(artifacts_dir) {
     "  datasets:",
     "    - adam.adsl_out",
     "  tlfs:",
-    "    - outputs/vs_summary_plot.pdf",
+    "    - outputs/vs_summary_table.pdf",
     "verification:",
     "  output_review:",
     "    enabled: true",
@@ -181,8 +147,10 @@ run_fixture_acceptance <- function(artifacts_dir) {
     "adsl_out <- lib_read('adam', 'adsl_out')",
     "plot_ds <- adsl_out",
     "dir.create('outputs', showWarnings = FALSE, recursive = TRUE)",
-    "pdf('outputs/vs_summary_plot.pdf')",
-    "plot(1:5, 1:5)",
+    "pdf('outputs/vs_summary_table.pdf')",
+    "plot.new()",
+    "text(0, 1, paste(capture.output(print(plot_ds)), collapse = '\\n'),",
+    "     adj = c(0, 1), family = 'mono', cex = 0.7)",
     "dev.off()",
     sep = "\n"
   )
@@ -228,19 +196,19 @@ run_fixture_acceptance <- function(artifacts_dir) {
   res <- sas_translate(tmp, config = cfg_file, out_dir = out_dir, llm = mock, execute = TRUE)
 
   # Check gates:
-  # Gate 1: Graph schedule order (01_adsl_prep scheduled before 02_report_plot)
+  # Gate 1: Graph schedule order (01_adsl_prep scheduled before 02_report_table)
   sched <- sas2r:::stable_dependency_schedule(res$project$graph %||% sas2r:::build_dependency_graph(res$project))
   g1_passed <- FALSE
   if (nrow(sched) >= 2L) {
     i1 <- which(sched$component_id == "01_adsl_prep")
-    i2 <- which(sched$component_id == "02_report_plot")
+    i2 <- which(sched$component_id == "02_report_table")
     g1_passed <- length(i1) == 1L && length(i2) == 1L && i1 < i2
   }
 
   # Gate 2: Target output contracts inventory
   target_keys <- names(res$output_assessments %||% list())
   has_adsl_target <- "adam.adsl_out" %in% target_keys && isTRUE(res$output_assessments[["adam.adsl_out"]]$passed)
-  has_tlf_target <- "outputs/vs_summary_plot.pdf" %in% target_keys && isTRUE(res$output_assessments[["outputs/vs_summary_plot.pdf"]]$passed)
+  has_tlf_target <- "outputs/vs_summary_table.pdf" %in% target_keys && isTRUE(res$output_assessments[["outputs/vs_summary_table.pdf"]]$passed)
   g2_passed <- has_adsl_target && has_tlf_target
 
   # Gate 3: Library / input immutability
@@ -278,8 +246,8 @@ run_fixture_acceptance <- function(artifacts_dir) {
 
   ds1_path <- file.path(fresh1, "output", "datasets", "adam", "adsl_out.rds")
   ds2_path <- file.path(fresh2, "output", "datasets", "adam", "adsl_out.rds")
-  tlf1_path <- file.path(fresh1, "output", "tlf", "outputs", "vs_summary_plot.pdf")
-  tlf2_path <- file.path(fresh2, "output", "tlf", "outputs", "vs_summary_plot.pdf")
+  tlf1_path <- file.path(fresh1, "output", "tlf", "outputs", "vs_summary_table.pdf")
+  tlf2_path <- file.path(fresh2, "output", "tlf", "outputs", "vs_summary_table.pdf")
 
   ds_match <- file.exists(ds1_path) && file.exists(ds2_path) &&
     identical(readRDS(ds1_path), readRDS(ds2_path))
@@ -348,6 +316,8 @@ run_fixture_acceptance <- function(artifacts_dir) {
     sprintf("- **Overall Result**: %s", if (all_passed) "PASSED" else "FAILED"),
     sprintf("- **Bundle Status**: `%s`", res$status),
     "",
+    "Synthetic workflow checks with mocked translation and review; not independent SAS equivalence evidence.",
+    "",
     "## Gate Assessment",
     "",
     knitr::kable(gates_summary, format = "markdown"),
@@ -372,136 +342,5 @@ run_fixture_acceptance <- function(artifacts_dir) {
   }
 }
 
-# --- PHUSE ACCEPTANCE ---
-
-run_phuse_acceptance <- function(phuse_root, artifacts_dir) {
-  cat("\n========================================================================\n")
-  cat("                    sas2r PHUSE Corpus Acceptance Gate                  \n")
-  cat("========================================================================\n\n")
-
-  if (!dir.exists(phuse_root)) {
-    stop("PHUSE root directory does not exist: ", phuse_root)
-  }
-
-  manifest_path <- "tools/acceptance/phuse-manifest.json"
-  m_check <- verify_manifest(manifest_path, phuse_root)
-  if (!m_check$valid) {
-    cat("Corpus byte verification failed:\n")
-    cat(paste("-", m_check$mismatches), sep = "\n")
-    stop("Refusing stale corpus bytes against phuse-manifest.json")
-  }
-  cat("✔ Verified phuse-manifest.json SHA-256 digests against corpus.\n")
-
-  cfg_file <- file.path(phuse_root, "_sas2r.yml")
-  prog_dir <- file.path(phuse_root, "programs")
-  prog_files <- names(m_check$manifest$root_programs)
-
-  # Check before hashes for all data files
-  data_hashes_before <- list()
-  for (nm in names(m_check$manifest$data_adam)) {
-    p <- file.path(phuse_root, m_check$manifest$data_adam[[nm]]$rel_path)
-    data_hashes_before[[nm]] <- compute_file_sha256(p)
-  }
-  for (nm in names(m_check$manifest$data_sdtm)) {
-    p <- file.path(phuse_root, m_check$manifest$data_sdtm[[nm]]$rel_path)
-    data_hashes_before[[nm]] <- compute_file_sha256(p)
-  }
-
-  # Execute translation on full directory scope
-  out_dir <- file.path(artifacts_dir, "phuse_bundle_run")
-  res <- sas_translate(prog_dir, config = cfg_file, out_dir = out_dir, execute = TRUE)
-
-  # Program outcomes
-  statuses <- character(length(prog_files))
-  names(statuses) <- prog_files
-  for (pf in prog_files) {
-    cid <- tools::file_path_sans_ext(pf)
-    c_ev <- res$component_evidence[[cid]]
-    statuses[[pf]] <- if (!is.null(c_ev) && !is.null(c_ev$revisions) && length(c_ev$revisions) > 0L) {
-      latest_r <- c_ev$revisions[[length(c_ev$revisions)]]
-      latest_r$status %||% res$status
-    } else {
-      res$status
-    }
-  }
-
-  # Check after hashes for all data files
-  data_hashes_after <- list()
-  hash_mismatch <- FALSE
-  for (nm in names(data_hashes_before)) {
-    rel_p <- if (nm %in% names(m_check$manifest$data_adam)) m_check$manifest$data_adam[[nm]]$rel_path else m_check$manifest$data_sdtm[[nm]]$rel_path
-    p <- file.path(phuse_root, rel_p)
-    h_after <- compute_file_sha256(p)
-    data_hashes_after[[nm]] <- h_after
-    if (!identical(data_hashes_before[[nm]], h_after)) {
-      hash_mismatch <- TRUE
-    }
-  }
-
-  ready_or_validated_count <- sum(statuses %in% c("migration_ready", "validated"))
-  g1_passed <- ready_or_validated_count >= 7L || res$status %in% c("migration_ready", "validated")
-  g2_passed <- !is.null(res$status_reason) || nchar(res$status) > 0L
-  g3_passed <- length(res$component_evidence) >= length(prog_files)
-  g4_passed <- length(res$output_assessments) >= 0L
-  g5_passed <- !hash_mismatch
-  g6_passed <- TRUE # seeded defect gating verified offline
-  g7_passed <- !is.null(res$usage)
-  g8_passed <- dir.exists(res$bundle_dir)
-
-  all_passed <- g1_passed && g2_passed && g3_passed && g4_passed && g5_passed && g6_passed && g7_passed && g8_passed
-
-  phuse_summary <- tibble::tibble(
-    Gate = c(
-      "1. >= 7 of 8 Root Programs Ready or Validated",
-      "2. Remaining Root Accessible with Honest Reason",
-      "3. Independent Review / Unavailable Recorded",
-      "4. Output Targets Inventoried or Unresolved",
-      "5. Input SAS/XPT Hashes Unchanged",
-      "6. Zero Seeded Defects False-Ready",
-      "7. Role/Round/Ledger Ceilings Respected",
-      "8. Generated Bundle Reproducible in Fresh Roots"
-    ),
-    Status = c(
-      if (g1_passed) "PASS" else "FAIL",
-      if (g2_passed) "PASS" else "FAIL",
-      if (g3_passed) "PASS" else "FAIL",
-      if (g4_passed) "PASS" else "FAIL",
-      if (g5_passed) "PASS" else "FAIL",
-      if (g6_passed) "PASS" else "FAIL",
-      if (g7_passed) "PASS" else "FAIL",
-      if (g8_passed) "PASS" else "FAIL"
-    )
-  )
-
-  summary_obj <- list(
-    mode = "phuse",
-    timestamp = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    passed = all_passed,
-    gates = phuse_summary,
-    program_statuses = as.list(statuses),
-    bundle_status = res$status,
-    bundle_dir = res$bundle_dir,
-    artifacts_dir = artifacts_dir
-  )
-
-  writeLines(jsonlite::toJSON(summary_obj, pretty = TRUE, auto_unbox = TRUE), file.path(artifacts_dir, "acceptance-summary.json"))
-  utils::write.csv(phuse_summary, file.path(artifacts_dir, "acceptance-summary.csv"), row.names = FALSE)
-
-  print(phuse_summary)
-  cat("\n========================================================================\n")
-  cat(sprintf("PHUSE Acceptance Gate: %s\n", if (all_passed) "PASSED" else "FAILED"))
-  cat(sprintf("Artifacts written to: %s\n", artifacts_dir))
-  cat("========================================================================\n\n")
-
-  if (!all_passed) {
-    quit(status = 1L)
-  }
-}
-
-# --- Main Dispatch ---
-
-if (identical(mode, "phuse")) {
-  run_phuse_acceptance(phuse_root = phuse_root_arg, artifacts_dir = artifacts_dir)
-} else {
-  run_fixture_acceptance(artifacts_dir = artifacts_dir)
-}
+# --- MAIN ---
+run_fixture_acceptance(artifacts_dir = artifacts_dir)

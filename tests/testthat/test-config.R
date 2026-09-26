@@ -439,7 +439,7 @@ test_that("a library write format the runtime cannot honour fails at config time
 })
 
 test_that("the shipped demo project configures a write format the runtime honours", {
-  cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
+  cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",
                                 package = "sas2r"))
   expect_true(cfg$libraries$adam$write %in% c("rds", "xpt"))
 })

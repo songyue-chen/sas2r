@@ -1,5 +1,5 @@
 test_that("transpile writes staged files with banner, helpers, and stubs", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   tr <- sas_transpile(p, out)
   expect_s3_class(tr, "sas2r_transpilation")
@@ -12,7 +12,7 @@ test_that("transpile writes staged files with banner, helpers, and stubs", {
 })
 
 test_that("manifest tiers: t1 for supported, stub with reason for the rest", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   m <- sas_transpile(p, out)$manifest
   expect_true(all(m$tier %in% c("t1", "stub")))
@@ -22,7 +22,7 @@ test_that("manifest tiers: t1 for supported, stub with reason for the rest", {
 })
 
 test_that("stub blocks preserve the original SAS visibly", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   sas_transpile(p, out)
   staged <- paste(readLines(file.path(out, "02_summary.R")), collapse = "\n")
@@ -32,7 +32,7 @@ test_that("stub blocks preserve the original SAS visibly", {
 
 test_that("the t1 fixture file executes end to end with correct semantics", {
   skip_if_not_installed("dplyr")
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   sas_transpile(p, out)
   e <- new.env(parent = globalenv())
@@ -51,7 +51,7 @@ test_that("the t1 fixture file executes end to end with correct semantics", {
 })
 
 test_that("print method runs without error", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   tr <- sas_transpile(p, out)
   expect_no_error(capture.output(print(tr), type = "message"))

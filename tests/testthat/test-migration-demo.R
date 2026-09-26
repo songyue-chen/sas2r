@@ -1,4 +1,23 @@
-# Test executable migration demo on single file and directory
+# Test the migration workflow with a deterministic translator and reviewer.
+# This covers synthetic data and PDF content, not independent SAS equivalence.
+
+test_that("demo input generation requires a destination outside the copied project", {
+  script <- system.file("examples", "migration-demo", "make-input.R", package = "sas2r")
+  expect_true(file.exists(script))
+  elsewhere <- withr::local_tempdir()
+  withr::local_dir(elsewhere)
+  expect_error(source(script, local = new.env()), "pass its data directory", fixed = TRUE)
+  expect_false(dir.exists("data"))
+
+  # The command-line destination works even when the caller is elsewhere.
+  destination <- file.path(elsewhere, "copied demo", "data")
+  output <- system2(file.path(R.home("bin"), "Rscript"),
+                    c("--vanilla", shQuote(script), shQuote(destination)),
+                    stdout = TRUE, stderr = TRUE)
+  expect_null(attr(output, "status"))
+  expect_equal(nrow(readRDS(file.path(destination, "input_ds.rds"))), 5L)
+  expect_false(dir.exists("data"))
+})
 
 test_that("migration demo executes from local RDS input and produces dataset and TLF outputs", {
   skip_if_not_installed("dplyr")
@@ -8,7 +27,7 @@ test_that("migration demo executes from local RDS input and produces dataset and
   if (!dir.exists(demo_root)) {
     demo_root <- system.file("examples", "migration-demo", package = "sas2r")
   }
-  skip_if(!dir.exists(demo_root), "migration-demo directory not found")
+  expect_true(dir.exists(demo_root))
 
   # Create a clean working copy of demo_root
   temp_dir <- withr::local_tempdir()
@@ -41,8 +60,10 @@ test_that("migration demo executes from local RDS input and produces dataset and
     "lib_write(final_ds, 'adam', 'final_ds')",
     "",
     "dir.create('outputs', recursive = TRUE, showWarnings = FALSE)",
-    "pdf('outputs/figure1.pdf')",
-    "plot(final_ds$AVAL, main = 'Demo Plot')",
+    "pdf('outputs/table1.pdf')",
+    "plot.new()",
+    "text(0, 1, paste(capture.output(print(final_ds)), collapse = '\\n'),",
+    "     adj = c(0, 1), family = 'mono', cex = 0.7)",
     "dev.off()",
     sep = "\n"
   )
@@ -87,10 +108,33 @@ test_that("migration demo executes from local RDS input and produces dataset and
 
   for (result in list(res_single, res_dir)) {
     expect_true(file.exists(file.path(result$outputs_dir, "datasets", "adam", "final_ds.rds")))
-    expect_true(file.exists(file.path(result$outputs_dir, "tlf", "outputs", "figure1.pdf")))
+    expect_true(file.exists(file.path(result$outputs_dir, "tlf", "outputs", "table1.pdf")))
   }
 
-  # Normalized content equivalence
+  # Source-derived values for the synthetic input, including missingness and order.
+  expected <- data.frame(
+    USUBJID = c("01", "05", "03", "02", "04"),
+    AVISITN = c(1L, 1L, 2L, 1L, 2L),
+    AVAL = c(12.5, 14.2, 15.0, NA_real_, 9.8),
+    TRTP = c("TRT A", "TRT A", "TRT A", "TRT B", "TRT B"),
+    AVAL_FLAG = c("RECORDED", "RECORDED", "RECORDED", "MISSING", "RECORDED"),
+    HIGH_FLAG = c(1, 1, 1, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  for (result in list(res_single, res_dir)) {
+    actual <- readRDS(file.path(result$outputs_dir, "datasets", "adam", "final_ds.rds"))
+    for (column in names(expected)) expect_equal(actual[[column]], expected[[column]])
+    expect_identical(names(actual), names(expected))
+    if (requireNamespace("pdftools", quietly = TRUE)) {
+      pages <- pdftools::pdf_text(file.path(result$outputs_dir, "tlf", "outputs", "table1.pdf"))
+      expect_length(pages, 1L)
+      for (label in c(names(expected), "MISSING", "RECORDED", "12.5", "14.2", "9.8")) {
+        expect_match(pages[[1L]], label, fixed = TRUE)
+      }
+    }
+  }
+
+  # Both entry paths use the same selected code; this is not SAS equivalence.
   code_single <- sas_code(res_single, 1L)
   code_dir <- sas_code(res_dir, 1L)
   expect_identical(trimws(code_single), trimws(code_dir))

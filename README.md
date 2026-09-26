@@ -71,6 +71,11 @@ install.packages("ellmer")
 remotes::install_github("songyue-chen/sas2r")
 ```
 
+Installed examples are available without a GitHub checkout. Locate them with
+`system.file("examples", package = "sas2r")`; its README explains how to copy the
+migration demo into a writable directory and prepare its synthetic input. The
+annotated YAML is a configuration reference to adapt to your own study.
+
 ### 2. Describe your study in `_sas2r.yml`
 
 Create one small file, `_sas2r.yml`, in your project directory. It says where your data lives, which outputs matter, and which AI model to use. The folder of SAS programs to translate is not part of it: you pass that folder, or a single `.sas` file, as the `path` argument in steps 3 and 4, with `recursive = TRUE` to include subfolders. Called macro folders are named under `macros`.

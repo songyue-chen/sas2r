@@ -12,4 +12,4 @@ outputs:
   datasets:
     - adam.final_ds
   tlfs:
-    - outputs/figure1.pdf
+    - outputs/table1.pdf

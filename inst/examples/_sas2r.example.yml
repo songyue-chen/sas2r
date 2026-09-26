@@ -29,7 +29,7 @@ libraries:
   # Expanded syntax with engine and write format
   sdtm:
     path: data/sdtm
-    engine: sas7bdat      # Input format: sas7bdat | rds | xpt | csv | duckdb
+    engine: sas7bdat      # Input format: sas7bdat | rds | xpt
     write: rds            # Output format for emitted R code: rds | xpt
 
   work:

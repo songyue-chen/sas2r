@@ -167,23 +167,6 @@ test_that("example config states exact ellmer timeout and retry semantics", {
   expect_match(text, "does not interrupt an in-flight request", fixed = TRUE)
 })
 
-test_that("demo config does not promise ellmer tool/schema coexistence", {
-  path <- system.file("examples", "demo_project", "_sas2r.yml", package = "sas2r")
-  if (!nzchar(path) || !file.exists(path)) {
-    path <- test_path("..", "..", "inst", "examples", "demo_project", "_sas2r.yml")
-  }
-  skip_if_not(file.exists(path), "packaged demo config unavailable")
-  demo <- readLines(path, warn = FALSE)
-
-  expect_false(any(grepl(
-    "tools_with_structured_output: supported", demo, fixed = TRUE
-  )))
-  expect_true(any(grepl(
-    "ellmer gathers with tools before structured finalization",
-    demo, fixed = TRUE
-  )))
-})
-
 test_that("forbidden-claim detector recognises the claim shape, not fixed phrasings", {
   offending <- c(
     "sas2r automatically verifies parity with your SAS outputs.",

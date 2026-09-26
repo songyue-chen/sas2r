@@ -211,7 +211,7 @@ test_that("write_helpers copies template to output directory", {
 })
 
 test_that("the autoexec writer emits a sourceable registry with WORK", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   write_helpers(out)
   write_autoexec(p, out)

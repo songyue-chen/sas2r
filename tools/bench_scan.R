@@ -1,3 +1,7 @@
+#!/usr/bin/env Rscript
+# Maintainer benchmark of the internal scanner, not a public package API.
+# Run from the repository to load development code, or from elsewhere to use
+# the installed sas2r package. The fixture is located relative to this script.
 if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DESCRIPTION", warn = FALSE)))) {
   if (requireNamespace("pkgload", quietly = TRUE)) {
     pkgload::load_all(quiet = TRUE)
@@ -13,13 +17,11 @@ if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DES
 # 1. Setup benchmark directory and generate ~1 MB corpus of SAS code
 bench_dir <- tempfile(pattern = "bench_scan_")
 dir.create(bench_dir, recursive = TRUE, showWarnings = FALSE)
-on.exit(unlink(bench_dir, recursive = TRUE), add = TRUE)
 
-demo_files <- list.files("inst/examples/demo_project", pattern = "\\.sas$", full.names = TRUE)
-if (!length(demo_files)) {
-  demo_files <- list.files(system.file("examples/demo_project", package = "sas2r"),
-                           pattern = "\\.sas$", full.names = TRUE)
-}
+script_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1L])
+repo_root <- dirname(dirname(normalizePath(script_file, winslash = "/", mustWork = TRUE)))
+demo_files <- list.files(file.path(repo_root, "tests", "testthat", "fixtures", "scanner-project"),
+                         pattern = "\\.sas$", full.names = TRUE)
 
 # Read demo templates
 templates <- lapply(demo_files, function(f) readLines(f, warn = FALSE))
@@ -47,12 +49,12 @@ actual_size_mb <- total_bytes / (1024 * 1024)
 
 # 2. Cold scan (cache = TRUE, cache starts empty)
 t_cold <- system.time({
-  p_cold <- sas2r::sas_project(bench_dir, cache = TRUE)
+  p_cold <- sas2r:::sas_project(bench_dir, cache = TRUE)
 })
 
-# 3. Warm scan (cache = TRUE, cache already populated in .sas2r/scan_cache.rds)
+# 3. Warm scan (cache = TRUE, cache already populated in session-temporary storage)
 t_warm <- system.time({
-  p_warm <- sas2r::sas_project(bench_dir, cache = TRUE)
+  p_warm <- sas2r:::sas_project(bench_dir, cache = TRUE)
 })
 
 cold_elapsed <- t_cold[["elapsed"]]
@@ -76,7 +78,6 @@ cat(sprintf("| %-12s | %-12.3f | %-8.2f MB/s | %-12s |\n",
             "Cold Scan", cold_elapsed, cold_rate, "1.0x (base)"))
 cat(sprintf("| %-12s | %-12.3f | %-8.2f MB/s | %-11.1fx |\n",
             "Warm Scan", warm_elapsed, warm_rate, speedup))
-status <- if (warm_elapsed < 2.0) "DEFERRED" else "REVISIT TRIGGERED"
-cmp <- if (warm_elapsed < 2.0) "<" else ">="
-cat(sprintf("Decision Rule: Warm scan (%.3fs) %s 2.0s threshold => Tree-sitter %s\n", warm_elapsed, cmp, status))
+cat("Timing is descriptive; it is not a release gate or a parser-selection rule.\n")
 cat("========================================================================\n\n")
+unlink(bench_dir, recursive = TRUE)
