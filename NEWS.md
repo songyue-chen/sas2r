@@ -15,6 +15,9 @@
 - Retain uncertain literal permanent outputs from invoked macros in declared
   order, without hiding unrelated missing inputs. Preflight explains shorter
   bundle limits, budget admission and incomplete diagnosis responses.
+- Admit possible permanent writers only after execution reaches them, so a
+  reader placed before its writer still blocks on a missing input. Reuse macro
+  definition summaries within each analysis pass to avoid reparsing every call.
 
 # sas2r 0.5.5
 

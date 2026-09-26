@@ -162,14 +162,15 @@ Simple resolved macros containing only variable declarations and assignments,
 with literal arguments and defaults, preserve known dataset versions. Indirect
 values, emitted code, nested calls and other macro forms remain deferred.
 Literal permanent outputs in invoked, resolved macro bodies (including reachable
-nested macros) are possible writes and keep matching reads deferred, using the
-library binding at the caller. They do not establish a known producer or prove
-that the macro creates the dataset. Permanent inputs with no open-code or literal
-macro writer still receive the normal availability check, so absent files block
-execution. Dynamic macro output names such as `adam.&member` do not establish a
-literal writer; an absent permanent input can still be reported missing in that
-case. WORK can be created by an unexpanded macro and remains deferred even when
-no static writer is known.
+nested macros) are possible writes after execution reaches the call, using the
+library binding at the caller. They can keep later matching reads deferred, but
+do not establish a known producer or prove that the macro creates the dataset.
+Permanent inputs with no preceding open-code or literal macro writer still
+receive the normal availability check, so absent files block execution even if
+a later program writes them. Dynamic macro output names such as `adam.&member`
+do not establish a literal writer; an absent permanent input can still be
+reported missing in that case. WORK can be created by an unexpanded macro and
+remains deferred even when no static writer is known.
 Later explicit writes can establish known state again. These advisory findings
 still need translation review and execution checks. If a root is deferred, its
 ordered successors are deferred from bundle execution too.

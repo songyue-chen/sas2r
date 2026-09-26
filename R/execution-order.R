@@ -81,43 +81,70 @@ macro_preserves_datasets <- function(project, call) {
 
 # Literal outputs of reachable resolved macros are possible writes, not known
 # producers. Resolve their libraries at the outer call site, where the macro
-# runs; do not promote the macro body into ordinary executable lineage.
+# runs; do not promote the macro body into ordinary executable lineage. Keep
+# results by source statement so the ordered walk admits them only at that site.
 macro_possible_dataset_writes <- function(project) {
   statements <- project$statements
   resolution <- project$macros$resolution
   defs <- project$macros$defs
   if (!nrow(resolution) || !any(statements$unit_type == "macro_def" &
-      statements$first_token %in% dataset_candidate_tokens())) return(character())
-  visit <- function(calls, file, line, seen = integer()) {
-    writes <- character()
-    for (id in calls$call_id) {
-      call <- resolution[resolution$call_id == id, ]
-      if (nrow(call) != 1L || !call$status %in%
-          c("resolved_project", "resolved_path", "resolved_content")) next
-      def <- defs[defs$name == call$name & defs$file == call$source, ]
-      if (nrow(def) != 1L || def$unit_id %in% seen) next
-      body <- statements[statements$unit_id == def$unit_id, ]
-      datasets <- unique(unlist(lapply(seq_len(nrow(body)), function(i) {
-        token <- body$first_token[i]
-        refs <- dataset_statement_refs(body$text[i], token,
-          if (token == "data") "data_step" else "proc_step")
-        norm_ds(static_dataset_names(refs$creates))
-      }), use.names = FALSE))
-      datasets <- datasets[!startsWith(datasets, "work.")]
-      bindings <- libref_point_of_use_records(project$libref_registry,
-        sub("\\..*$", "", datasets), rep(file, length(datasets)), rep(line, length(datasets)))
-      for (i in seq_along(datasets)) {
-        binding <- bindings$records[[bindings$slot[i]]]
-        if (identical(binding$status, "bound"))
-          writes <- c(writes, paste(datasets[i], binding$selected_path, sep = "\r"))
+      statements$first_token %in% dataset_candidate_tokens())) return(list())
+  keys <- paste(defs$file, defs$name, sep = "\r")
+  target <- match(paste(resolution$source, resolution$name, sep = "\r"), keys)
+  ambiguous <- which(duplicated(keys) | duplicated(keys, fromLast = TRUE))
+  target[target %in% ambiguous | !resolution$status %in%
+    c("resolved_project", "resolved_path", "resolved_content") |
+    duplicated(resolution$call_id) | duplicated(resolution$call_id, fromLast = TRUE)] <- NA_integer_
+  targets <- function(calls) unique(stats::na.omit(target[match(calls$call_id, resolution$call_id)]))
+  rows_by_unit <- split(seq_len(nrow(statements)), statements$unit_id)
+  # Parse each definition once, including its resolved nested-call targets.
+  bodies <- lapply(seq_len(nrow(defs)), function(d) {
+    body <- statements[rows_by_unit[[as.character(defs$unit_id[d])]], ]
+    datasets <- unique(unlist(lapply(seq_len(nrow(body)), function(i) {
+      token <- body$first_token[i]
+      refs <- dataset_statement_refs(body$text[i], token,
+        if (token == "data") "data_step" else "proc_step")
+      norm_ds(static_dataset_names(refs$creates))
+    }), use.names = FALSE))
+    list(outputs = datasets[!startsWith(datasets, "work.")], calls = targets(extract_macro_calls(body)))
+  })
+  output_cache <- vector("list", nrow(defs))
+  outputs <- function(d) {
+    if (is.null(output_cache[[d]])) {
+      pending <- d
+      visited <- integer()
+      while (length(pending)) {
+        next_defs <- setdiff(pending, visited)
+        if (!length(next_defs)) break
+        visited <- c(visited, next_defs)
+        pending <- unique(unlist(lapply(bodies[next_defs], `[[`, "calls"), use.names = FALSE))
       }
-      writes <- c(writes, visit(extract_macro_calls(body), file, line, c(seen, def$unit_id)))
+      output_cache[[d]] <<- unique(unlist(lapply(bodies[visited], `[[`, "outputs"),
+                                         use.names = FALSE)) %||% character()
     }
-    unique(writes)
+    output_cache[[d]]
   }
-  calls <- extract_macro_calls(statements[statements$unit_type != "macro_def", ])
-  unique(unlist(lapply(seq_len(nrow(calls)), function(i)
-    visit(calls[i, ], calls$source_file[i], calls$line[i])), use.names = FALSE))
+  writing_defs <- Filter(function(d) length(outputs(d)) > 0L, unique(stats::na.omit(target)))
+  sites <- resolution[target %in% writing_defs, ]
+  # Most setup calls have no dataset effects to collect. Use their resolved
+  # summaries to skip them; parse candidate statements to distinguish calls
+  # sharing a source line before assigning results to statement IDs.
+  site_keys <- paste(sites$source_file, sites$line, sep = "\r")
+  rows <- which(statements$unit_type != "macro_def" &
+    paste(statements$file, statements$line_start, sep = "\r") %in% site_keys)
+  writes <- lapply(rows, function(row) {
+    call <- statements[row, ]
+    datasets <- unique(unlist(lapply(targets(extract_macro_calls(call)), outputs), use.names = FALSE))
+    if (!length(datasets)) return(character())
+    bindings <- libref_point_of_use_records(project$libref_registry,
+      sub("\\..*$", "", datasets), rep(call$file, length(datasets)), rep(call$line_start, length(datasets)))
+    unique(unlist(lapply(seq_along(datasets), function(i) {
+      binding <- bindings$records[[bindings$slot[i]]]
+      if (identical(binding$status, "bound")) paste(datasets[i], binding$selected_path, sep = "\r")
+    }), use.names = FALSE))
+  })
+  names(writes) <- paste(statements$file[rows], statements$stmt_id[rows], sep = "\r")
+  writes[lengths(writes) > 0L]
 }
 
 # Walk existing statements and resolved include sites in execution order.
@@ -131,8 +158,9 @@ ordered_dataset_producers <- function(project, paths, identity) {
   calls <- project$macros$calls
   if (nrow(calls)) calls <- calls[!vapply(seq_len(nrow(calls)), function(i)
     macro_preserves_datasets(project, calls[i, ]), logical(1)), ]
-  stateful <- startsWith(lineage$dataset, "work.") |
-    identity %in% c(identity[lineage$role == "creates"], macro_possible_dataset_writes(project))
+  is_work <- startsWith(lineage$dataset, "work.")
+  possible <- macro_possible_dataset_writes(project)
+  seen <- character()
   lineage_rows <- split(seq_len(nrow(lineage)), lineage$unit_id)
   current <- list()
   uncertain <- FALSE
@@ -147,7 +175,7 @@ ordered_dataset_producers <- function(project, paths, identity) {
       events[[length(events) + 1L]] <<- list(row = row,
         writer = if (is.null(value)) NA_integer_ else value$row,
         reader_root = owner, writer_root = if (is.null(value)) NA_character_ else value$owner,
-        deferred = is.null(value) && uncertain && stateful[row])
+        deferred = is.null(value) && uncertain && (is_work[row] || identity[row] %in% seen))
     }
   }
   write_rows <- function(rows, owner) {
@@ -202,6 +230,11 @@ ordered_dataset_producers <- function(project, paths, identity) {
       # semantics; do not resurrect a possibly deleted/intermediate dataset.
       if (mutation || is_sql || dynamic) invalidate()
       else write_rows(rows[lineage$role[rows] == "creates"], owner)
+      # Only the completed prefix can explain an uncertain permanent read.
+      # Even an invalidating unit can contain a possible (not known) write.
+      created <- rows[lineage$role[rows] == "creates" & !is.na(paths[rows])]
+      keys <- paste(file, unit$stmt_id, sep = "\r")
+      seen <<- c(seen, identity[created], unlist(possible[intersect(keys, names(possible))], use.names = FALSE))
     }
     invisible(NULL)
   }
