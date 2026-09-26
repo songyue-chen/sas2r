@@ -110,13 +110,13 @@ smoke_component_revision <- function(state, component_id, execute = TRUE) {
     state$selected_revisions, execute = execute)
   plan$population_specs <- source_population_specs(state$project, c(plan$dependency_prefix, component_id))
   ids <- c(plan$dependency_prefix, component_id)
-  inputs <- input_hash_manifest(state$project)
+  inputs <- input_hash_manifest(state$project, metadata_only = TRUE)
   formats <- state$runtime$formats %||% file.path(dirname(state$runtime$helpers), "_sas2r_formats.R")
   context_key <- migration_hash(list(
     plan = plan[setdiff(names(plan), "selected_revisions")],
     programs = lapply(state$selected_revisions[ids], revision_code),
     helper = runtime_helper_code(state$runtime),
-    inputs = inputs,
+    inputs = list(content = state$input_manifest, metadata = inputs),
     libraries = state$project$config$libraries,
     formats = if (file.exists(formats)) readLines(formats, warn = FALSE) else NULL,
     R = as.character(getRversion())))
@@ -143,9 +143,10 @@ smoke_component_revision <- function(state, component_id, execute = TRUE) {
     dir <- state[["attempt"]]$attempt_dir %||%
       if (!is.null(state$paths$smoke_tests)) file.path(state$paths$smoke_tests, "smoke_attempt_001") else tempdir()
     smoke_state <- state
-    smoke_state$input_manifest <- inputs
+    smoke_state$input_metadata <- inputs
     prepared <- prepare_program_smoke(smoke_state, plan, dir)
-    result <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)
+    result <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir,
+      timeout = state$config$migration$smoke_timeout %||% 60)
     state$histories[[component_id]] <- record_program_smoke(state$histories[[component_id]], result)
     event <- if (isTRUE(result$passed)) "smoke_passed:" else
       if (!is.null(result$blocked_by)) "smoke_blocked:" else "smoke_failed:"
@@ -184,9 +185,16 @@ finalize_component_reviews <- function(state) {
   signal_immediate_coordinator_event("component_review_checkpoint_started", "all components")
   reused <- completed <- unavailable <- 0L
   for (cid in ids) {
-    cached <- review_component_revision(state, cid, reuse_only = TRUE)
-    result <- if (!is.null(cached)) list(state = state, review = cached) else
-      review_component_revision(state, cid, state$repair_counts[[cid]] %||% 0L)
+    result <- tryCatch({
+      cached <- review_component_revision(state, cid, reuse_only = TRUE)
+      if (!is.null(cached)) list(state = state, review = cached) else
+        review_component_revision(state, cid, state$repair_counts[[cid]] %||% 0L)
+    }, error = function(error) {
+      if (critical_translation_error(error)) stop(error)
+      state$histories[[cid]] <- record_review_unavailable(state$histories[[cid]], conditionMessage(error))
+      state$diagnostics$review_failures[[cid]] <- conditionMessage(error)
+      list(state = state, review = list(verdict = "review_unavailable"))
+    })
     state <- promote_reviewed_smoke(result$state, cid)
     if (isTRUE(result$review$reused)) reused <- reused + 1L else
       if (identical(result$review$verdict, "review_unavailable")) unavailable <- unavailable + 1L else

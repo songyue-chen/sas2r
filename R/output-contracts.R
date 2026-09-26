@@ -62,7 +62,7 @@ validate_output_overrides <- function(overrides) {
   }
 
   if (is.list(overrides)) {
-    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles")
+    allowed <- c("datasets", "tlfs", "references", "assertions", "profiles", "optional")
     unknown <- setdiff(names(overrides), allowed)
     if (length(unknown) > 0L) {
       cli::cli_abort(
@@ -89,6 +89,10 @@ validate_output_overrides <- function(overrides) {
         )
       }
     }
+
+    if (!is.null(overrides$optional) && (!is.character(overrides$optional) ||
+        anyNA(overrides$optional) || any(!nzchar(overrides$optional))))
+      cli::cli_abort("outputs$optional must be a character vector of target names", class = "sas2r_output_contract_error")
 
     validate_reference_paths(overrides$references, "outputs$references")
     if (!is.null(overrides$references)) overrides$references <- normalize_target_mapping(overrides$references, "outputs$references")
@@ -220,6 +224,10 @@ merge_output_overrides <- function(contracts, overrides = NULL) {
     }
   }
 
+  if (is.list(overrides) && length(overrides$optional)) {
+    optional <- names(normalize_target_mapping(stats::setNames(as.list(overrides$optional), overrides$optional), "outputs$optional"))
+    for (i in seq_along(records)) if (records[[i]]$target_key %in% optional) records[[i]]$required <- FALSE
+  }
   if (length(records) == 0L) return(empty_output_contracts())
 
   target_keys <- vapply(records, `[[`, character(1), "target_key")
@@ -552,7 +560,7 @@ infer_output_contracts <- function(project, overrides = NULL) {
           clean_p <- gsub("\\\\", "/", clean_p)
           is_dyn <- grepl("&", clean_p)
           ext <- tolower(tools::file_ext(clean_p))
-          kind <- if (ext %in% OUTPUT_TLF_EXTENSIONS) "tlf" else "dataset"
+          kind <- if (ext %in% OUTPUT_TLF_EXTENSIONS) "tlf" else "file"
           add_inferred_record(
             target_key = clean_p,
             kind = kind,
@@ -572,7 +580,7 @@ infer_output_contracts <- function(project, overrides = NULL) {
       if (tok == "file") {
         m_file <- regmatches(txt, regexec("^file\\s+(?:['\"]([^'\"]+)['\"]|([A-Za-z0-9_&./\\\\]+))", txt, ignore.case = TRUE, perl = TRUE))[[1]]
         file_dest <- if (length(m_file) >= 2L && nzchar(m_file[2])) m_file[2] else if (length(m_file) >= 3L && nzchar(m_file[3])) m_file[3] else ""
-        if (nzchar(file_dest) && tolower(file_dest) != "print") {
+        if (nzchar(file_dest) && !tolower(file_dest) %in% c("print", "log")) {
           if (tolower(file_dest) %in% names(filerefs)) {
             clean_p <- filerefs[[tolower(file_dest)]]
             raw_p <- clean_p
@@ -583,7 +591,7 @@ infer_output_contracts <- function(project, overrides = NULL) {
           clean_p <- gsub("\\\\", "/", clean_p)
           is_dyn <- grepl("&", clean_p)
           ext <- tolower(tools::file_ext(clean_p))
-          kind <- if (ext %in% OUTPUT_TLF_EXTENSIONS) "tlf" else "dataset"
+          kind <- if (ext %in% OUTPUT_TLF_EXTENSIONS) "tlf" else "file"
           add_inferred_record(
             target_key = clean_p,
             kind = kind,

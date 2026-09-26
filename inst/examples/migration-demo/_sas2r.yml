@@ -3,7 +3,7 @@ libraries:
     path: data
     engine: rds
     write: rds
-  work:
+  raw:
     path: data
     engine: rds
     write: rds
@@ -12,4 +12,4 @@ outputs:
   datasets:
     - adam.final_ds
   tlfs:
-    - outputs/figure1.pdf
+    - outputs/table1.pdf

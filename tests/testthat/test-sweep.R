@@ -52,12 +52,12 @@ test_that("CLASS options other than missing are rejected into stubs", {
   expect_false(is.na(em2$code))
 })
 
-test_that("chr_cmp strips trailing whitespace (including newlines and tabs)", {
+test_that("chr_cmp strips only SAS blank padding, preserving newlines and tabs", {
   e <- new.env(parent = globalenv())
   sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), e)
   val_with_newline <- "A\n"
-  expect_true(e$chr_cmp(val_with_newline, "A", "=="))
+  expect_false(e$chr_cmp(val_with_newline, "A", "=="))
 
   val_with_tab <- "A\t  "
-  expect_true(e$chr_cmp(val_with_tab, "A", "=="))
+  expect_false(e$chr_cmp(val_with_tab, "A", "=="))
 })

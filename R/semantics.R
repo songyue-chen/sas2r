@@ -308,6 +308,7 @@ semantic_coverage <- function(rulebook, registry = load_semantic_registry()) {
       paste0("procs.", proc_names)
     )
   )
+  targets[c("operators.and", "operators.or", "operators.not")] <- "sas_true"
   present <- intersect(required, names(registry$rules))
   strategy_mismatches <- present[vapply(
     present,

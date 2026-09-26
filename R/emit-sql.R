@@ -26,6 +26,9 @@ emit_sql_create <- function(stmt_text, stmt_id) {
   grp <- tolower(trimws(m[6]))
   ord <- tolower(trimws(m[7]))
 
+  if (!deterministic_names(c(target[["member"]],
+      if (nzchar(grp)) trimws(strsplit(grp, ",", fixed = TRUE)[[1L]]),
+      if (nzchar(ord)) trimws(strsplit(ord, ",", fixed = TRUE)[[1L]])))) return(reject)
   agg_pat <- "(count\\(\\s*\\*\\s*\\)|sum\\(\\s*\\w+\\s*\\)|avg\\(\\s*\\w+\\s*\\)|min\\(\\s*\\w+\\s*\\)|max\\(\\s*\\w+\\s*\\))\\s+as\\s+(\\w+)"
   has_agg <- grepl(agg_pat, sel, ignore.case = TRUE)
   lines <- c(sprintf('%s <- lib_read("%s", "%s")', target[["member"]], src[["lib"]], src[["member"]]),
@@ -74,8 +77,8 @@ emit_sql_create <- function(stmt_text, stmt_id) {
                               paste(sel_items, collapse = ", ")))
   }
   if (nzchar(ord))
-    lines <- c(lines, sprintf("  dplyr::arrange(%s)",
-                              paste(trimws(strsplit(ord, "\\s*,\\s*")[[1]]), collapse = ", ")))
+    lines <- c(lines, sprintf("  sas_sort(by = c(%s))",
+      paste(vapply(trimws(strsplit(ord, ",", fixed = TRUE)[[1L]]), deparse, ""), collapse = ", ")))
   code <- paste(lines, collapse = " |>\n")
   writes <- emit_lib_writes(target[["member"]],
                             paste0(target[["lib"]], ".", target[["member"]]))

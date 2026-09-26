@@ -37,6 +37,9 @@ emit_proc_freq <- function(us) {
   data_in <- eq_captures(proc, "data")
   if (!length(data_in) || !nzchar(data_in[1])) return(reject("freq_not_t1"))
 
+  if (!proc_options_supported(proc, "freq", "data", "noprint") ||
+      !proc_options_supported(paste("proc freq", opts), "freq", "out", "missing"))
+    return(reject("freq_options_deferred"))
   inc_missing <- has_bare_option(opts, "missing")
   src <- split_ds(norm_ds(data_in[1]))
   target <- split_ds(norm_ds(out_ds[1]))

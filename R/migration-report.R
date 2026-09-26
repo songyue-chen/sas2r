@@ -11,6 +11,7 @@
 #' @noRd
 redact_secrets <- function(x) {
   if (is.null(x)) return(NULL)
+  x <- redact_llm_secrets(x)
   if (is.character(x)) {
     # Redact common LLM API keys and bearer tokens
     x <- gsub("sk-[A-Za-z0-9_-]{20,}", "[REDACTED_API_KEY]", x)
@@ -197,7 +198,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
 
   # Input hashes
   input_hashes <- tryCatch(
-    input_hash_manifest(state$project %||% state),
+    state$selected_attempt$input_hashes_after %||% state$input_manifest %||% input_hash_manifest(state$project %||% state),
     error = function(e) list()
   )
 

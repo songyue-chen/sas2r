@@ -13,10 +13,10 @@ parallel_rpc <- function(operation, args = list(), allow_error = FALSE) {
   client$sequence <- client$sequence + 1L
   stem <- file.path(client$dir, sprintf("%08d", client$sequence))
   atomic_write_file(function(path) saveRDS(list(operation = operation, args = args), path),
-                    paste0(stem, ".request"))
+                    paste0(stem, ".request"), require_atomic = TRUE)
   reply <- paste0(stem, ".reply")
   while (!file.exists(reply)) Sys.sleep(0.02)
-  result <- readRDS(reply)
+  result <- read_parallel_record(reply)
   if (length(result$rejected_capabilities))
     list2env(result$rejected_capabilities, .llm_rejected_capabilities)
   client$rpc_ms <- c(client$rpc_ms, stats::setNames(as.numeric(difftime(Sys.time(), started, units = "secs")) * 1000, operation))
@@ -132,7 +132,7 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
   startup_bytes <- nchar(env[["SAS2R_WORKER_ADAPTERS"]], type = "bytes")
   # Windows permits 32,767 characters including the terminating NUL. This
   # base64 packet is ASCII, so its byte and character lengths are identical.
-  startup_limit <- if (.Platform$OS.type == "windows") 32766L else 100000L
+  startup_limit <- if (.Platform$OS.type == "windows") 32766L - nchar("SAS2R_WORKER_ADAPTERS=") else 100000L
   if (startup_bytes > startup_limit) cli::cli_abort(c(
     "Parallel worker startup data is too large ({startup_bytes} bytes; limit {startup_limit} bytes).",
     "i" = "Reduce captured values in parallel_factory or provider configuration.",
@@ -146,7 +146,10 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
     .libPaths(libpath)
     if (file.exists(file.path(package_path, "Meta", "package.rds"))) {
       loadNamespace("sas2r", lib.loc = dirname(package_path))
-    } else pkgload::load_all(package_path, quiet = TRUE)
+    } else {
+      if (!requireNamespace("pkgload", quietly = TRUE)) stop("Development workers require pkgload")
+      pkgload::load_all(package_path, quiet = TRUE)
+    }
     get("parallel_worker_main", asNamespace("sas2r"))(
       snapshot, policy, dir, cid, kind, execute, repair_cap)
   }, args = list(package_path, .libPaths(), snapshot,
@@ -210,13 +213,16 @@ parallel_worker_main <- function(state, policy, dir, cid, kind, execute, repair_
     ids <- names(state[[field]])
     ids[!vapply(ids, function(id) identical(before[[field]][[id]], state[[field]][[id]]), logical(1))]
   }
+  diagnostics <- state$diagnostics[changed("diagnostics")]
+  if (length(diagnostics$rejected_repairs)) diagnostics$rejected_repairs <- diagnostics$rejected_repairs[
+    seq_along(diagnostics$rejected_repairs) > length(before$diagnostics$rejected_repairs)]
   list(component_id = cid, kind = kind,
     revisions = state$selected_revisions[changed("selected_revisions")],
     histories = state$histories[changed("histories")],
     runtime = if (!identical(before$runtime, state$runtime)) state$runtime else NULL,
     repair_counts = state$repair_counts,
     events = state$events[seq_along(state$events) > length(before$events)],
-    diagnostics = state$diagnostics[changed("diagnostics")], review = review,
+    diagnostics = diagnostics, review = review,
     dependency_findings = parallel_dependency_findings(state, cid), rpc_ms = client$rpc_ms,
     initial_review = initial_review)
 }
@@ -301,7 +307,7 @@ parallel_service_job <- function(pool, id) {
     sequence <- as.integer(sub("[.]request$", "", basename(path)))
     if (sequence <= job$last_reply) next
     reply <- sub("[.]request$", ".reply", path)
-    message <- readRDS(path)
+    message <- read_parallel_record(path)
     op <- message$operation
     args <- message$args
     if (op %in% c("reserve_usage_request", "usage_budget_allows_future") &&
@@ -342,7 +348,7 @@ parallel_service_job <- function(pool, id) {
       result$error_class <- class(value)
     } else result["value"] <- list(value)
     job$last_reply <- sequence
-    atomic_write_file(function(p) saveRDS(result, p), reply)
+    atomic_write_file(function(p) saveRDS(result, p), reply, require_atomic = TRUE)
   }
   pool$jobs[[id]] <- job
   invisible(NULL)
@@ -375,7 +381,17 @@ parallel_poll <- function(pool) {
     if (job$process$is_alive()) next
     result <- tryCatch(job$process$get_result(), error = identity)
     if (inherits(result, "condition")) {
-      reason <- redact_secrets(conditionMessage(result))
+      cause <- execution_condition(result)
+      reason <- redact_secrets(paste(c(conditionMessage(result),
+        if (!is.null(cause$call)) paste0("Call: ", cause$call)), collapse = "; "))
+      retained <- Sys.getenv("SAS2R_WORKER_FAILURE_LOG_DIR", unset = "")
+      if (nzchar(retained)) {
+        retained <- file.path(retained, pool$state$usage_budget$run_id, basename(job$dir))
+        dir.create(retained, recursive = TRUE, showWarnings = FALSE)
+        logs <- file.path(job$dir, c("stdout.log", "stderr.log"))
+        file.copy(logs[file.exists(logs)], retained, overwrite = TRUE)
+        writeLines(reason, file.path(retained, "condition.txt"))
+      }
       parallel_abandon_job(pool, job)
       parallel_job_record(job, "failed", reason)
       pool$jobs[[id]] <- NULL
@@ -432,9 +448,27 @@ parallel_apply_result <- function(state, result) {
   for (cid in names(result$repair_counts)) state$repair_counts[[cid]] <-
     max(state$repair_counts[[cid]] %||% 0L, result$repair_counts[[cid]])
   state$events <- c(state$events, result$events)
-  if (length(result$diagnostics)) state$diagnostics <- utils::modifyList(state$diagnostics %||% list(), result$diagnostics)
+  if (length(result$diagnostics$rejected_repairs)) {
+    state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, result$diagnostics$rejected_repairs)
+    result$diagnostics$rejected_repairs <- NULL
+  }
+  if (length(result$diagnostics)) state$diagnostics[names(result$diagnostics)] <- result$diagnostics
   state <- sync_dependency_context(state)
   if (!is.null(result$assignment)) parallel_job_record(result$assignment, "accepted")
   state$active_revision <- state$selected_revisions[[result$component_id]]$revision_id
   state
+}
+
+# Windows file handles may briefly prevent opening an atomically published RPC
+# record. Retry only open/read failures; do not conceal serialization defects.
+read_parallel_record <- function(path) {
+  for (attempt in seq_len(5L)) {
+    value <- tryCatch(suppressWarnings(readRDS(path)), error = identity)
+    if (!inherits(value, "error")) return(value)
+    transient <- grepl("cannot open|error reading from connection", conditionMessage(value), ignore.case = TRUE)
+    if (!transient || attempt == 5L) cli::cli_abort(
+      "Could not read worker record {.file {path}}: {conditionMessage(value)}",
+      class = "sas2r_parallel_record_error", parent = value)
+    Sys.sleep(0.02)
+  }
 }

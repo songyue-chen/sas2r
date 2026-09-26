@@ -26,12 +26,12 @@ parallel_test_llm <- function(responses, delay = 0.1, marker_dir = NULL, crash_c
         failing_write <- local({
           original_write <- atomic_write_file
           revision_root <- file.path(.parallel_worker$client$dir, "components", write_failure_component)
-          function(write_fn, target_file, pattern = "atomic_") {
+          function(write_fn, target_file, pattern = "atomic_", ...) {
             if (startsWith(target_file, paste0(revision_root, "/")) &&
                 identical(basename(target_file), "program.R")) {
               write_fn <- function(path) stop("simulated revision write failure")
             }
-            original_write(write_fn, target_file, pattern)
+            original_write(write_fn, target_file, pattern, ...)
           }
         })
         assignInNamespace("atomic_write_file", failing_write, ns = "sas2r")

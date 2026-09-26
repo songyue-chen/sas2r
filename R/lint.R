@@ -23,15 +23,19 @@
 SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas_compress", "sas_substr", "sas_min", "sas_max",
                         "sas_length", "sas_put", "sas_sort", "sas_merge",
-                        "sas_if_else", "sas2r_fold_names",
+                        "sas_if_else", "sas_true", "sas_missing", "sas2r_fold_names",
                         "apply_format", "lib_read", "lib_write", "lib_delete", "lib_exists", "lib_members", "chr_cmp",
                         "sas2r_source_include", "sas2r_libname_assign",
                         "sas2r_libname_clear", "sas2r_lib_entry",
                         "sas2r_lib_member_path", "sas2r_lib_member_file", "sas2r_libref_stop",
-                        "$.sas2r_dataset", "[[.sas2r_dataset", "split_ds",
+                        "$.sas2r_dataset", "[[.sas2r_dataset", "$<-.sas2r_dataset", "[[<-.sas2r_dataset", "split_ds",
                         "sas_display", "sas2r_registry_env",
                         "sas2r_resolve_registry", "sas2r_assignment_path")
 
+
+SAS2R_PROTECTED_HELPERS <- c("lib_write", "lib_read", "sas2r_lib_member_file",
+  "sas2r_registry_env", "sas2r_lib_member_path", "sas2r_source_include",
+  "sas2r_libname_assign", "sas2r_assignment_path", "lib_delete")
 
 BANNED_FUNCTIONS <- c("system", "system2", "shell", "download.file", "url",
                       "unlink", "file.remove", "Sys.setenv", "source",
@@ -153,6 +157,9 @@ lint_r_code <- function(code,
       ""
     }
     plain <- sub("^.*::", "", fname)
+    if (plain %in% c("<-", "=") && length(e) == 3L && is.name(e[[2L]]) &&
+        as.character(e[[2L]]) %in% SAS2R_PROTECTED_HELPERS)
+      add("error", "protected_runtime_helper", paste("Cannot redefine", as.character(e[[2L]])))
     direct_io <- plain %in% c("readRDS", "readLines", "read.csv", "read.csv2",
       "read.table", "read.delim", "read.delim2", "scan", "load", "file",
       "file.exists", "list.files", "dir") || startsWith(fname, "haven::read_")
@@ -239,6 +246,7 @@ lint_helper_patch <- function(content, allowlist = NULL) {
   trusted <- parse(file = template, keep.source = FALSE)
   changed <- Filter(function(expr) !any(vapply(as.list(trusted),
     function(stock) identical(expr, stock), logical(1))), as.list(parsed))
+
   results <- lapply(changed, function(expr) {
     lint <- lint_r_code(paste(deparse(expr), collapse = "\n"), allowlist = allowlist)
     if (nrow(lint)) {

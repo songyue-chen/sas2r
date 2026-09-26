@@ -1,5 +1,5 @@
 test_that("transpile writes staged files with banner, helpers, and stubs", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   tr <- sas_transpile(p, out)
   expect_s3_class(tr, "sas2r_transpilation")
@@ -12,7 +12,7 @@ test_that("transpile writes staged files with banner, helpers, and stubs", {
 })
 
 test_that("manifest tiers: t1 for supported, stub with reason for the rest", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   m <- sas_transpile(p, out)$manifest
   expect_true(all(m$tier %in% c("t1", "stub")))
@@ -22,7 +22,7 @@ test_that("manifest tiers: t1 for supported, stub with reason for the rest", {
 })
 
 test_that("stub blocks preserve the original SAS visibly", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   sas_transpile(p, out)
   staged <- paste(readLines(file.path(out, "02_summary.R")), collapse = "\n")
@@ -32,7 +32,7 @@ test_that("stub blocks preserve the original SAS visibly", {
 
 test_that("the t1 fixture file executes end to end with correct semantics", {
   skip_if_not_installed("dplyr")
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   sas_transpile(p, out)
   e <- new.env(parent = globalenv())
@@ -51,7 +51,7 @@ test_that("the t1 fixture file executes end to end with correct semantics", {
 })
 
 test_that("print method runs without error", {
-  p <- sas_project(system.file("examples", "demo_project", package = "sas2r"))
+  p <- sas_project(test_path("fixtures", "scanner-project"))
   out <- withr::local_tempdir()
   tr <- sas_transpile(p, out)
   expect_no_error(capture.output(print(tr), type = "message"))
@@ -604,9 +604,9 @@ test_that("a three-level include chain marks the deepest module too", {
   }
   expect_true(any(grepl("UNREACHABLE MODULE",
                         readLines(file.path(out, "c.R"), warn = FALSE))))
-  # The driver itself is untouched: it is an entry point and translates as ever.
+  # The driver itself is untouched: it is an entry point and is conservatively deferred because its syntax is unsupported.
   drv <- tr$manifest[basename(tr$manifest$file) == "driver.sas", ]
-  expect_true(all(drv$tier == "t1"))
+  expect_true(all(drv$tier == "stub"))
 })
 
 test_that("a live chain of includes stays translated all the way down", {
@@ -740,7 +740,7 @@ test_that("a non-emitting parent shows its dropped include site in the code", {
     "^# sas2r:untranslated include line=1 reason=include_site_not_emitted$",
     driver)))
   expect_false(any(grepl("^sas2r_source_include\\(", driver)))
-  expect_true(any(grepl("^s <- sas_sort\\(", driver)))
+  expect_false(any(grepl("^s <- sas_sort\\(", driver)))
 
   # The marker sits inside the unit's own block, so a later splice replaces it
   # with the unit rather than stranding it beside one.

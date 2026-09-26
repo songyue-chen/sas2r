@@ -33,7 +33,7 @@ age <- list(ranges = list(list(lo = 0, hi = 17, label = "<18"),
 sas_put(c(5, 40, NA), age)
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
 \code{\link{lib_exists}()},
@@ -48,6 +48,7 @@ Other runtime helpers:
 \code{\link{sas_if_else}()},
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}

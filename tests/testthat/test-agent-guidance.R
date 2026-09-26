@@ -168,7 +168,7 @@ test_that("all actual role requests receive the same source context without refe
   for (llm in list(translator, reviewer, fixer)) {
     expect_gt(length(llm$requests()), 0)
     request <- llm$requests()[[1]]
-    messages <- paste(vapply(request$messages, `[[`, "", "content"), collapse = "\n")
+    messages <- request_task_text(request)
     expect_match(messages, guidance$text, fixed = TRUE)
     expect_match(messages, agent_guidance_policy(), fixed = TRUE)
     expect_match(messages, "check <- function() 1L", fixed = TRUE)
@@ -195,7 +195,7 @@ test_that("unrelated agent tasks do not receive translation policy", {
   llm <- recording_reviewer(function(req) valid_program_review_response())
   result <- run_agent(spec, llm, list(), "unrelated task", log_dir = withr::local_tempdir())
   expect_identical(result$status, "ok")
-  messages <- paste(vapply(llm$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  messages <- request_task_text(llm$requests()[[1]])
   expect_false(grepl(agent_guidance_policy(), messages, fixed = TRUE))
 })
 
@@ -266,7 +266,7 @@ test_that("metadata-only mistakes need no fixer and syntax allegations do not ve
   expect_length(fx$state$fixer_llm$requests(), 1)
   expect_identical(state$selected_revisions$p01$r_code, fx$fixed$p01)
   expect_identical(component_review_verdict(state$histories$p01), "repair_required")
-  messages <- paste(vapply(fx$state$fixer_llm$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  messages <- request_task_text(fx$state$fixer_llm$requests()[[1]])
   expect_false(grepl("alleged source quoting error", messages, fixed = TRUE))
 })
 
@@ -301,7 +301,7 @@ test_that("candidate byte summaries require matched evidence and remain human-on
   fixer <- recording_fixer(function(req) valid_program_fix_response("target <- source"))
   fx$failed_smoke$repair_observations <- list(record_level_difference = "FORBIDDEN_ROW_TARGET", output_changes = report)
   fix_program_revision(fx$revision, smoke = fx$failed_smoke, llm = fixer, paths = fx$paths)
-  messages <- paste(vapply(fixer$requests()[[1]]$messages, `[[`, "", "content"), collapse = "\n")
+  messages <- request_task_text(fixer$requests()[[1]])
   expect_false(grepl("FORBIDDEN_ROW_TARGET|byte_changed|figure.pdf", messages))
 })
 
@@ -351,7 +351,7 @@ test_that("a parse/eval implementation can still receive a simple supported corr
   expect_true(fixed$checks$pass)
   expect_true(fixed$mechanical_retry$dynamic_code)
   expect_length(fixer$requests(), 2)
-  retry <- paste(vapply(fixer$requests()[[2]]$messages, `[[`, "", "content"), collapse = "\n")
+  retry <- request_task_text(fixer$requests()[[2]])
   expect_match(retry, "Do not replace banned parse/eval with a handwritten general interpreter", fixed = TRUE)
 })
 

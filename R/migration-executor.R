@@ -1,3 +1,16 @@
+# Generated R does not need provider credentials. It is still executable local
+# code, not an OS sandbox; private input access must be constrained externally.
+execution_process_env <- function(startup_file) {
+  env <- callr::rcmd_safe_env()
+  names <- unique(unlist(lapply(llm_provider_ids(), function(id) llm_provider_spec(id)$credential_envs)))
+  current <- Sys.getenv()
+  secrets <- llm_registered_secret_values()
+  names <- unique(c(names, names(current)[current %in% secrets & nzchar(current)]))
+  env[names] <- NA_character_
+  env[c("R_ENVIRON_USER", "R_PROFILE_USER")] <- startup_file
+  env
+}
+
 #' Migration program smoke execution and diagnostics
 #'
 #' Implements dependency-aware program smoke planning, isolated callr subprocess
@@ -209,7 +222,9 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
     vapply(files, function(f) sprintf("source(%s)", encodeString(f, quote = '\"')), character(1)),
     plan$call_site %||% character()
   ), replay)
-  plan$input_hashes <- state$input_manifest %||% input_hash_manifest(state$project)
+  plan$input_project <- state$project
+  plan$input_hashes <- state$input_manifest %||% list()
+  plan$input_metadata <- state$input_metadata %||% input_hash_manifest(state$project, metadata_only = TRUE)
   plan$code_hashes <- stats::setNames(lapply(files, function(f) unname(cli::hash_file_sha256(f))), ids)
   plan$replay_script <- replay
   plan$raw_output_retention <- if (isTRUE(state$keep_raw_attempts)) "keep_raw_attempts" else "prune_unselected"
@@ -340,34 +355,36 @@ run_program_smoke <- function(
 
   smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call) {
     # Initialize fresh environment
-    rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
+    execution_env <- new.env(parent = globalenv())
 
     if (!is.null(autoexec_file) && nzchar(autoexec_file) && file.exists(autoexec_file)) {
-      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
+      sys.source(autoexec_file, envir = execution_env, chdir = TRUE)
     } else {
       if (!is.null(registry_file) && nzchar(registry_file) && file.exists(registry_file)) {
-        sys.source(registry_file, envir = globalenv())
+        sys.source(registry_file, envir = execution_env)
       }
       if (!is.null(helpers_file) && nzchar(helpers_file) && file.exists(helpers_file)) {
-        sys.source(helpers_file, envir = globalenv())
+        sys.source(helpers_file, envir = execution_env)
       }
       if (!is.null(formats_file) && nzchar(formats_file) && file.exists(formats_file)) {
-        sys.source(formats_file, envir = globalenv())
+        sys.source(formats_file, envir = execution_env)
       }
     }
 
+    registry_seed <- get0(".sas2r_registry", envir = execution_env, inherits = FALSE)
     executed_components <- character()
     executed_calls <- character()
     current <- component_id
     population_checks <- list()
     execute_component <- function(id, code) {
       current <<- id
-      observer <- observe_population(population_specs[[id]], globalenv())
+      if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
+      observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
         population_checks[[id]] <<- observer$finish()
         observer$restore()
       })
-      eval(parse(text = code), envir = globalenv())
+      eval(parse(text = code), envir = execution_env)
     }
 
     tryCatch({
@@ -405,6 +422,9 @@ run_program_smoke <- function(
     )})
   }
 
+  startup_file <- tempfile("sas2r-empty-startup-")
+  file.create(startup_file)
+  on.exit(unlink(startup_file), add = TRUE)
   t_start <- Sys.time()
   res <- tryCatch(
     callr::r(
@@ -426,7 +446,7 @@ run_program_smoke <- function(
       stderr = stderr_path,
       wd = attempt_dir,
       timeout = timeout,
-      env = callr::rcmd_safe_env()
+      env = execution_process_env(startup_file), user_profile = FALSE, system_profile = FALSE
     ),
     error = function(e) e
   )
@@ -435,9 +455,19 @@ run_program_smoke <- function(
 
   passed <- !inherits(res, "error") && isTRUE(res$success)
   condition <- NULL
+  if (!is.null(plan$input_project) && !identical(plan$input_metadata, input_hash_manifest(plan$input_project, metadata_only = TRUE))) {
+    passed <- FALSE
+    res <- simpleError("Source input files changed during program execution")
+  }
 
   if (!passed) {
     condition <- if (inherits(res, "error")) execution_condition(res) else res$condition
+    if (any(grepl("timeout", condition$class, fixed = TRUE))) {
+      condition$timeout_setting <- "migration.smoke_timeout"
+      condition$timeout_seconds <- timeout
+      condition$message <- paste0(condition$message, "; migration.smoke_timeout = ", timeout,
+        " seconds. Increase this setting for a longer smoke check; no translation defect established.")
+    }
     err_msg <- condition$message
     signal_program_smoke_event(
       "program_smoke_failed",
@@ -495,6 +525,7 @@ run_program_smoke <- function(
     raw_output_retention = plan$raw_output_retention %||% "caller_managed",
     replay_script = plan$replay_script,
     input_hashes = plan$input_hashes %||% list(),
+    input_metadata = plan$input_metadata %||% list(),
     code_hashes = plan$code_hashes %||% list(),
     output_files = output_files,
     output_hashes = output_hashes,
@@ -536,7 +567,7 @@ bounded_agent_diagnostics <- function(
   }
 
   cond_msg <- execution$condition$message
-  if (is.null(cond_msg) || !nzchar(cond_msg)) {
+  if (!identical(policy, "code_only") && (is.null(cond_msg) || !nzchar(cond_msg))) {
     if (!is.null(execution$stderr_path) && file.exists(execution$stderr_path)) {
       lines <- readLines(execution$stderr_path, warn = FALSE)
       if (length(lines) > 0L) {
@@ -546,7 +577,7 @@ bounded_agent_diagnostics <- function(
   }
 
   log_excerpt <- character()
-  if (!is.null(execution$stderr_path) && file.exists(execution$stderr_path)) {
+  if (!identical(policy, "code_only") && !is.null(execution$stderr_path) && file.exists(execution$stderr_path)) {
     err_lines <- readLines(execution$stderr_path, warn = FALSE)
     if (length(err_lines) > 0L) {
       # Take last 50 lines max
@@ -575,10 +606,10 @@ bounded_agent_diagnostics <- function(
       failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
       blocked_by = execution$blocked_by,
       population_checks = execution$population_checks,
-      condition_message = cond_msg,
+      condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
       condition_class = execution$condition$class %||% character(),
       source_location = source_location,
-      stack_frames = execution$stack_frames %||% character(),
+      stack_frames = if (identical(policy, "code_only")) character() else execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
       dataset_rows = NULL,
@@ -622,10 +653,10 @@ bounded_agent_diagnostics <- function(
       failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
       blocked_by = execution$blocked_by,
       population_checks = execution$population_checks,
-      condition_message = cond_msg,
+      condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
       condition_class = execution$condition$class %||% character(),
       source_location = source_location,
-      stack_frames = execution$stack_frames %||% character(),
+      stack_frames = if (identical(policy, "code_only")) character() else execution$stack_frames %||% character(),
       affected_identifiers = affected_ids,
       log_excerpt = log_excerpt,
       output_metadata = output_meta,
@@ -643,7 +674,7 @@ bounded_agent_diagnostics <- function(
     exit_status = execution$exit_status,
     elapsed_sec = execution$elapsed_sec,
     condition = execution$condition,
-    condition_message = cond_msg,
+    condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
     condition_class = execution$condition$class %||% character(),
     executed_component_ids = execution$executed_component_ids,
     executed_call_ids = execution$executed_call_ids,
@@ -738,7 +769,7 @@ run_bundle_attempt <- function(
     sequence = sequence
   )
 
-  before_hashes <- input_hash_manifest(state$project %||% state)
+  before_hashes <- state$input_manifest %||% input_hash_manifest(state$project %||% state)
   bundle_dir <- snapshot_selected_bundle(state, attempt)
   attempt$helper_hash <- unname(cli::hash_file_sha256(file.path(bundle_dir, "sas2r-helpers.R")))
   attempt$revision_manifest <- lapply(state$selected_revisions, function(rev) list(
@@ -778,7 +809,7 @@ run_bundle_attempt <- function(
   stderr_path <- normalizePath(file.path(logs_dir, "bundle_stderr.log"), winslash = "/", mustWork = FALSE)
 
   bundle_runner_fn <- function(bundle_dir, execution_order, program_files, population_specs, observe_population) {
-    rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
+    execution_env <- new.env(parent = globalenv())
 
     # The bundle's own autoexec.R loads the runtime, exactly as a program
     # launched by a person would; an older bundle without one is loaded by hand.
@@ -788,17 +819,20 @@ run_bundle_attempt <- function(
     formats_file <- file.path(bundle_dir, "_sas2r_formats.R")
 
     if (file.exists(autoexec_file)) {
-      sys.source(autoexec_file, envir = globalenv(), chdir = TRUE)
+      sys.source(autoexec_file, envir = execution_env, chdir = TRUE)
     } else {
-      if (file.exists(reg_file)) sys.source(reg_file, envir = globalenv())
-      if (file.exists(helpers_file)) sys.source(helpers_file, envir = globalenv())
-      if (file.exists(formats_file)) sys.source(formats_file, envir = globalenv())
+      if (file.exists(reg_file)) sys.source(reg_file, envir = execution_env)
+      if (file.exists(helpers_file)) sys.source(helpers_file, envir = execution_env)
+      if (file.exists(formats_file)) sys.source(formats_file, envir = execution_env)
     }
 
+    registry_seed <- get(".sas2r_registry", envir = execution_env)
+    output_dirs <- lapply(registry_seed, function(binding) binding$write_path)
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
     population_checks <- list()
     for (item in execution_order) {
+      assign(".sas2r_registry", registry_seed, envir = execution_env)
       writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
       candidates <- c(
         file.path(bundle_dir, program_files[[item]]),
@@ -814,24 +848,30 @@ run_bundle_attempt <- function(
       }
 
       if (!is.na(target_file) && file.exists(target_file)) {
-        observer <- observe_population(population_specs[[item]], globalenv())
+        observer <- observe_population(population_specs[[item]], execution_env)
         tryCatch({
-          sys.source(target_file, envir = globalenv())
+          sys.source(target_file, envir = execution_env)
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
             population_checks = population_checks), auto_unbox = TRUE), status_file)
         })
+        bindings <- get(".sas2r_registry", envir = execution_env)
+        for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))
         executed <- c(executed, item)
         writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
       } else {
         stop(sprintf("Target program %s not found in bundle", item))
       }
     }
-    list(success = TRUE, executed = executed, population_checks = population_checks)
+    list(success = TRUE, executed = executed, population_checks = population_checks,
+      output_dirs = output_dirs)
   }
 
+  startup_file <- tempfile("sas2r-empty-startup-")
+  file.create(startup_file)
+  on.exit(unlink(startup_file), add = TRUE)
   t_start <- Sys.time()
   res <- tryCatch(
     callr::r(
@@ -847,7 +887,7 @@ run_bundle_attempt <- function(
       stdout = stdout_path,
       stderr = stderr_path,
       timeout = timeout,
-      env = callr::rcmd_safe_env()
+      env = execution_process_env(startup_file), user_profile = FALSE, system_profile = FALSE
     ),
     error = function(e) e
   )
@@ -856,6 +896,13 @@ run_bundle_attempt <- function(
 
   passed <- !inherits(res, "error") && isTRUE(res$success)
   after_hashes <- input_hash_manifest(state$project %||% state)
+  input_changed <- !identical(before_hashes, after_hashes)
+  if (input_changed) {
+    # Preserve an existing runtime diagnosis (for example a removed input).
+    # Integrity evidence is additional context, never a replacement for it.
+    if (passed) res <- simpleError("Source input files changed since run initialization")
+    passed <- FALSE
+  }
 
   status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
   prog_info <- if (file.exists(status_file)) {
@@ -883,6 +930,13 @@ run_bundle_attempt <- function(
   condition <- NULL
   if (!passed) {
     condition <- execution_condition(res)
+    condition$input_changed <- input_changed
+    if (any(grepl("timeout", condition$class, fixed = TRUE))) {
+      condition$timeout_setting <- "migration.bundle_timeout"
+      condition$timeout_seconds <- timeout
+      condition$message <- paste0(condition$message, "; migration.bundle_timeout = ", timeout,
+        " seconds. Increase this setting for a longer study run; no translation defect established.")
+    }
     condition$component_id <- failed_cid
   }
 
@@ -904,6 +958,7 @@ run_bundle_attempt <- function(
     stderr_path = stderr_path,
     input_hashes_before = before_hashes,
     input_hashes_after = after_hashes,
+    output_dirs = res$output_dirs %||% list(),
     output_hashes = output_hashes,
     execution_context = list(
       sources = lapply(state$selected_revisions, function(rev) rev$contract$binding$source_hash %||% rev$binding$source_hash),

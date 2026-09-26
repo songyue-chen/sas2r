@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 9L
+RESUME_CHECKPOINT_VERSION <- 10L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")
@@ -9,7 +9,7 @@ component_source_text <- function(graph, component_id) {
   sources <- sources[nzchar(sources)]
   paste(vapply(sources, function(f) {
     if (!file.exists(f)) return("")
-    text <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    text <- paste(read_sas_source(f), collapse = "\n")
     if (any(nodes$type == "macro")) {
       units <- sas_units(sas_statements(text))
       defs <- extract_macro_defs(units)
@@ -29,6 +29,8 @@ migration_resume_fingerprint <- function(state, version = RESUME_CHECKPOINT_VERS
   source_outputs$reference_path <- NULL
   migration_hash(list(
     version = version,
+    package_version = as.character(utils::packageVersion("sas2r")),
+    baseline = state$baseline$manifest[c("unit_id", "file", "code", "tier", "flags")],
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)
     }), state$schedule$component_id),
@@ -64,22 +66,42 @@ restore_migration_checkpoint <- function(state, fingerprint) {
   revisions <- checkpoint$selected_revisions
   # Missing or locally edited artifacts are cheap to regenerate. Do not rebuild
   # paths from revision labels, which need not match the on-disk directory name.
-  intact <- length(revisions) > 0L && all(vapply(revisions, function(rev) {
+  intact <- vapply(revisions, function(rev) {
     if (!is.null(rev$agent_status) && !is.na(rev$agent_status) && rev$agent_status != "ok") return(FALSE)
     !is.null(rev$r_path) && file.exists(rev$r_path) &&
       identical(paste(readLines(rev$r_path, warn = FALSE), collapse = "\n"), rev$r_code)
-  }, logical(1)))
-  if (!intact) return(invalidate("generated revisions are missing, changed, or incomplete"))
+  }, logical(1))
+  if (!any(intact)) return(invalidate("generated revisions are missing, changed, or incomplete"))
+  revisions <- revisions[intact]
   state$selected_revisions <- revisions
-  state$histories <- checkpoint$histories
+  state$histories <- checkpoint$histories[names(revisions)]
+  for (cid in names(state$histories)) {
+    h <- state$histories[[cid]]
+    rid <- which(vapply(h$revisions, function(r) identical(r$revision_id, h$active_revision_id), logical(1)))
+    if (!length(rid)) next
+    rid <- rid[1L]
+    rev <- h$revisions[[rid]]
+    if (length(rev$level) && rev$level %in% c("output_verified", "reference_validated")) {
+      rev$level <- "runtime_verified"
+      rev$coverage <- character()
+      rev$basis_ids <- character()
+      h$revisions[[rid]] <- rev
+      state$histories[[cid]] <- h
+    }
+  }
   state$repair_counts <- checkpoint$repair_counts
   state$revisit_counts <- checkpoint$revisit_counts %||% stats::setNames(
     rep(NA_integer_, nrow(state$schedule)), state$schedule$component_id)
   writeLines(checkpoint$helper_code, state$runtime$helpers)
-  state$component_stage <- checkpoint$component_stage
+  state$component_stage <- checkpoint$component_stage[names(revisions)]
   state$resumed_components <- if (is.null(checkpoint$component_stage)) names(revisions) else
     intersect(names(revisions), names(Filter(function(stage) identical(stage, "settled"), checkpoint$component_stage)))
-  state$diagnostics <- utils::modifyList(checkpoint$diagnostics %||% list(), state$diagnostics %||% list())
+  # Preserve cumulative repair audit/counters, not prior transient failures.
+  for (field in c("bundle_repair", "rejected_repairs")) {
+    if (is.null(state$diagnostics[[field]])) state$diagnostics[[field]] <- checkpoint$diagnostics[[field]]
+  }
+  # Prior failures remain in the prior report, not in this run's current diagnostics.
+  state$diagnostics$resume_dropped_components <- names(intact)[!intact]
   if (legacy) state$diagnostics$resume_import <- "v8: preserved repairs; previous revisit counts unknown"
   state$diagnostics$resume_invalidated <- NULL
   state$diagnostics$resumed_components <- names(revisions)

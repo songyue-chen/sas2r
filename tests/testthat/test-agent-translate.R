@@ -201,8 +201,8 @@ test_that("macro artifact tests parse and run for signed and non-syntactic contr
 test_that("numeric macro artifact tests run for plain and unary formal literals", {
   cases <- list(
     list(sas_default = "2.5", r_literal = "2.5", expected = "2.5"),
-    list(sas_default = "+2.5", r_literal = "+2.5", expected = "2.5"),
-    list(sas_default = "-0", r_literal = "-0", expected = "0"),
+    list(sas_default = "+2.5", r_literal = '"+2.5"', expected = '"+2.5"'),
+    list(sas_default = "-0", r_literal = '"-0"', expected = '"-0"'),
     list(sas_default = "-2.5", r_literal = "-2.5", expected = "-2.5")
   )
 
@@ -227,7 +227,7 @@ test_that("numeric macro artifact tests run for plain and unary formal literals"
     expect_match(
       spec_txt,
       paste0(
-        'expect_identical(eval(formals(fn)[["value"]]), ', case$expected, ")"
+        if (startsWith(case$r_literal, '"')) 'expect_identical(formals(fn)[["value"]], ' else 'expect_identical(eval(formals(fn)[["value"]]), ', case$expected, ")"
       ),
       fixed = TRUE,
       info = case$sas_default

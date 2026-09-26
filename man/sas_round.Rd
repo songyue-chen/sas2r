@@ -23,7 +23,7 @@ sas_round(c(0.5, 1.5, -0.5))
 sas_round(12.345, 0.01)
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
@@ -39,6 +39,7 @@ Other runtime helpers:
 \code{\link{sas_if_else}()},
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}
 }

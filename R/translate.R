@@ -75,7 +75,7 @@
 #'   `$bundle_dir`, `$outputs_dir`, `$status`, `$status_reason`, `$graph_path`,
 #'   `$output_contracts_path`, `$report_path`, `$report_json_path`, `$component_evidence`,
 #'   `$output_assessments`, `$diagnostics`, `$repair_history`, `$usage`, and `$project`.
-#'   `$outputs_dir` contains all selected generated files with their library and
+#'   `$outputs_dir` contains selected contract deliverables with their library and
 #'   relative-path layout (for example `work/out.rds`, `adam/adsl.rds`,
 #'   `outputs/table.html`); it is NULL when execution is disabled. The JSON
 #'   report includes separate target/reference/review coverage and effective limits.
@@ -135,14 +135,24 @@ sas_translate <- function(
     "max_bundle_repair_rounds", allow_null = TRUE)
   max_bundle_repairs_per_component <- bundle_repair_limit(max_bundle_repairs_per_component,
     "max_bundle_repairs_per_component")
+  max_program_repair_rounds <- bundle_repair_limit(max_program_repair_rounds, "max_program_repair_rounds")
   agent_evidence <- if (is.character(agent_evidence)) match.arg(agent_evidence, c("code_only", "bounded")) else "code_only"
 
   # Resolve budget and configuration before output/cache writes or providers.
   if (is.null(out_dir)) out_dir <- tempfile(pattern = "sas2r_out_")
+  cfg <- translation_config(path, config)
+  configured_budget <- cfg$budget %||% list()
+  if (missing(budget_usd)) budget_usd <- configured_budget$max_usd %||% budget_usd
+  if (missing(budget_mode)) budget_mode <- configured_budget$mode %||% budget_mode
+  if (missing(pricing_source)) pricing_source <- configured_budget$pricing_source %||% pricing_source
+  if (missing(pricing_rates)) pricing_rates <- configured_budget$rates %||% pricing_rates
+  configured_limits <- configured_budget[intersect(names(configured_budget), setdiff(usage_limit_names(), "max_usd"))]
+  usage_limits <- utils::modifyList(configured_limits, usage_limits %||% list())
+  config <- cfg
   paths <- migration_paths(out_dir)
   budget <- translation_budget(
     budget_usd, budget_mode, pricing_source, pricing_rates, usage_limits,
-    ledger_path = file.path(paths$state, "usage.jsonl"), resume = resume
+    ledger_path = file.path(paths$state, "usage.jsonl"), resume = FALSE
   )
   paths <- migration_paths(out_dir, budget$run_id)
   state <- list(paths = paths, usage_budget = budget, execute = isTRUE(execute))
@@ -151,6 +161,14 @@ sas_translate <- function(
   setup <- translation_setup(path, config, outputs, recursive, cache = TRUE,
                              max_parallel_translations = max_parallel_translations, llm = llm)
   translation_limit <- setup$max_parallel_translations
+  dir.create(paths$state, recursive = TRUE, showWarnings = FALSE)
+  run_lock <- filelock::lock(file.path(paths$state, "run.lock"), timeout = 0)
+  if (is.null(run_lock)) cli::cli_abort("Another migration is using this output directory", class = "sas2r_run_locked")
+  on.exit(filelock::unlock(run_lock), add = TRUE)
+  if (isTRUE(resume) && file.exists(budget$ledger_path)) {
+    reconstruct_usage_budget(budget, read_usage_records(budget$ledger_path))
+    update_usage_remaining(budget)
+  }
   paths <- init_migration_paths(out_dir, budget$run_id)
   state$paths <- paths
   state$project <- setup$project
@@ -192,6 +210,7 @@ sas_translate <- function(
     NULL
   }
 
+  validate_ellmer_budget(resolved_llm, budget)
   stage <- "initialize"
   # 8. Initialize migration state
   state <- new_migration_state(
@@ -209,11 +228,15 @@ sas_translate <- function(
   # Adopt the state's run-scoped paths for code, execution evidence, and reports.
   paths <- state$paths
   state$diagnostics$pipeline <- plan$pipeline
+  prompt_files <- list.files(file.path(project$project_dir, ".sas2r", "prompts"), pattern = "\\.md$", full.names = TRUE)
+  state$diagnostics$prompt_overrides <- stats::setNames(lapply(prompt_files, function(path)
+    list(path = normalizePath(path), sha256 = unname(cli::hash_file_sha256(path)))), basename(prompt_files))
   state$diagnostics$readiness <- project$readiness
   state$output_contracts <- output_contracts
   state$parallel <- resolve_parallel_execution(state, translation_limit)
   state$diagnostics$parallel <- state$parallel
   state$agent_evidence <- agent_evidence
+  state$config$agent_evidence <- agent_evidence
   state$keep_raw_attempts <- isTRUE(keep_raw_attempts)
 
   # Resume exact revision records only when all relevant inputs still match.
@@ -306,6 +329,7 @@ sas_translate <- function(
   # unreachable.
   degraded <- state$diagnostics$agent_degraded %||% list()
   if (length(degraded)) {
+    if (state$status %in% c("migration_ready", "validated")) state$status <- state$current_run_status <- "needs_review"
     note <- sprintf(
       "LLM agent unavailable for %d component(s) (%s); deterministic baseline kept",
       length(degraded),
@@ -361,7 +385,7 @@ sas_translate <- function(
   }, error = function(error) {
     state <- error$migration_state %||% state
     if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
-        "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error"))) stop(error)
+        "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error", "sas2r_run_locked"))) stop(error)
     finalize_usage_run(budget, terminal_status = "failed")
     # Evidence writing must never hide the original failure, including an
     # unwritable output location. No additional success state is invented.
@@ -435,6 +459,11 @@ print.sas2r_translation <- function(x, ...) {
 #'
 #' @param x A `sas2r_translation` object.
 #' @param dir Target directory path to write translated files.
+#' @param overwrite Replace an existing sas2r export. Non-export directories
+#'   must be empty. Replacing an export updates only its previously listed files;
+#'   unrelated files are preserved and conflicting new paths are refused.
+#'   This also replaces your edits to previously exported files. Export to a new
+#'   directory to preserve an edited bundle; edits are not merged or backed up.
 #' @return The target directory path, invisibly.
 #' @examples
 #' sas_dir <- file.path(tempdir(), "sas2r-write-example")
@@ -449,8 +478,39 @@ print.sas2r_translation <- function(x, ...) {
 #' suppressWarnings(sas_write(res, dest))
 #' list.files(dest, recursive = TRUE)
 #' @export
-sas_write <- function(x, dir) {
+sas_write <- function(x, dir, overwrite = FALSE) {
   stopifnot(inherits(x, "sas2r_translation"))
+  if (dir.exists(dir) && length(list.files(dir, all.files = TRUE, no.. = TRUE))) {
+    if (!isTRUE(overwrite) || !file.exists(file.path(dir, ".sas2r-export")))
+      cli::cli_abort("Destination is not empty; choose an empty directory or use overwrite = TRUE for a previous sas2r export", class = "sas2r_export_exists")
+    manifest <- tryCatch(read_json_record(file.path(dir, ".sas2r-export")), error = function(e) NULL)
+    if (is.null(manifest$files)) cli::cli_abort(
+      "This older export has no file inventory; choose a new empty destination", class = "sas2r_export_exists")
+    staged <- tempfile("sas2r-export-")
+    on.exit(unlink(staged, recursive = TRUE), add = TRUE)
+    sas_write(x, staged)
+    next_files <- read_json_record(file.path(staged, ".sas2r-export"))$files
+    existing <- list.files(dir, recursive = TRUE, all.files = TRUE, no.. = TRUE)
+    conflicts <- intersect(setdiff(existing, manifest$files), next_files)
+    parents <- unique(unlist(lapply(next_files, function(path) {
+      dirs <- character()
+      while (dirname(path) != ".") { path <- dirname(path); dirs <- c(dirs, path) }
+      dirs
+    })))
+    conflicts <- unique(c(conflicts, parents[file.exists(file.path(dir, parents)) & !dir.exists(file.path(dir, parents))],
+      next_files[dir.exists(file.path(dir, next_files))]))
+    if (length(conflicts)) cli::cli_abort("Export conflicts with unrelated destination paths: {.val {conflicts}}", class = "sas2r_export_exists")
+    # Remove files, never recursively remove directories a person may have used.
+    owned <- file.path(dir, manifest$files)
+    unlink(owned[!dir.exists(owned)])
+    for (file in c(next_files, ".sas2r-export")) {
+      target <- file.path(dir, file)
+      dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
+      if (!file.copy(file.path(staged, file), target, overwrite = TRUE))
+        cli::cli_abort("Could not export {.file {target}}", class = "sas2r_write_failed")
+    }
+    return(invisible(dir))
+  }
   if (x$status %in% c("blocked", "needs_review")) {
     cli::cli_warn(
       sprintf("writing code with status '%s' (%s)", x$status, x$status_reason %||% "review before use"),
@@ -474,6 +534,8 @@ sas_write <- function(x, dir) {
     file.copy(x$report_json_path, file.path(state_dir, "report.json"), overwrite = TRUE)
   }
 
+  atomic_write_json(list(files = list.files(dir, recursive = TRUE, all.files = TRUE, no.. = TRUE)),
+    file.path(dir, ".sas2r-export"))
   invisible(dir)
 }
 

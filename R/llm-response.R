@@ -380,7 +380,10 @@ failure_class <- function(error) {
   if (grepl("invalid.{0,40}schema|schema.{0,40}invalid", message)) {
     return("sas2r_llm_invalid_schema")
   }
-  "sas2r_llm_transport_error"
+  if ((!is.na(status_code) && (status_code == 408L || status_code >= 500L)) ||
+      inherits(error, c("curl_error", "httr2_failure")) || grepl("connection (reset|refused|failed)|could not resolve host", message))
+    return("sas2r_llm_transport_error")
+  "sas2r_llm_error"
 }
 
 new_llm_response <- function(status, action = "none", data = NULL,
@@ -467,7 +470,7 @@ normalize_legacy_response <- function(raw, request, provider) {
     ))
   }
   data <- raw$data
-  if (is.list(data) && inherits(request, "sas2r_llm_request") && !is.null(request$schema_name)) {
+  if (identical(provider, "mock") && is.list(data) && inherits(request, "sas2r_llm_request") && !is.null(request$schema_name)) {
     if (identical(request$schema_name, "program_fix_v1") && is.null(data$diagnosis) && !is.null(data$r_code)) {
       diag_src <- data$assumptions %||% data$summary
       diag <- if (length(diag_src)) paste(unlist(diag_src), collapse = "; ") else "repaired logic"

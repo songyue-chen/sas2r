@@ -92,6 +92,7 @@ init_attempt <- function(paths, kind = "smoke", parent_attempt_id = NULL, sequen
   record <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     attempt_id = attempt_id,
+    run_id = paths$run_id,
     kind = kind,
     sequence = sequence,
     parent_attempt_id = parent_attempt_id,
@@ -187,9 +188,10 @@ read_attempt_record <- function(attempt_dir) {
 #' Build a hash manifest of configured inputs
 #'
 #' @param project A `sas2r_project`, `sas2r_migration_state`, or directory/list.
-#' @return A named list of file hashes for all files in configured input libraries.
+#' @param metadata_only Use size and modification time for inexpensive smoke checks.
+#' @return A named list of file hashes (or metadata) for configured input files.
 #' @noRd
-input_hash_manifest <- function(project) {
+input_hash_manifest <- function(project, metadata_only = FALSE) {
   if (is.null(project)) return(list())
 
   # Extract project if state was passed
@@ -223,16 +225,29 @@ input_hash_manifest <- function(project) {
     }
   }
 
+  excluded <- normalizePath(if (is.list(p)) p$input_manifest_exclude %||% character() else character(), winslash = "/", mustWork = FALSE)
+  # A generated output tree may sit below a library, but cannot contain the
+  # library itself: excluding that tree would erase all source evidence.
+  for (root in lib_roots) if (length(excluded) && any(root == excluded | startsWith(root, paste0(excluded, "/"))))
+    cli::cli_abort("Input library {.path {root}} lies inside the generated output root; choose a separate output directory", class = "sas2r_config_error")
   manifest <- list()
   for (lib in names(lib_roots)) {
     root <- lib_roots[[lib]]
     files <- list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE)
     files <- sort(files, method = "radix")
+    # Roots are canonical, so ordinary generated paths can be excluded without
+    # touching files that parallel workers may already have removed.
+    for (exclude in excluded)
+      files <- files[files != exclude & !startsWith(files, paste0(exclude, "/"))]
     for (f in files) {
-      if (file.info(f)$isdir) next
+      info <- file.info(f)
+      if (is.na(info$isdir) || info$isdir) next
+      resolved <- normalizePath(f, winslash = "/", mustWork = FALSE)
+      if (length(excluded) && any(resolved == excluded | startsWith(resolved, paste0(excluded, "/")))) next
       rel <- substring(f, nchar(root) + 2L)
       key <- paste0(lib, "/", rel)
-      h <- tryCatch(as.character(cli::hash_file_sha256(f)), error = function(e) "")
+      h <- if (metadata_only) list(size = info$size, mtime = as.numeric(info$mtime)) else
+        tryCatch(as.character(cli::hash_file_sha256(f)), error = function(e) "")
       manifest[[key]] <- h
     }
   }
@@ -420,7 +435,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     )
   }
 
-  status_str <- if (is.list(assessment)) (assessment$status %||% "migration_ready") else as.character(assessment)
+  status_str <- if (is.list(assessment)) (assessment$status %||% "blocked") else as.character(assessment)
 
   sel_path <- if (is.list(paths) && !is.null(paths$selected)) {
     paths$selected
@@ -438,6 +453,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     )
   }
 
+  if (!is.null(candidate$run_id) && !identical(prev_rec$run_id, candidate$run_id)) prev_rec <- NULL
   if (!is.null(prev_rec)) {
     reasons <- source_history_regressions(prev_rec$assessment$evidence_histories,
                                            assessment$evidence_histories)
@@ -466,11 +482,13 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
   sel_rec <- list(
     schema_version = MIGRATION_SCHEMA_VERSION,
     attempt_id = candidate$attempt_id,
+    run_id = candidate$run_id,
     selected_at = strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     status = status_str,
     assessment = assessment,
     attempt_dir = candidate$attempt_dir,
     outputs_dir = candidate$outputs_dir,
+    output_dirs = candidate$output_dirs %||% list(),
     output_hashes = candidate$output_hashes %||% list(),
     execution_order = candidate$execution_order,
     execution_passed = isTRUE(candidate$passed),

@@ -108,7 +108,7 @@ test_that("oversized captured adapter settings give an actionable error before w
   error <- tryCatch(run_program_pipeline(state, execute = FALSE), error = identity)
   expect_s3_class(error, "sas2r_parallel_config_error")
   message <- conditionMessage(error)
-  limit <- if (.Platform$OS.type == "windows") "32766" else "100000"
+  limit <- if (.Platform$OS.type == "windows") as.character(32766L - nchar("SAS2R_WORKER_ADAPTERS=")) else "100000"
   expect_match(message, paste0("[0-9]+ bytes; limit ", limit, " bytes"))
   for (text in c("captured", "provider configuration", "max_parallel_translations = 1"))
     expect_match(message, text, fixed = TRUE)

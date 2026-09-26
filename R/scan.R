@@ -1,3 +1,11 @@
+read_sas_source <- function(path) {
+  text <- readLines(path, warn = FALSE, encoding = "UTF-8")
+  valid <- iconv(text, from = "UTF-8", to = "UTF-8")
+  if (anyNA(valid)) cli::cli_abort("Source {.path {path}} has invalid UTF-8 at line {which(is.na(valid))[1L]}; convert it from its original encoding to UTF-8 before translation", class = "sas2r_source_encoding_error")
+  if (length(valid)) valid[1L] <- sub("^\ufeff", "", valid[1L])
+  valid
+}
+
 DL_TOKENS <- c("datalines", "cards", "datalines4", "cards4", "parmcards", "parmcards4")
 
 #' Classify every character of SAS source code
@@ -243,7 +251,7 @@ split_macro_statement <- function(txt, l_start, l_end, positions) {
   tok <- regmatches(txt, regexpr("^%?[A-Za-z_][A-Za-z0-9_]*", txt))
   tibble::tibble(
     text = txt,
-    first_token = if (length(tok)) tolower(tok) else "",
+    first_token = if (identical(tolower(tok), "%inc")) "%include" else if (length(tok)) tolower(tok) else "",
     type = "code",
     line_start = l_start,
     line_end = l_end,

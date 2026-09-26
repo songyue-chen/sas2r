@@ -1,4 +1,4 @@
-%let plotds = input_ds;
+%let plotds = raw.input_ds;
 
 data work.stg1;
   set &plotds;
@@ -16,7 +16,7 @@ data adam.final_ds;
   else HIGH_FLAG = 0;
 run;
 
-ods pdf file="outputs/figure1.pdf";
+ods pdf file="outputs/table1.pdf";
 proc print data=adam.final_ds;
 run;
 ods pdf close;

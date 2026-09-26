@@ -14,7 +14,7 @@ test_that("preflight finds real files and missing inputs without model calls or 
     sas_translate = function(...) stop("translation must not run"))
   before <- list.files(root, recursive = TRUE, all.files = TRUE)
   check <- sas_preflight(root, out_dir = file.path(root, "migration"),
-                         budget_usd = 5, usage_limits = list(max_calls = 12, max_request_bytes = 10000))
+                         budget_usd = 5, budget_mode = "soft", usage_limits = list(max_calls = 12, max_request_bytes = 10000))
   expect_s3_class(check, "sas2r_preflight")
   expect_equal(check$model_calls, 0)
   expect_identical(check$inputs$status[check$inputs$dataset == "raw.dm"], "available")
@@ -23,7 +23,7 @@ test_that("preflight finds real files and missing inputs without model calls or 
   expect_match(check$inputs$path[check$inputs$dataset == "raw.dm"], "raw/dm.rds$")
   expect_equal(check$budget$max_usd, 5)
   expect_equal(check$budget$max_calls, 12)
-  expect_identical(check$budget$mode, "strict")
+  expect_identical(check$budget$mode, "soft")
   expect_true(any(grepl("retain", check$unsupported$reason)))
   expect_setequal(check$outputs$target_key, c("adam.adsl", "adam.adae"))
   expect_identical(list.files(root, recursive = TRUE, all.files = TRUE), before)

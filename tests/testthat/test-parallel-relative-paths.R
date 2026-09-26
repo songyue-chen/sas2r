@@ -1,3 +1,6 @@
+# The installed-tests CI job runs this full process integration matrix.
+skip_on_cran()
+
 test_that("parallel translation shares relative output paths across different working directories", {
   root <- withr::local_tempdir()
   dir.create(file.path(root, "programs"))

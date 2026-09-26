@@ -1,25 +1,16 @@
-# Generate local RDS input dataset(s) for the migration demo
-args <- commandArgs(trailingOnly = TRUE)
-
-script_dir <- tryCatch({
-  frame_files <- Filter(Negate(is.null), lapply(sys.frames(), function(f) f$ofile))
-  if (length(frame_files) > 0L) dirname(normalizePath(frame_files[[1L]], winslash = "/", mustWork = FALSE)) else NA_character_
-}, error = function(e) NA_character_)
-
-if (is.na(script_dir) || !nzchar(script_dir)) {
-  args_all <- commandArgs(trailingOnly = FALSE)
-  file_arg <- grep("^--file=", args_all, value = TRUE)
-  if (length(file_arg) > 0L) {
-    script_dir <- dirname(normalizePath(sub("^--file=", "", file_arg[1L]), winslash = "/", mustWork = FALSE))
-  } else {
-    script_dir <- if (file.exists("demo.sas")) "." else file.path("inst", "examples", "migration-demo")
-  }
+# Generate synthetic RDS input for a writable copy of the migration demo.
+# Usage from any directory: Rscript make-input.R /path/to/migration-demo/data
+# Or run/source this script with the copied demo as your working directory.
+args <- if (sys.nframe() == 0L) commandArgs(trailingOnly = TRUE) else character()
+if (!length(args) && !file.exists("demo.sas")) {
+  stop("Run from the copied migration-demo directory or pass its data directory as the first argument.",
+       call. = FALSE)
 }
 
 target_dir <- if (length(args) > 0L) {
   args[[1L]]
 } else {
-  file.path(script_dir, "data")
+  file.path(getwd(), "data")
 }
 
 dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)

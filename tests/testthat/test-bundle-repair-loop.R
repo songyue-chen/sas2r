@@ -166,11 +166,11 @@ test_that("a prior run's execution success does not prevent repairs in a new run
     }
   )
 
-  # Both new attempts initially lose execution. Keep the older selection while
-  # repairing each failure, then select only the complete, successful rerun.
-  expect_identical(retained, rep(prior_dir, 2L))
+  # Selection is scoped to the current run; old output artifacts remain intact.
+  expect_length(retained, 2L)
+  expect_false(any(retained == prior_dir))
   expect_false("bundle_early_stop" %in% events)
-  expect_true("bundle_previous_selection_retained" %in% events)
+  expect_false("bundle_previous_selection_retained" %in% events)
   expect_identical(fx$get_fixer_calls(), 2L)
   expect_identical(result$attempts$sequence, 1:3)
   expect_identical(result$status, "migration_ready")
@@ -183,18 +183,20 @@ test_that("a prior run's execution success does not prevent repairs in a new run
     data.frame(USUBJID = c("01", "02"), TRT = c("A", "B"), DERIVED = 1))
 })
 
-test_that("an older selection stays intact when the new run exhausts its repair cap", {
+test_that("older artifacts stay intact while a new run records its own failed selection", {
   fx <- previously_selected_bundle_fixture()
-  expect_identical(fx$prior$status, "migration_ready")
-  selection_before <- readLines(fx$state$paths$selected)
+  # The manually constructed prior revisions have no independent review evidence.
+  expect_identical(fx$prior$status, "needs_review")
+  prior_record <- file.path(fx$prior$attempt$attempt_dir, "record.json")
+  record_before <- readLines(prior_record)
   result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
 
   expect_identical(fx$get_fixer_calls(), 1L)
   expect_identical(result$attempts$sequence, 1:2)
   expect_identical(result$current_run_status, "blocked")
   expect_identical(result$status_reason, "max_bundle_repair_rounds_reached")
-  expect_null(result$selected_attempt)
-  expect_identical(readLines(fx$state$paths$selected), selection_before)
+  expect_identical(result$selected_attempt$run_id, fx$state$paths$run_id)
+  expect_identical(readLines(prior_record), record_before)
   expect_true(file.exists(file.path(fx$prior$attempt$attempt_dir, "adam", "out2.rds")))
 })
 

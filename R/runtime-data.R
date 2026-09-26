@@ -140,7 +140,7 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
       write_path <- bindings[[idx]]$write_path
     } else {
       root <- get(".sas2r_output_root", envir = env, inherits = FALSE)
-      write_path <- file.path(root, "libraries", paste0(key, "_", length(bindings) + 1L))
+      write_path <- file.path(root, "libraries", paste0(key, "_", substr(cli::hash_sha256(read_path), 1L, 16L)))
     }
   } else {
     write_path <- sas2r_assignment_path(write_path, env)
@@ -188,7 +188,7 @@ sas2r_assignment_path <- function(path, env) {
 sas2r_libname_clear <- function(libref) {
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)
-  registry[[tolower(libref)]] <- NULL
+  if (identical(tolower(libref), "_all_")) registry <- list() else registry[[tolower(libref)]] <- NULL
   assign(".sas2r_registry", registry, envir = env)
   invisible(NULL)
 }
@@ -270,12 +270,18 @@ sas2r_lib_member_path <- function(dir, member, ext) {
 #' @keywords internal
 sas2r_lib_member_file <- function(reg, member) {
   sas2r_lib_member_path("", member, "")
-  dirs <- unique(c(if (!is.null(reg$write_path)) reg$write_path else reg$path,
-                   if (!is.null(reg$read_path)) reg$read_path else reg$path))
-  for (dir in dirs[!is.na(dirs) & nzchar(dirs)]) {
-    for (type in c("rds", "sas7bdat", "xpt")) {
-      path <- sas2r_lib_member_path(dir, member, paste0(".", type))
-      if (file.exists(path) && !dir.exists(path)) return(list(type = type, path = path))
+  write_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
+  read_dir <- if (!is.null(reg$read_path)) reg$read_path else reg$path
+  locations <- list(list(path = write_dir, types = unique(c(reg$write, "rds", "sas7bdat", "xpt"))),
+                    list(path = read_dir, types = unique(c(reg$engine, "rds", "sas7bdat", "xpt"))))
+  for (location in locations) {
+    if (is.null(location$path) || is.na(location$path) || !nzchar(location$path)) next
+    files <- list.files(location$path, full.names = TRUE)
+    files <- files[!dir.exists(files)]
+    for (type in location$types) {
+      hits <- files[tolower(basename(files)) == paste0(tolower(member), ".", type)]
+      if (length(hits) > 1L) stop("Ambiguous dataset member: ", member, call. = FALSE)
+      if (length(hits)) return(list(type = type, path = hits[[1L]]))
     }
   }
   NULL
@@ -394,6 +400,24 @@ sas2r_fold_names <- function(df) {
   if (is.character(i) && length(i) == 1L) {
     idx <- match(tolower(i), tolower(names(x)))
     if (!is.na(idx)) return(x[[idx]])
+  }
+  NextMethod()
+}
+
+#' @export
+#' @noRd
+`$<-.sas2r_dataset` <- function(x, name, value) {
+  idx <- match(tolower(name), tolower(names(x)))
+  if (!is.na(idx)) name <- names(x)[idx]
+  NextMethod()
+}
+
+#' @export
+#' @noRd
+`[[<-.sas2r_dataset` <- function(x, i, value) {
+  if (is.character(i) && length(i) == 1L) {
+    idx <- match(tolower(i), tolower(names(x)))
+    if (!is.na(idx)) i <- names(x)[idx]
   }
   NextMethod()
 }
@@ -534,9 +558,13 @@ lib_write <- function(df, libref, member, ...) {
   }
   dir.create(w_dir, showWarnings = FALSE, recursive = TRUE)
   fmt <- if (is.null(reg$write)) "rds" else reg$write
-  if (fmt == "rds") saveRDS(df, sas2r_lib_member_path(w_dir, member, ".rds"))
-  else if (fmt == "xpt") haven::write_xpt(df, sas2r_lib_member_path(w_dir, member, ".xpt"))
-  else stop("Unsupported write format: ", fmt, call. = FALSE)
+  df <- as.data.frame(df)
+  if (!fmt %in% c("rds", "xpt")) stop("Unsupported write format: ", fmt, call. = FALSE)
+  target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
+  pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
+  on.exit(unlink(pending), add = TRUE)
+  if (fmt == "rds") saveRDS(df, pending) else haven::write_xpt(df, pending)
+  if (!file.rename(pending, target)) stop("Could not replace dataset member: ", target, call. = FALSE)
   invisible(df)
 }
 

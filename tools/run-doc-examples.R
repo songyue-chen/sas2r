@@ -7,7 +7,8 @@ if (!file.exists(file.path(repo, "DESCRIPTION"))) stop("Run from the repository 
 if ("--source" %in% args) pkgload::load_all(repo, quiet = TRUE) else library(sas2r)
 
 files <- c("README.md", "docs/running-migrations.md", "docs/output-evidence.md", "docs/clinical-qc-preflight.md",
-           "vignettes/dependency-aware-migration.Rmd", "vignettes/runtime-helpers.Rmd")
+           "vignettes/dependency-aware-migration.Rmd", "vignettes/runtime-helpers.Rmd",
+           "inst/examples/README.md", "inst/examples/migration-demo/README.md")
 source(file.path(repo, "tests/testthat/helper-documentation.R"))
 blocks <- unlist(lapply(files, function(file) {
   doc_code_blocks(readLines(file.path(repo, file), warn = FALSE), file)

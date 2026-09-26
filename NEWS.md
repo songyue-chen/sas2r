@@ -1,3 +1,47 @@
+# sas2r 0.5.5
+
+- Document how to copy and run installed examples, correct the supported input
+  engines in the configuration reference, and move the incomplete scanner
+  project into test fixtures. Configuration help uses the installed migration demo.
+- Make demo input generation require an explicit destination or the demo working
+  directory. Align mocked PDF tables with their SAS sources and check their data.
+- Remove the PHUSE benchmark mode and manifest; retain the generic offline
+  acceptance checks. Repair the internal scan benchmark and its cache guidance.
+
+- Explain missing required output contracts and manual review needs in run
+  status reasons while retaining specific failures and the original diagnostics.
+  Document the configuration workaround for autoexec-only input libraries.
+
+- Exclude generated worker files before input inspection, require a required
+  output contract for readiness, and retain repair failures alongside output
+  review guidance. Keep fixer dependency source in task data and execute `%inc`
+  without treating it as an unresolved macro. Older ellmer versions can use
+  locally enforced tool, retry and wall-time limits.
+
+- Review fixes preserve agent instructions, isolate per-program library bindings,
+  distinguish manual flat-file review from missing outputs, and preserve unrelated
+  files when replacing an export. Execution timeout settings are documented.
+- Standalone bundles now require `cli` (hashing) and `vctrs` (exact grouping),
+  in addition to the packages listed in their generated README.
+
+- Readiness now includes every scheduled component, untranslated code and
+  unknown output lineage. Dataset evidence must match the requested library
+  and member; ambiguous files cannot satisfy a target.
+- Unsupported PROC options, macro control flow and variable-list syntax are
+  deferred intact. Correct SAS missing/truth handling, decimal rounding,
+  character ordering, formats, MERGE keys and case-insensitive replacement.
+- Numeric comparison defaults to absolute tolerance only; relative tolerance
+  is opt-in. Apply source ordering and date/time policies during output checks.
+- Apply configured budgets and execution timeouts, retain per-request usage,
+  separate source task data from system instructions, and limit credential
+  inheritance and raw execution diagnostics sent to agents. Generated R still
+  requires external isolation when it is untrusted.
+- Preserve usable revisions on resume, scope selection to the current run,
+  and refuse concurrent writes to one output directory. Exports require an
+  empty destination or explicit replacement of a previous sas2r export.
+- Speed up dependency closures, exact row matching, macro scans and ledger
+  appends. Test installations without optional dependencies in CI.
+
 # sas2r 0.5.4
 
 - README links to repository-only guides and the license use public URLs in

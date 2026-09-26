@@ -115,13 +115,13 @@ run_native_history_contract <- function() {
       wire <- lapply(readLines(log), jsonlite::fromJSON, simplifyVector = FALSE)
       wire <- wire[seq_along(wire) > before]
       stopifnot(length(wire) == 8L, checked$usage_budget$request_count - before_calls == 8L)
-      # Group by the component-specific system context; each worker keeps its
-      # own native history while the short user instruction is shared.
+      # Task data lives in the first user turn. Each worker retains its own
+      # component context and native history across tool batches.
       key <- vapply(wire, function(entry) {
         if (provider == "deepseek") {
-          prompt <- Filter(function(m) identical(m$role, "system"), entry$body$messages)[[1]]$content
+          prompt <- Filter(function(m) identical(m$role, "user"), entry$body$messages)[[1]]$content
         } else {
-          prompt <- entry$body$systemInstruction
+          prompt <- Filter(function(m) identical(m$role, "user"), entry$body$contents)[[1]]$parts
         }
         digest::digest(prompt)
       }, "")

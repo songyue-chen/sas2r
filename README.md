@@ -71,6 +71,11 @@ install.packages("ellmer")
 remotes::install_github("songyue-chen/sas2r")
 ```
 
+Installed examples are available without a GitHub checkout. Locate them with
+`system.file("examples", package = "sas2r")`; its README explains how to copy the
+migration demo into a writable directory and prepare its synthetic input. The
+annotated YAML is a configuration reference to adapt to your own study.
+
 ### 2. Describe your study in `_sas2r.yml`
 
 Create one small file, `_sas2r.yml`, in your project directory. It says where your data lives, which outputs matter, and which AI model to use. The folder of SAS programs to translate is not part of it: you pass that folder, or a single `.sas` file, as the `path` argument in steps 3 and 4, with `recursive = TRUE` to include subfolders. Called macro folders are named under `macros`.
@@ -152,9 +157,10 @@ result <- sas_translate(
   max_bundle_repair_rounds = NULL, # optional overall cap on bundle fixer calls
   agent_evidence = "code_only"     # what repair evidence the AI may see
   # Optional limits, commented out by default. Uncomment to enforce them; the
-  # run stops when any limit is reached. Requests and tool calls per program
+  # run stops admitting requests when a limit is reached. Requests and tool calls per program
   # vary by model and study: size ceilings from a completed run's usage summary.
-  # , budget_usd = 10
+  # Catalog costs are estimates; an in-flight request may exceed the threshold.
+  # , budget_usd = 10, budget_mode = "soft"
   # , usage_limits = list(max_calls = 700, max_tool_calls = 700, max_wall_time = 14400)
 )
 

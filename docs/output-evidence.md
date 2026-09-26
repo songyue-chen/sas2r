@@ -50,7 +50,7 @@ and result type:
 
 | Function | Contract |
 | --- | --- |
-| `compare_profile(abs = 1e-8, rel = 1e-8)` | Constructs numeric tolerance, missing-value, padding, and attribute policy. It does not take datasets or calculate a statistical profile. |
+| `compare_profile(abs = 1e-8, rel = 0)` | Constructs numeric tolerance, missing-value, padding, and attribute policy. It does not take datasets or calculate a statistical profile. |
 | `compare_datasets(base, comp, profile, keys)` | Compares reference `base` with candidate `comp`. Without keys it pairs by row order; duplicate keys pair by occurrence. Returns a `sas2r_comparison`. |
 | `passed(comparison)` | Returns the pass/fail result of a `sas2r_comparison`. |
 | `compare_aligned_outputs(reference, candidate, target, context = NULL, profile = compare_profile())` | Infers and checks candidate row keys, then uses duplicate-key or keyless multiset alignment when needed. Returns a bounded `sas2r_comparison_report`. It does not require pre-aligned input. |
@@ -74,7 +74,7 @@ comparison <- compare_datasets(
   base = reference,
   comp = candidate,
   keys = "USUBJID",
-  profile = compare_profile(abs = 1e-8, rel = 1e-8)
+  profile = compare_profile(abs = 1e-8, rel = 0)
 )
 passed(comparison)
 write_comparison_report(comparison, file = "dataset-comparison.md")

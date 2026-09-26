@@ -13,6 +13,7 @@ sas_units <- function(stmts) {
   cur_type <- NA_character_
   open <- FALSE
   macro_depth <- 0L
+  open_macro_control <- FALSE
 
   # Context stack for enclosing step when %macro is defined inside a step
   outer_id <- NA_integer_
@@ -25,6 +26,7 @@ sas_units <- function(stmts) {
   for (k in seq_len(n)) {
     tok <- tolower(stmts$first_token[k])
 
+    if (macro_depth == 0L && tok %in% c("%if", "%else", "%do", "%end")) open_macro_control <- TRUE
     if (macro_depth > 0L) {
       if (tok == "%macro") macro_depth <- macro_depth + 1L
       if (tok == "%mend") macro_depth <- macro_depth - 1L
@@ -93,6 +95,7 @@ sas_units <- function(stmts) {
 
   stmts$unit_id <- unit_id
   stmts$unit_type <- unit_type
+  stmts$macro_control <- open_macro_control & unit_type != "macro_def"
   tibble::as_tibble(stmts)
 }
 

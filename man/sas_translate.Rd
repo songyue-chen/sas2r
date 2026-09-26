@@ -107,7 +107,7 @@ An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \ver
 \verb{$bundle_dir}, \verb{$outputs_dir}, \verb{$status}, \verb{$status_reason}, \verb{$graph_path},
 \verb{$output_contracts_path}, \verb{$report_path}, \verb{$report_json_path}, \verb{$component_evidence},
 \verb{$output_assessments}, \verb{$diagnostics}, \verb{$repair_history}, \verb{$usage}, and \verb{$project}.
-\verb{$outputs_dir} contains all selected generated files with their library and
+\verb{$outputs_dir} contains selected contract deliverables with their library and
 relative-path layout (for example \code{work/out.rds}, \code{adam/adsl.rds},
 \code{outputs/table.html}); it is NULL when execution is disabled. The JSON
 report includes separate target/reference/review coverage and effective limits.

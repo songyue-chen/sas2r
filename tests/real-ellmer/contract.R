@@ -503,7 +503,7 @@ production_sources <- paste(c(
 ), collapse = "\n")
 for (method in c(
   "set_turns", "register_tool", "chat", "chat_structured", "last_turn",
-  "get_turns", "get_tokens", "get_cost"
+  "get_turns", "get_tokens"
 )) {
   if (!grepl(method, production_sources, fixed = TRUE)) {
     stop("production adapter no longer calls real Chat$", method)
@@ -601,6 +601,7 @@ lookup <- sas2r:::make_tool(
   )
 )
 deprecations <- character()
+requests_before_agent <- length(readLines(log_file))
 agent <- withCallingHandlers(
   sas2r:::run_agent(
     list(
@@ -637,12 +638,21 @@ if (!identical(direct$usage$input_tokens, 100) ||
   stop("real Chat$get_tokens metadata did not normalize")
 }
 if (is.na(direct$cost$amount_usd) || !is.finite(direct$cost$amount_usd)) {
-  stop("real Chat$get_cost(include = 'last') did not report model cost")
+  stop("new complete assistant turns did not report model cost")
 }
 if (!identical(agent$status, "ok") ||
     !identical(agent$tool_calls, 1L) ||
     !identical(lookup_executions, 1L)) {
   stop("real Chat$register_tool/chat path did not execute exactly one tool call")
+}
+
+# Every loopback response reports the same usage. Include any settings probe
+# as well as gathering and finalization, and compare against actual HTTP calls.
+# No hidden tool turn may be omitted or counted twice.
+agent_requests <- length(readLines(log_file)) - requests_before_agent
+if (agent_requests < 3L || !isTRUE(all.equal(agent$known_cost_usd,
+    agent_requests * direct$cost$amount_usd, tolerance = 1e-10))) {
+  stop("agent cost does not equal all new HTTP turns")
 }
 
 # The production adapter over the two native (non-OpenAI) protocol families
@@ -850,7 +860,8 @@ wire_history_positions <- function(request) {
     if (length(positions)) positions[[1]] else NA_integer_
   }
   c(
-    original_user = first_position(function(item) contains_value(item, "translate")),
+    original_user = first_position(function(item) contains_pair(item, "role", "user") &&
+      contains_value(item, "translate")),
     assistant_tool_request = first_position(function(item) {
       (contains_pair(item, "role", "assistant") &&
          contains_field(item, "tool_calls")) ||

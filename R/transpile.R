@@ -563,15 +563,16 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
     # An unreachable module is stubbed whole -- libname registration included,
     # since nothing in it ever runs -- so the file and the manifest agree that
     # none of it is translation a reviewer could approve.
-    if (orphan) {
+    if (orphan || any(us[["macro_control"]] %||% FALSE)) {
       out_chunks[[length(out_chunks) + 1L]] <- c(
         sprintf("# --- sas2r:unit %s ---", uid),
-        stub_block(us, "include_site_not_emitted", uid), "")
+        stub_block(us, if (orphan) "include_site_not_emitted" else "open_code_macro_control", uid), "")
       rows[[length(rows) + 1L]] <- list(
         unit_id = uid, file = f, staged_file = rel_r, unit_type = ut,
         tier = "stub", dataset = target_ds,
         gate_reached = NA_character_, evidence_basis = NA_character_,
-        reason = "include_site_not_emitted", flags = "orphan_module",
+        reason = if (orphan) "include_site_not_emitted" else "open_code_macro_control",
+        flags = if (orphan) "orphan_module" else "macro_control",
         code = NA_character_, lint_errors = 0L, lint_warnings = 0L)
       next
     }
@@ -877,6 +878,7 @@ deterministic_emission_result <- function(out) {
 
 deterministic_unit_translation <- function(us, rulebook, file = us$file[1L]) {
   out <- tryCatch({
+    if (any(us[["macro_control"]] %||% FALSE)) return(list(em = NULL, reason = "open_code_macro_control"))
     if (us$unit_type[1L] == "macro_def") return(list(em = NULL, reason = "macro_deferred"))
     if (us$unit_type[1L] == "proc_step") {
       dispatch_proc(us, rulebook)
@@ -887,5 +889,12 @@ deterministic_unit_translation <- function(us, rulebook, file = us$file[1L]) {
       list(em = em, reason = NULL, outputs = ir$outputs)
     }
   }, error = function(e) list(em = NULL, reason = deterministic_failure_reason(e)))
-  deterministic_emission_result(out)
+  out <- deterministic_emission_result(out)
+  if (!is.null(out$em)) {
+    procs <- sub("^proc\\s+([A-Za-z_]+).*", "\\1", us$text[us$first_token == "proc"], ignore.case = TRUE)
+    used <- semantic_exercised_rules(list(statements = us), procs, rulebook)
+    risks <- used[vapply(used, function(id) identical(rulebook$semantics$rules[[id]]$classification, "known_divergence"), logical(1))]
+    if (length(risks)) out$em$flags <- unique(c(out$em$flags, paste0("semantic:", risks)))
+  }
+  out
 }

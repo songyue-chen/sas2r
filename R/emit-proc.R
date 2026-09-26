@@ -9,6 +9,12 @@
 emit_proc_sort <- function(stmts) {
   code_rows <- stmts[stmts$type == "code", ]
   proc <- code_rows$text[code_rows$first_token == "proc"][1]
+  reject <- function(flag) list(code = NA_character_, stmt_map = as.integer(code_rows$stmt_id), flags = flag)
+  if (!all(code_rows$first_token %in% c("proc", "by", "run", "quit")))
+    return(reject("sort_body_deferred"))
+  if (grepl("(", proc, fixed = TRUE)) return(reject("sort_dataset_options"))
+  if (!proc_options_supported(proc, "sort", c("data", "out"), c("nodupkey", "equals")))
+    return(reject("sort_options_deferred"))
   data_in <- eq_captures(proc, "data")
   out <- eq_captures(proc, "out")
   has_nodupkey <- grepl("\\bnodupkey\\b", proc, ignore.case = TRUE)
@@ -45,6 +51,7 @@ emit_proc_sort <- function(stmts) {
                 flags = "sort_missing_by"))
   }
 
+  if (!deterministic_names(by)) return(reject("sort_invalid_by"))
   desc_indices <- which(desc_next) + 1L
   desc_indices <- desc_indices[desc_indices <= length(toks)]
   descending <- tolower(toks[desc_indices])
@@ -131,22 +138,19 @@ compile_format_catalog <- function(project) {
 
             if (tolower(raw_lhs) == "other") {
               other <- lab
-            } else if (!grepl("^['\"]", raw_lhs) && grepl("(?:<-?|-<?)", raw_lhs)) {
-              parts <- strsplit(raw_lhs, "\\s*(?:<-?|-<?)\\s*")[[1]]
-              if (length(parts) == 2L) {
-                p1 <- tolower(trimws(parts[1]))
-                p2 <- tolower(trimws(parts[2]))
-                lo <- if (p1 == "low") -Inf else suppressWarnings(as.numeric(p1))
-                hi <- if (p2 == "high") Inf else suppressWarnings(as.numeric(p2))
-                if (!is.na(lo) && !is.na(hi)) {
-                  ranges[[length(ranges) + 1L]] <- list(lo = lo, hi = hi, label = lab)
-                  next
-                }
-              }
-              items <- trimws(strsplit(raw_lhs, "\\s*,\\s*")[[1]])
-              for (item in items) {
-                val <- gsub("^['\"]|['\"]$", "", item)
-                values[val] <- lab
+            } else if (!grepl("^['\"]", raw_lhs) && grepl("-", raw_lhs, fixed = TRUE)) {
+              endpoint <- "(low|high|[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))"
+              range_match <- regmatches(tolower(raw_lhs), regexec(paste0("^\\s*", endpoint,
+                "\\s*(<)?\\s*-\\s*(<)?\\s*", endpoint, "\\s*$"), tolower(raw_lhs), perl = TRUE))[[1L]]
+              if (length(range_match)) {
+                lo <- if (range_match[2L] == "low") -Inf else as.numeric(range_match[2L])
+                hi <- if (range_match[5L] == "high") Inf else as.numeric(range_match[5L])
+                ranges[[length(ranges) + 1L]] <- list(lo = lo, hi = hi,
+                  lo_excl = nzchar(range_match[3L]), hi_excl = nzchar(range_match[4L]), label = lab)
+              } else if (!is.na(suppressWarnings(as.numeric(raw_lhs)))) {
+                values[raw_lhs] <- lab
+              } else {
+                flags[[length(flags) + 1L]] <- tibble::tibble(unit_id = uid, reason = "format_range_deferred")
               }
             } else {
               items <- trimws(strsplit(raw_lhs, "\\s*,\\s*")[[1]])
@@ -199,6 +203,9 @@ write_formats <- function(catalog, out_dir) {
 #' @return A list with elements `code` (character), `stmt_map` (integer), and `flags` (character).
 #' @noRd
 emit_proc_format <- function(us) {
+  compiled <- compile_format_catalog(list(statements = us))
+  if (nrow(compiled$flags)) return(list(code = NA_character_, stmt_map = us$stmt_id,
+    flags = unique(compiled$flags$reason)))
   list(code = "# formats compiled into _sas2r_formats.R",
        stmt_map = us$stmt_id, flags = character())
 }

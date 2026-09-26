@@ -30,7 +30,7 @@ test_that("the actual fixer receives complete retained parent bodies and materia
     paths = fx$paths, helper_code = retained)
   expect_true(rev$checks$pass)
   expect_true(rev$helper_changed)
-  prompt <- paste(vapply(fixer$requests()[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+  prompt <- request_task_text(fixer$requests()[[1]])
   expect_match(prompt, retained, fixed = TRUE)
   expect_identical(paste(readLines(rev$helper_path), collapse = '\n'), rev$helper_code)
   expect_identical(rev$contract$binding$helper_hash, migration_hash(rev$helper_code))
@@ -63,7 +63,7 @@ test_that("immediate helper-only repair executes and exports the reviewed snapsh
   helper <- runtime_helper_code(result$runtime)
   expect_identical(rev$helper_code, helper)
   requests <- fx$state$reviewer_llm$requests()
-  prompt <- paste(vapply(tail(requests, 1)[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+  prompt <- request_task_text(tail(requests, 1)[[1]])
   expect_match(prompt, helper, fixed = TRUE)
   plan <- build_program_smoke_plan(result$graph, 'p01', result$selected_revisions)
   staged <- prepare_program_smoke(result, plan, withr::local_tempdir())
@@ -163,7 +163,7 @@ test_that("ambiguous empty-input artifact failures require source review before 
     expect_identical(observations$p02$work.out1$status, 'observed_empty_candidate_input')
     expect_false(result$assessment$targets$work.out2$checks$candidate_exists$passed)
     expect_identical(result$selected_revisions$p01$r_code, fx$state$selected_revisions$p01$r_code)
-    prompt <- paste(vapply(fx$state$reviewer_llm$requests()[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+    prompt <- request_task_text(fx$state$reviewer_llm$requests()[[1]])
     expect_false(grepl('observed_empty_candidate_input|candidate_input_observations|rows_candidate', prompt))
   }
 })
@@ -171,7 +171,7 @@ test_that("ambiguous empty-input artifact failures require source review before 
 test_that("a source-required empty output is repairable in the same cycle without changing its rows", {
   fx <- empty_repair_fixture()
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
-    text <- paste(vapply(req$messages, `[[`, '', 'content'), collapse = '\n')
+    text <- request_task_text(req)
     if (grepl('Focused source review', text, fixed = TRUE)) material_review_response(
       sas_evidence = 'data work.out2; set work.out1; value=value+1; run; creates a dataset even with zero rows',
       r_evidence = 'invisible(NULL) omits the required lib_write', affected_outputs = 'work.out2')
@@ -182,7 +182,7 @@ test_that("a source-required empty output is repairable in the same cycle withou
   expect_identical(result$repairs[[1]]$component_id, 'p02')
   expect_equal(nrow(readRDS(file.path(result$selected_attempt$attempt_dir, 'work', 'out2.rds'))), 0)
   expect_identical(result$selected_revisions$p01$r_code, fx$state$selected_revisions$p01$r_code)
-  prompt <- paste(vapply(fx$state$fixer_llm$requests()[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+  prompt <- request_task_text(fx$state$fixer_llm$requests()[[1]])
   expect_match(prompt, 'omits the required lib_write', fixed = TRUE)
   expect_false(grepl('observed_empty_candidate_input|Candidate dataset file not found', prompt))
 })
@@ -192,13 +192,13 @@ test_that("an independent defect stays eligible while its artifact investigation
   fx$state$histories$p02 <- record_completed_review(fx$state$histories$p02, verdict = 'repair_required',
     findings = list(list(severity = 'material', sas_evidence = 'value=value+1', r_evidence = 'value + 9')))
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
-    text <- paste(vapply(req$messages, `[[`, '', 'content'), collapse = '\n')
+    text <- request_task_text(req)
     if (grepl('Focused source review', text, fixed = TRUE)) valid_program_review_response(verdict = 'review_unavailable')
     else valid_program_review_response()
   })
   result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L)
   expect_length(fx$state$fixer_llm$requests(), 1)
-  prompt <- paste(vapply(fx$state$fixer_llm$requests()[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+  prompt <- request_task_text(fx$state$fixer_llm$requests()[[1]])
   expect_match(prompt, 'value + 9', fixed = TRUE)
   expect_false(grepl('observed_empty_candidate_input|Candidate dataset file not found', prompt))
 })
@@ -275,7 +275,7 @@ test_that("saved static blockers outrank other source defects on required output
   fx$state <- stage_workflow_revision(fx$state, "p02",
     "render <- function() stop('required output not implemented')", "reviewed_no_material_finding")
   fx$state$reviewer_llm <- recording_reviewer(function(req) {
-    text <- paste(vapply(req$messages, `[[`, "", "content"), collapse = "\n")
+    text <- request_task_text(req)
     if (req$component_id == "p02" && grepl("required output not implemented", text, fixed = TRUE)) {
       response <- material_review_response(sas_evidence = "data work.out2; set raw.input; value=value+1; run;",
         r_evidence = "render <- function() stop('required output not implemented')")
@@ -323,7 +323,7 @@ test_that("a warranted follow-up can recover an unavailable full review with exp
   expect_identical(component_review_verdict(result$histories$p01), 'reviewed_no_material_finding')
   expect_length(fx$state$fixer_llm$requests(), 0)
   expect_length(fx$state$reviewer_llm$requests(), 1)
-  prompt <- paste(vapply(fx$state$reviewer_llm$requests()[[1]]$messages, `[[`, '', 'content'), collapse = '\n')
+  prompt <- request_task_text(fx$state$reviewer_llm$requests()[[1]])
   expect_match(prompt, 'Full component review with additional focus', fixed = TRUE)
   expect_match(prompt, 'entire component', fixed = TRUE)
   expect_false(grepl('999|reference.rds', prompt))

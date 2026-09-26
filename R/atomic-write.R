@@ -2,7 +2,7 @@
 #'
 #' Writes to a temporary file in the same directory and renames over the destination.
 #' On platforms or filesystems where rename cannot overwrite an existing destination,
-#' safely falls back to copy with overwrite.
+#' falls back to copy with overwrite, unless `require_atomic` is TRUE.
 #'
 #' The callback serializes an already prepared artifact. Callback errors,
 #' including serialization errors, mean the artifact could not be persisted
@@ -13,9 +13,10 @@
 #' @param write_fn Function taking a file path argument to execute the write.
 #' @param target_file Target destination path.
 #' @param pattern Tempfile prefix pattern.
+#' @param require_atomic Refuse a copy fallback for files read by other processes.
 #' @return Logical TRUE on success.
 #' @noRd
-atomic_write_file <- function(write_fn, target_file, pattern = "atomic_") {
+atomic_write_file <- function(write_fn, target_file, pattern = "atomic_", require_atomic = FALSE) {
   dir.create(dirname(target_file), showWarnings = FALSE, recursive = TRUE)
   tf <- tempfile(pattern = pattern, tmpdir = dirname(target_file))
   on.exit(if (file.exists(tf)) unlink(tf), add = TRUE)
@@ -23,7 +24,14 @@ atomic_write_file <- function(write_fn, target_file, pattern = "atomic_") {
     cli::cli_abort("failed to write {.file {target_file}}: {conditionMessage(error)}",
       class = "sas2r_write_failed", parent = error)
   })
-  ok <- tryCatch(file.rename(tf, target_file), error = function(e) FALSE)
+  ok <- FALSE
+  for (attempt in seq_len(5L)) {
+    ok <- tryCatch(suppressWarnings(file.rename(tf, target_file)), error = function(e) FALSE)
+    if (isTRUE(ok)) break
+    if (attempt < 5L) Sys.sleep(0.02)
+  }
+  if (!isTRUE(ok) && isTRUE(require_atomic))
+    cli::cli_abort("failed to atomically publish {.file {target_file}}", class = "sas2r_write_failed")
   if (!isTRUE(ok)) {
     copy_ok <- tryCatch(file.copy(tf, target_file, overwrite = TRUE), error = function(e) FALSE)
     if (!isTRUE(copy_ok)) {

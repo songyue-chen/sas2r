@@ -46,7 +46,7 @@ ping uses the configured output ceiling, or 2048 tokens when reasoning effort
 is configured, otherwise 32. It does not perform the negative control used by
 automatic translation startup to detect ignored reasoning settings, and does
 not populate that startup cache. The
-probe never launches an interactive browser or device login: a missing or
+probe may invoke provider-managed authentication, including device login. A missing or
 expired ambient session raises a classed condition naming the command to
 run instead.
 }

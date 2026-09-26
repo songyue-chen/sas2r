@@ -42,6 +42,10 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
   code_text <- paste(code_lines, collapse = "\n")
   errors <- c(errors, check_component_library_assignments(code_text, project, contract$component_id))
 
+  if (any(grepl("^# sas2r:untranslated", code_lines) & !grepl("reason=display_only$", code_lines))) {
+    errors <- c(errors, "untranslated_source: generated code still contains untranslated SAS units")
+  }
+
   # 1. Parse check
   parsed <- tryCatch(parse(text = code_text), error = function(e) e)
   if (inherits(parsed, "error")) {
@@ -51,15 +55,8 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
   # 2. Package lint check (excluding the sas2r bootstrap block)
   code_for_lint <- code_text
   if (!inherits(parsed, "error")) {
-    non_boot <- Filter(function(expr) {
-      if (is.call(expr) && identical(as.character(expr[[1L]]), "if")) {
-        cond_text <- paste(deparse(expr[[2L]]), collapse = " ")
-        if (grepl(".sas2r_registry", cond_text, fixed = TRUE)) {
-          return(FALSE)
-        }
-      }
-      TRUE
-    }, as.list(parsed))
+    bootstrap <- as.list(parse(text = module_bootstrap(), keep.source = FALSE))
+    non_boot <- Filter(function(expr) !any(vapply(bootstrap, identical, logical(1), y = expr)), as.list(parsed))
     code_for_lint <- paste(vapply(non_boot, function(e) paste(deparse(e), collapse = "\n"), character(1)), collapse = "\n\n")
   }
 

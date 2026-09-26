@@ -96,7 +96,7 @@ test_that("multiline SQL and case insensitivity", {
   expect_match(em$code, "dplyr::filter")
   expect_match(em$code, "dplyr::group_by\\(trt\\)")
   expect_match(em$code, 'dplyr::summarise\\(n = dplyr::n\\(\\), .groups = "drop"\\)')
-  expect_match(em$code, "dplyr::arrange\\(trt\\)")
+  expect_match(em$code, 'sas_sort(by = c("trt"))', fixed = TRUE)
 })
 
 test_that("aggregates over an all-missing column yield NA without warnings", {

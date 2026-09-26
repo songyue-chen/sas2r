@@ -35,6 +35,15 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
                           usage_limits = NULL, recursive = FALSE, max_parallel_translations = NULL) {
   root <- if (is.null(out_dir)) "<temporary output root>" else migration_paths(out_dir)$root
   if (!is.null(out_dir)) root <- config_anchor_paths(root, getwd())
+  cfg <- translation_config(path, config)
+  configured_budget <- cfg$budget %||% list()
+  if (missing(budget_usd)) budget_usd <- configured_budget$max_usd %||% budget_usd
+  if (missing(budget_mode)) budget_mode <- configured_budget$mode %||% budget_mode
+  if (missing(pricing_source)) pricing_source <- configured_budget$pricing_source %||% pricing_source
+  if (missing(pricing_rates)) pricing_rates <- configured_budget$rates %||% pricing_rates
+  configured_limits <- configured_budget[intersect(names(configured_budget), setdiff(usage_limit_names(), "max_usd"))]
+  usage_limits <- utils::modifyList(configured_limits, usage_limits %||% list())
+  config <- cfg
   budget <- translation_budget(budget_usd, budget_mode, pricing_source,
                                pricing_rates, usage_limits)
   setup <- translation_setup(path, config, outputs, recursive,
@@ -84,7 +93,7 @@ sas_preflight <- function(path, out_dir = NULL, config = NULL, outputs = NULL,
     ),
     notes = c("Static inspection only; datasets and generated programs were not executed.",
               "Missing resources normally allow translation with warnings; affected execution remains unavailable.",
-              "Budget matches sas_translate arguments; config$budget is not used by that entry point.",
+              "Budget includes project configuration; explicit arguments take precedence.",
               "Run and attempt identifiers are assigned when translation starts.")
   ), class = "sas2r_preflight")
 }

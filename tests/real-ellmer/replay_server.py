@@ -58,7 +58,7 @@ def structured_payload(body):
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
-    if contains_key(body, "side_effects"):
+    if contains_key(body, "side_effects") or "schema program_translation_v1" in json.dumps(body):
         return PROGRAM_TRANSLATION
     return TRANSLATION
 

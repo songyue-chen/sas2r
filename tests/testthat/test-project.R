@@ -1,4 +1,4 @@
-demo <- function() system.file("examples", "demo_project", package = "sas2r")
+demo <- function() test_path("fixtures", "scanner-project")
 
 test_that("project scans all files and renumbers units globally", {
   p <- sas_project(demo())
@@ -58,7 +58,7 @@ test_that("empty directory returns valid 0-row project tibbles", {
   expect_identical(nrow(p$comments), 0L)
   expect_identical(names(p$statements), c("stmt_id", "text", "first_token", "type",
                                           "line_start", "line_end", "unit_id",
-                                          "unit_type", "file", "origin"))
+                                          "unit_type", "file", "origin", "macro_control"))
   expect_identical(names(p$units), c("file", "unit_id", "unit_type", "label",
                                      "line_start", "line_end", "n_stmts", "origin"))
   expect_identical(names(p$comments), c(

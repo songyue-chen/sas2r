@@ -66,6 +66,10 @@ emit_proc_means <- function(us) {
   prs <- prs[!grepl("^out\\s*=", prs, ignore.case = TRUE)]
   if (!length(prs)) return(reject)
 
+  remaining <- trimws(sub("^output\\s+", "", out_txt[1], ignore.case = TRUE))
+  if (!proc_options_supported(proc, "means", "data", c("noprint", "nway", "missing", MEANS_STATS)) ||
+      !proc_options_supported(paste("proc means", remaining), "means", c("out", MEANS_STATS))) return(reject)
+  if (!deterministic_names(c(cls, v))) return(reject)
   aliases <- character(); stat_ids <- character()
   for (p in prs) {
     g <- regmatches(p, regexec("(\\w+)\\s*=\\s*(\\w+)", p))[[1]]

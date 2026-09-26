@@ -111,6 +111,8 @@ translation_budget <- function(budget_usd, budget_mode, pricing_source,
   }
 
   pricing_source_norm <- if (identical(pricing_source, "catalog")) "adapter" else pricing_source
+  if (identical(budget_mode_norm, "strict") && is.finite(budget_usd) && identical(pricing_source_norm, "adapter"))
+    cli::cli_abort("A strict dollar budget requires pricing_source = 'organization' and pricing_rates; use budget_mode = 'soft' for catalog estimates", class = "sas2r_budget_config_error")
 
   usage_limits_map <- usage_limits %||% list()
   limit_names <- setdiff(usage_limit_names(), "max_usd")

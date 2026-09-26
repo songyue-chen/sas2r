@@ -1,5 +1,6 @@
 test_that("assess_dataset_target evaluates keys, tolerances, missing values, and explicit checks", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
 
   # Create candidate and reference datasets
   ref_df <- data.frame(
@@ -16,7 +17,7 @@ test_that("assess_dataset_target evaluates keys, tolerances, missing values, and
   )
 
   ref_path <- file.path(tmp, "ref.rds")
-  cand_path <- file.path(tmp, "adsl.rds")
+  cand_path <- file.path(tmp, "adam", "adsl.rds")
   saveRDS(ref_df, ref_path)
   saveRDS(cand_df, cand_path)
 
@@ -48,13 +49,14 @@ test_that("assess_dataset_target evaluates keys, tolerances, missing values, and
 
 test_that("assess_dataset_target detects missing required columns and tolerance failures", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
 
   cand_df <- data.frame(
     USUBJID = c("01", "02"),
     AVAL = c(10.0, 50.0), # 50.0 != 20.0
     stringsAsFactors = FALSE
   )
-  cand_path <- file.path(tmp, "adsl.rds")
+  cand_path <- file.path(tmp, "adam", "adsl.rds")
   saveRDS(cand_df, cand_path)
 
   ref_df <- data.frame(
@@ -89,10 +91,11 @@ test_that("assess_dataset_target detects missing required columns and tolerance 
 
 test_that("assess_final_outputs promotes covered components on passing output lineage", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
 
   # Create candidate files
   cand_adsl <- data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2), stringsAsFactors = FALSE)
-  saveRDS(cand_adsl, file.path(tmp, "adsl.rds"))
+  saveRDS(cand_adsl, file.path(tmp, "adam", "adsl.rds"))
 
   ref_adsl <- data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2), stringsAsFactors = FALSE)
   ref_path <- file.path(tmp, "ref_adsl.rds")
@@ -168,14 +171,14 @@ test_that("assess_final_outputs promotes covered components on passing output li
 
 test_that("gate without configured tolerance uses compare_profile defaults, not abs-only 1e-6", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
   # Values at AUC scale: double resolution near 1e7 makes an absolute-only
-  # 1e-6 unmeetable, while the default combined tolerance (abs 1e-8 +
-  # rel 1e-8 * 1e7 = 0.1) accepts a 0.05 representation-level difference.
+  # differences meaningful: relative tolerance must now be explicitly enabled.
   ref_df <- data.frame(USUBJID = c("01", "02"), AUC = c(1e7, 2e7))
   cand_df <- data.frame(USUBJID = c("01", "02"), AUC = c(1e7 + 0.05, 2e7))
   ref_path <- file.path(tmp, "ref.rds")
   saveRDS(ref_df, ref_path)
-  saveRDS(cand_df, file.path(tmp, "adpc.rds"))
+  saveRDS(cand_df, file.path(tmp, "adam", "adpc.rds"))
 
   contract <- list(
     target_id = "t1", target_key = "adam.adpc", kind = "dataset",
@@ -185,7 +188,7 @@ test_that("gate without configured tolerance uses compare_profile defaults, not 
   )
   attempt <- list(attempt_dir = tmp, outputs_dir = tmp)
   res <- assess_dataset_target(contract, attempt)
-  expect_true(res$checks$reference_comparison$passed)
+  expect_false(res$checks$reference_comparison$passed)
 
   # An explicitly configured tolerance stays authoritative and absolute.
   contract$assertions$numeric_tolerance <- 1e-6
@@ -195,6 +198,7 @@ test_that("gate without configured tolerance uses compare_profile defaults, not 
 
 test_that("a TLF reference that merely exists is never reported as compared", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
   writeLines("{\\rtf1 candidate}", file.path(tmp, "t_demo.rtf"))
   ref_path <- file.path(tmp, "reference.rtf")
   writeLines("{\\rtf1 reference}", ref_path)
@@ -214,12 +218,13 @@ test_that("a TLF reference that merely exists is never reported as compared", {
 
 test_that("gate alignment: a content-equal reorder without keys passes instead of smearing diffs", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
   ref_df <- data.frame(USUBJID = c("01", "02", "03"), AVAL = c(1, 2, 3),
                        stringsAsFactors = FALSE)
   cand_df <- ref_df[c(3, 1, 2), ]
   ref_path <- file.path(tmp, "ref.rds")
   saveRDS(ref_df, ref_path)
-  saveRDS(cand_df, file.path(tmp, "adsl.rds"))
+  saveRDS(cand_df, file.path(tmp, "adam", "adsl.rds"))
 
   contract <- list(
     target_id = "t1", target_key = "adam.adsl", kind = "dataset",
@@ -234,13 +239,14 @@ test_that("gate alignment: a content-equal reorder without keys passes instead o
 
 test_that("gate alignment: duplicate-key rows match as multisets, not by position", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
   ref_df <- data.frame(USUBJID = c("01", "01"), AVAL = c(10, 20),
                        stringsAsFactors = FALSE)
   cand_df <- data.frame(USUBJID = c("01", "01"), AVAL = c(20, 10),
                         stringsAsFactors = FALSE)
   ref_path <- file.path(tmp, "ref.rds")
   saveRDS(ref_df, ref_path)
-  saveRDS(cand_df, file.path(tmp, "adsl.rds"))
+  saveRDS(cand_df, file.path(tmp, "adam", "adsl.rds"))
 
   contract <- list(
     target_id = "t1", target_key = "adam.adsl", kind = "dataset",
@@ -254,6 +260,7 @@ test_that("gate alignment: duplicate-key rows match as multisets, not by positio
 
 test_that("gate alignment: a real defect in a reordered unkeyed candidate is localized to one cell", {
   tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "adam"))
   ref_df <- data.frame(USUBJID = c("01", "02", "03", "04"),
                        AVAL = c(1, 2, 3, 4), stringsAsFactors = FALSE)
   cand_df <- ref_df
@@ -261,7 +268,7 @@ test_that("gate alignment: a real defect in a reordered unkeyed candidate is loc
   cand_df <- cand_df[c(4, 3, 1, 2), ]
   ref_path <- file.path(tmp, "ref.rds")
   saveRDS(ref_df, ref_path)
-  saveRDS(cand_df, file.path(tmp, "adsl.rds"))
+  saveRDS(cand_df, file.path(tmp, "adam", "adsl.rds"))
 
   contract <- list(
     target_id = "t1", target_key = "adam.adsl", kind = "dataset",

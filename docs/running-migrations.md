@@ -104,6 +104,11 @@ share the reserved startup component with `autoexec.sas`; preflight names both
 files and asks you to rename the conflicting source and rescan.
 Complete coverage is separate from input availability and translation quality;
 preflight can still report `needs_attention` for other findings.
+
+LIBNAME statements in `autoexec.sas` are recognized by preflight but are not yet
+applied during execution. Configure input library bindings under `libraries:` in
+`_sas2r.yml`, even if preflight reports those autoexec bindings as available.
+
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel
 translation, and the full bundle executes the main programs serially in that order.
@@ -709,7 +714,7 @@ comparison <- compare_datasets(
   base = haven::read_xpt("data/reference/adsl.xpt"),
   comp = readRDS(file.path(result$outputs_dir, "datasets", "adam", "adsl.rds")),
   keys = c("STUDYID", "USUBJID"),
-  profile = compare_profile(abs = 1e-8, rel = 1e-8)
+  profile = compare_profile(abs = 1e-8, rel = 0)
 )
 passed(comparison)
 write_comparison_report(comparison, file = "adsl-comparison.md")
@@ -727,3 +732,56 @@ migration status or rerunning the bundle.
 See the [study-team FAQ](../README.md#frequently-asked-questions)
 for preparation, reference outputs, independent QC, dependencies, parallel
 timing, interrupted runs, privacy and working with the exported R code.
+
+## Execution timeouts and outputs needing manual review
+
+The output directory may be nested below an input library. Keep input libraries
+outside the generated output tree itself; an output root that contains an entire
+input library is refused because excluding generated files would hide that data.
+
+Configure execution limits in `_sas2r.yml` (seconds):
+
+```yaml
+migration:
+  smoke_timeout: 60
+  bundle_timeout: 120
+```
+
+The smoke limit covers a component and its dependency prefix. The bundle limit
+covers the entire study in one process. Increase `bundle_timeout` for a larger
+study; a timeout alone does not prove a translation error. The failure reason
+and START_HERE report name the setting and the actual limit used.
+
+Flat-file outputs from PROC EXPORT or FILE are checked for existence only.
+An existing required file keeps the run at `needs_review`; a missing required
+file blocks it. Review contents against the source and reference independently.
+The automated fixer does not repair an existing file merely because its content
+has no automated assessment. For deliberately optional artifacts, list their
+inferred target names under `outputs.optional`:
+
+```yaml
+outputs:
+  optional: [outputs/debug.txt]
+```
+
+Optional targets remain visible in the report but do not gate readiness or
+trigger output repairs. Do not mark required study deliverables optional.
+If every target is optional, the run remains `needs_review`: no required output
+contract was assessed.
+
+A `budget_usd` cap using catalog estimates must explicitly select
+`budget_mode = "soft"` (YAML `budget.mode: soft`). It stops new requests once
+recorded spend reaches the threshold; an in-flight request can overshoot it.
+Strict dollar enforcement instead needs organization pricing and rates.
+
+Each root program starts with the configured library bindings. Explicit LIBNAME
+changes and CLEAR take effect within that program; later programs start with the
+configured bindings again. Written intermediate datasets remain on disk.
+
+Re-exporting with `sas_write(..., overwrite = TRUE)` replaces files listed in
+its export inventory and preserves unrelated files such as NOTES.md and `.git`.
+This includes replacing your edits to previously exported scripts or configuration.
+Use a new destination to preserve an edited bundle; re-export does not merge edits
+or create backups.
+A new export path conflicting with an unrelated file is refused. Older exports
+without an inventory must be exported to a new empty directory.

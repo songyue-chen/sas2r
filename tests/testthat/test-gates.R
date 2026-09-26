@@ -140,7 +140,10 @@ test_that("lost source invocation is repaired before smoke and creates its decla
   expect_length(state$fixer_llm$requests(), 1L)
   state$output_contracts <- infer_output_contracts(project, overrides = list(datasets = "work.result"))
   result <- run_bundle_pipeline(state)
-  expect_identical(result$status, "migration_ready")
+  # The output is correct, but the macro-generated producer has no static lineage.
+  expect_identical(result$status, "needs_review")
+  expect_true("unknown_output_lineage" %in% result$assessment$lineage_evidence$blockers)
+  expect_match(result$status_reason, "unknown_output_lineage: work.result", fixed = TRUE)
   actual <- readRDS(file.path(result$selected_attempt$attempt_dir, "work", "result.rds"))
   expect_identical(actual$value, 42)
 })

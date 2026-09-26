@@ -29,7 +29,7 @@ libraries:
   # Expanded syntax with engine and write format
   sdtm:
     path: data/sdtm
-    engine: sas7bdat      # Input format: sas7bdat | rds | xpt | csv | duckdb
+    engine: sas7bdat      # Input format: sas7bdat | rds | xpt
     write: rds            # Output format for emitted R code: rds | xpt
 
   work:
@@ -49,6 +49,8 @@ outputs:
   tlfs:
     - outputs/table1.pdf
     - outputs/figure1.pdf
+  # Optional inferred artifacts stay visible but do not gate readiness:
+  # optional: [outputs/debug.txt]
 
 # ------------------------------------------------------------------------------
 # 3. Macro Search Path
@@ -72,7 +74,9 @@ includes:
 # ------------------------------------------------------------------------------
 # 5. Autoexec & Environment
 # ------------------------------------------------------------------------------
-# SAS autoexec files to ingest for global macro variables, options, and setup.
+# SAS autoexec files to scan for startup context.
+# Autoexec LIBNAME statements are not yet applied during execution;
+# configure input library bindings under libraries: above.
 environment:
   autoexec:
     - autoexec.sas
@@ -202,6 +206,8 @@ llm:
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
 #   max_parallel_translations: 1
+#   smoke_timeout: 60       # seconds for a component smoke check
+#   bundle_timeout: 120     # seconds for the whole study; increase for larger data
 
 # ------------------------------------------------------------------------------
 # Code style. dialect: tidyverse (the default) tells the translator and fixer

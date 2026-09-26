@@ -29,7 +29,7 @@ test_that("quiet translation keeps status and reports without console output", {
       out_dir = withr::local_tempdir(), execute = FALSE))), type = "message")
   expect_length(output, 0L)
   expect_length(messages, 0L)
-  expect_identical(result$status, "needs_review")
+  expect_identical(result$status, "blocked")
   expect_true(file.exists(result$report_json_path))
   report <- read_json_record(result$report_json_path)
   expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)

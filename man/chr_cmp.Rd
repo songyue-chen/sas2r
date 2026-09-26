@@ -35,7 +35,7 @@ chr_cmp(c(61, 70, NA), c(61, 60, NA), op = "==")
 chr_cmp(c(1, NA, 3), c(1, 2, 2), op = "<")
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{apply_format}()},
 \code{\link{lib_delete}()},
 \code{\link{lib_exists}()},
@@ -50,6 +50,7 @@ Other runtime helpers:
 \code{\link{sas_if_else}()},
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}

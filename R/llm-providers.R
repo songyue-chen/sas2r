@@ -10,9 +10,7 @@
 # This file is collated after R/llm-auth.R and R/llm-capabilities.R (whose
 # helpers the specs call) but before R/llm.R, and it validates the registry at
 # load time, so it cannot rely on anything R/llm.R defines at its top level.
-if (!exists("%||%", mode = "function")) {
-  `%||%` <- function(a, b) if (is.null(a)) b else a
-}
+`%||%` <- function(a, b) if (is.null(a)) b else a
 
 LLM_PROVIDER_SPEC_FIELDS <- c(
   "id", "chat_export", "models_export", "ellmer_support",

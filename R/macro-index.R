@@ -26,7 +26,7 @@ build_macro_index <- function(dirs, cache_dir = NULL) {
   for (d in valid_dirs) {
     for (f in list.files(d, pattern = "\\.sas$", full.names = TRUE,
                          ignore.case = TRUE)) {
-      raw_text <- paste(readLines(f, warn = FALSE), collapse = "\n")
+      raw_text <- paste(read_sas_source(f), collapse = "\n")
       key <- paste0("v", MACRO_INDEX_SCHEMA_VERSION, "_",
                     normalizePath(f, mustWork = FALSE), "_", cli::hash_md5(raw_text))
       hit <- cache[[key]]

@@ -46,7 +46,7 @@
 #'     [sas_mean()], [sas_min()] and [sas_max()], [sas_round()],
 #'     [sas_length()], [sas_substr()], [sas_compress()], [sas_display()]; and
 #'     two operators the package defines but does not export: `a %notin% b`
-#'     (`NOT IN` with SAS missing semantics -- a missing `a` is in no list;
+#'     (`NOT IN` with SAS missing semantics -- missing values match missing values in the list;
 #'     character comparison ignores trailing blanks) and `a %+% b` (`||`
 #'     concatenation where a missing operand contributes nothing rather than
 #'     `"NA"`; SAS pads fixed-width operands, this does not).}
@@ -76,6 +76,6 @@
 #' is a future option when usage justifies it.
 #'
 #' @name sas2r_runtime
-#' @aliases sas2r_helpers
+#' @aliases sas2r_helpers $<-.sas2r_dataset [[<-.sas2r_dataset
 #' @seealso [sas_translate()], [sas_write()], [sas_code()]
 NULL

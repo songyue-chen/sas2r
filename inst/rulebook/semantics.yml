@@ -171,13 +171,13 @@ rules:
     edge_cases: [all_missing, special_missing, zero_arguments]
 
   functions.missing:
-    classification: known_divergence
+    classification: adapter_required
     sas_default: "MISSING recognizes numeric missing values, special numeric missings, and blank character values."
     r_default: "is.na recognizes R missing values but does not treat a blank string as missing."
-    strategy: is.na
+    strategy: sas_missing
     implementation_status: implemented_unverified
-    risk: high
-    scope: "Direct MISSING dispatch; blank strings and SAS special missing values remain divergent."
+    risk: low
+    scope: "Direct MISSING dispatch via sas_missing handles ordinary/tagged numeric missing and all-space character values."
     sources: *function_sources
     edge_cases: [blank_character, special_missing, tagged_na]
 
@@ -265,12 +265,12 @@ rules:
     edge_cases: [ordinary_missing, special_missing, collation]
 
   operators.and:
-    classification: known_divergence
+    classification: adapter_required
     sas_default: "AND treats SAS numeric zero as false and nonzero nonmissing values as true."
     r_default: "R elementwise logical conjunction propagates NA under three-valued logic."
-    strategy: "&"
+    strategy: sas_true
     implementation_status: implemented_unverified
-    risk: high
+    risk: low
     scope: "Word-form AND operator in translated expressions."
     sources: &logic_sources
       - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
@@ -282,23 +282,23 @@ rules:
     edge_cases: [ordinary_missing, numeric_truth, vector_recycling]
 
   operators.or:
-    classification: known_divergence
+    classification: adapter_required
     sas_default: "OR treats SAS numeric zero as false and nonzero nonmissing values as true."
     r_default: "R elementwise logical disjunction propagates NA under three-valued logic."
-    strategy: "|"
+    strategy: sas_true
     implementation_status: implemented_unverified
-    risk: high
+    risk: low
     scope: "Word-form OR operator in translated expressions."
     sources: *logic_sources
     edge_cases: [ordinary_missing, numeric_truth, vector_recycling]
 
   operators.not:
-    classification: known_divergence
+    classification: adapter_required
     sas_default: "NOT negates SAS numeric truth values."
     r_default: "R logical negation coerces supported values and preserves NA."
-    strategy: "!"
+    strategy: sas_true
     implementation_status: implemented_unverified
-    risk: high
+    risk: low
     scope: "Word-form NOT operator in translated expressions."
     sources: *logic_sources
     edge_cases: [ordinary_missing, numeric_truth, coercion]

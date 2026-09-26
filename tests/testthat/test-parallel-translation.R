@@ -1,3 +1,6 @@
+# The installed-tests CI job runs this full process integration matrix.
+skip_on_cran()
+
 test_that("thread configuration is explicit, validated, and not semantic review evidence", {
   expect_identical(normalize_migration_config(NULL)$max_parallel_translations, 1L)
   for (bad in list(0, -1, 1.5, Inf, NA_real_, TRUE, "2", c(1, 2)))
@@ -370,7 +373,7 @@ test_that("a join waits for both producers and retains complete source-defined v
     list(id = 1:3, total = c(22, 24, 26)))
 })
 
-test_that("a worker receives identical review messages, settings and tool contracts on the same snapshot", {
+test_that("a worker receives equivalent review messages, settings and tool contracts on the same snapshot", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   markers <- file.path(fx$root, "requests"); dir.create(markers)
   state <- check_component_revision(fx$state, "p01")
@@ -381,7 +384,17 @@ test_that("a worker receives identical review messages, settings and tool contra
   parallel <- finalize_parallel_component_reviews(state)
   requests <- lapply(list.files(markers, full.names = TRUE), function(path) readRDS(path)$request)
   expect_length(requests, 2L)
-  expect_identical(requests[[1L]], requests[[2L]])
+  # Requests intentionally have unique task-block delimiters. Compare all
+  # policy, source, settings and tool contracts after normalizing only those labels.
+  comparable <- lapply(requests, function(request) {
+    request$messages <- lapply(request$messages, function(message) {
+      message$content <- gsub("(?m)^(BEGIN|END) SAS2R_TASK_[^ ]+ ",
+        "\\1 SAS2R_TASK_NONCE ", message$content, perl = TRUE)
+      message
+    })
+    request
+  })
+  expect_identical(comparable[[1L]], comparable[[2L]])
   expect_match(paste(vapply(requests[[1L]]$messages, `[[`, "", "content"), collapse = "\n"),
     "data work.out1; set raw.input; value = value + 1; run;", fixed = TRUE)
   expect_identical(component_review_verdict(direct$state$histories$p01), component_review_verdict(parallel$histories$p01))

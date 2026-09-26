@@ -350,7 +350,7 @@ build_translator_context <- function(
   sas_text <- if (nrow(comp_stmts) > 0L) {
     format_sas_statements(comp_stmts$text)
   } else if (length(src_files) > 0L && file.exists(src_files[1L])) {
-    paste(readLines(src_files[1L], warn = FALSE), collapse = "\n")
+    paste(read_sas_source(src_files[1L]), collapse = "\n")
   } else {
     ""
   }
@@ -970,7 +970,7 @@ generate_program_revisions <- function(
   ...
 ) {
   if (is.null(paths)) {
-    paths <- init_migration_paths(withr::local_tempdir())
+    paths <- init_migration_paths(tempfile("sas2r-revisions-"))
   } else if (is.character(paths)) {
     paths <- init_migration_paths(paths)
   } else if (is.list(paths)) {

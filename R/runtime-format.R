@@ -30,15 +30,29 @@ apply_format <- function(x, fmt) {
   }
   key <- if (is.numeric(x)) vapply(x, fmt_key, character(1)) else as.character(x)
   out <- if (!is.null(fmt$other)) rep(fmt$other, length(x)) else key
-  hit <- !is.na(x) & key %in% names(fmt$values)
-  out[hit] <- unname(fmt$values[key[hit]])
+  names_key <- names(fmt$values)
+  if (is.numeric(x)) {
+    numeric_keys <- suppressWarnings(as.numeric(names_key))
+    matched <- match(x, numeric_keys)
+    # Only the ordinary SAS missing key represents an NA numeric input.
+    matched[is.na(x)] <- match(".", names_key)
+  } else {
+    key <- sub(" +$", "", key)
+    key[is.na(key)] <- ""
+    matched <- match(key, sub(" +$", "", names_key))
+  }
+  hit <- !is.na(matched)
+  out[hit] <- unname(fmt$values[matched[hit]])
   if (!is.null(fmt$ranges)) {
     for (r in fmt$ranges) {
-      inr <- !is.na(x) & x >= r$lo & x <= r$hi & !hit
+      lower <- if (isTRUE(r$lo_excl)) x > r$lo else x >= r$lo
+      upper <- if (isTRUE(r$hi_excl)) x < r$hi else x <= r$hi
+      inr <- !is.na(x) & lower & upper & !hit
       out[inr] <- r$label
+      hit <- hit | inr
     }
   }
-  out[is.na(x) & is.null(fmt$other)] <- NA_character_
+  out[is.na(x) & !hit & is.null(fmt$other)] <- NA_character_
   out
 }
 

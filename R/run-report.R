@@ -25,7 +25,7 @@ write_run_navigation <- function(state, report) {
   sources <- if (!is.null(state$graph$nodes)) unique(state$graph$nodes[["source_file"]]) else character()
   sources <- as.character(sources)
   sources <- sources[!is.na(sources) & file.exists(sources)]
-  source_links <- stats::setNames(file.path("report", "sources", sprintf("source-%03d.sas", seq_along(sources))), sources)
+  source_links <- stats::setNames(file.path("report", "sources", sprintf("source-%03d.sas.txt", seq_along(sources))), sources)
   for (source in sources) {
     target <- file.path(paths$run_root, source_links[[source]])
     dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)

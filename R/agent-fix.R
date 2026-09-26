@@ -119,7 +119,7 @@ fix_program_revision <- function(
     evidence_sections <- c(evidence_sections, sprintf(
       "Smoke Execution Failure (ID: %s):\n%s",
       smoke$execution_id %||% smoke$id %||% "unknown",
-      jsonlite::toJSON(bounded_agent_diagnostics(smoke), auto_unbox = TRUE, pretty = TRUE)
+      jsonlite::toJSON(bounded_agent_diagnostics(smoke, policy = config$agent_evidence %||% "code_only"), auto_unbox = TRUE, pretty = TRUE)
     ))
   }
   if (!is.null(bundle)) {
@@ -127,7 +127,7 @@ fix_program_revision <- function(
       "Bundle Execution Evidence (ID: %s):\nFailing outputs: %s\n%s",
       bundle$bundle_id %||% bundle$execution_id %||% "unknown",
       paste(bundle$failing_outputs %||% character(), collapse = ", "),
-      jsonlite::toJSON(bounded_agent_diagnostics(bundle), auto_unbox = TRUE, pretty = TRUE)
+      jsonlite::toJSON(bounded_agent_diagnostics(bundle, policy = config$agent_evidence %||% "code_only"), auto_unbox = TRUE, pretty = TRUE)
     ))
   }
   evidence_text <- paste(evidence_sections, collapse = "\n\n")
@@ -173,7 +173,8 @@ fix_program_revision <- function(
     comments = comments_text,
     staged_r = r_code,
     evidence = paste(evidence_text, "Current complete shared helper definitions (edit a nested function by returning its complete outermost parent):", helper_code, sep = "\n\n"),
-    skills = paste(rendered_skills,
+    skills = rendered_skills,
+    guidance = paste(
       render_component_libraries(project, component_id),
       "Declared component interface (preserve names and defaults):",
       render_macro_interface(contract$macro_contract),

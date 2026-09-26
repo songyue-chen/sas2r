@@ -47,10 +47,10 @@ test_that("SAS2R_CONFIG env var wins over discovery", {
                    normalizePath("/s", winslash = "/", mustWork = FALSE))
 })
 
-test_that("unknown top-level keys warn but do not fail", {
+test_that("unknown top-level keys fail before settings can be silently lost", {
   dir <- withr::local_tempdir()
   writeLines("bananas: true", file.path(dir, "_sas2r.yml"))
-  expect_warning(sas_config(start = dir), "bananas")
+  expect_error(sas_config(start = dir), "bananas", class = "sas2r_config_error")
 })
 
 test_that("0-byte config file returns raw = list()", {
@@ -439,7 +439,7 @@ test_that("a library write format the runtime cannot honour fails at config time
 })
 
 test_that("the shipped demo project configures a write format the runtime honours", {
-  cfg <- sas_config(system.file("examples", "demo_project", "_sas2r.yml",
+  cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",
                                 package = "sas2r"))
   expect_true(cfg$libraries$adam$write %in% c("rds", "xpt"))
 })

@@ -25,8 +25,7 @@ sas_length(x)
 }
 \description{
 \code{sas_compress()} is \code{COMPRESS}: every character listed in \code{chars} is
-removed (\code{chars} is used as a regular-expression character class, so a \verb{]}
-or \code{-} in the list needs escaping). \code{sas_substr()} is \code{SUBSTR}; a \code{NULL}
+removed literally, including \verb{]} and \code{-}. SAS modifiers are unsupported. \code{sas_substr()} is \code{SUBSTR}; a \code{NULL}
 \code{len} reads to the end of the string. \code{sas_length()} is \code{LENGTH}: trailing
 blanks do not count, and a missing or blank value has length 1, as in SAS.
 }
@@ -36,7 +35,7 @@ sas_substr("abcdef", 2, 3)
 sas_length(c("abc  ", "", NA))
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
@@ -51,6 +50,7 @@ Other runtime helpers:
 \code{\link{sas_if_else}()},
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}

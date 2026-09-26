@@ -8,7 +8,7 @@ sas_merge(
   a,
   b,
   by,
-  keep = c("both", "left", "right", "left_only", "right_only", "full"),
+  keep = c("full", "both", "left", "right", "left_only", "right_only"),
   ...
 )
 }
@@ -46,7 +46,7 @@ subjects <- data.frame(id = c(1, 2), base = c(10, 20))
 sas_merge(events, subjects, by = "id", keep = "left") # three events remain
 }
 \seealso{
-Other runtime helpers: 
+Other runtime helpers:
 \code{\link{apply_format}()},
 \code{\link{chr_cmp}()},
 \code{\link{lib_delete}()},
@@ -61,6 +61,7 @@ Other runtime helpers:
 \code{\link{sas_display}()},
 \code{\link{sas_if_else}()},
 \code{\link{sas_min}()},
+\code{\link{sas_missing}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}

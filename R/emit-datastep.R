@@ -6,7 +6,8 @@
 sas_cond_to_r <- function(cond) {
   tx <- tidy_expr(translate_expr(cond))
   vars <- expr_vars(cond, r_expr = tx)
-  wrap_missing(tx, vars) |> tidy_expr()
+  value <- wrap_missing(tx, vars)
+  tidy_expr(paste(deparse(sas_truth_call(parse(text = value)[[1L]])), collapse = " "))
 }
 
 #' Emit R pipeline code for a DATA step
@@ -64,6 +65,8 @@ emit_data_step <- function(ir, src_file = "") {
     )
     if (!is.null(piece)) add_piece(piece, s$line)
   }
+  tail_steps <- c(Filter(function(s) s$kind != "rename", tail_steps),
+                  Filter(function(s) s$kind == "rename", tail_steps))
   for (s in tail_steps) {
     piece <- switch(s$kind,
       keep = sprintf("dplyr::select(%s)", paste(s$vars, collapse = ", ")),

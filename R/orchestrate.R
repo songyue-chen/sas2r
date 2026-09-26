@@ -41,6 +41,7 @@ new_migration_state <- function(
   )
   paths <- init_migration_paths(out_dir, run_id = budget$run_id)
 
+  p$input_manifest_exclude <- paths$root
   baseline <- sas_transpile(p, paths$staging)
   plan <- plan %||% translation_plan(p, p$config$outputs)
   graph <- plan$graph
@@ -749,6 +750,7 @@ run_bundle_pipeline <- function(
     attempt_rec <- if (isTRUE(execute)) {
       run_bundle_attempt(
         state = state,
+        timeout = state$config$migration$bundle_timeout %||% 120,
         sequence = attempt_seq,
         parent_attempt_id = if (!is.null(latest_attempt)) latest_attempt$attempt_id else NULL
       )
@@ -763,8 +765,8 @@ run_bundle_pipeline <- function(
         reason = "execute_disabled",
         execution_order = if (!is.null(state$graph)) build_bundle_execution_plan(state$graph)$execution_order else character(),
         executed_component_ids = character(0),
-        input_hashes_before = input_hash_manifest(state$project %||% state),
-        input_hashes_after = input_hash_manifest(state$project %||% state),
+        input_hashes_before = state$input_manifest %||% input_hash_manifest(state$project %||% state),
+        input_hashes_after = state$input_manifest %||% input_hash_manifest(state$project %||% state),
         output_hashes = list()
       )
     }
@@ -784,6 +786,7 @@ run_bundle_pipeline <- function(
       contracts = state$output_contracts %||% empty_output_contracts(),
       attempt = attempt_rec,
       graph = state$graph,
+      project = state$project,
       evidence_histories = state$histories,
       comparison_rules = state$comparison_rules %||% state$config$comparison_rules %||% list()
     )
@@ -805,7 +808,7 @@ run_bundle_pipeline <- function(
         assessment <- assess_final_outputs(state$output_contracts %||% empty_output_contracts(),
           attempt_rec, state$graph, state$histories,
           state$comparison_rules %||% state$config$comparison_rules %||% list(),
-          target_results = assessment$targets)
+          target_results = assessment$targets, project = state$project)
         state$histories <- assessment$evidence_histories
       }
     }
@@ -861,6 +864,8 @@ run_bundle_pipeline <- function(
         signal_bundle_event("bundle_previous_selection_retained", round = round,
           reason = paste0(previous$attempt_id, " at ", previous$attempt_dir, "; ", conditionMessage(cand_selection)))
       }
+    } else if (inherits(cand_selection, "error")) {
+      stop(cand_selection)
     }
 
     # Record attempt in summary
@@ -997,6 +1002,25 @@ run_bundle_pipeline <- function(
     NULL
   } else {
     stop_reason %||% latest_diagnosis %||% "Bundle outputs or execution did not satisfy gate requirements"
+  }
+
+  final_assessment <- selected_assessment %||% latest_assessment
+  if (identical(final_status, "needs_review")) {
+    required <- Filter(function(target) isTRUE(target$required %||% TRUE), final_assessment$targets)
+    unknown <- final_assessment$lineage_evidence$unknown_output_targets
+    manual <- names(Filter(function(target) identical(target$status, "unassessed_file"), required))
+    review_notes <- c(
+      if (!length(required)) paste0("no_required_outputs: No required output was assessed. ",
+        "Declare output targets or remove deliverables from outputs.optional."),
+      if (length(unknown)) paste0("unknown_output_lineage: ", paste(unknown, collapse = ", "),
+        ". Review the source producer and translated write; automatic runtime attribution is not available."),
+      if (length(manual)) paste0("unassessed_file: ", paste(manual, collapse = ", "),
+        ". Review file contents against the source/reference; existence alone is not validation.")
+    )
+    if (length(review_notes)) {
+      if (identical(status_reason, "no_causal_evidence")) status_reason <- NULL
+      status_reason <- paste(c(status_reason, review_notes), collapse = "; ")
+    }
   }
 
   res <- list(

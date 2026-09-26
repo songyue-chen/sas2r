@@ -157,7 +157,7 @@ and never on an upgrade. Fixes to the runtime reach a bundle when it is translat
 
 The promise behind that:
 
-- Within a major version, an existing helper never changes what it does for the same inputs.
+- Existing helper contracts are stable, but correctness fixes may change erroneous results. Exported bundles retain their own runtime until regenerated.
 - A helper is retired only after a replacement ships and the old name has warned for at least
   one minor version.
 - The lint allowlist, the help topic, and the runtime file are held in sync by the package's

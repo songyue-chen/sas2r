@@ -72,7 +72,7 @@ test_that("sas_translate with no reviewer records review_unavailable when execut
     llm = NULL
   )
   expect_s3_class(result, "sas2r_translation")
-  expect_identical(result$status, "needs_review")
+  expect_identical(result$status, "blocked")
   # Evidence reflects review unavailable without reviewer
   expect_true(length(result$component_evidence) > 0L)
 })
@@ -107,7 +107,7 @@ test_that("sas_write copies selected bundle, outputs, and report", {
     llm = deterministic_migration_llm()
   )
   dst <- withr::local_tempdir()
-  written <- sas_write(result, dst)
+  expect_warning(written <- sas_write(result, dst), class = "sas2r_unverified_write")
   expect_identical(written, dst)
   expect_true(file.exists(file.path(dst, "report", "translation.md")))
 })

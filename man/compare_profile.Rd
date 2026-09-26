@@ -6,7 +6,7 @@
 \usage{
 compare_profile(
   abs = 1e-08,
-  rel = 1e-08,
+  rel = 0,
   sas_null_equals_na = TRUE,
   na_tags = c("report", "ignore", "strict"),
   padding = c("cosmetic", "strict"),
@@ -39,7 +39,9 @@ An object of class \code{sas2r_profile}.
 Every equivalence judgement the comparator makes is parameterized here
 and nowhere else. Defaults implement the accepted SAS-to-R tolerance
 rules: SAS null == NA, special missings reported, trailing padding
-cosmetic, combined absolute + relative numeric tolerance.
+cosmetic, absolute numeric tolerance of 1e-8 and no relative tolerance.
+Equality uses abs(x-y) <= abs + rel * max(abs(x), abs(y));
+relative tolerance can be enabled explicitly for measured quantities.
 }
 \examples{
 # Defaults implement the accepted SAS-to-R tolerance rules.
