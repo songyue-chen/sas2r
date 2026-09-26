@@ -116,6 +116,76 @@ Cycles are warnings: drafts use stable source order inside a cycle, while execut
 waits for the dependency issue to be resolved. This draft order is not a claim
 that the programs can execute in that order.
 
+## Explicit execution order
+
+When the programmer already knows the program sequence, declare all executable
+root programs exactly once in `_sas2r.yml`:
+
+```yaml
+migration:
+  execution_order:
+    - programs/adsl.sas
+    - programs/adef.sas
+    - programs/adtte.sas
+```
+
+Paths are relative to the configuration file. With an in-memory configuration
+list they are relative to the scanned project directory. `path` and `recursive`
+still select the source scope; the order does not silently add or filter files.
+Missing, duplicate or out-of-scope entries produce a configuration error. List
+root programs only: startup, called macros and included modules retain their
+existing roles. Driver-file discovery and separate batch-session modes are not
+part of this option.
+
+The list governs root translation dependencies, component smoke replays and the
+final bundle. Roots wait for the preceding root even when parallel translation
+is enabled; independent helper translation can still use available workers.
+`check$pipeline$order_source` reports `configured` or `inferred`. Without this
+setting, existing dependency inference is unchanged. Changing an order on a
+previously scanned project requires rescanning the sources.
+
+Execution uses one shared WORK session. Each read sees the latest completed
+write of that dataset earlier in the declared sequence. For example, A creates
+`work.tmp`, B reads and replaces it, and C reads B's version. In
+`data work.tmp; set work.tmp; ...; run;`, the input is the version entering the
+step and the replacement becomes visible after the step. A future writer never
+supplies an earlier read. Permanent datasets also retain their resolved library
+identity when selecting preceding writes.
+
+Resolved literal includes are followed at their call sites, including repeated
+and nested includes, and are not independently executed again. Macro bodies
+continue through the existing macro discovery and translation interfaces.
+Order alone does not resolve arbitrary macro expansion, conditional writes or
+catalog mutations. Such effects invalidate affected static producer claims;
+preflight reports `deferred` when the current dataset state cannot be established.
+Simple resolved macros containing only variable declarations and assignments,
+with literal arguments and defaults, preserve known dataset versions. Indirect
+values, emitted code, nested calls and other macro forms remain deferred.
+Literal permanent outputs in invoked, resolved macro bodies (including reachable
+nested macros) are possible writes and keep matching reads deferred, using the
+library binding at the caller. They do not establish a known producer or prove
+that the macro creates the dataset. Permanent inputs with no open-code or literal
+macro writer still receive the normal availability check, so absent files block
+execution. Dynamic macro output names such as `adam.&member` do not establish a
+literal writer; an absent permanent input can still be reported missing in that
+case. WORK can be created by an unexpanded macro and remains deferred even when
+no static writer is known.
+Later explicit writes can establish known state again. These advisory findings
+still need translation review and execution checks. If a root is deferred, its
+ordered successors are deferred from bundle execution too.
+
+Component smoke checks replay the entire preceding ordered session to preserve
+options, macro variables and other effects beyond dataset edges. For n roots,
+a complete set of smoke checks can run n(n+1)/2 programs (36 for 8 roots; 1,275
+for 50), plus the final bundle. Repairs can replay this work again. No persistent
+session snapshots are reused. In this mode, `migration.smoke_timeout` is an
+allowance per replayed root: the eighth root with the default 60 seconds gets
+480 seconds for its replay. Diagnostics record the effective timeout. In inferred
+mode it remains the total smoke limit. `migration.bundle_timeout` remains the
+total bundle limit. Configure these limits for the study's measured runtime;
+preflight notes when the bundle limit is below the last ordered smoke allowance.
+Explicit order is a correctness option, not a parallel speed optimization.
+
 ## Files and manual reruns
 
 Open `migration_output/<run_id>/START_HERE.html` first. It links the selected
@@ -503,8 +573,9 @@ reports the reason.
 For the supplied ellmer connections, parallel mode requires **ellmer 0.5.0 or
 newer** and `llm.max_tries: 1` (the
 default); older ellmer installations visibly use one workflow. If both
-`max_parallel_translations` and `llm.max_tries` exceed 1, preflight and translation
-stop before provider calls and explain which setting to change. Set `llm.max_tries`
+`max_parallel_translations` and `llm.max_tries` exceed 1, translation and offline
+preflight stop before provider calls and explain which setting to change.
+Automatic preflight diagnosis can make its single advisory request for this error. Set `llm.max_tries`
 to 1 for parallel translation, or `max_parallel_translations` to 1 for provider-level
 retries. Function argument overrides are applied before this check. The existing
 bounded agent retry policy still applies. With ellmer 0.5.0+, `max_calls` counts each request
@@ -747,8 +818,10 @@ migration:
   bundle_timeout: 120
 ```
 
-The smoke limit covers a component and its dependency prefix. The bundle limit
-covers the entire study in one process. Increase `bundle_timeout` for a larger
+The smoke limit covers a component and its dependency prefix. With explicit
+`execution_order`, the allowance is multiplied by the number of replayed root
+programs; otherwise it is the total limit. The bundle limit covers the entire
+study in one process. Increase `bundle_timeout` for a larger
 study; a timeout alone does not prove a translation error. The failure reason
 and START_HERE report name the setting and the actual limit used.
 

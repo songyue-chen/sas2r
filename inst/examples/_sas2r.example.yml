@@ -109,7 +109,8 @@ environment:
 # completion nor accuracy. Claude's full allowance is conditional: see below.
 # Startup verifies explicit settings and sets their effective capabilities.
 # Unsupported, ignored, or unverified settings stop the run before agent work.
-# Probe calls share the run budget; sas_preflight() stays offline.
+# Probe calls share the run budget. sas_preflight(diagnose = "off") stays offline.
+# Default preflight diagnosis can send bounded SAS source/paths/findings to this LLM.
 # Do not add temperature/top_p overrides to these reasoning profiles.
 # Cloud/local providers and connector limitations: docs/llm-providers.md.
 # timeout_seconds bounds each HTTP transfer attempt, not inactivity: receiving
@@ -205,8 +206,10 @@ llm:
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
+#   # Optional: all root programs, in one shared WORK session; paths relative here.
+#   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
 #   max_parallel_translations: 1
-#   smoke_timeout: 60       # seconds for a component smoke check
+#   smoke_timeout: 60       # seconds per replayed root in explicit-order mode; total otherwise
 #   bundle_timeout: 120     # seconds for the whole study; increase for larger data
 
 # ------------------------------------------------------------------------------

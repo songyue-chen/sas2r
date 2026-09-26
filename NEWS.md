@@ -1,3 +1,21 @@
+# sas2r (development version)
+
+- Add optional `migration.execution_order` for root programs sharing one WORK
+  session. Planning, translation dependencies, smoke checks and final execution
+  follow the declared sequence; reads use preceding dataset versions and includes
+  execute at their call sites. Unmodeled mutations keep producer state deferred.
+- Add bounded advisory AI diagnosis to preflight. Missing LLM configuration is
+  reported; configured diagnosis suggests source/setup corrections or a GitHub
+  issue draft for suspected sas2r bugs without changing static findings. Use
+  `diagnose = "off"` for offline inspection. Diagnosis announces source context,
+  preserves explicit generation allowances and records response finish reasons.
+- Review fixes retain external-input blockers after unmodeled effects, preserve
+  dataset versions across simple setup macros, group ordered producer events,
+  scale ordered smoke timeouts per replayed root and clarify replay costs.
+- Retain uncertain literal permanent outputs from invoked macros in declared
+  order, without hiding unrelated missing inputs. Preflight explains shorter
+  bundle limits, budget admission and incomplete diagnosis responses.
+
 # sas2r 0.5.5
 
 - Document how to copy and run installed examples, correct the supported input

@@ -11,6 +11,8 @@ project_input_root <- function(path) {
 scan_config_fields <- function(config) {
   fields <- config[c("libraries", "macro_search_path", "include_roots", "autoexec")]
   fields$libraries <- fields$libraries[sort(names(fields$libraries))]
+  if (!is.null(config$migration$execution_order))
+    fields$execution_order <- config$migration$execution_order
   fields
 }
 

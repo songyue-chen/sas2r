@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "classification": {"type": "string", "enum": [
+            "sas_source", "configuration", "missing_resource",
+            "suspected_sas2r_bug", "undetermined"
+          ]},
+          "explanation": {"type": "string"},
+          "evidence": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "uncertainty": {"type": "string"}
+        },
+        "required": ["classification", "explanation", "evidence", "suggestion", "uncertainty"],
+        "additionalProperties": false
+      }
+    },
+    "issue_title": {"type": "string"},
+    "issue_body": {"type": "string"}
+  },
+  "required": ["summary", "findings", "issue_title", "issue_body"],
+  "additionalProperties": false
+}

@@ -359,14 +359,26 @@ normalize_migration_config <- function(config) {
       cli::cli_abort("{name} must be a finite positive number of seconds", class = "sas2r_config_error")
     value
   }
-  list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
+  order <- config[["execution_order"]]
+  if (!is.null(order)) {
+    if (is.list(order) && is.null(names(order)) &&
+        all(vapply(order, is_scalar_character, logical(1)))) order <- unlist(order, use.names = FALSE)
+    if (!is.character(order) || !length(order) || anyNA(order) || any(!nzchar(trimws(order))))
+      cli::cli_abort("migration.execution_order must be a non-empty list of program paths",
+                     class = "sas2r_config_error")
+  }
+  out <- list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
        smoke_timeout = timeout("smoke_timeout", 60), bundle_timeout = timeout("bundle_timeout", 120))
+  if (!is.null(order)) out$execution_order <- unname(order)
+  out
 }
 
 normalize_project_config <- function(config, root) {
   assert_exact_names(config, PROJECT_CONFIG_KEYS)
   root <- include_normalize_path(root)
   config$migration <- normalize_migration_config(config$migration)
+  if (!is.null(config$migration$execution_order))
+    config$migration$execution_order <- config_anchor_paths(config$migration$execution_order, root)
   config$libraries <- normalize_library_entries(config$libraries, root)
   for (field in c("macro_search_path", "include_roots", "autoexec")) {
     config[[field]] <- config_anchor_paths(config[[field]], root)
@@ -486,6 +498,8 @@ sas_config <- function(path = NULL, start = ".") {
     source = src,
     raw = raw
   ), class = "sas2r_config")
+  if (!is.null(config$migration$execution_order))
+    config$migration$execution_order <- config_rebase_paths(config$migration$execution_order, src)
   # Style keys are optional scalars: present only when the file sets them, so
   # a file without them keeps the package defaults and the same field names.
   if (!is.null(raw$dialect)) config$dialect <- as.character(unlist(raw$dialect))[1L]

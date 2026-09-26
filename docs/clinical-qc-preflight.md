@@ -1,10 +1,13 @@
-# Offline preflight and clinical QC profiles
+# Preflight diagnosis and clinical QC profiles
 
 Run `sas_preflight()` before a migration to inspect resolved source files,
 point-of-use library bindings, missing input paths, deterministic translation
 limitations, output targets, destinations, and effective usage limits. It does
-not construct an AI adapter, make model calls, read dataset contents, execute
-programs, or write a scan cache or migration folder.
+not read dataset contents, execute programs, or write a scan cache or migration
+folder. Use `diagnose = "off"` to also avoid constructing an AI adapter or making
+model calls. The default `diagnose = "auto"` adds advisory diagnosis when an LLM
+is configured and there are actionable findings. Without an LLM it reports
+`not_configured` and returns the static findings.
 
 This complete example runs offline with a small synthetic input:
 
@@ -36,7 +39,7 @@ outputs <- list(
 check <- sas_preflight(
   study, out_dir = file.path(study, "migration"),
   config = list(libraries = list(raw = "raw", adam = "adam")),
-  outputs = outputs
+  outputs = outputs, diagnose = "off"
   # Optional limits, commented out by default. Uncomment to enforce them; the
   # run stops admitting requests when a limit is reached.
   # Catalog costs are estimates; an in-flight request may exceed the threshold.
@@ -243,3 +246,42 @@ invented; affected translations and downstream assumptions remain provisional.
 Missing execution prerequisites defer execution, while missing configured
 references defer comparison. No active source, unusable configuration and
 unexplained pipeline omissions still stop the run before translation.
+
+## AI diagnosis
+
+`sas_preflight(..., diagnose = "auto")` uses the existing `llm:` configuration,
+or an adapter supplied with `llm =`, for one advisory request. It sends bounded
+source excerpts, source locations, execution order and static diagnostics to the
+configured provider. It does not send dataset contents. The diagnosis is limited
+to one transport attempt, 30,000 context characters (plus a truncation notice),
+the configured `llm.max_output_tokens` allowance (4,096 when absent), and a
+120-second configured transport timeout. Configured reasoning effort is retained;
+preflight does not silently shrink an explicitly larger generation allowance. Existing
+usage and budget limits also apply. A custom adapter retains its own transport
+contract. Known configured secrets are redacted; useful paths remain visible.
+The 120-second ceiling still applies with a large token allowance or high
+reasoning effort; more allowed tokens do not guarantee completion within that
+time. Diagnosis does not automatically extend the deadline or retry.
+
+`check$diagnosis` separates SAS-source corrections, configuration changes,
+missing resources, suspected sas2r bugs and undetermined causes. Advice includes
+evidence and uncertainty. A suspected tool bug includes a link to the sas2r GitHub
+issue form and draft title/body for the programmer to review and submit. Preflight
+does not edit SAS code or submit issues. Inspect `check$diagnosis$advisory` for the
+full response and `check$diagnosis$usage` for request accounting. The request's
+allowance, response status and finish reason are retained in `$max_output_tokens`,
+`$response_status` and `$finish_reason`. Preflight announces the source context
+and provider before budget admission; a rejected attempt sends nothing. Incomplete
+advice prints its finish reason and allowance so the programmer can review token
+and context limits. `diagnose = "off"` disables diagnosis. The issue tracker
+is public: review the draft and use a synthetic example without study source,
+identifiers or paths.
+
+No configured model, a disabled diagnosis, no actionable findings, unavailable
+advice and completed advice have distinct statuses. Budget rejection, provider
+failure and malformed advice leave static findings intact. If inspection itself
+throws after configuration and budget setup, the original error class and message
+are preserved and advice is attached as `error$diagnosis`. Early configuration
+failures that prevent constructing a valid request budget remain undiagnosed.
+`sas_translate()` still performs its shared static readiness checks without a
+hidden diagnosis request. Use `diagnose = "off"` for reproducible offline/CI checks.

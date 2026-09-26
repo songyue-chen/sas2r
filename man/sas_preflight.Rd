@@ -2,7 +2,7 @@
 % Please edit documentation in R/preflight.R
 \name{sas_preflight}
 \alias{sas_preflight}
-\title{Inspect a migration before making model calls or running programs}
+\title{Inspect a migration and optionally diagnose findings}
 \usage{
 sas_preflight(
   path,
@@ -15,7 +15,9 @@ sas_preflight(
   pricing_rates = NULL,
   usage_limits = NULL,
   recursive = FALSE,
-  max_parallel_translations = NULL
+  max_parallel_translations = NULL,
+  diagnose = c("auto", "off"),
+  llm = NULL
 )
 }
 \arguments{
@@ -52,17 +54,24 @@ request activity; unknown names and invalid values raise a configuration error.}
 
 \item{recursive}{Logical; whether to scan subdirectories recursively. Defaults to FALSE.}
 
-\item{max_parallel_translations}{Maximum concurrent SAS program or macro translation workflows. Overrides
-\code{migration.max_parallel_translations} in \verb{_sas2r.yml}; defaults to 1. Model waiting can
-overlap on fewer CPUs. Local execution and repair remain serial.
-Values above 1 cannot be combined with \code{llm.max_tries} above 1; preflight
-and translation stop with a configuration error before provider calls.}
+\item{max_parallel_translations}{Concurrent component workflow limit used
+when planning translation. Overrides \code{migration.max_parallel_translations}.
+Invalid combinations are reported by static checks; automatic diagnosis
+can explain these errors when a valid diagnosis budget is available.}
+
+\item{diagnose}{\code{"auto"} (default) diagnoses actionable findings when an LLM
+is configured; \code{"off"} always stays offline. Advice never clears findings.}
+
+\item{llm}{Optional \code{sas2r_llm} adapter for diagnosis, overriding \verb{llm:}
+configuration. Missing configuration is reported, not treated as a failure.}
 }
 \value{
 A \code{sas2r_preflight} list with \code{sources}, point-of-use \code{libraries},
-\code{inputs} (available, missing, unresolved, no_producer, backward_dependency,
+\code{inputs} (available, missing, unresolved, no_producer, deferred, backward_dependency,
 created_if_missing, generated, or environment), \code{references}, \code{unsupported},
-scanner \code{findings}, shared \code{readiness} warnings, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, and \code{model_calls}.
+scanner \code{findings}, shared \code{readiness} warnings, \code{outputs}, \code{destinations}, \code{budget}, \code{next_actions}, \code{diagnosis}, and actual \code{model_calls}.
+Diagnosis failures preserve the static result. Inspection errors retain
+their original condition with optional advice attached as \verb{$diagnosis}.
 \code{called_macros} lists reachable search-path macro definitions and their
 standalone R and interface-test paths.
 \code{pipeline} reconciles every scanned file with the translation schedule and
@@ -75,7 +84,10 @@ findings; it does not mean execution or reference validation has passed.
 \description{
 Scans sources and resolves library bindings with the same project scanner
 used by \code{\link[=sas_translate]{sas_translate()}}. Reads directory listings, not dataset contents.
-Does not create output directories, scan caches, adapters, or usage ledgers.
+Does not execute programs, read dataset contents, or create output directories,
+scan caches, or usage ledgers. With a configured LLM, actionable findings can
+receive one bounded advisory diagnosis. Use \code{diagnose = "off"} for offline
+inspection without constructing an adapter or making a model call.
 Deterministic support findings are advisory: an AI translation may handle
 deferred constructs, and runtime checks can still defer supported shapes.
 }
