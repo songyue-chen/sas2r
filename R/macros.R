@@ -6,7 +6,7 @@ NON_CALL_MACRO_KEYWORDS <- c(
   "put", "input", "display", "window", "sysexec", "cms", "tso",
   "symdel", "sysrput", "syslput", "sysmacdelete", "sysmstoreclear", "copy", "syscall",
   # SAS statements outside the macro facility.
-  "include", "list", "run"
+  "include", "inc", "list", "run"
 )
 
 #' Built-in macro functions and statement/control keywords

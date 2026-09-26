@@ -173,7 +173,8 @@ fix_program_revision <- function(
     comments = comments_text,
     staged_r = r_code,
     evidence = paste(evidence_text, "Current complete shared helper definitions (edit a nested function by returning its complete outermost parent):", helper_code, sep = "\n\n"),
-    skills = paste(rendered_skills,
+    skills = rendered_skills,
+    context = paste(
       render_component_libraries(project, component_id),
       "Declared component interface (preserve names and defaults):",
       render_macro_interface(contract$macro_contract),

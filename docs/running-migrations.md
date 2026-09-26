@@ -761,6 +761,8 @@ outputs:
 
 Optional targets remain visible in the report but do not gate readiness or
 trigger output repairs. Do not mark required study deliverables optional.
+If every target is optional, the run remains `needs_review`: no required output
+contract was assessed.
 
 A `budget_usd` cap using catalog estimates must explicitly select
 `budget_mode = "soft"` (YAML `budget.mode: soft`). It stops new requests once
@@ -773,5 +775,8 @@ configured bindings again. Written intermediate datasets remain on disk.
 
 Re-exporting with `sas_write(..., overwrite = TRUE)` replaces files listed in
 its export inventory and preserves unrelated files such as NOTES.md and `.git`.
+This includes replacing your edits to previously exported scripts or configuration.
+Use a new destination to preserve an edited bundle; re-export does not merge edits
+or create backups.
 A new export path conflicting with an unrelated file is refused. Older exports
 without an inventory must be exported to a new empty directory.

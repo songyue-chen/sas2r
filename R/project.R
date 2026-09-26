@@ -69,7 +69,7 @@ unit_order <- function(lineage, unit_ids) {
 
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.4"
+SCAN_CACHE_SCHEMA_VERSION <- "4.5"
 
 # Cache source parsing within this R session without writing into input trees.
 project_cache_dir <- function(root) {

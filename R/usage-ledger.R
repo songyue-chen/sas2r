@@ -1736,10 +1736,10 @@ run_with_budget <- function(llm, mode = "observe", max_usd = Inf,
 
 # Call once at migration startup, and for direct requests outside that pipeline.
 validate_ellmer_budget <- function(llm, budget) {
-  limited <- identical(budget$mode, "strict") || any(vapply(
-    setdiff(usage_limit_names(), "max_usd"),
-    function(name) is.finite(budget[[name]] %||% Inf), logical(1)))
-  if (isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && limited && !ellmer_has_request_callbacks())
-    cli::cli_abort("This ellmer version cannot enforce strict or finite request limits across tool turns; update ellmer to a version with request callbacks", class = "sas2r_budget_unmeterable")
+  limits <- c("max_calls", "max_request_bytes", "max_request_chars", "max_input_tokens", "max_output_tokens")
+  unsupported <- c(if (identical(budget$mode, "strict")) "strict mode",
+    limits[vapply(limits, function(name) is.finite(budget[[name]] %||% Inf), logical(1))])
+  if (isTRUE(attr(llm, "is_ellmer", exact = TRUE)) && length(unsupported) && !ellmer_has_request_callbacks())
+    cli::cli_abort("This ellmer version cannot enforce {.val {unsupported}} across tool turns; update ellmer to a version with request callbacks", class = "sas2r_budget_unmeterable")
   invisible(NULL)
 }

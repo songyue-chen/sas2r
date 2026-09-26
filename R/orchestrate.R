@@ -1009,11 +1009,12 @@ run_bundle_pipeline <- function(
     unknown <- final_assessment$lineage_evidence$unknown_output_targets
     manual <- names(Filter(function(target) isTRUE(target$required) && identical(target$status, "unassessed_file"), final_assessment$targets))
     if (length(c(unknown, manual))) status_reason <- paste(c(
+      status_reason,
       if (length(unknown)) paste0("unknown_output_lineage: ", paste(unknown, collapse = ", "),
         ". Review the source producer and translated write; automatic runtime attribution is not available."),
       if (length(manual)) paste0("unassessed_file: ", paste(manual, collapse = ", "),
         ". Review file contents against the source/reference; existence alone is not validation.")
-    ), collapse = " ")
+    ), collapse = "; ")
   }
 
   res <- list(

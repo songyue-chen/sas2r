@@ -934,6 +934,7 @@ derive_bundle_status <- function(assessment) {
   any_target_missing <- FALSE
   any_target_failed <- FALSE
   any_target_needs_review <- FALSE
+  any_required_targets <- FALSE
   all_required_passed <- TRUE
   has_ref_pass <- FALSE
   has_ast_pass <- FALSE
@@ -945,6 +946,7 @@ derive_bundle_status <- function(assessment) {
       t_status <- t$status %||% (if (t_passed) "passed" else "failed")
 
       if (req) {
+        any_required_targets <- TRUE
         if (t_status %in% c("needs_review", "unresolved_target", "not_executed", "unassessed_file")) {
           any_target_needs_review = TRUE
           all_required_passed = FALSE
@@ -974,7 +976,7 @@ derive_bundle_status <- function(assessment) {
   }
 
   # 2. Check for needs_review conditions
-  if (exec_deferred || !length(targets)) {
+  if (exec_deferred || !any_required_targets) {
     return("needs_review")
   }
   # A partial attempt executed only part of the configured pipeline. It can

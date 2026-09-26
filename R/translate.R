@@ -462,6 +462,8 @@ print.sas2r_translation <- function(x, ...) {
 #' @param overwrite Replace an existing sas2r export. Non-export directories
 #'   must be empty. Replacing an export updates only its previously listed files;
 #'   unrelated files are preserved and conflicting new paths are refused.
+#'   This also replaces your edits to previously exported files. Export to a new
+#'   directory to preserve an edited bundle; edits are not merged or backed up.
 #' @return The target directory path, invisibly.
 #' @examples
 #' sas_dir <- file.path(tempdir(), "sas2r-write-example")

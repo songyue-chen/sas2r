@@ -8,6 +8,7 @@ Constraints, in order:
    Do not call library() or require(), including for allowlisted packages.
    Qualify package functions (e.g. dplyr::mutate) and use the base |> pipe.
    {{style}}
+   Preserve the declared component's names and defaults. For resolved project functions, call by name; do not redefine them.
 6. Emit ONLY JSON conforming to schema program_fix_v1:
    {
      "r_code": "...",
@@ -34,6 +35,9 @@ Evidence:
 
 Repair focus:
 {{phase}}
+
+Project interfaces and dependency evidence:
+{{context}}
 
 {{skills}}
 

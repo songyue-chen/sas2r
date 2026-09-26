@@ -1,5 +1,11 @@
 # sas2r 0.5.4
 
+- Exclude generated worker files before input inspection, require a required
+  output contract for readiness, and retain repair failures alongside output
+  review guidance. Keep fixer dependency source in task data and execute `%inc`
+  without treating it as an unresolved macro. Older ellmer versions can use
+  locally enforced tool, retry and wall-time limits.
+
 - Review fixes preserve agent instructions, isolate per-program library bindings,
   distinguish manual flat-file review from missing outputs, and preserve unrelated
   files when replacing an export. Execution timeout settings are documented.

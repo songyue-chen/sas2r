@@ -235,10 +235,14 @@ input_hash_manifest <- function(project, metadata_only = FALSE) {
     root <- lib_roots[[lib]]
     files <- list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE)
     files <- sort(files, method = "radix")
+    # Roots are canonical, so ordinary generated paths can be excluded without
+    # touching files that parallel workers may already have removed.
+    for (exclude in excluded)
+      files <- files[files != exclude & !startsWith(files, paste0(exclude, "/"))]
     for (f in files) {
       info <- file.info(f)
-      if (info$isdir) next
-      resolved <- normalizePath(f, winslash = "/", mustWork = TRUE)
+      if (is.na(info$isdir) || info$isdir) next
+      resolved <- normalizePath(f, winslash = "/", mustWork = FALSE)
       if (length(excluded) && any(resolved == excluded | startsWith(resolved, paste0(excluded, "/")))) next
       rel <- substring(f, nchar(root) + 2L)
       key <- paste0(lib, "/", rel)
