@@ -8,8 +8,6 @@
 - Remove the PHUSE benchmark mode and manifest; retain the generic offline
   acceptance checks. Repair the internal scan benchmark and its cache guidance.
 
-# sas2r 0.5.4
-
 - Explain missing required output contracts and manual review needs in run
   status reasons while retaining specific failures and the original diagnostics.
   Document the configuration workaround for autoexec-only input libraries.
@@ -43,6 +41,8 @@
   empty destination or explicit replacement of a previous sas2r export.
 - Speed up dependency closures, exact row matching, macro scans and ledger
   appends. Test installations without optional dependencies in CI.
+
+# sas2r 0.5.4
 
 - README links to repository-only guides and the license use public URLs in
   the source archive. Symbolic-link tests skip cleanly when the operating system

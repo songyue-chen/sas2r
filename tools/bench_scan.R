@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
 # Maintainer benchmark of the internal scanner, not a public package API.
+# Launch with Rscript tools/bench_scan.R or source("tools/bench_scan.R").
 # Run from the repository to load development code, or from elsewhere to use
 # the installed sas2r package. The fixture is located relative to this script.
 if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DESCRIPTION", warn = FALSE)))) {
@@ -18,7 +19,10 @@ if (file.exists("DESCRIPTION") && any(grepl("^Package:\\s*sas2r", readLines("DES
 bench_dir <- tempfile(pattern = "bench_scan_")
 dir.create(bench_dir, recursive = TRUE, showWarnings = FALSE)
 
-script_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1L])
+script_file <- if (sys.nframe() > 0L) sys.frame(1L)$ofile else NULL
+if (is.null(script_file)) {
+  script_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1L])
+}
 repo_root <- dirname(dirname(normalizePath(script_file, winslash = "/", mustWork = TRUE)))
 demo_files <- list.files(file.path(repo_root, "tests", "testthat", "fixtures", "scanner-project"),
                          pattern = "\\.sas$", full.names = TRUE)
