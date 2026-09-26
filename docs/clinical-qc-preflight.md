@@ -254,7 +254,9 @@ or an adapter supplied with `llm =`, for one advisory request. It sends bounded
 source excerpts, source locations, execution order and static diagnostics to the
 configured provider. It does not send dataset contents. The diagnosis is limited
 to one transport attempt, 30,000 context characters (plus a truncation notice),
-up to 4,096 output tokens and a 120-second configured transport timeout. Existing
+the configured `llm.max_output_tokens` allowance (4,096 when absent), and a
+120-second configured transport timeout. Configured reasoning effort is retained;
+preflight does not silently shrink an explicitly larger generation allowance. Existing
 usage and budget limits also apply. A custom adapter retains its own transport
 contract. Known configured secrets are redacted; useful paths remain visible.
 
@@ -263,7 +265,12 @@ missing resources, suspected sas2r bugs and undetermined causes. Advice includes
 evidence and uncertainty. A suspected tool bug includes a link to the sas2r GitHub
 issue form and draft title/body for the programmer to review and submit. Preflight
 does not edit SAS code or submit issues. Inspect `check$diagnosis$advisory` for the
-full response and `check$diagnosis$usage` for request accounting.
+full response and `check$diagnosis$usage` for request accounting. The request's
+allowance, response status and finish reason are retained in `$max_output_tokens`,
+`$response_status` and `$finish_reason`. Preflight announces the source context
+and provider before the attempt; `diagnose = "off"` disables it. The issue tracker
+is public: review the draft and use a synthetic example without study source,
+identifiers or paths.
 
 No configured model, a disabled diagnosis, no actionable findings, unavailable
 advice and completed advice have distinct statuses. Budget rejection, provider

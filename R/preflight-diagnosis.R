@@ -35,7 +35,8 @@ preflight_diagnosis <- function(check = NULL, config = NULL, budget = NULL,
                                 llm = NULL, diagnose = "auto", error = NULL) {
   result <- list(status = "unavailable", reason = NULL, advisory = NULL,
     issue_url = NULL, model = NULL, provider = NULL, context_truncated = FALSE,
-    model_calls = 0L, usage = NULL)
+    model_calls = 0L, usage = NULL, finish_reason = NULL, response_status = NULL,
+    max_output_tokens = NULL)
   if (diagnose == "off") {
     result$status <- "disabled"
     result$reason <- "AI diagnosis disabled; static inspection only."
@@ -83,16 +84,20 @@ preflight_diagnosis <- function(check = NULL, config = NULL, budget = NULL,
     prompt <- paste(readLines(system.file("prompts", "preflight-diagnosis.md", package = "sas2r"),
                               warn = FALSE), collapse = "\n")
     capabilities <- llm_capabilities_for(llm)
+    result$max_output_tokens <- llm$model_parameters$max_output_tokens %||% 4096L
     request <- llm_request(
       messages = list(list(role = "system", content = prompt),
         list(role = "user", content = redact(packet$text))),
       output_schema = schema, schema_name = "preflight_diagnosis_v1", schema_version = "1",
       schema_mode = if (identical(capabilities$structured_output, "native")) "native" else "fallback",
-      max_output_tokens = min(llm$model_parameters$max_output_tokens %||% 4096L, 4096L),
+      max_output_tokens = result$max_output_tokens,
       reasoning_effort = llm$model_parameters$reasoning_effort,
       temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)
+    cli::cli_inform("AI diagnosis request to {llm$provider}: bounded SAS statements, source paths and findings; no dataset contents. Use diagnose = \"off\" to disable.")
     response <- attempt_llm_request(request, llm, usage_budget = budget,
       audit_context = list(purpose = "preflight_diagnosis", agent = "preflight_diagnosis"))
+    result$finish_reason <- redact(response$finish_reason)
+    result$response_status <- response$status
     if (!identical(response$status, "completed") || !identical(response$action, "final")) {
       result$reason <- redact(response$error$message %||% response$reason %||%
         paste("Diagnosis unavailable:", response$status))
@@ -126,5 +131,7 @@ preflight_diagnosis_lines <- function(diagnosis) {
       if (nzchar(f$uncertainty)) paste0("\nUncertainty: ", f$uncertainty)), ""),
     if (!is.null(diagnosis$issue_url)) paste("Suggested issue (not submitted):", diagnosis$issue_url),
     if (!is.null(diagnosis$issue_url)) advice$issue_title,
+    if (!is.null(diagnosis$issue_url)) paste("The issue tracker is public: review the draft, remove study code, identifiers and paths,",
+      "and use a minimal synthetic example before submitting."),
     if (diagnosis$context_truncated) "The supplied context was truncated; omitted facts remain unknown.")
 }

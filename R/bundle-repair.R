@@ -183,7 +183,8 @@ collect_bundle_diagnostics <- function(state, attempt) {
     # The completed bundle attempt owns its diagnostics, independently of the
     # initial program-smoke attempt stored on the migration state.
     prepared <- prepare_program_smoke(state, plan, attempt$attempt_dir)
-    execution <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)
+    execution <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir,
+      timeout = state$config$migration$smoke_timeout %||% 60)
     records[[cid]] <- execution
     signal_bundle_event("bundle_diagnostic_completed", component_id = cid,
       attempt_id = attempt$attempt_id, passed = execution$passed,

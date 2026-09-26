@@ -201,6 +201,8 @@ build_program_smoke_plan <- function(
     status = "runnable",
     component_id = component_id,
     included_modules = included_modules,
+    replay_program_count = if (is.null(graph$execution_order)) 1L else
+      max(1L, length(intersect(c(deps, component_id), graph$execution_order))),
     dependency_prefix = deps,
     call_site = call_site,
     selected_revisions = selected_revisions
@@ -262,7 +264,8 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
 #' @param plan A smoke plan from `build_program_smoke_plan()`.
 #' @param runtime List or path specifying registry and helpers runtime files.
 #' @param attempt_dir Directory path of the attempt.
-#' @param timeout Subprocess execution timeout in seconds (default 60).
+#' @param timeout Subprocess execution timeout in seconds (default 60). For
+#'   ordered sessions, this allowance applies per replayed root program.
 #' @return A named list representing the smoke execution result.
 #' @noRd
 run_program_smoke <- function(
@@ -306,6 +309,9 @@ run_program_smoke <- function(
       output_hashes = list()
     ))
   }
+
+  per_program_timeout <- timeout
+  timeout <- timeout * (plan$replay_program_count %||% 1L)
 
   execution_id <- paste0("exec_", substr(migration_hash(list(comp = component_id, time = Sys.time(), plan = plan)), 1L, 16L))
   attempt_id <- if (is.character(attempt_dir)) basename(attempt_dir) else NULL
@@ -484,8 +490,11 @@ run_program_smoke <- function(
     if (any(grepl("timeout", condition$class, fixed = TRUE))) {
       condition$timeout_setting <- "migration.smoke_timeout"
       condition$timeout_seconds <- timeout
-      condition$message <- paste0(condition$message, "; migration.smoke_timeout = ", timeout,
-        " seconds. Increase this setting for a longer smoke check; no translation defect established.")
+      condition$timeout_per_program <- per_program_timeout
+      condition$message <- paste0(condition$message, "; effective smoke timeout = ", timeout,
+        " seconds; migration.smoke_timeout = ", per_program_timeout,
+        " seconds", if (!is.null(plan$replay_program_count) && plan$replay_program_count > 1L) " per replayed root",
+        ". Increase this setting for a longer smoke check; no translation defect established.")
     }
     err_msg <- condition$message
     signal_program_smoke_event(

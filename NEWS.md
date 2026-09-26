@@ -7,7 +7,11 @@
 - Add bounded advisory AI diagnosis to preflight. Missing LLM configuration is
   reported; configured diagnosis suggests source/setup corrections or a GitHub
   issue draft for suspected sas2r bugs without changing static findings. Use
-  `diagnose = "off"` for offline inspection.
+  `diagnose = "off"` for offline inspection. Diagnosis announces source context,
+  preserves explicit generation allowances and records response finish reasons.
+- Review fixes retain external-input blockers after unmodeled effects, preserve
+  dataset versions across simple setup macros, group ordered producer events,
+  scale ordered smoke timeouts per replayed root and clarify replay costs.
 
 # sas2r 0.5.5
 

@@ -158,9 +158,26 @@ continue through the existing macro discovery and translation interfaces.
 Order alone does not resolve arbitrary macro expansion, conditional writes or
 catalog mutations. Such effects invalidate affected static producer claims;
 preflight reports `deferred` when the current dataset state cannot be established.
+Simple resolved macros containing only variable declarations and assignments,
+with literal arguments and defaults, preserve known dataset versions. Indirect
+values, emitted code, nested calls and other macro forms remain deferred.
+Permanent inputs with no scanned writer still receive the normal availability
+check, so absent files block execution. WORK can be created by an unexpanded
+macro and remains deferred even when no static writer is known.
 Later explicit writes can establish known state again. These advisory findings
 still need translation review and execution checks. If a root is deferred, its
 ordered successors are deferred from bundle execution too.
+
+Component smoke checks replay the entire preceding ordered session to preserve
+options, macro variables and other effects beyond dataset edges. For n roots,
+a complete set of smoke checks can run n(n+1)/2 programs (36 for 8 roots; 1,275
+for 50), plus the final bundle. Repairs can replay this work again. No persistent
+session snapshots are reused. In this mode, `migration.smoke_timeout` is an
+allowance per replayed root: the eighth root with the default 60 seconds gets
+480 seconds for its replay. Diagnostics record the effective timeout. In inferred
+mode it remains the total smoke limit. `migration.bundle_timeout` remains the
+total bundle limit. Configure these limits for the study's measured runtime;
+explicit order is a correctness option, not a parallel speed optimization.
 
 ## Files and manual reruns
 
@@ -794,8 +811,10 @@ migration:
   bundle_timeout: 120
 ```
 
-The smoke limit covers a component and its dependency prefix. The bundle limit
-covers the entire study in one process. Increase `bundle_timeout` for a larger
+The smoke limit covers a component and its dependency prefix. With explicit
+`execution_order`, the allowance is multiplied by the number of replayed root
+programs; otherwise it is the total limit. The bundle limit covers the entire
+study in one process. Increase `bundle_timeout` for a larger
 study; a timeout alone does not prove a translation error. The failure reason
 and START_HERE report name the setting and the actual limit used.
 
