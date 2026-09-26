@@ -1,5 +1,9 @@
 # sas2r 0.5.4
 
+- Explain missing required output contracts and manual review needs in run
+  status reasons while retaining specific failures and the original diagnostics.
+  Document the configuration workaround for autoexec-only input libraries.
+
 - Exclude generated worker files before input inspection, require a required
   output contract for readiness, and retain repair failures alongside output
   review guidance. Keep fixer dependency source in task data and execute `%inc`

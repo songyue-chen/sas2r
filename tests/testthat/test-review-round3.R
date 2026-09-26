@@ -50,6 +50,9 @@ test_that("all-optional outputs cannot report required validation passed", {
   expect_identical(result$status, "needs_review")
   report <- jsonlite::fromJSON(result$report_json_path, simplifyVector = FALSE)
   expect_identical(report$outcome$stages[["Required validation"]], "REVIEW REQUIRED")
+  expect_true(startsWith(result$status_reason, "no_required_outputs:"))
+  expect_identical(report$outcome$reason, result$status_reason)
+  expect_identical(result$diagnostics$stop_reason, "no_causal_evidence")
   expect_false(result$output_assessments[[1]]$required)
   expect_identical(result$output_assessments[[1]]$status, "unassessed_file")
   # A passing optional target still does not establish a required output contract.
@@ -95,7 +98,7 @@ test_that("lineage guidance does not mask a failed source repair", {
     max_program_repair_rounds = 1L, max_bundle_repair_rounds = 1L,
     config = list(libraries = list(raw = list(path = file.path(root, "data"), engine = "rds"))))
   expect_identical(result$status, "needs_review")
-  expect_match(result$status_reason, "repair_failed", fixed = TRUE)
+  expect_true(startsWith(result$status_reason, "repair_failed; unknown_output_lineage:"))
   expect_match(result$status_reason, "unknown_output_lineage: work.out", fixed = TRUE)
   report <- jsonlite::fromJSON(result$report_json_path, simplifyVector = FALSE)
   expect_identical(report$outcome$reason, result$status_reason)

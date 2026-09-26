@@ -74,7 +74,9 @@ includes:
 # ------------------------------------------------------------------------------
 # 5. Autoexec & Environment
 # ------------------------------------------------------------------------------
-# SAS autoexec files to ingest for global macro variables, options, and setup.
+# SAS autoexec files to scan for startup context.
+# Autoexec LIBNAME statements are not yet applied during execution;
+# configure input library bindings under libraries: above.
 environment:
   autoexec:
     - autoexec.sas

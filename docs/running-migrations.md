@@ -104,6 +104,11 @@ share the reserved startup component with `autoexec.sas`; preflight names both
 files and asks you to rename the conflicting source and rescan.
 Complete coverage is separate from input availability and translation quality;
 preflight can still report `needs_attention` for other findings.
+
+LIBNAME statements in `autoexec.sas` are recognized by preflight but are not yet
+applied during execution. Configure input library bindings under `libraries:` in
+`_sas2r.yml`, even if preflight reports those autoexec bindings as available.
+
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel
 translation, and the full bundle executes the main programs serially in that order.

@@ -1006,15 +1006,21 @@ run_bundle_pipeline <- function(
 
   final_assessment <- selected_assessment %||% latest_assessment
   if (identical(final_status, "needs_review")) {
+    required <- Filter(function(target) isTRUE(target$required %||% TRUE), final_assessment$targets)
     unknown <- final_assessment$lineage_evidence$unknown_output_targets
-    manual <- names(Filter(function(target) isTRUE(target$required) && identical(target$status, "unassessed_file"), final_assessment$targets))
-    if (length(c(unknown, manual))) status_reason <- paste(c(
-      status_reason,
+    manual <- names(Filter(function(target) identical(target$status, "unassessed_file"), required))
+    review_notes <- c(
+      if (!length(required)) paste0("no_required_outputs: No required output was assessed. ",
+        "Declare output targets or remove deliverables from outputs.optional."),
       if (length(unknown)) paste0("unknown_output_lineage: ", paste(unknown, collapse = ", "),
         ". Review the source producer and translated write; automatic runtime attribution is not available."),
       if (length(manual)) paste0("unassessed_file: ", paste(manual, collapse = ", "),
         ". Review file contents against the source/reference; existence alone is not validation.")
-    ), collapse = "; ")
+    )
+    if (length(review_notes)) {
+      if (identical(status_reason, "no_causal_evidence")) status_reason <- NULL
+      status_reason <- paste(c(status_reason, review_notes), collapse = "; ")
+    }
   }
 
   res <- list(
