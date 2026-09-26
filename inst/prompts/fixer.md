@@ -37,7 +37,7 @@ Repair focus:
 {{phase}}
 
 Project interfaces and dependency evidence:
-{{context}}
+{{guidance}}
 
 {{skills}}
 
