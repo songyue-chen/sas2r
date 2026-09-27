@@ -1,35 +1,15 @@
 # sas2r 0.5.7
 
-- Trace related code through indirect macro, include and dataset dependencies;
-  exclude scheduling-only edges and distinguish selected WORK writers from
-  possible predecessors. Indirect code changes invalidate review context.
-- Keep SAS source authoritative. Focused mismatch investigation receives closed
-  aggregate patterns; fixers and candidate acceptance remain reference-blind.
-  All execution evidence policies now exclude previews and raw runtime messages,
-  retaining recognized technical errors and source-verified names instead.
-- Translate supported SAS two-comparison chains using implied AND, preserve
-  explicit parentheses, and advise on suspicious nested R comparisons. Clarify
-  DATA-step retention and strengthen dplyr guidance without unrelated restyling.
-- Add a dataset discrepancy table, plain-language evidence and repair decisions
-  ahead of grouped warnings in the start page. Optional report explanations reuse
-  code reviews or make one budgeted request; `migration.report_diagnosis: off`
-  disables them. Advice cannot alter validation or feed back into repairs.
-- Review follow-up: retain useful structured facts for real multi-line runtime
-  failures; limit possible WORK writers to relevant earlier effects; remove exact
-  counts from provider-bound comparison summaries. Human reports show partial
-  explanation coverage and repairs prompted by mismatch investigation.
-- Invalidate older migration checkpoints for the changed evidence contract.
-- Include identity-specific earlier writers when a permanent dataset read is
-  deferred in declared execution order. Limit comparison-chain advice to source
-  expressions, excluding unrelated dataset/PROC options and PUT output syntax.
-- Review identifiable upstream macro callees after runtime failures before
-  choosing a bundle repair, retaining caller attribution and source-required
-  failures. Clarify the prohibition on speculative rejection checks and add an
-  advisory lint notice for base-regex bracket escapes that can match letters.
-- Capture function names before runtime errors unwind so arithmetic, dplyr and
-  nested-helper failures can identify a source-related macro for review. Preserve
-  earlier evidence when extra review has no actionable source finding; broaden
-  bracket-escape advice to all letters while retaining its advisory status.
+- Add clearer dataset discrepancy reports with optional AI explanations and
+  repair decisions.
+- Improve repairs across programs and macros using related SAS and R code.
+  SAS source remains authoritative; dataset values and raw runtime messages
+  stay out of AI diagnostic prompts.
+- Improve SAS comparison-chain handling and translation guidance for DATA-step
+  retention and dplyr style.
+- Bug fixes for dataset dependency tracking, macro error diagnosis and review
+  reuse; add advisory regex checks.
+- Older saved checkpoints are invalidated by the updated evidence format.
 
 # sas2r 0.5.6
 
