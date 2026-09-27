@@ -85,6 +85,21 @@ no_call_site_graph <- function() {
   list(schema_version = "1", nodes = nodes, edges = edges)
 }
 
+test_that("smoke failures retain live function names without argument values", {
+  fx <- callable_macro_fixture()
+  fx$selected$macro_def <- paste(c(
+    'calc_total <- function(a, b) {',
+    '  .check <- function(x) stop(x)',
+    '  .check(a)', '}'), collapse = "\n")
+  fx$selected$caller_prog <- 'calc_total(paste0("record", "_value_", 77123), 2)'
+  plan <- build_program_smoke_plan(fx$graph, "caller_prog", fx$selected)
+  smoke <- run_program_smoke(plan, fx$runtime, fx$attempt_dir)
+  expect_false(smoke$passed)
+  expect_identical(smoke$condition$message, "record_value_77123")
+  expect_true(all(c("calc_total", ".check") %in% smoke$condition$call_names))
+  expect_false(any(grepl("record|77123|paste0", smoke$condition$call_names)))
+})
+
 test_that("program smoke executes a real dependency prefix or defers honestly", {
   fx <- callable_macro_fixture()
   plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)

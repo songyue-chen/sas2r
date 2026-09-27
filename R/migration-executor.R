@@ -378,7 +378,7 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call, format_call_names) {
     # Initialize fresh environment
     execution_env <- new.env(parent = globalenv())
 
@@ -401,15 +401,19 @@ run_program_smoke <- function(
     executed_calls <- character()
     current <- component_id
     population_checks <- list()
+    call_names <- character()
     execute_component <- function(id, code) {
       current <<- id
+      call_names <<- character()
       if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
       observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
         population_checks[[id]] <<- observer$finish()
         observer$restore()
       })
-      eval(parse(text = code), envir = execution_env)
+      withCallingHandlers(eval(parse(text = code), envir = execution_env),
+        error = function(e) call_names <<- format_call_names(sys.calls()))
+      call_names <<- character()
     }
 
     tryCatch({
@@ -443,6 +447,7 @@ run_program_smoke <- function(
       population_checks = population_checks,
       condition = list(message = conditionMessage(e), class = class(e),
                        call = format_call(conditionCall(e)), identifiers = e$identifiers,
+                       call_names = call_names,
                        component_id = current, population_check = e$population_check)
     )})
   }
@@ -465,7 +470,8 @@ run_program_smoke <- function(
         component_id = component_id,
         population_specs = plan$population_specs %||% list(),
         observe_population = observe_source_population,
-        format_call = execution_call_text
+        format_call = execution_call_text,
+        format_call_names = execution_call_names
       ),
       stdout = stdout_path,
       stderr = stderr_path,
@@ -842,7 +848,7 @@ run_bundle_attempt <- function(
   stdout_path <- normalizePath(file.path(logs_dir, "bundle_stdout.log"), winslash = "/", mustWork = FALSE)
   stderr_path <- normalizePath(file.path(logs_dir, "bundle_stderr.log"), winslash = "/", mustWork = FALSE)
 
-  bundle_runner_fn <- function(bundle_dir, execution_order, program_files, population_specs, observe_population) {
+  bundle_runner_fn <- function(bundle_dir, execution_order, program_files, population_specs, observe_population, format_call_names) {
     execution_env <- new.env(parent = globalenv())
 
     # The bundle's own autoexec.R loads the runtime, exactly as a program
@@ -883,13 +889,16 @@ run_bundle_attempt <- function(
 
       if (!is.na(target_file) && file.exists(target_file)) {
         observer <- observe_population(population_specs[[item]], execution_env)
+        call_names <- character()
         tryCatch({
-          sys.source(target_file, envir = execution_env)
+          withCallingHandlers(sys.source(target_file, envir = execution_env),
+            error = function(e) call_names <<- format_call_names(sys.calls()))
+          call_names <- character()
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
-            population_checks = population_checks), auto_unbox = TRUE), status_file)
+            population_checks = population_checks, call_names = call_names), auto_unbox = TRUE), status_file)
         })
         bindings <- get(".sas2r_registry", envir = execution_env)
         for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))
@@ -915,7 +924,8 @@ run_bundle_attempt <- function(
         execution_order = exec_order,
         program_files = program_files,
         population_specs = source_population_specs(state$project, exec_order),
-        observe_population = observe_source_population
+        observe_population = observe_source_population,
+        format_call_names = execution_call_names
       ),
       wd = attempt$attempt_dir,
       stdout = stdout_path,
@@ -964,6 +974,7 @@ run_bundle_attempt <- function(
   condition <- NULL
   if (!passed) {
     condition <- execution_condition(res)
+    condition$call_names <- as.character(unlist(prog_info$call_names, use.names = FALSE))
     condition$input_changed <- input_changed
     if (any(grepl("timeout", condition$class, fixed = TRUE))) {
       condition$timeout_setting <- "migration.bundle_timeout"
@@ -1010,6 +1021,13 @@ execution_condition <- function(error) {
   list(message = conditionMessage(error), class = class(error),
        call = execution_call_text(conditionCall(error)), identifiers = error$identifiers,
        population_check = error$population_check)
+}
+
+# Capture only bare function names while the stack is live, never arguments or
+# environments. The coordinator checks these names against selected source code.
+execution_call_names <- function(calls) {
+  calls <- Filter(function(x) is.call(x) && is.name(x[[1L]]), calls)
+  unname(vapply(calls, function(x) as.character(x[[1L]]), ""))
 }
 
 # Calls in persisted execution records may already be formatted. Keep absent

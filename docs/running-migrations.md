@@ -643,22 +643,28 @@ For deferred permanent reads, agents can inspect earlier programs that wrote the
 same bound dataset and their called macros. These remain possible writers, not
 proof of which program produced the runtime data.
 
-When a runtime error names a uniquely identified upstream macro function, bundle
-repair first reviews that macro together with its callers. A source-grounded macro
-finding enters the existing repair queue; a faithful macro leaves the caller
+When a runtime error identifies an upstream macro function, bundle repair first
+reviews that macro together with its callers. The executor records bare function
+names from the live call stack, without argument values, to find the innermost
+uniquely matched selected macro. This also covers errors in arithmetic, dplyr and
+local helpers within a macro. A source-grounded macro finding enters the existing
+repair queue; a faithful macro leaves the caller
 eligible instead. The execution record still names the program that stopped.
 This review uses the configured review budget and reuses an unchanged review
-request. Missing, dynamic or ambiguous callees retain the ordinary caller path.
-An unavailable extra review preserves the earlier evidence for unchanged code;
-its outcome remains in the attempt diagnostics. Macros already awaiting a repair
-enter the existing queue without another callee review.
+request. Missing, dynamic or ambiguous callees retain the ordinary caller path;
+deterministic non-translation failures keep their existing classification.
+An unavailable extra review or a finding without source grounding preserves the
+earlier evidence for unchanged code; its outcome remains in the attempt
+diagnostics. Macros already awaiting a repair enter the existing queue without
+another callee review.
 
 Translations must not invent metadata or punctuation restrictions. A rejection
 needs source-required behavior or a demonstrated limitation, and a source-required
 failure must remain visible. The advisory `regex_bracket_escape` notice identifies
-literal base R patterns where backslash-r/backslash-n inside brackets can match
-letters instead of line breaks. It does not automatically reject code or authorize
-removing a source check. Dynamic patterns and engine settings need source review.
+literal base R patterns where backslash-letter escapes inside brackets can match
+letters instead of control characters or character classes. It does not automatically
+reject code or authorize removing a source check. Dynamic patterns and engine
+settings need source review.
 
 SAS code, its called macros/includes and execution order remain authoritative.
 References can guide investigation but cannot supply replacement business logic.

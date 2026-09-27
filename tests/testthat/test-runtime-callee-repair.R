@@ -1,5 +1,5 @@
 runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_abort = FALSE,
-                                   envir = parent.frame()) {
+                                   fault = NULL, envir = parent.frame()) {
   root <- withr::local_tempdir(.local_envir = envir)
   dir.create(file.path(root, "macros"))
   writeLines(if (nested) '%wrapper(label=Sensor reading);' else '%empty_frame(label=Sensor reading);',
@@ -18,9 +18,8 @@ runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_
     "  x <- data.frame(measure = numeric())",
     '  attr(x$measure, "label") <- label',
     '  lib_write(x, "work", "empty_frame")', "}"), collapse = "\n")
-  faulty <- sub("  x <-", paste0(
-    '  if (grepl("[\\\\r\\\\n]", label)) stop(paste0("record", "_value_", 77123))\n',
-    "  x <-"), correct, fixed = TRUE)
+  fault <- fault %||% 'if (grepl("[\\\\r\\\\n]", label)) stop(paste0("record", "_value_", 77123))'
+  faulty <- sub("  x <-", paste0("  ", fault, "\n  x <-"), correct, fixed = TRUE)
   fixed <- list(macro__empty_frame = correct, main = 'empty_frame(label = "Sensor reading")')
   if (source_abort) fixed$macro__empty_frame <- 'empty_frame <- function(label = "") stop("Source-required abort")'
   if (nested) {
@@ -47,9 +46,9 @@ runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_
   state$output_contracts <- infer_output_contracts(project, overrides = list(datasets = "work.empty_frame"))
   state$reviewer_llm <- recording_reviewer(function(req) {
     text <- request_task_text(req)
-    if (req$component_id == "macro__empty_frame" && grepl('stop(paste0("record", "_value_", 77123))', text, fixed = TRUE))
+    if (req$component_id == "macro__empty_frame" && grepl(fault, text, fixed = TRUE))
       return(material_review_response(sas_evidence = 'attrib measure label="&label"; if 0;',
-        r_evidence = 'grepl rejects ordinary labels with r or n before creating the empty dataset',
+        r_evidence = paste('This R operation prevents the source-required empty dataset:', fault),
         affected_outputs = "work.empty_frame"))
     valid_program_review_response()
   })
@@ -86,6 +85,29 @@ test_that("nested runtime calls can identify the inner macro without rewriting i
   expect_identical(result$selected_revisions$main$r_code, fx$fixed$main)
   expect_true(result$attempt$passed)
 })
+
+runtime_fault_sites <- list(
+  arithmetic = '1 + "a"',
+  dplyr = 'dplyr::mutate(data.frame(x = 1), y = missing_var)',
+  local_helper = '.check <- function(x) stop(paste0("record", "_value_", 77123)); .check(label)',
+  invented_read = 'lib_read("work", "not_there")')
+for (site in names(runtime_fault_sites)) {
+  test_that(paste("macro errors in", site, "route through the live call names"), {
+    if (site == "dplyr") skip_if_not_installed("dplyr")
+    fx <- runtime_callee_fixture(nested = TRUE, fault = runtime_fault_sites[[site]])
+    result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
+    expect_identical(vapply(result$repairs, "[[", "", "component_id"), "macro__empty_frame")
+    expect_identical(result$selected_revisions$main$r_code, fx$fixed$main)
+    expect_identical(result$selected_revisions$macro__wrapper$r_code, fx$fixed$macro__wrapper)
+    expect_true(result$attempt$passed)
+    first <- result$diagnostics$bundle_repair$attempts$bundle_attempt_001
+    expect_true(all(c("wrapper", "empty_frame") %in% first$failures$main$call_names))
+    expect_identical(first$callee_reviews$macro__empty_frame$caller, "main")
+    expect_false(any(grepl("record_value_77123|Sensor reading", first$failures$main$call_names)))
+    requests <- c(fx$state$reviewer_llm$requests(), fx$state$fixer_llm$requests())
+    expect_false(any(grepl("record_value_77123", vapply(requests, request_task_text, ""), fixed = TRUE)))
+  })
+}
 
 test_that("source-required macro failure remains blocked rather than being removed", {
   fx <- runtime_callee_fixture(source_abort = TRUE)
@@ -157,6 +179,24 @@ test_that("a pending macro repair is not erased or re-reviewed during callee inv
   expect_length(result$diagnostic$callee_reviews, 0L)
 })
 
+test_that("a non-actionable extra review does not replace completed macro evidence", {
+  fx <- runtime_callee_fixture(caller_fault = TRUE)
+  fx$state$reviewer_llm <- recording_reviewer(material_review_response(
+    unresolved_dependencies = "unresolved_source"))
+  original <- fx$state$histories$macro__empty_frame
+  attempt <- run_bundle_attempt(fx$state, sequence = 1L)
+  result <- review_bundle_callees(fx$state, attempt, collect_bundle_diagnostics(fx$state, attempt), 0L)
+  expect_identical(result$state$histories$macro__empty_frame, original)
+  expect_identical(result$diagnostic$callee_reviews$macro__empty_frame$verdict, "repair_required")
+  # This is a full source review, so a completed clean review can also recover
+  # evidence that was unavailable before this investigation.
+  fx$state$histories$macro__empty_frame <- record_review_unavailable(original)
+  fx$state$reviewer_llm <- recording_reviewer(valid_program_review_response())
+  recovered <- review_bundle_callees(fx$state, attempt, collect_bundle_diagnostics(fx$state, attempt), 0L)
+  expect_identical(component_review_verdict(recovered$state$histories$macro__empty_frame),
+    "reviewed_no_material_finding")
+})
+
 test_that("regex bracket notices are advisory and respect the selected engine", {
   pattern <- "[\\r\\n]"
   expect_true(grepl(pattern, "Sensor reading"))
@@ -172,6 +212,14 @@ test_that("regex bracket notices are advisory and respect the selected engine", 
       code("grepl", "[\r\n]"), code("grepl", "[rn]"), code("grepl", "\\r\\n"),
       code("other::grepl", pattern), 'grepl(pattern, "text")', code("grepl", pattern, ", perl = mode"))) {
     expect_false("regex_bracket_escape" %in% lint_r_code(text)$kind, info = text)
+  }
+  for (letter in c("r", "n", "t", "s", "d", "w", "S", "D", "W")) {
+    bracket <- paste0("[\\", letter, "]")
+    expect_true(grepl(bracket, letter))
+    for (fun in c("grepl", "sub", "gsub")) {
+      text <- if (fun == "grepl") code(fun, bracket) else code(fun, bracket, ', "replacement"')
+      expect_true("regex_bracket_escape" %in% lint_r_code(text)$kind)
+    }
   }
   path <- withr::local_tempfile(fileext = ".R")
   writeLines(code("grepl", pattern), path)

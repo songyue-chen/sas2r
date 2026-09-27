@@ -134,7 +134,7 @@ regex_bracket_escape_notice <- function(call, name) {
   pattern <- args$pattern
   if (!is.character(pattern) || length(pattern) != 1L || is.na(pattern)) return(FALSE)
   classes <- regmatches(pattern, gregexpr("\\[[^]]*\\]", pattern, perl = TRUE))[[1L]]
-  any(grepl("\\\\[rn]", classes, perl = TRUE))
+  any(grepl("\\\\[A-Za-z]", classes, perl = TRUE))
 }
 
 lint_r_code <- function(code,
@@ -172,8 +172,8 @@ lint_r_code <- function(code,
     plain <- sub("^.*::", "", fname)
     if ((!grepl("::", fname) || startsWith(fname, "base::")) && regex_bracket_escape_notice(e, plain))
       add("warn", "regex_bracket_escape", paste(paste(deparse(e), collapse = " "),
-        ": in the default regex engine, backslash-r/backslash-n inside brackets can match the letters r/n.",
-        "If the source requires line breaks, use actual control characters or an appropriate explicit regex engine; advisory only."))
+        ": in the default regex engine, backslash-letter escapes inside brackets can match literal letters.",
+        "Check the source intent; use actual control characters, POSIX character classes or an appropriate explicit regex engine; advisory only."))
     if (plain %in% c("<", "<=", ">", ">=", "==", "!=")) {
       nested_comparison <- function(x) {
         while (is.call(x) && identical(x[[1L]], as.name("("))) x <- x[[2L]]

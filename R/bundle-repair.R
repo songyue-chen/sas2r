@@ -211,22 +211,23 @@ collect_bundle_diagnostics <- function(state, attempt) {
 # and dynamic/ambiguous calls stay on the existing caller repair path.
 runtime_callee_component <- function(state, caller, condition) {
   text <- execution_call_text(condition$call)
-  if (is.null(text)) return(NULL)
-  call <- tryCatch(parse(text = text), error = function(e) NULL)
-  if (length(call) != 1L || !is.call(call[[1L]]) || !is.name(call[[1L]][[1L]])) return(NULL)
-  name <- as.character(call[[1L]][[1L]])
+  call <- if (!is.null(text)) tryCatch(parse(text = text), error = function(e) NULL)
+  call_names <- unique(c(rev(condition$call_names), execution_call_names(call)))
+  if (!length(call_names)) return(NULL)
   related <- intersect(context_component_dependencies(state$graph, caller), names(state$selected_revisions))
   called <- unique(unlist(lapply(c(caller, related), function(cid)
     r_call_names(revision_code(state$selected_revisions[[cid]]))), use.names = FALSE))
-  if (!name %in% called) return(NULL)
-  candidates <- Filter(function(cid) {
-    contract <- component_macro_contract(state$project, state$graph, cid)
-    if (is.null(contract) || !identical(contract$name, name)) return(FALSE)
-    definitions <- tryCatch(helper_definitions(revision_code(state$selected_revisions[[cid]])),
-      error = function(e) list())
-    name %in% names(definitions)
-  }, related)
-  if (length(candidates) == 1L) candidates[[1L]] else NULL
+  for (name in intersect(call_names, called)) {
+    candidates <- Filter(function(cid) {
+      contract <- component_macro_contract(state$project, state$graph, cid)
+      if (is.null(contract) || !identical(contract$name, name)) return(FALSE)
+      definitions <- tryCatch(helper_definitions(revision_code(state$selected_revisions[[cid]])),
+        error = function(e) list())
+      name %in% names(definitions)
+    }, related)
+    if (length(candidates)) return(if (length(candidates) == 1L) candidates[[1L]] else NULL)
+  }
+  NULL
 }
 
 # Reuse the ordinary full source review and its exact-context cache. Only a
@@ -257,9 +258,11 @@ review_bundle_callees <- function(state, attempt, diagnostic, round) {
         if (critical_translation_error(e)) stop(e)
         list(verdict = "review_unavailable", reason = conditionMessage(e))
       })
-    # An unavailable extra investigation does not invalidate an earlier review
-    # of unchanged code. Its outcome remains visible in the attempt diagnostics.
-    if (!is.null(review$history) && !identical(review$verdict, "review_unavailable"))
+    # Only a completed clean full review or an actionable source finding can
+    # update evidence. Other outcomes remain observations in the diagnostics.
+    adopted <- identical(review$verdict, "reviewed_no_material_finding") ||
+      (identical(review$verdict, "repair_required") && length(source_grounded_review_findings(review)) > 0L)
+    if (!is.null(review$history) && adopted)
       state$histories[[cid]] <- review$history
     diagnostic$callee_reviews[[cid]] <- list(caller = caller, component_id = cid,
       review_id = review$review_id, verdict = review$verdict, reason = review$reason,

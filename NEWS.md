@@ -26,6 +26,10 @@
   choosing a bundle repair, retaining caller attribution and source-required
   failures. Clarify the prohibition on speculative rejection checks and add an
   advisory lint notice for base-regex bracket escapes that can match letters.
+- Capture function names before runtime errors unwind so arithmetic, dplyr and
+  nested-helper failures can identify a source-related macro for review. Preserve
+  earlier evidence when extra review has no actionable source finding; broaden
+  bracket-escape advice to all letters while retaining its advisory status.
 
 # sas2r 0.5.6
 
