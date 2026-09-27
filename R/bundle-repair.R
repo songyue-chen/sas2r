@@ -241,6 +241,7 @@ review_bundle_callees <- function(state, attempt, diagnostic, round) {
     condition <- diagnostic$failures[[caller]]
     cid <- runtime_callee_component(state, caller, condition)
     if (is.null(cid) || cid %in% reviewed) next
+    if (identical(component_review_verdict(state$histories[[cid]]), "repair_required")) next
     reviewed <- c(reviewed, cid)
     execution <- attempt
     execution$condition <- condition
@@ -256,7 +257,10 @@ review_bundle_callees <- function(state, attempt, diagnostic, round) {
         if (critical_translation_error(e)) stop(e)
         list(verdict = "review_unavailable", reason = conditionMessage(e))
       })
-    if (!is.null(review$history)) state$histories[[cid]] <- review$history
+    # An unavailable extra investigation does not invalidate an earlier review
+    # of unchanged code. Its outcome remains visible in the attempt diagnostics.
+    if (!is.null(review$history) && !identical(review$verdict, "review_unavailable"))
+      state$histories[[cid]] <- review$history
     diagnostic$callee_reviews[[cid]] <- list(caller = caller, component_id = cid,
       review_id = review$review_id, verdict = review$verdict, reason = review$reason,
       reused = isTRUE(review$reused))

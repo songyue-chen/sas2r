@@ -110,7 +110,7 @@ test_that("a function call does not blame a faithful macro for an incorrect call
 })
 
 test_that("callee investigation reuses source review and respects budget and unavailable calls", {
-  fx <- runtime_callee_fixture()
+  fx <- runtime_callee_fixture(caller_fault = TRUE)
   state <- fx$state
   attempt <- run_bundle_attempt(state, sequence = 1L)
   diagnostic <- collect_bundle_diagnostics(state, attempt)
@@ -126,6 +126,35 @@ test_that("callee investigation reuses source review and respects budget and una
     condition <- execution_condition(tryCatch(eval(parse(text = code)), error = identity))
     expect_null(runtime_callee_component(state, "main", condition))
   }
+})
+
+test_that("an unavailable extra review preserves completed evidence while the caller is repaired", {
+  fx <- runtime_callee_fixture(caller_fault = TRUE)
+  fx$state$reviewer_llm <- recording_reviewer(function(req) {
+    if (req$component_id == "macro__empty_frame")
+      return(valid_program_review_response(verdict = "review_unavailable", static_runnability = "unknown"))
+    valid_program_review_response()
+  })
+  original <- fx$state$histories$macro__empty_frame
+  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
+  expect_identical(result$histories$macro__empty_frame, original)
+  expect_identical(result$diagnostics$bundle_repair$attempts$bundle_attempt_001$
+    callee_reviews$macro__empty_frame$verdict, "review_unavailable")
+  expect_identical(vapply(result$repairs, "[[", "", "component_id"), "main")
+  expect_true(result$attempt$passed)
+})
+
+test_that("a pending macro repair is not erased or re-reviewed during callee investigation", {
+  fx <- runtime_callee_fixture()
+  state <- fx$state
+  state$histories$macro__empty_frame <- record_completed_review(state$histories$macro__empty_frame,
+    verdict = "repair_required", findings = material_review_response()$data$findings)
+  attempt <- run_bundle_attempt(state, sequence = 1L)
+  diagnostic <- collect_bundle_diagnostics(state, attempt)
+  result <- review_bundle_callees(state, attempt, diagnostic, 0L)
+  expect_identical(result$state$histories$macro__empty_frame, state$histories$macro__empty_frame)
+  expect_length(state$reviewer_llm$requests(), 0L)
+  expect_length(result$diagnostic$callee_reviews, 0L)
 })
 
 test_that("regex bracket notices are advisory and respect the selected engine", {

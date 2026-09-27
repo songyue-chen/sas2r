@@ -649,6 +649,9 @@ finding enters the existing repair queue; a faithful macro leaves the caller
 eligible instead. The execution record still names the program that stopped.
 This review uses the configured review budget and reuses an unchanged review
 request. Missing, dynamic or ambiguous callees retain the ordinary caller path.
+An unavailable extra review preserves the earlier evidence for unchanged code;
+its outcome remains in the attempt diagnostics. Macros already awaiting a repair
+enter the existing queue without another callee review.
 
 Translations must not invent metadata or punctuation restrictions. A rejection
 needs source-required behavior or a demonstrated limitation, and a source-required
