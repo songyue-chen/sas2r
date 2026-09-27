@@ -910,6 +910,9 @@ run_bundle_pipeline <- function(
     diagnostic$non_translation_failures <- Filter(Negate(is.null), stats::setNames(
       lapply(names(diagnostic$failures), function(cid)
         non_translation_runtime_reason(state, cid, diagnostic$failures[[cid]])), names(diagnostic$failures)))
+    callee_review <- review_bundle_callees(state, attempt_rec, diagnostic, round)
+    state <- callee_review$state
+    diagnostic <- callee_review$diagnostic
     diagnostic_history[[attempt_rec$attempt_id]] <- diagnostic
     queue <- bundle_repair_queue(state, attempt_rec, assessment, diagnostic,
                                  previous_disposition = latest_diagnosis)

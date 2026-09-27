@@ -206,6 +206,66 @@ collect_bundle_diagnostics <- function(state, attempt) {
   list(failures = failures, executions = records, blocked = blocked)
 }
 
+# A runtime call suggests a review target, not fault ownership. Accept only a
+# unique, related, selected macro with a canonical function definition; aliases
+# and dynamic/ambiguous calls stay on the existing caller repair path.
+runtime_callee_component <- function(state, caller, condition) {
+  text <- execution_call_text(condition$call)
+  if (is.null(text)) return(NULL)
+  call <- tryCatch(parse(text = text), error = function(e) NULL)
+  if (length(call) != 1L || !is.call(call[[1L]]) || !is.name(call[[1L]][[1L]])) return(NULL)
+  name <- as.character(call[[1L]][[1L]])
+  related <- intersect(context_component_dependencies(state$graph, caller), names(state$selected_revisions))
+  called <- unique(unlist(lapply(c(caller, related), function(cid)
+    r_call_names(revision_code(state$selected_revisions[[cid]]))), use.names = FALSE))
+  if (!name %in% called) return(NULL)
+  candidates <- Filter(function(cid) {
+    contract <- component_macro_contract(state$project, state$graph, cid)
+    if (is.null(contract) || !identical(contract$name, name)) return(FALSE)
+    definitions <- tryCatch(helper_definitions(revision_code(state$selected_revisions[[cid]])),
+      error = function(e) list())
+    name %in% names(definitions)
+  }, related)
+  if (length(candidates) == 1L) candidates[[1L]] else NULL
+}
+
+# Reuse the ordinary full source review and its exact-context cache. Only a
+# source-grounded callee finding enters the existing dependency-ordered queue;
+# otherwise the caller remains eligible. Original execution attribution stays
+# intact, and no raw condition message or runtime values enter the review.
+review_bundle_callees <- function(state, attempt, diagnostic, round) {
+  diagnostic$callee_reviews <- list()
+  reviewed <- character()
+  for (caller in setdiff(names(diagnostic$failures), names(diagnostic$non_translation_failures))) {
+    if (is.null(state$reviewer_llm) || !usage_budget_allows_future(state$usage_budget)) break
+    condition <- diagnostic$failures[[caller]]
+    cid <- runtime_callee_component(state, caller, condition)
+    if (is.null(cid) || cid %in% reviewed) next
+    reviewed <- c(reviewed, cid)
+    execution <- attempt
+    execution$condition <- condition
+    execution$failed_component_id <- caller
+    review <- tryCatch(review_program_revision(state$selected_revisions[[cid]],
+      context = list(project = state$project, config = state$config, phase = "bundle",
+        execution = execution, selected_revisions = state$selected_revisions,
+        priority_dependencies = caller, helper_code = runtime_helper_code(state$runtime),
+        source_input_identity = state$input_manifest %||% input_hash_manifest(state$project)),
+      llm = state$reviewer_llm, usage = state$usage_budget, paths = state$paths,
+      history = state$histories[[cid]], round = round, attempt_id = attempt$attempt_id),
+      error = function(e) {
+        if (critical_translation_error(e)) stop(e)
+        list(verdict = "review_unavailable", reason = conditionMessage(e))
+      })
+    if (!is.null(review$history)) state$histories[[cid]] <- review$history
+    diagnostic$callee_reviews[[cid]] <- list(caller = caller, component_id = cid,
+      review_id = review$review_id, verdict = review$verdict, reason = review$reason,
+      reused = isTRUE(review$reused))
+    signal_bundle_event("bundle_source_review_completed", component_id = cid,
+      attempt_id = attempt$attempt_id, reason = paste("Runtime callee review:", review$verdict))
+  }
+  list(state = state, diagnostic = diagnostic)
+}
+
 # Group findings by known failing component or the source-derived output writer.
 # An absent downstream output after a crash is not an independent defect.
 source_grounded_review_findings <- function(review) {

@@ -22,6 +22,10 @@
 - Include identity-specific earlier writers when a permanent dataset read is
   deferred in declared execution order. Limit comparison-chain advice to source
   expressions, excluding unrelated dataset/PROC options and PUT output syntax.
+- Review identifiable upstream macro callees after runtime failures before
+  choosing a bundle repair, retaining caller attribution and source-required
+  failures. Clarify the prohibition on speculative rejection checks and add an
+  advisory lint notice for base-regex bracket escapes that can match letters.
 
 # sas2r 0.5.6
 

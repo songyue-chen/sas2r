@@ -124,6 +124,19 @@ normalize_package_allowlist <- function(allowlist = NULL) {
   unique(packages[!is.na(packages) & nzchar(packages)])
 }
 
+# Inspect literal base-regex patterns only; do not evaluate model expressions
+# or infer intent. Dynamic patterns/engine settings remain for source review.
+regex_bracket_escape_notice <- function(call, name) {
+  if (!name %in% c("grep", "grepl", "regexpr", "gregexpr", "regexec", "gregexec", "sub", "gsub")) return(FALSE)
+  args <- tryCatch(match.call(get(name, envir = baseenv()), call), error = function(e) NULL)
+  if (is.null(args) || (!is.null(args$perl) && !isFALSE(args$perl)) ||
+      (!is.null(args$fixed) && !isFALSE(args$fixed))) return(FALSE)
+  pattern <- args$pattern
+  if (!is.character(pattern) || length(pattern) != 1L || is.na(pattern)) return(FALSE)
+  classes <- regmatches(pattern, gregexpr("\\[[^]]*\\]", pattern, perl = TRUE))[[1L]]
+  any(grepl("\\\\[rn]", classes, perl = TRUE))
+}
+
 lint_r_code <- function(code,
                         allowlist = NULL,
                         helpers = SAS2R_HELPER_NAMES) {
@@ -157,6 +170,10 @@ lint_r_code <- function(code,
       ""
     }
     plain <- sub("^.*::", "", fname)
+    if ((!grepl("::", fname) || startsWith(fname, "base::")) && regex_bracket_escape_notice(e, plain))
+      add("warn", "regex_bracket_escape", paste(paste(deparse(e), collapse = " "),
+        ": in the default regex engine, backslash-r/backslash-n inside brackets can match the letters r/n.",
+        "If the source requires line breaks, use actual control characters or an appropriate explicit regex engine; advisory only."))
     if (plain %in% c("<", "<=", ">", ">=", "==", "!=")) {
       nested_comparison <- function(x) {
         while (is.call(x) && identical(x[[1L]], as.name("("))) x <- x[[2L]]

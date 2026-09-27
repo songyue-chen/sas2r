@@ -352,7 +352,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   }
   for (cid in names(observations$code_notices)) {
     notice <- observations$code_notices[[cid]]
-    details <- c(notice$direct_io, notice$nonlocal_assignment, notice$dependency_symbols)
+    details <- c(notice$direct_io, notice$nonlocal_assignment, notice$regex_bracket_escape, notice$dependency_symbols)
     if (!is.null(notice$mechanical_retry)) details <- c(details, paste(
       "Mechanical retry recorded; dynamic parse/eval involved:", isTRUE(notice$mechanical_retry$dynamic_code),
       "; candidate:", notice$revision_id, "; selected review verdict:", component_review_verdict(histories[[cid]])))
