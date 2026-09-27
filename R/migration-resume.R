@@ -1,6 +1,6 @@
 # Source bytes and revision records are shared by generation and resume. An old
 # report is evidence, not a recipe for reconstructing a generated program path.
-RESUME_CHECKPOINT_VERSION <- 10L
+RESUME_CHECKPOINT_VERSION <- 11L
 
 component_source_text <- function(graph, component_id) {
   if (is.null(graph$nodes) || !nrow(graph$nodes)) return("")

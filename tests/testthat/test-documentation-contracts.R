@@ -416,8 +416,8 @@ model_boundary_disclosure_gaps <- function(text) {
 
 test_that("disclosure detector recognises a gap, not a phrasing", {
   complete <- paste(
-    "Bounded reports may carry row numbers, subject identifiers, key values,",
-    "and differing cell values. Confirm your endpoint meets your data",
+    "Both evidence policies exclude dataset row numbers, subject identifiers,",
+    "key values and cell values. Confirm your endpoint meets your data",
     "residency obligations."
   )
   expect_identical(model_boundary_disclosure_gaps(complete), character())

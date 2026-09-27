@@ -157,6 +157,15 @@ lint_r_code <- function(code,
       ""
     }
     plain <- sub("^.*::", "", fname)
+    if (plain %in% c("<", "<=", ">", ">=", "==", "!=")) {
+      nested_comparison <- function(x) {
+        while (is.call(x) && identical(x[[1L]], as.name("("))) x <- x[[2L]]
+        is.call(x) && as.character(x[[1L]])[1L] %in% c("<", "<=", ">", ">=", "==", "!=")
+      }
+      if (any(vapply(as.list(e)[-1L], nested_comparison, logical(1))))
+        add("warn", "nested_comparison", paste(paste(deparse(e), collapse = " "),
+          ": check the source; an unparenthesized SAS comparison chain uses implied AND. Explicit source parentheses may justify this R expression."))
+    }
     if (plain %in% c("<-", "=") && length(e) == 3L && is.name(e[[2L]]) &&
         as.character(e[[2L]]) %in% SAS2R_PROTECTED_HELPERS)
       add("error", "protected_runtime_helper", paste("Cannot redefine", as.character(e[[2L]])))

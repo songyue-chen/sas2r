@@ -199,8 +199,11 @@ rules:
     strategy: "=="
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form EQ operator in translated expressions."
+    scope: "Word-form EQ operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: &comparison_sources
+      - url: https://support.sas.com/documentation/cdl/en/lrcon/65287/HTML/default/p00iah2thp63bmn1lt20esag14lh.htm
+        accessed: 2026-09-26
+        version: "SAS 9.3"
       - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
         accessed: 2026-08-19
         version: "SAS 9.4"
@@ -216,7 +219,7 @@ rules:
     strategy: "!="
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form NE operator in translated expressions."
+    scope: "Word-form NE operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: *comparison_sources
     edge_cases: [ordinary_missing, special_missing, blank_padding]
 
@@ -227,7 +230,7 @@ rules:
     strategy: "<"
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form LT operator in translated expressions."
+    scope: "Word-form LT operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: *comparison_sources
     edge_cases: [ordinary_missing, special_missing, collation]
 
@@ -238,7 +241,7 @@ rules:
     strategy: ">"
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form GT operator in translated expressions."
+    scope: "Word-form GT operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: *comparison_sources
     edge_cases: [ordinary_missing, special_missing, collation]
 
@@ -249,7 +252,7 @@ rules:
     strategy: "<="
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form LE operator in translated expressions."
+    scope: "Word-form LE operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: *comparison_sources
     edge_cases: [ordinary_missing, special_missing, collation]
 
@@ -260,7 +263,7 @@ rules:
     strategy: ">="
     implementation_status: implemented_unverified
     risk: high
-    scope: "Word-form GE operator in translated expressions."
+    scope: "Word-form GE operator in translated expressions. Two adjacent comparisons sharing an operand expand to implied AND with the existing missing-value adapter; explicit parentheses keep their grouping. Longer chains are deferred."
     sources: *comparison_sources
     edge_cases: [ordinary_missing, special_missing, collation]
 
@@ -621,13 +624,16 @@ known_domains:
 
   data_step_pdv_merge:
     classification: known_divergence
-    sas_default: "The DATA step uses PDV retention, BY-group state, and sequential merge semantics."
+    sas_default: "New assignment variables reset to missing each iteration unless retained. SET/MERGE/UPDATE variables, sum statements and explicit RETAIN have different retention rules; BY-group state and sequential merge semantics also matter."
     r_default: "R data-frame operations do not have an implicit PDV or SAS sequential merge state."
     strategy: deferred_pdv_state_model
     implementation_status: deferred
     risk: high
     scope: "DATA-step state and merge behavior outside explicitly implemented IR cases."
     sources:
+      - url: https://support.sas.com/documentation/cdl/en/lrcon/65287/HTML/default/p1x98c58fc4rgzn1jb5viwl5faz2.htm
+        accessed: 2026-09-26
+        version: "SAS 9.3"
       - url: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lrcon/titlepage.htm
         accessed: 2026-08-19
         version: "SAS 9.4"

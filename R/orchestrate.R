@@ -549,9 +549,9 @@ run_program_pipeline <- function(
 
 #' Build a causal repair packet for bundle-level repair
 #'
-#' Gathers the first stopping runtime condition, bounded local logs, all failed target
-#' checks and diffs, contributing dependency closure, behavioral contracts, helper guarantees,
-#' and previous repair disposition. Never includes unrelated outputs or whole datasets.
+#' Gathers structured runtime facts, source-grounded target failures, related
+#' dependency code, behavioral contracts, helper guarantees and repair disposition.
+#' Reference comparisons stay outside this code-writing packet.
 #'
 #' @param state Migration state object.
 #' @param attempt Completed bundle attempt record.
@@ -630,7 +630,8 @@ build_bundle_repair_packet <- function(
   # 5. Bounded diagnostics
   diag <- bounded_agent_diagnostics(
     attempt,
-    policy = state$agent_evidence %||% state$config$agent_evidence %||% "code_only"
+    policy = state$agent_evidence %||% state$config$agent_evidence %||% "code_only",
+    source_code = if (is.null(primary_cid)) "" else revision_code(state$selected_revisions[[primary_cid]])
   )
 
   # 6. Evidence IDs

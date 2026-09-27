@@ -335,7 +335,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list(), 
     checks = checks,
     differences = diffs,
     candidate_path = cand_path,
-    reference_path = if (has_ref) ref_path else NA_character_
+    reference_path = if (has_ref) ref_path else NA_character_,
+    dimensions = list(rows = nrow(cand_data), columns = ncol(cand_data))
   )
 }
 

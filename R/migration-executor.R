@@ -583,137 +583,82 @@ run_program_smoke <- function(
 #' @param policy Evidence policy ("code_only", "bounded", or "full").
 #' @return A named list representing bounded diagnostics.
 #' @noRd
-bounded_agent_diagnostics <- function(
-  execution,
-  policy = c("code_only", "bounded", "full")
-) {
-  if (is.character(policy) && length(policy) > 1L) {
-    policy <- policy[1L]
-  }
-  if (!is.character(policy) || length(policy) != 1L || !policy %in% c("code_only", "bounded", "full")) {
-    policy <- "code_only"
-  }
-
-  cond_msg <- execution$condition$message
-  if (!identical(policy, "code_only") && (is.null(cond_msg) || !nzchar(cond_msg))) {
-    if (!is.null(execution$stderr_path) && file.exists(execution$stderr_path)) {
-      lines <- readLines(execution$stderr_path, warn = FALSE)
-      if (length(lines) > 0L) {
-        cond_msg <- paste(lines, collapse = "\n")
+# Provider-bound errors are reconstructed from recognized kinds and identifiers
+# already present in source/code. Arbitrary messages and logs stay local.
+agent_error_facts <- function(condition, source_code = "") {
+  if (!length(condition)) return(list(kind = "none", identifiers = character(),
+    condition_class = character(), source_location = NA_character_, condition_message = ""))
+  source_code <- paste(source_code, collapse = "\n")
+  identifiers <- unique(tolower(regmatches(source_code,
+    gregexpr("[A-Za-z_][A-Za-z0-9_.]*", source_code, perl = TRUE))[[1L]]))
+  calls <- character()
+  walk <- function(x) {
+    if (is.call(x)) {
+      calls <<- c(calls, paste(deparse(x), collapse = " "))
+      # Registry calls express one dataset name as two literal arguments.
+      fn <- as.character(x[[1L]])
+      if (utils::tail(fn, 1L) %in% c("lib_read", "lib_exists", "lib_write")) {
+        args <- as.list(x)[-1L]
+        if (utils::tail(fn, 1L) == "lib_write") args <- args[-1L]
+        if (length(args) >= 2L && all(vapply(args[1:2], function(a)
+            is.character(a) && length(a) == 1L, logical(1))))
+          identifiers <<- unique(c(identifiers, tolower(paste(args[[1L]], args[[2L]], sep = "."))))
       }
     }
-  }
-
-  log_excerpt <- character()
-  if (!identical(policy, "code_only") && !is.null(execution$stderr_path) && file.exists(execution$stderr_path)) {
-    err_lines <- readLines(execution$stderr_path, warn = FALSE)
-    if (length(err_lines) > 0L) {
-      # Take last 50 lines max
-      n_lines <- length(err_lines)
-      start_line <- max(1L, n_lines - 49L)
-      log_excerpt <- paste(err_lines[start_line:n_lines], collapse = "\n")
+    if (is.call(x) || is.expression(x)) for (i in seq_along(x)) {
+      if (!identical(x[[i]], quote(expr = ))) walk(x[[i]])
     }
   }
-
-  affected_ids <- unique(c(
-    execution$component_id,
-    execution$executed_component_ids
-  ))
-  affected_ids <- affected_ids[!is.na(affected_ids) & nzchar(affected_ids)]
-  source_location <- execution_call_text(execution$condition$call) %||% NA_character_
-
-  if (identical(policy, "code_only")) {
-    return(list(
-      policy = "code_only",
-      execution_id = execution$execution_id,
-      component_id = execution$component_id,
-      passed = execution$passed,
-      exit_status = execution$exit_status,
-      stdout_path = execution$stdout_path,
-      stderr_path = execution$stderr_path,
-      failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
-      blocked_by = execution$blocked_by,
-      population_checks = execution$population_checks,
-      condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
-      condition_class = execution$condition$class %||% character(),
-      source_location = source_location,
-      stack_frames = if (identical(policy, "code_only")) character() else execution$stack_frames %||% character(),
-      affected_identifiers = affected_ids,
-      log_excerpt = log_excerpt,
-      dataset_rows = NULL,
-      output_previews = NULL
-    ))
-  }
-
-  # Bounded policy
-  output_meta <- list()
-  output_prev <- list()
-
-  if (!is.null(execution$attempt_dir)) {
-    work_dir <- file.path(execution$attempt_dir, "work")
-    if (dir.exists(work_dir)) {
-      rds_files <- list.files(work_dir, pattern = "\\.rds$", full.names = TRUE)
-      for (rf in rds_files) {
-        ds_name <- sub("\\.rds$", "", basename(rf))
-        ds_data <- tryCatch(readRDS(rf), error = function(e) NULL)
-        if (is.data.frame(ds_data)) {
-          output_meta[[ds_name]] <- list(
-            columns = names(ds_data),
-            row_count = nrow(ds_data),
-            col_count = ncol(ds_data)
-          )
-          # Capped preview (first 5 rows max)
-          output_prev[[ds_name]] <- utils::head(ds_data, 5L)
-        }
-      }
+  parsed <- tryCatch(parse(text = source_code), error = function(e) expression())
+  walk(parsed)
+  message <- condition$message %||% ""
+  patterns <- c(dataset_not_found = "^Dataset not found: ([A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$",
+    object_not_found = "^object ['`][^'`]+['`] not found$",
+    column_not_found = "^[Cc]olumn ['`][^'`]+['`] (doesn't exist|not found).*$")
+  kind <- "unclassified_error"; names <- character()
+  for (candidate in names(patterns)) {
+    if (!grepl(patterns[[candidate]], message, perl = TRUE)) next
+    found <- if (candidate == "dataset_not_found") sub(patterns[[candidate]], "\\1", message, perl = TRUE) else
+      sub("^[^'`]*['`]([^'`]+)['`].*$", "\\1", message, perl = TRUE)
+    if (tolower(found) %in% identifiers) {
+      kind <- candidate; names <- found
     }
+    break
   }
+  classes <- intersect(condition$class %||% character(),
+    c("error", "condition", "simpleError", "rlang_error", "dplyr:::mutate_error",
+      "dplyr:::filter_error", "subscriptOutOfBoundsError", "sas2r_execution_timeout"))
+  # A call is safe only if it occurs verbatim in the supplied code tree.
+  call_text <- execution_call_text(condition$call)
+  location <- if (!is.null(call_text) && call_text %in% calls) call_text else NA_character_
+  labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
+    column_not_found = "Column not found", unclassified_error = "Execution failed; inspect the local diagnostics")
+  list(kind = kind, identifiers = names, condition_class = classes,
+    source_location = location,
+    condition_message = paste0(labels[[kind]], if (length(names)) paste0(": ", paste(names, collapse = ", "))))
+}
 
-  if (identical(policy, "bounded")) {
-    return(list(
-      policy = "bounded",
-      execution_id = execution$execution_id,
-      component_id = execution$component_id,
-      passed = execution$passed,
-      exit_status = execution$exit_status,
-      stdout_path = execution$stdout_path,
-      stderr_path = execution$stderr_path,
-      failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
-      blocked_by = execution$blocked_by,
-      population_checks = execution$population_checks,
-      condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
-      condition_class = execution$condition$class %||% character(),
-      source_location = source_location,
-      stack_frames = if (identical(policy, "code_only")) character() else execution$stack_frames %||% character(),
-      affected_identifiers = affected_ids,
-      log_excerpt = log_excerpt,
-      output_metadata = output_meta,
-      output_previews = output_prev
-    ))
-  }
-
-  # Full policy
-  list(
-    policy = "full",
-    execution_id = execution$execution_id,
-    component_id = execution$component_id,
-    attempt_dir = execution$attempt_dir,
-    passed = execution$passed,
-    exit_status = execution$exit_status,
-    elapsed_sec = execution$elapsed_sec,
-    condition = execution$condition,
-    condition_message = substr(redact_llm_secrets(cond_msg %||% ""), 1L, 2000L),
-    condition_class = execution$condition$class %||% character(),
-    executed_component_ids = execution$executed_component_ids,
-    executed_call_ids = execution$executed_call_ids,
-    stdout_path = execution$stdout_path,
-    stderr_path = execution$stderr_path,
-    log_excerpt = log_excerpt,
-    output_metadata = output_meta,
-    output_previews = output_prev,
-    input_hashes = execution$input_hashes,
-    output_hashes = execution$output_hashes
-  )
+bounded_agent_diagnostics <- function(execution,
+                                      policy = c("code_only", "bounded", "full"),
+                                      source_code = "") {
+  # All provider-bound policies share the no-record boundary. Historical
+  # bounded/full labels no longer authorize previews or raw stderr.
+  policy <- as.character(policy)[1L]
+  if (is.na(policy) || !policy %in% c("code_only", "bounded", "full")) policy <- "code_only"
+  facts <- agent_error_facts(execution$condition, source_code)
+  affected_ids <- unique(c(execution$component_id, execution$executed_component_ids))
+  list(schema_version = "execution-facts-v2", policy = policy,
+    execution_id = execution$execution_id, component_id = execution$component_id,
+    passed = execution$passed, exit_status = execution$exit_status,
+    failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
+    blocked_by = execution$blocked_by,
+    condition_kind = facts$kind, condition_identifiers = facts$identifiers,
+    condition_message = if (isTRUE(execution$passed)) "" else facts$condition_message,
+    condition_class = facts$condition_class, source_location = facts$source_location,
+    affected_identifiers = affected_ids[!is.na(affected_ids) & nzchar(affected_ids)],
+    stdout_path = execution$stdout_path, stderr_path = execution$stderr_path,
+    log_excerpt = character(), stack_frames = character(),
+    dataset_rows = NULL, output_previews = NULL)
 }
 
 #' Build a bundle execution plan

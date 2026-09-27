@@ -55,7 +55,9 @@ An explicit zero disables bundle repair.}
 Reference paths supplied here resolve from the calling working directory.
 Output overrides are retained in the returned project for reuse.}
 
-\item{agent_evidence}{Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".}
+\item{agent_evidence}{Agent evidence policy ("code_only" or legacy "bounded").
+Both exclude record previews and raw runtime messages. Focused investigation
+may receive approved aggregate patterns; fixers remain reference-blind.}
 
 \item{llm}{Optional \code{sas2r_llm} instance for agent-assisted translation, review, and repair.
 For parallel execution, a custom adapter needs a self-contained, zero-argument

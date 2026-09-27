@@ -624,6 +624,42 @@ parallel execution remains opt-in until the paired live comparison is completed.
 See the [migration evidence guide](migration-evidence.md#parallel-coordination-and-evidence)
 for requested/effective concurrency, process logs and interrupted-work accounting.
 
+## Understand discrepancies and repairs
+
+Open `START_HERE.html` for the dataset comparison table before the detailed
+warnings. It lists dimensions, paired rows, common column names and the variables
+that differ. A 100% row-alignment result does not mean that the values match;
+column-name overlap does not imply equal types or contents. Missing measurements
+are shown as unavailable. Expanded sections link code and local comparison details,
+show reference paths when known, and distinguish measured differences from possible
+causes. The repair table shows retained candidates, rejected patches and their reasons.
+
+Component fixes check local source translation. Bundle fixes follow the related
+program/macro chain, fix the earliest source-grounded error and rerun in a fresh
+shared WORK session. They can retrieve indirect dependencies and downstream code.
+Declared order is separate from code relevance; the latest preceding WORK writer
+matters. Unknown dynamic writers stay unknown, with possible predecessors identified.
+
+SAS code, its called macros/includes and execution order remain authoritative.
+References can guide investigation but cannot supply replacement business logic.
+If R faithfully follows SAS while a reference differs, the comparison remains
+failed and the programmer should investigate source, input and reference versions.
+
+```yaml
+migration:
+  report_diagnosis: auto  # or off; default auto
+```
+
+Measured summaries need no AI. Optional report explanations reuse current code
+reviews or make at most one additional request through the reviewer adapter under
+the existing usage budget. The run announces that code and aggregate patterns may
+be sent to the provider. No LLM, no remaining budget or a failed diagnosis leaves
+measurements available and reports the limitation. Explanations remain advisory,
+never change status and never feed another agent. The focused reviewer gets
+categorical mismatch patterns; fixers and candidate acceptance get source/code
+findings without reference targets. Neither evidence policy permits record previews
+or raw runtime logs. See [model privacy](model-privacy.md).
+
 ## Code style and packages
 
 Translated code is written for maintenance as well as fidelity. Two
@@ -633,6 +669,12 @@ configuration keys control the style:
 dialect: tidyverse
 allowlist: [base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate, tibble, haven, stats, utils, graphics, grDevices, grid]
 ```
+
+`dialect: tidyverse` is the default. Ordinary transformations now explicitly prefer
+`|>` with `dplyr::mutate`, `filter`, `select`, `rename`, `group_by` and `summarise`
+when faithful to SAS. Fixers preserve that style but do not restyle unrelated code.
+For additional preferences, put a plain-language style instruction in `dialect`,
+for example `dialect: "Prefer dplyr pipelines and explicit namespace calls; preserve SAS helpers"`.
 
 `dialect: tidyverse` is the default. The translator, macro translator and fixer
 receive a style block naming the allowlisted, installed tidyverse packages to

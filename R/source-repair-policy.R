@@ -134,9 +134,11 @@ source_review_config <- function(config) {
   config$budget <- NULL
   config$usage_limits <- NULL
   config$migration$max_parallel_translations <- NULL
+  config$migration$report_diagnosis <- NULL
   if (!length(config$migration)) config$migration <- NULL
   if (is.list(config$raw)) {
     config$raw$migration$max_parallel_translations <- NULL
+    config$raw$migration$report_diagnosis <- NULL
     if (!length(config$raw$migration)) config$raw$migration <- NULL
   }
   if (is.list(config$outputs)) {
@@ -172,7 +174,9 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     if (identical(component_review_verdict(history), "repair_required") && !isTRUE(queue[[cid]]$artifact_investigation)) next
     full_review <- identical(component_review_verdict(history), "review_unavailable")
     targets <- sort(unique(vapply(c(queue[[cid]]$failed_targets, queue[[cid]]$investigation_targets), `[[`, "", "target_key")))
+    discrepancies <- lapply(targets, function(key) reviewer_discrepancy_summary(assessment$targets[[key]], key))
     key <- migration_hash(list(
+      evidence_schema = DISCREPANCY_SUMMARY_VERSION, discrepancies = discrepancies,
       code = rev$r_code, binding = old$binding,
       guidance = build_agent_guidance(state$project, cid, rev$contract,
         state$selected_revisions, state$graph, config = state$config,
@@ -193,6 +197,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     review <- tryCatch(review_program_revision(rev, context = list(
       sas_source = component_source_text(state$graph, cid), project = state$project,
       config = state$config, selected_revisions = state$selected_revisions, focus_outputs = targets,
+      discrepancy_summary = discrepancies,
       helper_code = runtime_helper_code(state$runtime), full_review = full_review,
       phase = "bundle", source_input_identity = state$input_manifest %||% input_hash_manifest(state$project)), llm = state$reviewer_llm,
       usage = state$usage_budget, paths = state$paths, history = history,
@@ -218,6 +223,7 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     h$revisions[[idx]]$events <- c(h$revisions[[idx]]$events, list(list(
       type = "source_mismatch_review", context_key = key, target_keys = targets,
       basis_id = review$review_id, verdict = review$verdict, reason = review$reason,
+      findings = review$findings,
       review_scope = review$review_scope %||% "focused", adopted = isTRUE(actionable) || recovered)))
     state$histories[[cid]] <- h
     signal_bundle_event("bundle_source_review_completed", component_id = cid,

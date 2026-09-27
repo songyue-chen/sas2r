@@ -1,3 +1,21 @@
+# sas2r (development version)
+
+- Trace related code through indirect macro, include and dataset dependencies;
+  exclude scheduling-only edges and distinguish selected WORK writers from
+  possible predecessors. Indirect code changes invalidate review context.
+- Keep SAS source authoritative. Focused mismatch investigation receives closed
+  aggregate patterns; fixers and candidate acceptance remain reference-blind.
+  All execution evidence policies now exclude previews and raw runtime messages,
+  retaining recognized technical errors and source-verified names instead.
+- Translate supported SAS two-comparison chains using implied AND, preserve
+  explicit parentheses, and advise on suspicious nested R comparisons. Clarify
+  DATA-step retention and strengthen dplyr guidance without unrelated restyling.
+- Add a dataset discrepancy table, plain-language evidence and repair decisions
+  ahead of grouped warnings in the start page. Optional report explanations reuse
+  code reviews or make one budgeted request; `migration.report_diagnosis: off`
+  disables them. Advice cannot alter validation or feed back into repairs.
+- Invalidate older migration checkpoints for the changed evidence contract.
+
 # sas2r 0.5.6
 
 - Add optional `migration.execution_order` for root programs sharing one WORK

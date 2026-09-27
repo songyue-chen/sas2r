@@ -318,15 +318,16 @@ Called macro folders are configured through
 
 ## Privacy: What Your Model Provider Can Receive
 
-Dataset processing and comparisons run on your infrastructure. AI requests can
-contain SAS/R code, comments, paths and execution errors, which may themselves
-contain patient information. The default `agent_evidence = "code_only"` excludes
-explicit dataset previews; it does not de-identify source code or diagnostics.
+Dataset processing and comparisons run on your infrastructure. AI requests contain
+SAS/R code, comments, paths and structured technical errors. Dataset row numbers,
+subject identifiers, key values, cell values, previews and raw runtime messages
+stay local under both `code_only` and the legacy
+`bounded` policy. Source code and comments are not automatically de-identified.
 
-`agent_evidence = "bounded"` permits capped candidate-output previews, including
-row numbers, subject identifiers, key values and cell values. Reference comparison answers
-remain outside the AI authoring/review tools. Use an organization-approved
-endpoint and confirm its data residency and retention terms.
+Focused mismatch investigation can receive counts, column/type differences and
+categorical patterns. Fixers and candidate acceptance reviews remain reference-blind:
+SAS is the source of truth. Human report explanations never drive code repairs.
+Use an organization-approved endpoint and confirm its data residency and retention terms.
 Read the [full privacy guidance](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md) before using confidential
 study material; generated R is not a filesystem sandbox.
 
@@ -437,11 +438,12 @@ See [resume and limit provider calls](https://github.com/songyue-chen/sas2r/blob
 
 ### Can patient data reach the AI provider?
 
-Data processing runs locally, and the default `agent_evidence = "code_only"`
-omits explicit dataset previews. However, SAS source, comments and error messages
-can contain patient information and can be sent to the configured provider.
-`code_only` does not de-identify them. Use your organization's approved endpoint
-and review the [privacy details](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md)
+Data processing runs locally. Agents cannot retrieve dataset records, comparison
+cells, previews or raw runtime logs. Source code, comments and project paths are
+still sent to the configured provider and may themselves contain confidential
+information. Approved aggregate comparison patterns go only to focused
+investigation and human-report diagnosis. Review the
+[privacy details](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md)
 before using confidential study material.
 
 ### Can our programmers edit and run the R code without sas2r or AI?

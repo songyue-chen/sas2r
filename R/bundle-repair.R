@@ -118,6 +118,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
 
   # Record repair
   repair_rec <- list(
+    revision_id = fixed_rev$revision_id,
     round = round + 1L,
     component_id = fixed_rev$component_id %||% primary_cid,
     revision_id = fixed_rev$revision_id,

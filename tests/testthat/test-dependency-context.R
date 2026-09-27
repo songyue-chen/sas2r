@@ -16,7 +16,7 @@ test_that("all roles can retrieve a late dependency's complete source and select
   expect_match(tail, "sas truncated")
   expect_match(tail, "r truncated")
   expect_match(tail, "available characters:")
-  expect_false(grepl("Additional downstream consumer IDs:", guidance$text, fixed = TRUE))
+  expect_false(grepl("Additional related code IDs:", guidance$text, fixed = TRUE))
   ctx <- list(project = project, component_id = "main", selected_revisions = selected)
   source_reads <- character()
   read_source <- component_source_text
@@ -51,7 +51,7 @@ test_that("all roles can retrieve a late dependency's complete source and select
   ctx$selected_revisions <- list()
   expect_identical(read_dependency_context(ctx, "macro__z_template", "r")$status, "unavailable")
   expect_identical(read_dependency_context(ctx, "macro__z_template", "sas")$status, "available")
-  expect_identical(read_dependency_context(ctx, "unrelated", "r")$error, "not_a_direct_dependency_or_consumer")
+  expect_identical(read_dependency_context(ctx, "unrelated", "r")$error, "not_a_related_dependency_or_consumer")
 })
 
 test_that("consumer context is available without changing the macro's dependencies", {
@@ -64,7 +64,7 @@ test_that("consumer context is available without changing the macro's dependenci
   selected <- c(fx$revisions, list(main = list(revision_id = "r3", r_code = "answer <- check()")))
   ctx <- list(project = fx$project, component_id = "macro__check", selected_revisions = selected)
   expect_match(build_agent_guidance(fx$project, "macro__check", selected_revisions = selected)$text,
-    "Additional downstream consumer IDs: main", fixed = TRUE)
+    "Additional related code IDs: main", fixed = TRUE)
   expect_identical(read_dependency_context(ctx, "main", "r")$code, "answer <- check()")
   old <- build_agent_guidance(fx$project, "macro__check", selected_revisions = selected)$identity
   selected$main$r_code <- "answer <- check() + 1"
