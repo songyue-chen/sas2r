@@ -179,8 +179,12 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
                               `[[`, character(1), "node_id")
 
   if (length(setup_nodes) > 0L && length(source_unit_nodes) > 0L) {
-    # Distinct program files
-    prog_files <- unique(units$file[units$origin != "environment"])
+    # Includes that supply startup code already point into setup. A reverse
+    # setup_before edge would turn that legitimate include into a cycle.
+    frames <- project$libref_registry$frames
+    startup_files <- frames$file[vapply(frames$key_prefix,
+      function(key) key[1L] <= length(facts$env_files), logical(1))]
+    prog_files <- setdiff(unique(units$file[units$origin != "environment"]), startup_files)
     for (s_id in setup_nodes) {
       s_node <- node_list[[which(vapply(node_list, function(n) n$node_id == s_id, logical(1)))[1]]]
       for (pf in prog_files) {

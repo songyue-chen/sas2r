@@ -48,7 +48,7 @@ translation_readiness <- function(project, plan) {
   }
   # These scanner findings cannot always be attached to a schedule edge. Keep
   # their scope explicit instead of pretending the scanner resolved the source.
-  global <- c("autoexec_missing", "include_depth_exceeded", "include_cycle",
+  global <- c("autoexec_missing", "autoexec_bindings_deferred", "include_depth_exceeded", "include_cycle",
     "libref_context_truncated", "macro_dependency_analysis_deferred",
     "macro_library_initialization_unsupported", "macro_include_requires_expansion",
     "macro_nested_definition_unsupported")

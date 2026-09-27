@@ -5,8 +5,7 @@ test_that("warm scans reuse the cache and produce identical projects", {
   expect_true(file.exists(file.path(project_cache_dir(dir), "scan_cache.rds")))
   expect_false(dir.exists(file.path(dir, ".sas2r")))
   p2 <- sas_project(dir, cache = TRUE)
-  expect_identical(p1$units, p2$units)
-  expect_identical(p1$lineage, p2$lineage)
+  expect_identical(p1, p2)
 })
 
 test_that("edited files bypass the stale cache entry", {
@@ -69,4 +68,5 @@ test_that("cached scans reproduce identical include graphs", {
   expect_identical(p1$include_graph$occurrences, p2$include_graph$occurrences)
   expect_identical(p1$include_graph$files, p2$include_graph$files)
   expect_identical(p1$includes, p2$includes)
+  expect_identical(p1, p2)
 })

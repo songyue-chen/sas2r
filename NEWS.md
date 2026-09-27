@@ -1,10 +1,19 @@
+# sas2r (development version)
+
+- Apply supported autoexec library bindings consistently during preflight,
+  execution and bundle export, including reassignment and CLEAR fallbacks.
+- Reduce repeated work in SAS scanning while preserving source and dependency
+  information.
+- Fix macro investigation when a project function shares a name with R's error
+  handler.
+
 # sas2r 0.5.7
 
 - Add clearer dataset discrepancy reports with optional AI explanations and
   repair decisions.
 - Improve repairs across programs and macros using related SAS and R code.
-  SAS source remains authoritative; dataset values and raw runtime messages
-  stay out of AI diagnostic prompts.
+  SAS source remains authoritative; dataset row numbers, key values, cell values,
+  subject identifiers and raw runtime messages stay out of AI diagnostic prompts.
 - Improve SAS comparison-chain handling and translation guidance for DATA-step
   retention and dplyr style.
 - Bug fixes for dataset dependency tracking, macro error diagnosis and review

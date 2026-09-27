@@ -117,7 +117,7 @@ smoke_component_revision <- function(state, component_id, execute = TRUE) {
     programs = lapply(state$selected_revisions[ids], revision_code),
     helper = runtime_helper_code(state$runtime),
     inputs = list(content = state$input_manifest, metadata = inputs),
-    libraries = state$project$config$libraries,
+    libraries = startup_libref_map(state$project),
     formats = if (file.exists(formats)) readLines(formats, warn = FALSE) else NULL,
     R = as.character(getRversion())))
   if (identical(rev$smoke$context_key, context_key) &&

@@ -230,7 +230,8 @@ undeclared_registry_entry <- function(libref, bindings) {
 #' Emits `autoexec.R`, the file every program in a bundle sources first and
 #' the one a person maintains afterwards.
 #' Its LIBRARIES section is the *seed* of the bundle's runtime registry: the
-#' libraries configuration declares, plus a session `work` directory. It is
+#' configured libraries after the supported autoexec prologue, plus a session
+#' `work` directory. It is
 #' deliberately not a static project-wide map of every
 #' `LIBNAME` the scan saw. A libref is bound at a point in an execution, not
 #' once per project, so the bindings a source `LIBNAME` establishes are emitted
@@ -300,7 +301,7 @@ write_autoexec <- function(project, out_dir, effective = effective_librefs(proje
                             root = root)
     }
   } else {
-    seed <- effective$seed
+    seed <- effective$startup
     work <- seed[["work"]]
     configured <- seed[setdiff(names(seed), "work")]
     entries <- vapply(names(configured), function(libref) {

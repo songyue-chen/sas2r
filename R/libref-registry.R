@@ -1345,8 +1345,9 @@ empty_effective_librefs <- function() {
 #' @param project A `sas2r_project` object.
 #' @return A `sas2r_effective_librefs` list with
 #'   * `version` -- [LIBREF_REGISTRY_VERSION], the schema the rows answer to;
-#'   * `seed` -- the normalized configured libraries, the only bindings that
-#'     exist before the program runs a statement;
+#'   * `seed` -- the normalized configured libraries, retained for CLEAR and
+#'     unavailable source-binding fallbacks;
+#'   * `startup` -- those libraries after the supported autoexec prologue;
 #'   * `bindings` -- a tibble carrying exactly [EFFECTIVE_LIBREF_FIELDS];
 #'   * `undeclared` -- librefs a generated read or write needs and no binding
 #'     establishes, in first-use order;
@@ -1362,6 +1363,7 @@ effective_librefs <- function(project) {
     )
   }
   seed <- registry$libraries %||% list()
+  startup <- startup_libref_map(project)
 
   # `work` is filtered out of statements exactly as it is out of references:
   # it is the session library the generated seed creates, and resolving a
@@ -1395,7 +1397,7 @@ effective_librefs <- function(project) {
 
   if (!length(kind)) {
     return(structure(
-      list(version = LIBREF_REGISTRY_VERSION, seed = seed,
+      list(version = LIBREF_REGISTRY_VERSION, seed = seed, startup = startup,
            bindings = empty_effective_librefs(), undeclared = character(),
            session_library = session_library),
       class = "sas2r_effective_librefs"
@@ -1452,11 +1454,49 @@ effective_librefs <- function(project) {
       bindings$status %in% c("unbound", "conditionally_bound")])
 
   structure(
-    list(version = LIBREF_REGISTRY_VERSION, seed = seed, bindings = bindings,
+    list(version = LIBREF_REGISTRY_VERSION, seed = seed, startup = startup, bindings = bindings,
          undeclared = as.character(undeclared),
          session_library = session_library),
     class = "sas2r_effective_librefs"
   )
+}
+
+# Resolve immediately after the configured prologue, before any root statement.
+# Reuse the ordered registry so includes, reassignment and CLEAR have exactly
+# the same meaning here as at a source read. Configuration remains a separate
+# fallback: a later CLEAR must not restore an autoexec assignment.
+startup_libref_map <- function(project) {
+  registry <- project$libref_registry
+  seed <- registry$libraries %||% list()
+  env_files <- project$dependency_facts$env_files %||% character()
+  if (!length(env_files) || !nrow(registry$frames)) return(seed)
+  frames <- registry$frames
+  context <- frames$context_id[1L]
+  frame <- frames[frames$context_id == context, ][1L, ]
+  truncated <- libref_context_truncated(registry, frame)
+  events <- registry$events
+  events <- events[events$context_id == context, ]
+  librefs <- setdiff(unique(c(names(seed), events$libref)), c("work", "_all_"))
+  out <- seed
+  for (libref in librefs) {
+    rows <- libref_candidate_rows(registry$events, libref)[[as.character(context)]] %||% integer()
+    record <- libref_binding_in_frame(registry, libref, line = 0L,
+      rows = rows, key_prefix = length(env_files) + 1L,
+      frame_file = frame$file, context_root = frame$root_program,
+      configured_path = seed[[libref]]$path %||% NA_character_,
+      truncated = truncated)
+    if (identical(record$status, "bound") && !isTRUE(record$context_truncated)) {
+      entry <- seed[[libref]] %||% list()
+      entry$path <- record$selected_path
+      if (identical(record$selection_origin, "source")) entry$engine <- "sas7bdat"
+      entry$engine <- entry$engine %||% "sas7bdat"
+      entry$write <- entry$write %||% "rds"
+      out[[libref]] <- entry
+    } else {
+      out[[libref]] <- NULL
+    }
+  }
+  out
 }
 
 #' Zero-row prototype of the `LIBNAME work` statement table
@@ -1554,7 +1594,7 @@ confine_libref_path <- function(path, libref) {
 #' @noRd
 build_attempt_library_map <- function(project, attempt_dir) {
   effective <- if (inherits(project, "sas2r_effective_librefs")) project else effective_librefs(project)
-  seed <- effective$seed
+  seed <- effective$startup
   out <- list()
   for (libref in names(seed)) {
     if (libref == "work") next
@@ -1576,4 +1616,3 @@ build_attempt_library_map <- function(project, attempt_dir) {
   )
   out
 }
-

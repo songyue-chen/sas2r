@@ -776,6 +776,24 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     project_root = root,
     anchors = identity_anchors
   )
+  # Startup code is not translated/executed as a SAS macro program. If its
+  # prologue needs control-flow expansion, do not promote any of its library
+  # assignments to unconditional bindings (including resolved includes).
+  frames <- libref_registry$frames
+  startup_frames <- frames$frame_index[vapply(frames$key_prefix,
+    function(key) key[1L] <= length(env_files), logical(1))]
+  startup_files <- frames$file[frames$frame_index %in% startup_frames]
+  conditional_startup <- statements$file %in% startup_files &
+    (statements$macro_control | (statements$unit_type == "macro_def" &
+      statements$first_token == "%include"))
+  rows <- libref_registry$events$frame_index %in% startup_frames
+  if (any(conditional_startup) && any(rows)) {
+    libref_registry$events$conditional[rows] <- TRUE
+    flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
+      kind = "autoexec_bindings_deferred",
+      detail = paste("Startup control flow requires SAS expansion; configure library fallbacks explicitly:",
+        paste(unique(statements$file[conditional_startup]), collapse = ", ")))
+  }
   for (ctx in libref_registry$truncated_contexts) {
     flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
       kind = "libref_context_truncated", detail = ctx)

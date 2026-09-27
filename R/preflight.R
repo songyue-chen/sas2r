@@ -223,7 +223,7 @@ print.sas2r_preflight <- function(x, ...) {
 }
 
 preflight_blocking_findings <- function() c(
-    "autoexec_missing", "unresolved_include", "dynamic_include", "include_cycle",
+    "autoexec_missing", "autoexec_bindings_deferred", "unresolved_include", "dynamic_include", "include_cycle",
     "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
     "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
     "dynamic_dataset_reference", "backward_dependency", "macro_data_flow_deferred",

@@ -38,8 +38,12 @@ write_bundle_entrypoint <- function(state, bundle_dir) {
     "local({",
     "  env <- new.env(parent = globalenv())",
     '  sys.source("autoexec.R", envir = env, chdir = TRUE)',
+    "  registry <- env$.sas2r_registry",
     paste0("  programs <- ", paste(deparse(unname(files)), collapse = "\n")),
-    "  for (program in programs) sys.source(program, envir = env)",
+    "  for (program in programs) {",
+    "    env$.sas2r_registry <- registry",
+    "    sys.source(program, envir = env)",
+    "  }",
     "})"
   ), file.path(bundle_dir, entrypoint))
   invisible(files)

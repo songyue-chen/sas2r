@@ -105,9 +105,17 @@ files and asks you to rename the conflicting source and rescan.
 Complete coverage is separate from input availability and translation quality;
 preflight can still report `needs_attention` for other findings.
 
-LIBNAME statements in `autoexec.sas` are recognized by preflight but are not yet
-applied during execution. Configure input library bindings under `libraries:` in
-`_sas2r.yml`, even if preflight reports those autoexec bindings as available.
+Supported literal LIBNAME statements in configured autoexec files, including
+resolved includes, now supply the same startup bindings in preflight, smoke
+execution, full runs and exported bundles. Assignments and CLEAR follow source
+order; CLEAR restores a configured `libraries:` fallback when one exists.
+Each root program starts with these bindings. Its own LIBNAME statements take
+effect where they appear, while WORK datasets remain available across roots.
+
+This does not execute arbitrary SAS startup code. Unresolved paths, assignments
+inside macro definitions and startup control flow still need review. Conditional
+startup bindings are reported as `autoexec_bindings_deferred`; provide explicit
+`libraries:` fallbacks in `_sas2r.yml` and review the original startup logic.
 
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel

@@ -412,7 +412,10 @@ run_program_smoke <- function(
         observer$restore()
       })
       withCallingHandlers(eval(parse(text = code), envir = execution_env),
-        error = function(e) call_names <<- format_call_names(sys.calls()))
+        error = function(e) {
+          calls <- sys.calls()
+          call_names <<- format_call_names(calls, lapply(seq_along(calls), sys.function))
+        })
       call_names <<- character()
     }
 
@@ -892,7 +895,10 @@ run_bundle_attempt <- function(
         call_names <- character()
         tryCatch({
           withCallingHandlers(sys.source(target_file, envir = execution_env),
-            error = function(e) call_names <<- format_call_names(sys.calls()))
+            error = function(e) {
+              calls <- sys.calls()
+              call_names <<- format_call_names(calls, lapply(seq_along(calls), sys.function))
+            })
           call_names <- character()
         }, finally = {
           population_checks[[item]] <- observer$finish()
@@ -1025,7 +1031,14 @@ execution_condition <- function(error) {
 
 # Capture only bare function names while the stack is live, never arguments or
 # environments. The coordinator checks these names against selected source code.
-execution_call_names <- function(calls) {
+execution_call_names <- function(calls, functions = NULL) {
+  # The handler is called "h" by base R. Stop before the actual signalling
+  # functions, not before a matching name: a project can itself define h/stop.
+  # Function objects are used only here and are never recorded or returned.
+  signalling <- which(vapply(functions, function(fun)
+    identical(fun, base::stop) || identical(fun, base::signalCondition) ||
+      identical(fun, base::.handleSimpleError), logical(1)))
+  if (length(signalling)) calls <- utils::head(calls, signalling[1L] - 1L)
   calls <- Filter(function(x) is.call(x) && is.name(x[[1L]]), calls)
   unname(vapply(calls, function(x) as.character(x[[1L]]), ""))
 }
