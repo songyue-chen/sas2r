@@ -19,6 +19,9 @@
   counts from provider-bound comparison summaries. Human reports show partial
   explanation coverage and repairs prompted by mismatch investigation.
 - Invalidate older migration checkpoints for the changed evidence contract.
+- Include identity-specific earlier writers when a permanent dataset read is
+  deferred in declared execution order. Limit comparison-chain advice to source
+  expressions, excluding unrelated dataset/PROC options and PUT output syntax.
 
 # sas2r 0.5.6
 

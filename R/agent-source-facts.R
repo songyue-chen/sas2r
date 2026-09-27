@@ -25,22 +25,44 @@ component_read_context <- function(graph, component_id) {
   list(reads = facts, possible = possible)
 }
 
+# Only expressions can contain comparison chains. Dataset/PROC options and
+# PUT's named output use '=' too, but are not comparison expressions.
+source_comparison_expressions <- function(tokens) {
+  if (!length(tokens)) return(list())
+  if (tolower(tokens[1L]) %in% c("proc", "data", "set", "merge", "update")) {
+    # A WHERE= dataset option encloses its expression in parentheses. Ignore
+    # other options and unsupported/unbalanced forms; this fact is advisory.
+    starts <- which(tolower(tokens) == "where")
+    return(Filter(length, lapply(starts, function(i) {
+      if (i + 2L > length(tokens) || tokens[i + 1L] != "=" || tokens[i + 2L] != "(")
+        return(character())
+      body <- tokens[seq.int(i + 2L, length(tokens))]
+      end <- match(0L, cumsum((body == "(") - (body == ")")))
+      if (is.na(end)) character() else body[seq_len(end)]
+    })))
+  }
+  pieces <- if (tolower(tokens[1L]) %in% c("if", "else"))
+    split(tokens, cumsum(tolower(tokens) %in% c("then", "else"))) else list(tokens)
+  Filter(length, lapply(pieces, function(part) {
+    while (length(part) && tolower(part[1L]) %in% c("then", "else")) part <- part[-1L]
+    if (!length(part)) return(character())
+    if (length(part) > 2L && part[2L] == "=" && grepl("^[A-Za-z_][A-Za-z0-9_]*$", part[1L]))
+      return(part[-c(1L, 2L)])
+    if (tolower(part[1L]) %in% c("if", "where")) return(part[-1L])
+    character()
+  }))
+}
+
 source_comparison_context <- function(project, component_id) {
   statements <- component_statements(project, component_id)
   if (is.null(statements)) return(character())
   operators <- load_rulebook()$operators
   hits <- vapply(statements$text, function(text) {
     tokens <- tryCatch(tokenize_expr(sub(";[[:space:]]*$", "", text)), error = function(e) character())
-    # Separate conditions/actions and remove assignment LHSs. Use the same
-    # grouping and chain detector as translation, including deferred chains.
-    pieces <- split(tokens, cumsum(tolower(tokens) %in% c("then", "else")))
+    # Use translation's grouping and chain detector, including deferred chains.
+    pieces <- source_comparison_expressions(tokens)
     found <- FALSE
     for (part in pieces) {
-      condition <- any(tolower(utils::head(part, 2L)) %in% c("if", "where"))
-      while (length(part) && tolower(part[1L]) %in% c("if", "where", "then", "else"))
-        part <- part[-1L]
-      if (!condition && length(part) > 2L && part[2L] == "=" && grepl("^[A-Za-z_][A-Za-z0-9_]*$", part[1L]))
-        part <- part[-c(1L, 2L)]
       replace <- tolower(part) %in% names(operators)
       part[replace] <- unlist(operators[tolower(part[replace])], use.names = FALSE)
       tryCatch(expand_comparison_chains(part, function() { found <<- TRUE }),

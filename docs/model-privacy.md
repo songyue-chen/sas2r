@@ -47,8 +47,11 @@ feeds repair or acceptance requests.
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only
 `execution_before` edges do not make every earlier program a code dependency.
-Deferred WORK reads can expose possible preceding programs with a matching static/macro write or unknown dataset effect, nearest first and explicitly labeled
-unconfirmed. Paging uses existing tool limits; repeated unavailable page requests
+Deferred WORK reads can expose possible preceding programs with a matching
+static/macro write or unknown dataset effect. Deferred permanent reads expose only
+earlier writers of that bound dataset, including literal outputs of called macros.
+Both list candidates nearest first and explicitly label them unconfirmed.
+Paging uses existing tool limits; repeated unavailable page requests
 stop within the invocation. Review identities include all retrievable selected code,
 so an indirect dependency change invalidates cached evidence.
 

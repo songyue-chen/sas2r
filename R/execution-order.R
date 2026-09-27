@@ -228,7 +228,9 @@ ordered_dataset_producers <- function(project, paths, identity) {
         reader_root = owner, writer_root = if (is.null(value)) NA_character_ else value$owner,
         deferred = is.null(value) && uncertain && (is_work[row] || identity[row] %in% seen),
         possible_writers = if (is.null(value) && uncertain && is_work[row])
-          setdiff(possible_before(identity[row]), owner) else character())
+          setdiff(possible_before(identity[row]), owner) else
+          if (is.null(value) && uncertain && identity[row] %in% seen)
+            setdiff(possible_owners[[identity[row]]] %||% character(), owner) else character())
     }
   }
   write_rows <- function(rows, owner) {

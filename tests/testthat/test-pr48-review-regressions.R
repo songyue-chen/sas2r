@@ -8,7 +8,7 @@ test_that("ordinary execution errors retain technical facts without record value
     differing_row_counts = 'data.frame(a = 1:3, b = 1:2)',
     undefined_columns = 'data.frame(x = 1)[, "missing_col"]',
     subscript_out_of_bounds = 'list(1)[[3]]',
-    unused_argument = 'round(1, digits = 2, extra = value_from_record)',
+    unused_argument = 'f <- function(x) x; f(1, extra = value_from_record)',
     missing_argument = 'f <- function(required) required; f()')
   env <- new.env()
   env$value_from_record <- "RECORD_VALUE_997711"
@@ -74,13 +74,14 @@ test_that("real subprocess library errors retain classed facts and full local di
   expect_false(grepl(value, facts$condition_message, fixed = TRUE))
 })
 
-review_order_project <- function(programs, macros = list()) {
+review_order_project <- function(programs, macros = list(), libraries = list()) {
   root <- withr::local_tempdir(.local_envir = parent.frame())
   dir.create(file.path(root, "programs"))
   dir.create(file.path(root, "macros"))
   for (name in names(programs)) writeLines(programs[[name]], file.path(root, "programs", paste0(name, ".sas")))
   for (name in names(macros)) writeLines(macros[[name]], file.path(root, "macros", paste0(name, ".sas")))
   sas_project(file.path(root, "programs"), config = list(
+    libraries = libraries,
     macro_search_path = file.path(root, "macros"),
     migration = list(execution_order = paste0(names(programs), ".sas"))))
 }
@@ -103,6 +104,61 @@ test_that("deferred WORK candidates exclude unrelated setup programs and prefer 
   expect_lt(match("c", before$selected_dependencies), match("a", before$selected_dependencies))
   selected$b$r_code <- "# unrelated edit"
   expect_identical(build_agent_guidance(p, "d", selected_revisions = selected)$identity, before$identity)
+})
+
+test_that("deferred permanent reads can retrieve earlier open-code and macro writers", {
+  adam <- withr::local_tempdir()
+  for (macro_writer in c(FALSE, TRUE)) {
+    macros <- list(setup = "%macro setup; %put NOTE: setup; %mend;")
+    if (macro_writer) macros$derive_adsl <- "%macro derive_adsl; data adam.adsl; ittfl='Y'; run; %mend;"
+    p <- review_order_project(list(
+      adsl = paste("%setup;", if (macro_writer) "%derive_adsl;" else "data adam.adsl; ittfl='Y'; run;"),
+      adae = "%setup; data adam.adae; x=1; run;",
+      adef = "%setup; data adam.adef; set adam.adsl; run;"), macros,
+      libraries = list(adam = list(path = adam, engine = "rds")))
+    context <- component_read_context(p$graph, "adef")
+    expect_identical(context$reads[[1]]$writer_status, "deferred")
+    expect_identical(context$possible, "adsl")
+    ids <- c("adsl", "adae", "adef", "macro__setup", if (macro_writer) "macro__derive_adsl")
+    selected <- stats::setNames(lapply(ids, function(id) list(revision_id = "r1", r_code = paste("#", id))), ids)
+    expected <- c("adsl", "macro__setup", if (macro_writer) "macro__derive_adsl")
+    expect_setequal(names(agent_dependency_bodies(p, "adef", selected)), expected)
+    before <- build_agent_guidance(p, "adef", selected_revisions = selected)
+    expect_true("adsl" %in% before$selected_dependencies)
+    for (id in expected) {
+      page <- read_dependency_context(list(project = p, component_id = "adef", selected_revisions = selected), id, "sas")
+      expect_identical(page$status, "available")
+    }
+    if (macro_writer) {
+      selected$macro__derive_adsl$r_code <- "# changed derivation"
+      expect_false(identical(build_agent_guidance(p, "adef", selected_revisions = selected)$identity, before$identity))
+      selected$macro__derive_adsl$r_code <- "# macro__derive_adsl"
+    }
+    selected$adsl$r_code <- "# source edit"
+    expect_false(identical(build_agent_guidance(p, "adef", selected_revisions = selected)$identity, before$identity))
+    selected$adsl$r_code <- "# adsl"
+    selected$adae$r_code <- "# unrelated edit"
+    expect_identical(build_agent_guidance(p, "adef", selected_revisions = selected)$identity, before$identity)
+  }
+})
+
+test_that("permanent candidates are identity-specific preceding writers, nearest first", {
+  adam <- withr::local_tempdir()
+  other <- withr::local_tempdir()
+  p <- review_order_project(list(
+    old = "data adam.adsl; x=1; run;",
+    unrelated = "data other.adsl; x=1; run;",
+    near = "data adam.adsl; x=2; run;",
+    unknown = "%unresolved;",
+    reader = "%setup; data adam.out; set adam.adsl adam.external; run;",
+    future = "data adam.adsl; x=3; run;"),
+    list(setup = "%macro setup; %put NOTE: setup; %mend;"),
+    libraries = list(adam = list(path = adam, engine = "rds"), other = list(path = other, engine = "rds")))
+  context <- component_read_context(p$graph, "reader")
+  expect_identical(context$possible, c("near", "old"))
+  external <- Filter(function(x) x$dataset == "adam.external", context$reads)[[1L]]
+  expect_identical(external$writer_status, "external")
+  expect_length(external$possible_preceding_programs, 0L)
 })
 
 test_that("literal macro writes and unknown earlier effects remain possible without future writers", {
@@ -184,6 +240,26 @@ test_that("source chain facts ignore assignments and separate comparisons", {
   expect_match(facts, "if a=b=c then h=1", fixed = TRUE)
   expect_match(facts, "if 0<x<5<10", fixed = TRUE)
   expect_false(grepl("flag =|if x=1 then y=2|if \\(0<x\\)<5", facts))
+})
+
+test_that("source chain facts inspect expressions without option or PUT noise", {
+  plain <- c("data work.out (drop=x rename=(a=b c=d));",
+    "set work.in (in=left) work.second (in=right);",
+    "merge work.in (in=left) work.second (in=right);",
+    'put "values" x= y=;', 'if x=1 then put "values" x= y=;',
+    'else put "values" x= y=;',
+    "proc sort data=work.in out=work.sorted;",
+    "proc print data=work.in (where=(x=1 and y=2) keep=x y) obs=20;",
+    "set work.in (where=(x=1) rename=(a=b c=d));")
+  chains <- c("if 0<x<5 then put x= y=;", "else if (1<y<9) then ok=1;",
+    "if x=1 then flag=(a=b=c);", "else flag=(0<z<5);",
+    "where 0<x<5;", "flag = max((0<x<5), (2<y<9));",
+    "set work.in (where=(0<x<5) rename=(a=b c=d));",
+    "proc print data=work.in (where=(max(1,x)<y<9) keep=x y) obs=20;")
+  p <- review_order_project(list(main = c(plain, chains, "run;")))
+  facts <- paste(source_comparison_context(p, "main"), collapse = "\n")
+  for (statement in plain) expect_false(grepl(sub(";$", "", statement), facts, fixed = TRUE), info = statement)
+  for (statement in chains) expect_match(facts, sub(";$", "", statement), fixed = TRUE)
 })
 
 test_that("reports expose partial explanation coverage and group by warning kind", {

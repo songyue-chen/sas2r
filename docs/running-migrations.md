@@ -639,6 +639,9 @@ program/macro chain, fix the earliest source-grounded error and rerun in a fresh
 shared WORK session. They can retrieve indirect dependencies and downstream code.
 Declared order is separate from code relevance; the latest preceding WORK writer
 matters. Unknown dynamic writers stay unknown, with possible predecessors identified.
+For deferred permanent reads, agents can inspect earlier programs that wrote the
+same bound dataset and their called macros. These remain possible writers, not
+proof of which program produced the runtime data.
 
 SAS code, its called macros/includes and execution order remain authoritative.
 References can guide investigation but cannot supply replacement business logic.
