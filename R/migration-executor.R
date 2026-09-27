@@ -442,7 +442,7 @@ run_program_smoke <- function(
       executed_calls = executed_calls, failed_component_id = current,
       population_checks = population_checks,
       condition = list(message = conditionMessage(e), class = class(e),
-                       call = format_call(conditionCall(e)),
+                       call = format_call(conditionCall(e)), identifiers = e$identifiers,
                        component_id = current, population_check = e$population_check)
     )})
   }
@@ -575,9 +575,8 @@ run_program_smoke <- function(
 #' Produce bounded diagnostics for an agent worker
 #'
 #' Formats execution diagnostics strictly adhering to the specified policy.
-#' `code_only` policy sends condition class, message, mapped location, stack trace,
-#' affected identifiers, and capped log excerpts with zero dataset rows or TLF bytes.
-#' `bounded` adds configured capped metadata and previews.
+#' Every policy sends recognized technical error facts and code-verified names.
+#' Arbitrary messages, log contents and dataset previews remain local.
 #'
 #' @param execution Smoke or bundle execution result record.
 #' @param policy Evidence policy ("code_only", "bounded", or "full").
@@ -611,31 +610,87 @@ agent_error_facts <- function(condition, source_code = "") {
   }
   parsed <- tryCatch(parse(text = source_code), error = function(e) expression())
   walk(parsed)
-  message <- condition$message %||% ""
-  patterns <- c(dataset_not_found = "^Dataset not found: ([A-Za-z_][A-Za-z0-9_]*[.][A-Za-z_][A-Za-z0-9_]*)$",
-    object_not_found = "^object ['`][^'`]+['`] not found$",
-    column_not_found = "^[Cc]olumn ['`][^'`]+['`] (doesn't exist|not found).*$")
-  kind <- "unclassified_error"; names <- character()
-  for (candidate in names(patterns)) {
-    if (!grepl(patterns[[candidate]], message, perl = TRUE)) next
-    found <- if (candidate == "dataset_not_found") sub(patterns[[candidate]], "\\1", message, perl = TRUE) else
-      sub("^[^'`]*['`]([^'`]+)['`].*$", "\\1", message, perl = TRUE)
-    if (tolower(found) %in% identifiers) {
-      kind <- candidate; names <- found
-    }
-    break
+  # Live rlang conditions have parents; persisted records retain the formatted
+  # cause in their message. Match individual lines, never copy their contents.
+  causes <- list(condition)
+  while (inherits(condition$parent, "condition")) {
+    condition <- condition$parent
+    causes <- c(causes, list(condition))
   }
-  classes <- intersect(condition$class %||% character(),
+  raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
+  messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
+    conditionMessage(e) else e$message %||% ""), use.names = FALSE)
+  lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
+    unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
+  if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
+  name <- "([A-Za-z_][A-Za-z0-9_.]*)"
+  quote_mark <- paste0("['", intToUtf8(96), "\"]")
+  patterns <- c(dataset_not_found = paste0("^Dataset not found: ", name, "$"),
+    object_not_found = paste0("^object ", quote_mark, name, quote_mark, " not found$"),
+    function_not_found = paste0("^could not find function ", quote_mark, name, quote_mark, "$"),
+    column_not_found = paste0("^[Cc]olumn ", quote_mark, name, quote_mark, " (doesn't exist|not found)[.]?$"),
+    missing_argument = paste0("^argument ", quote_mark, name, quote_mark, " is missing, with no default$"),
+    unused_argument = paste0("^unused arguments? \\(", name, "\\s*=.*\\)$"))
+  kind <- "unclassified_error"; found_names <- character()
+  for (candidate in names(patterns)) {
+    matched <- lines[grepl(patterns[[candidate]], lines, perl = TRUE)]
+    if (!length(matched)) next
+    found <- sub(patterns[[candidate]], "\\1", matched, perl = TRUE)
+    found <- unique(found[tolower(found) %in% identifiers])
+    if (length(found)) { kind <- candidate; found_names <- found; break }
+  }
+  # Fixed labels carry no interpolated values: row sizes and type-error values
+  # are deliberately discarded. Cover ordinary base R and dplyr failures.
+  fixed <- c(non_numeric_operand = "^non-numeric argument to binary operator$",
+    missing_boolean = "^missing value where TRUE/FALSE needed$",
+    empty_argument = "^argument is of length zero$",
+    subscript_out_of_bounds = "^subscript out of bounds$",
+    undefined_columns = "^undefined columns selected$",
+    differing_row_counts = "^arguments imply differing number of rows: [0-9, ]+$",
+    unused_argument = "^unused arguments? \\(.*\\)$")
+  if (kind == "unclassified_error") for (candidate in names(fixed)) {
+    if (any(grepl(fixed[[candidate]], lines, perl = TRUE))) { kind <- candidate; break }
+  }
+  if (kind == "unclassified_error" && "vctrs_error_incompatible_type" %in% raw_classes)
+    kind <- "incompatible_types"
+  if (kind == "unclassified_error" && "vctrs_error_subscript_oob" %in% raw_classes)
+    kind <- "subscript_out_of_bounds"
+  if (kind == "unclassified_error" && "rlang_error" %in% raw_classes &&
+      any(grepl("^.* must be a logical vector, not ", lines))) kind <- "filter_not_logical"
+  helper_kinds <- c(sas2r_dataset_not_found = "dataset_not_found",
+    sas2r_unknown_libref = "unknown_library", sas2r_libref_member_error = "invalid_member",
+    sas2r_lib_read_arguments = "lib_read_arguments", sas2r_lib_write_arguments = "lib_write_arguments",
+    sas2r_library_unavailable = "library_unavailable", sas2r_write_format = "unsupported_write_format")
+  helper <- intersect(raw_classes, names(helper_kinds))
+  if (length(helper)) {
+    kind <- unname(helper_kinds[helper[1L]])
+    names_in_condition <- unlist(lapply(causes, function(e) e$identifiers), use.names = FALSE)
+    found_names <- unique(c(found_names, names_in_condition[tolower(names_in_condition) %in% identifiers]))
+  }
+  classes <- intersect(raw_classes,
     c("error", "condition", "simpleError", "rlang_error", "dplyr:::mutate_error",
-      "dplyr:::filter_error", "subscriptOutOfBoundsError", "sas2r_execution_timeout"))
+      "dplyr:::filter_error", "subscriptOutOfBoundsError", "sas2r_execution_timeout",
+      "vctrs_error_incompatible_type", "vctrs_error_subscript_oob", names(helper_kinds)))
   # A call is safe only if it occurs verbatim in the supplied code tree.
-  call_text <- execution_call_text(condition$call)
-  location <- if (!is.null(call_text) && call_text %in% calls) call_text else NA_character_
+  call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
+  location <- intersect(call_text, calls)
+  location <- if (length(location)) location[1L] else NA_character_
   labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
-    column_not_found = "Column not found", unclassified_error = "Execution failed; inspect the local diagnostics")
-  list(kind = kind, identifiers = names, condition_class = classes,
+    column_not_found = "Column not found", function_not_found = "Function not found",
+    missing_argument = "Required argument missing", unused_argument = "Unused argument",
+    non_numeric_operand = "Non-numeric operand in arithmetic", missing_boolean = "Missing value in an if/while condition",
+    empty_argument = "Zero-length argument in a condition", subscript_out_of_bounds = "Subscript out of bounds",
+    undefined_columns = "Undefined columns selected", differing_row_counts = "Incompatible row counts",
+    incompatible_types = "Incompatible column types", filter_not_logical = "Filter condition must be logical",
+    unknown_library = "Library is not registered", invalid_member = "Invalid dataset member name",
+    lib_read_arguments = 'Invalid helper arguments; use lib_read("lib", "member")',
+    lib_write_arguments = 'Invalid helper arguments; use lib_write(data, "lib", "member")',
+    library_unavailable = "Library directory or writable path unavailable",
+    unsupported_write_format = "Unsupported dataset write format",
+    unclassified_error = "Execution failed; inspect the local diagnostics")
+  list(kind = kind, identifiers = found_names, condition_class = classes,
     source_location = location,
-    condition_message = paste0(labels[[kind]], if (length(names)) paste0(": ", paste(names, collapse = ", "))))
+    condition_message = paste0(labels[[kind]], if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
 }
 
 bounded_agent_diagnostics <- function(execution,
@@ -647,7 +702,7 @@ bounded_agent_diagnostics <- function(execution,
   if (is.na(policy) || !policy %in% c("code_only", "bounded", "full")) policy <- "code_only"
   facts <- agent_error_facts(execution$condition, source_code)
   affected_ids <- unique(c(execution$component_id, execution$executed_component_ids))
-  list(schema_version = "execution-facts-v2", policy = policy,
+  list(schema_version = "execution-facts-v3", policy = policy,
     execution_id = execution$execution_id, component_id = execution$component_id,
     passed = execution$passed, exit_status = execution$exit_status,
     failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
@@ -953,7 +1008,7 @@ run_bundle_attempt <- function(
 execution_condition <- function(error) {
   while (inherits(error$parent, "condition")) error <- error$parent
   list(message = conditionMessage(error), class = class(error),
-       call = execution_call_text(conditionCall(error)),
+       call = execution_call_text(conditionCall(error)), identifiers = error$identifiers,
        population_check = error$population_check)
 }
 

@@ -83,7 +83,7 @@ macro_preserves_datasets <- function(project, call) {
 # producers. Resolve their libraries at the outer call site, where the macro
 # runs; do not promote the macro body into ordinary executable lineage. Keep
 # results by source statement so the ordered walk admits them only at that site.
-macro_possible_dataset_writes <- function(project) {
+macro_possible_dataset_writes <- function(project, include_work = FALSE) {
   statements <- project$statements
   resolution <- project$macros$resolution
   defs <- project$macros$defs
@@ -106,7 +106,8 @@ macro_possible_dataset_writes <- function(project) {
         if (token == "data") "data_step" else "proc_step")
       norm_ds(static_dataset_names(refs$creates))
     }), use.names = FALSE))
-    list(outputs = datasets[!startsWith(datasets, "work.")], calls = targets(extract_macro_calls(body)))
+    list(outputs = if (include_work) datasets else datasets[!startsWith(datasets, "work.")],
+      calls = targets(extract_macro_calls(body)))
   })
   output_cache <- vector("list", nrow(defs))
   outputs <- function(d) {
@@ -139,12 +140,50 @@ macro_possible_dataset_writes <- function(project) {
     bindings <- libref_point_of_use_records(project$libref_registry,
       sub("\\..*$", "", datasets), rep(call$file, length(datasets)), rep(call$line_start, length(datasets)))
     unique(unlist(lapply(seq_along(datasets), function(i) {
+      if (startsWith(datasets[i], "work.")) return(paste(datasets[i], "<session work>", sep = "\r"))
       binding <- bindings$records[[bindings$slot[i]]]
       if (identical(binding$status, "bound")) paste(datasets[i], binding$selected_path, sep = "\r")
     }), use.names = FALSE))
   })
   names(writes) <- paste(statements$file[rows], statements$stmt_id[rows], sep = "\r")
   writes[lengths(writes) > 0L]
+}
+
+# Context candidates only: this does not promote macro outputs to known writes.
+# Resolved, non-writing setup code is not a possible WORK producer. Unknown
+# emitted text, dataset names, includes or nested calls remain possible effects.
+macro_unknown_dataset_effects <- function(project) {
+  defs <- project$macros$defs
+  resolution <- project$macros$resolution
+  target <- function(call) {
+    rows <- resolution[resolution$call_id == call$call_id, ]
+    if (nrow(rows) != 1L || !rows$status %in% c("resolved_project", "resolved_path", "resolved_content"))
+      return(NA_integer_)
+    ids <- which(defs$file == rows$source & defs$name == rows$name)
+    if (length(ids) == 1L) ids else NA_integer_
+  }
+  cache <- vector("list", nrow(defs))
+  unknown <- function(id, visited = integer()) {
+    if (is.na(id) || id %in% visited) return(TRUE)
+    if (!is.null(cache[[id]])) return(cache[[id]])
+    body <- project$statements[project$statements$unit_id == defs$unit_id[id], ]
+    nested <- extract_macro_calls(body)
+    value <- any(body$macro_control %in% TRUE) ||
+      any(body$first_token == "%include") ||
+      any(grepl("\\bcall\\s+execute\\s*\\(|^proc\\s+datasets\\b", body$text, ignore.case = TRUE)) ||
+      any(grepl("^[&]", trimws(body$text)))
+    if (!value) for (i in seq_len(nrow(body))) {
+      refs <- dataset_statement_refs(body$text[i], body$first_token[i],
+        if (body$first_token[i] == "data") "data_step" else "proc_step")
+      if (any(grepl("[&%]", refs$creates))) { value <- TRUE; break }
+    }
+    if (!value && nrow(nested)) value <- any(vapply(seq_len(nrow(nested)), function(i)
+      unknown(target(nested[i, ]), c(visited, id)), logical(1)))
+    cache[[id]] <<- value
+    value
+  }
+  calls <- project$macros$calls
+  stats::setNames(vapply(seq_len(nrow(calls)), function(i) unknown(target(calls[i, ])), logical(1)), calls$call_id)
 }
 
 # Walk existing statements and resolved include sites in execution order.
@@ -160,6 +199,18 @@ ordered_dataset_producers <- function(project, paths, identity) {
     macro_preserves_datasets(project, calls[i, ]), logical(1)), ]
   is_work <- startsWith(lineage$dataset, "work.")
   possible <- macro_possible_dataset_writes(project)
+  context_writes <- macro_possible_dataset_writes(project, include_work = TRUE)
+  unknown_calls <- macro_unknown_dataset_effects(project)
+  possible_owners <- list()
+  unknown_owners <- character()
+  remember <- function(keys, owner) {
+    for (key in keys) possible_owners[[key]] <<- unique(c(owner, possible_owners[[key]]))
+  }
+  possible_before <- function(key) {
+    owners <- union(possible_owners[[key]], unknown_owners)
+    ordered <- c(project$dependency_facts$env_files, roots)
+    owners[order(match(owners, ordered), decreasing = TRUE)]
+  }
   seen <- character()
   lineage_rows <- split(seq_len(nrow(lineage)), lineage$unit_id)
   current <- list()
@@ -175,7 +226,9 @@ ordered_dataset_producers <- function(project, paths, identity) {
       events[[length(events) + 1L]] <<- list(row = row,
         writer = if (is.null(value)) NA_integer_ else value$row,
         reader_root = owner, writer_root = if (is.null(value)) NA_character_ else value$owner,
-        deferred = is.null(value) && uncertain && (is_work[row] || identity[row] %in% seen))
+        deferred = is.null(value) && uncertain && (is_work[row] || identity[row] %in% seen),
+        possible_writers = if (is.null(value) && uncertain && is_work[row])
+          setdiff(possible_before(identity[row]), owner) else character())
     }
   }
   write_rows <- function(rows, owner) {
@@ -186,6 +239,7 @@ ordered_dataset_producers <- function(project, paths, identity) {
   walk <- function(file, owner, chain = character()) {
     key <- include_scan_key(file)
     if (key %in% chain || length(chain) >= INCLUDE_MAX_DEPTH) {
+      unknown_owners <<- union(owner, unknown_owners)
       invalidate()
       return(invisible(NULL))
     }
@@ -208,23 +262,31 @@ ordered_dataset_producers <- function(project, paths, identity) {
         any(calls$source_file == file & calls$line %in% unit$line_start) ||
         any(grepl("\\bcall\\s+execute\\s*\\(", unit$text, ignore.case = TRUE)) ||
         (is_data && any(unit$first_token == "%include"))
+      unit_calls <- calls[calls$source_file == file & calls$line %in% unit$line_start, ]
+      if (any(unknown_calls[unit_calls$call_id] %in% TRUE) ||
+          any(unit$macro_control %in% TRUE) || mutation ||
+          any(grepl("\\bcall\\s+execute\\s*\\(", unit$text, ignore.case = TRUE)) ||
+          (is_data && any(unit$first_token == "%include")))
+        unknown_owners <<- union(owner, unknown_owners)
       if (mutation || is_sql || dynamic) invalidate()
       read_rows(rows[lineage$role[rows] == "reads"], owner)
       for (s in seq_len(nrow(unit))) {
         at <- unit$line_start[s]
         include <- sites[sites$parent_unit_id == uid & sites$line == at, ]
         if (unit$first_token[s] == "%include") {
-          if (!nrow(include)) invalidate()
+          if (!nrow(include)) { invalidate(); unknown_owners <<- union(owner, unknown_owners) }
           for (i in seq_len(nrow(include))) {
             if (include$status[i] == "resolved" && !is.na(include$target_file[i]))
               walk(include$target_file[i], owner, chain)
-            else invalidate()
+            else { invalidate(); unknown_owners <<- union(owner, unknown_owners) }
           }
         }
         if (any(calls$source_file == file & calls$line == at) ||
             grepl("\\bcall\\s+execute\\s*\\(", unit$text[s], ignore.case = TRUE)) invalidate()
         refs <- dataset_statement_refs(unit$text[s], unit$first_token[s], unit$unit_type[s])
-        if (length(refs$creates) && any(grepl("[&%]", refs$creates))) invalidate()
+        if (length(refs$creates) && any(grepl("[&%]", refs$creates))) {
+          invalidate(); unknown_owners <<- union(owner, unknown_owners)
+        }
       }
       # SQL with several writes and catalog mutations need statement-level
       # semantics; do not resurrect a possibly deleted/intermediate dataset.
@@ -234,6 +296,8 @@ ordered_dataset_producers <- function(project, paths, identity) {
       # Even an invalidating unit can contain a possible (not known) write.
       created <- rows[lineage$role[rows] == "creates" & !is.na(paths[rows])]
       keys <- paste(file, unit$stmt_id, sep = "\r")
+      remember(c(identity[created], unlist(context_writes[intersect(keys, names(context_writes))],
+        use.names = FALSE)), owner)
       seen <<- c(seen, identity[created], unlist(possible[intersect(keys, names(possible))], use.names = FALSE))
     }
     invisible(NULL)

@@ -64,7 +64,7 @@
     "dots": false
   },
   "sas2r_libref_stop": {
-    "text": "Signal a runtime library error\n\nArguments:\ncls: Character scalar giving the specific error class.\nmsg: Character scalar error message.\n\nReturns:\nDoes not return normally. Signals an error with classes cls,\nsas2r_libref_error, error, and condition, and fields message and call.\n\nExamples:\nfail <- getFromNamespace(\"sas2r_libref_stop\", \"sas2r\")\ntryCatch(fail(\"example_library_error\", \"Example failure\"),\n         sas2r_libref_error = function(e) conditionMessage(e))",
+    "text": "Signal a runtime library error\n\nArguments:\ncls: Character scalar giving the specific error class.\nmsg: Character scalar error message.\nidentifiers: Technical names for structured diagnostics, checked against code before agent use.\n\nReturns:\nDoes not return normally. Signals an error with classes cls,\nsas2r_libref_error, error, and condition, and fields message, call and identifiers.\n\nExamples:\nfail <- getFromNamespace(\"sas2r_libref_stop\", \"sas2r\")\ntryCatch(fail(\"example_library_error\", \"Example failure\"),\n         sas2r_libref_error = function(e) conditionMessage(e))",
     "dots": false
   },
   "sas2r_registry_env": {

@@ -656,7 +656,7 @@ the existing usage budget. The run announces that code and aggregate patterns ma
 be sent to the provider. No LLM, no remaining budget or a failed diagnosis leaves
 measurements available and reports the limitation. Explanations remain advisory,
 never change status and never feed another agent. The focused reviewer gets
-categorical mismatch patterns; fixers and candidate acceptance get source/code
+categorical mismatch patterns without exact counts or offsets; fixers and candidate acceptance get source/code
 findings without reference targets. Neither evidence policy permits record previews
 or raw runtime logs. See [model privacy](model-privacy.md).
 
@@ -676,7 +676,7 @@ when faithful to SAS. Fixers preserve that style but do not restyle unrelated co
 For additional preferences, put a plain-language style instruction in `dialect`,
 for example `dialect: "Prefer dplyr pipelines and explicit namespace calls; preserve SAS helpers"`.
 
-`dialect: tidyverse` is the default. The translator, macro translator and fixer
+The translator, macro translator and fixer
 receive a style block naming the allowlisted, installed tidyverse packages to
 prefer and what each is for: dplyr for DATA step logic and PROC SQL, tidyr for
 PROC TRANSPOSE, ggplot2 for figures, stringr for character functions, forcats

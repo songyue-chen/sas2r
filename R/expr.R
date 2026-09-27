@@ -74,7 +74,7 @@ translate_expr <- function(txt) {
 # https://support.sas.com/documentation/cdl/en/lrcon/65287/HTML/default/p00iah2thp63bmn1lt20esag14lh.htm
 # Work on tokens, keeping explicit parentheses and logical/list boundaries.
 # Longer chains remain unsupported rather than guessing their evaluation.
-expand_comparison_chains <- function(tokens) {
+expand_comparison_chains <- function(tokens, on_chain = function() NULL) {
   comparisons <- c("<", "<=", ">", ">=", "==", "!=")
   grouped <- character()
   i <- 1L
@@ -92,7 +92,7 @@ expand_comparison_chains <- function(tokens) {
     if (depth != 0L) return(tokens) # ordinary parse diagnostics own this
     body <- if (end > i + 1L) tokens[seq.int(i + 1L, end - 1L)] else character()
     # Keep the entire parenthesized body atomic for comparisons at this level.
-    grouped <- c(grouped, paste(c("(", expand_comparison_chains(body), ")"), collapse = " "))
+    grouped <- c(grouped, paste(c("(", expand_comparison_chains(body, on_chain), ")"), collapse = " "))
     i <- end + 1L
   }
   split_at <- which(grouped %in% c("&", "|", ","))
@@ -102,6 +102,7 @@ expand_comparison_chains <- function(tokens) {
     start <- boundaries[j] + 1L; end <- boundaries[j + 1L] - 1L
     part <- if (end >= start) grouped[seq.int(start, end)] else character()
     all_ops <- which(part %in% c(comparisons, "%in%", "%notin%"))
+    if (length(all_ops) >= 2L) on_chain()
     if (length(all_ops) >= 2L && any(part[all_ops] %in% c("%in%", "%notin%")))
       cli::cli_abort("comparison chains with membership operators are unsupported",
         class = "sas2r_expr_parse_error")

@@ -14,6 +14,10 @@
   ahead of grouped warnings in the start page. Optional report explanations reuse
   code reviews or make one budgeted request; `migration.report_diagnosis: off`
   disables them. Advice cannot alter validation or feed back into repairs.
+- Review follow-up: retain useful structured facts for real multi-line runtime
+  failures; limit possible WORK writers to relevant earlier effects; remove exact
+  counts from provider-bound comparison summaries. Human reports show partial
+  explanation coverage and repairs prompted by mismatch investigation.
 - Invalidate older migration checkpoints for the changed evidence contract.
 
 # sas2r 0.5.6

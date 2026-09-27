@@ -1,16 +1,3 @@
-discrepancy_fixture <- function() {
-  # Synthetic comparator output; no user data. Values deliberately recognizable
-  # so accidental forwarding of detail rows fails the request-boundary tests.
-  base <- data.frame(id = paste0("RECORD_SENTINEL_", 1:3), day = 101:103)
-  comp <- transform(base, day = day + 3653)
-  cmp <- compare_datasets_aligned(base, comp, keys = "id")
-  list(kind = "dataset", target_key = "work.result", status = "failed", has_reference = TRUE,
-    reference_path = "/REFERENCE_PATH_SENTINEL/data.rds",
-    checks = list(reference_comparison = list(summary = cmp$summary)),
-    differences = list(digest = unclass(diff_digest(cmp)), structure = cmp$structure,
-      mismatches = cmp$details))
-}
-
 test_that("one canonical summary separates human magnitudes from investigation patterns", {
   target <- discrepancy_fixture()
   summary <- dataset_discrepancy_summary(target)
@@ -25,7 +12,7 @@ test_that("one canonical summary separates human magnitudes from investigation p
   expect_false(grepl("3653|RECORD_SENTINEL|REFERENCE_PATH_SENTINEL|101|102|103", packet))
   expect_null(reviewer_discrepancy_summary(target)$variables[[1]]$absolute_offset)
   expect_identical(names(reviewer_discrepancy_summary(target)$variables[[1]]),
-    c("name", "kind", "compared", "mismatches", "missing_differences", "patterns"))
+    c("name", "kind", "differences", "patterns"))
   table <- discrepancy_table(list(summary))
   expect_identical(table$`Rows aligned`, "100.0% (3/3)")
   expect_identical(table$`Columns present in both`, "100.0% (2/2)")
@@ -95,7 +82,7 @@ test_that("transitive code is available to every role and invalidates selected c
   expect_false("unrelated" %in% names(agent_dependency_bodies(project, "main", selected)))
 })
 
-test_that("ordered WORK writer facts select the preceding writer and label unknown prefixes", {
+test_that("ordered WORK writer facts distinguish a preceding writer from no producer", {
   root <- withr::local_tempdir()
   files <- c("first", "reader", "last", "unknown")
   source <- c("data work.stage; x=1; run;", "data work.answer; set work.stage; run;",
@@ -106,8 +93,8 @@ test_that("ordered WORK writer facts select the preceding writer and label unkno
   expect_identical(read$writer, "first")
   expect_identical(read$writer_status, "selected_by_source_order")
   unknown <- component_read_context(project$graph, "unknown")
-  expect_identical(unknown$reads[[1]]$writer_status, "unknown")
-  expect_setequal(unknown$possible, c("first", "reader", "last"))
+  expect_identical(unknown$reads[[1]]$writer_status, "no_producer")
+  expect_length(unknown$possible, 0)
 })
 
 test_that("report diagnosis is a one-way bounded request with explicit off and budget states", {
@@ -184,8 +171,13 @@ test_that("mismatch summaries investigate the upstream defect while fixers and a
   expect_identical(result$status, "blocked") # source correction cannot satisfy these references
   expect_length(fx$state$fixer_llm$requests(), 1L)
   expect_identical(repaired, "p01")
+  expect_true(result$repairs[[1]]$reference_triggered_review)
+  expect_false(anyDuplicated(names(result$repairs[[1]])) > 0L)
+  expect_match(paste(report_repair_table(result)$Reason, collapse = " "), "prompted by a reference discrepancy")
   reviewer_text <- vapply(fx$state$reviewer_llm$requests(), request_task_text, "")
   expect_true(any(grepl("CONSTANT_OFFSET", reviewer_text, fixed = TRUE)))
+  focused <- reviewer_text[grepl("Investigation-only comparison patterns", reviewer_text, fixed = TRUE)]
+  expect_false(any(grepl("value_mismatches|rows_aligned|missing_differences|\"compared\"|\"mismatches\"", focused)))
   for (request in fx$state$fixer_llm$requests()) {
     text <- request_task_text(request)
     expect_false(grepl("CONSTANT_OFFSET|REFERENCE_PATH_SENTINEL|7000[1-5]|value_mismatches|rows_aligned", text))

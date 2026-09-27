@@ -17,7 +17,7 @@ With the default `agent_evidence = "code_only"`, a request can contain:
 | Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
 | Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
 | Execution diagnostics | Recognized error kinds, standard condition classes, failed component identifiers, source-verified object/dataset/column names, source call locations and local log paths; no raw messages or log contents |
-| Investigation/report summaries only | Dataset dimensions, row-alignment counts, common column counts, type differences, variable mismatch counts and enumerated patterns; no exact difference amounts or per-record values |
+| Investigation/report summaries only | Relative row/column sizes, complete/partial row pairing, type differences, some/all/missing-only variable differences and enumerated patterns; no exact counts, difference amounts or per-record values |
 | Guidance and lookup results | Helper interfaces, installed-package versions, translation rules, registered skills and enabled local documentation mirrors |
 
 Both `code_only` and the legacy `bounded` label exclude dataset previews and raw
@@ -47,7 +47,7 @@ feeds repair or acceptance requests.
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only
 `execution_before` edges do not make every earlier program a code dependency.
-Unknown WORK writers can expose possible preceding programs, explicitly labeled
+Deferred WORK reads can expose possible preceding programs with a matching static/macro write or unknown dataset effect, nearest first and explicitly labeled
 unconfirmed. Paging uses existing tool limits; repeated unavailable page requests
 stop within the invocation. Review identities include all retrievable selected code,
 so an indirect dependency change invalidates cached evidence.

@@ -54,7 +54,9 @@ migration_report_diagnosis <- function(state) {
   existing <- Filter(function(f) f$target %in% names(targets), current_report_findings(state))
   if (length(existing)) {
     result$status <- "completed"; result$origin <- "existing_source_review"
-    result$reason <- "Reused current source/code review evidence; no additional model call."
+    result$reason <- paste0("Reused current source/code review evidence for ",
+      length(unique(vapply(existing, `[[`, "", "target"))), " of ", length(targets),
+      " unresolved targets; other causes remain unresolved. No additional model call.")
     result$explanations <- existing
     return(result)
   }

@@ -8,6 +8,10 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   }
 
   primary_rev <- state$selected_revisions[[primary_cid]]
+  events <- current_component_evidence(state$histories[[primary_cid]])$events %||% list()
+  reference_triggered <- any(vapply(events, function(e)
+    identical(e$type, "source_mismatch_review") && isTRUE(e$adopted) &&
+      !is.null(e$basis_id) && identical(e$basis_id, packet$review$review_id), logical(1)))
 
   bundle_ev <- attempt_rec
   bundle_ev$bundle_id <- attempt_rec$attempt_id
@@ -55,6 +59,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   if (!isTRUE(fixed_rev$checks$pass)) {
     state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
       component_id = primary_cid, revision_id = fixed_rev$revision_id,
+      reference_triggered_review = reference_triggered,
       r_path = fixed_rev$r_path, mechanical_retry = fixed_rev$mechanical_retry,
       candidate_review = "unreviewed", errors = fixed_rev$checks$errors)))
     return(list(state = state, applied = FALSE, reason = paste(
@@ -107,6 +112,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     }
     retained$diagnostics$rejected_repairs <- c(retained$diagnostics$rejected_repairs,
       list(list(component_id = primary_cid, revision_id = fixed_rev$revision_id,
+        reference_triggered_review = reference_triggered,
         revisions = rejected_revisions,
         r_path = fixed_rev$r_path, helper_path = if (has_helper_patch) hp_dest else NULL,
         errors = rejection)))
@@ -118,10 +124,10 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
 
   # Record repair
   repair_rec <- list(
-    revision_id = fixed_rev$revision_id,
     round = round + 1L,
     component_id = fixed_rev$component_id %||% primary_cid,
     revision_id = fixed_rev$revision_id,
+    reference_triggered_review = reference_triggered,
     diagnosis = fixed_rev$diagnosis,
     summary = fixed_rev$summary,
     patch_hash = fixed_rev$patch_hash,

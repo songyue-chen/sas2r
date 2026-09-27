@@ -2,10 +2,12 @@
 
 `dataset_discrepancy_summary()` builds the canonical local summary from results
 already computed by the local comparator. It never opens a dataset, log or detail
-file. `reviewer_discrepancy_summary()` removes measured offset amounts for focused
+file. `reviewer_discrepancy_summary()` projects categorical differences without counts or measured offset amounts for focused
 investigation and report explanation requests. Fixers and candidate acceptance
 reviews receive neither projection. This is an explicit field projection, not a
 redaction pass over arbitrary comparison JSON.
+
+The following fields are human-report fields, not the provider-bound projection.
 
 | Field | Type | Origin and meaning |
 |---|---|---|
@@ -31,9 +33,20 @@ comparison cells, record identifiers, keys, examples/previews, distinct values,
 minimum/maximum/quantile statistics and raw runtime log text. Reference paths and
 full comparison details remain available to the human in local reports.
 
-Execution diagnostics use a separate `execution-facts-v2` projection. Recognized
-missing-dataset/object/column errors retain names already present in supplied code;
-other messages become an unclassified error. Calls must occur in that code tree.
+The provider-bound projection retains identity/status, column names/types and
+enumerated patterns. Row and column sizes become same, generated_more,
+generated_fewer or unknown; pairing becomes complete, partial or unknown.
+Variable differences become some, all or missing_only. It contains no exact
+dimensions, pairing totals, mismatch counts, offset magnitudes or numeric targets.
+The same projection serves focused investigation and terminal report explanation.
+
+Execution diagnostics use a separate execution-facts-v3 projection. Recognized
+missing-dataset/object/column/function and argument errors retain names already
+present in supplied code. Multi-line dplyr causes are recognized; arithmetic,
+condition, indexing, row-shape and type failures become fixed technical categories.
+Library helper failures carry classed conditions with technical identifier fields.
+No runtime values, row sizes or arbitrary messages are forwarded. Other messages
+become an unclassified error. Calls must occur in the supplied code tree.
 Known technical classes, component IDs and local log paths remain available.
 Unknown messages and the complete diagnostics remain local for programmer review.
 All legacy evidence-policy labels enforce the same no-record boundary.
@@ -42,6 +55,6 @@ Focused review may locate a source/R contradiction using approved patterns. Its
 findings cite source operations, rather than reference targets. Reference
 inconsistency remains advisory; it cannot authorize changing SAS logic. Human
 report explanations are terminal output, never subsequent agent input, and never
-change comparison results. Counts and patterns are bound into investigation cache
+change comparison results. Categorical patterns are bound into investigation cache
 identity; all retrievable dependency code is bound into source context identity.
 Old checkpoints are invalidated when this evidence contract changes.

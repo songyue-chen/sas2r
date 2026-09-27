@@ -36,9 +36,10 @@ run_dataset_details <- function(report, components, comparisons, link) {
 }
 
 run_advisory_groups <- function(details) {
-  kind <- ifelse(grepl("[Dd]ependency|producer", details), "Dependencies",
-    ifelse(grepl("[Rr]eadiness|[Ii]nput|[Ll]ibrary", details), "Inputs and readiness",
-      ifelse(grepl("[Rr]eview|human judgment", details), "Source reviews", "Execution and other diagnostics")))
+  code <- sub(":.*$", "", details)
+  kind <- ifelse(grepl("^(input_|libref_|reference_|readiness)", code), "Inputs and readiness",
+    ifelse(grepl("^(source_dependency|dependency_|macro_|include_|dynamic_dataset_|dataset_statement_)", code), "Dependencies",
+      ifelse(grepl("^(review|source_review|human_judgment)", code), "Source reviews", "Execution and other diagnostics")))
   vapply(split(details, kind), function(lines) paste0("<details><summary>",
     run_html_escape(kind[match(lines[[1L]], details)]), " (", length(lines), ")</summary><pre>",
     run_html_escape(paste(lines, collapse = "\n")), "</pre></details>"), "")

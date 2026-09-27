@@ -109,7 +109,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
   called <- vapply(bodies, function(b) b$symbol %in% calls, logical(1))
   cited <- deps %in% priority_dependencies | vapply(bodies, function(b)
     b$symbol %in% priority_dependencies, logical(1))
-  deps <- deps[order(!cited, !called, seq_along(deps))]
+  deps <- deps[order(!cited, !called, !deps %in% read_context$possible,
+    match(deps, read_context$possible, nomatch = length(deps) + 1L), seq_along(deps))]
   bodies <- bodies[deps]
   scope <- migration_hash(list(component_id, macro, available_bodies, environment, projections, consumers,
     reads = read_context, source_comparisons = source_comparisons,

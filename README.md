@@ -324,7 +324,7 @@ subject identifiers, key values, cell values, previews and raw runtime messages
 stay local under both `code_only` and the legacy
 `bounded` policy. Source code and comments are not automatically de-identified.
 
-Focused mismatch investigation can receive counts, column/type differences and
+Focused mismatch investigation can receive relative sizes, column/type differences and
 categorical patterns. Fixers and candidate acceptance reviews remain reference-blind:
 SAS is the source of truth. Human report explanations never drive code repairs.
 Use an organization-approved endpoint and confirm its data residency and retention terms.

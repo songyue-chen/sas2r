@@ -1,7 +1,7 @@
 # Closed projections of comparison results already computed locally. These
 # functions never open datasets or comparison-detail files. Cell examples,
 # keys, arbitrary check messages and reference paths are not copied.
-DISCREPANCY_SUMMARY_VERSION <- "1"
+DISCREPANCY_SUMMARY_VERSION <- "2"
 
 comparison_records <- function(x) {
   if (is.data.frame(x)) return(lapply(seq_len(nrow(x)), function(i) as.list(x[i, , drop = FALSE])))
@@ -43,13 +43,25 @@ dataset_discrepancy_summary <- function(target, key = target$target_key) {
     alignment = target$differences$structure$alignment_resource_state %||% "unknown")
 }
 
-# Investigation only. Exact offset magnitudes belong to human reports, not
-# code-writing or acceptance-review requests. This projection has no file IDs.
+# Investigation only. Counts and offset magnitudes belong to human reports.
+# This projection deliberately contains no numeric comparison targets.
 reviewer_discrepancy_summary <- function(target, key = target$target_key) {
-  summary <- dataset_discrepancy_summary(target, key)
-  summary$variables <- lapply(summary$variables, function(v) v[c(
-    "name", "kind", "compared", "mismatches", "missing_differences", "patterns")])
-  summary
+  s <- dataset_discrepancy_summary(target, key)
+  relative <- function(a, b) {
+    if (any(!is.finite(c(a, b)))) return("unknown")
+    if (a == b) "same" else if (a > b) "generated_more" else "generated_fewer"
+  }
+  list(schema_version = DISCREPANCY_SUMMARY_VERSION, target = s$target,
+    kind = s$kind, status = s$status, reference_present = s$reference_present,
+    rows = relative(s$generated$rows, s$reference$rows),
+    columns = relative(s$generated$columns, s$reference$columns),
+    row_pairing = if (any(!is.finite(c(s$rows_aligned, s$generated$rows, s$reference$rows)))) "unknown" else
+      if (s$rows_aligned == s$generated$rows && s$rows_aligned == s$reference$rows) "complete" else "partial",
+    variables = lapply(s$variables, function(v) list(name = v$name, kind = v$kind,
+      differences = if (isTRUE(v$mismatches == v$missing_differences)) "missing_only" else
+        if (isTRUE(v$mismatches == v$compared)) "all" else "some",
+      patterns = v$patterns)), type_differences = s$type_differences,
+    alignment = s$alignment)
 }
 
 discrepancy_description <- function(summary) {
@@ -94,15 +106,19 @@ discrepancy_table <- function(summaries) {
 
 report_repair_table <- function(state) {
   rows <- list()
-  add <- function(cid, revision, result, reason) {
+  add <- function(cid, revision, result, reason, reference_triggered = FALSE) {
+    if (isTRUE(reference_triggered)) reason <- c(
+      "Source review prompted by a reference discrepancy; candidate acceptance remains reference-blind.", reason)
     rows[[length(rows) + 1L]] <<- data.frame(Component = cid %||% "Unknown",
       Revision = revision %||% "Unknown", Result = result,
       Reason = paste(reason %||% "Not recorded", collapse = "; "), check.names = FALSE)
   }
   for (repair in state$repairs %||% state$repair_history %||% list())
-    add(repair$component_id, repair$revision_id, "Accepted for rerun", repair$summary %||% repair$diagnosis)
+    add(repair$component_id, repair$revision_id, "Accepted for rerun", repair$summary %||% repair$diagnosis,
+      repair$reference_triggered_review)
   for (repair in state$diagnostics$rejected_repairs %||% list())
-    add(repair$component_id, repair$revision_id, "Rejected; previous code retained", repair$errors)
+    add(repair$component_id, repair$revision_id, "Rejected; previous code retained", repair$errors,
+      repair$reference_triggered_review)
   for (cid in names(state$histories)) {
     history <- state$histories[[cid]]
     if (length(history$revisions) < 2L) next
