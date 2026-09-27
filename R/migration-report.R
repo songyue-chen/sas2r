@@ -117,6 +117,12 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     list()
   }
 
+  dataset_targets <- Filter(function(t) identical(t$kind %||% "dataset", "dataset"), output_assessments)
+  discrepancy_summaries <- lapply(names(dataset_targets), function(key)
+    dataset_discrepancy_summary(dataset_targets[[key]], key))
+  names(discrepancy_summaries) <- names(dataset_targets)
+  repair_table <- report_repair_table(state)
+
   # Component evidence summary
   component_evidence_list <- list()
   comp_table_rows <- list()
@@ -248,6 +254,9 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     coverage = coverage,
     style_observation = style_observation,
     output_assessments = output_assessments,
+    discrepancy_summaries = discrepancy_summaries,
+    report_diagnosis = state$report_diagnosis,
+    repair_table = repair_table,
     component_evidence = component_evidence_list,
     bundle_execution = bundle_execution,
     attempts = attempts_data,
@@ -280,7 +289,25 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     migration_environment_lines(state$environment),
     migration_style_line(style_observation),
     "",
-    migration_outcome_lines(report_payload$outcome),
+    migration_outcome_lines(report_payload$outcome)[1L],
+    paste(names(report_payload$outcome$stages), unlist(report_payload$outcome$stages), sep = ": "),
+    paste("Next action:", report_payload$outcome$next_action),
+    "",
+    "## Dataset discrepancies",
+    "",
+    "Rows aligned means paired records, not equal values. Columns present in both means matching names, not matching types or contents. SAS source remains authoritative when reference results disagree.",
+    "",
+    migration_md_table(discrepancy_table(discrepancy_summaries)),
+    "",
+    report_explanation_lines(state$report_diagnosis),
+    "",
+    "## Repair decisions",
+    "",
+    migration_md_table(repair_table),
+    "",
+    "## Warnings and diagnostics",
+    "",
+    report_payload$outcome$details,
     "",
     "## Selected Artifacts",
     "",
@@ -325,7 +352,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   }
   for (cid in names(observations$code_notices)) {
     notice <- observations$code_notices[[cid]]
-    details <- c(notice$direct_io, notice$nonlocal_assignment, notice$dependency_symbols)
+    details <- c(notice$direct_io, notice$nonlocal_assignment, notice$regex_bracket_escape, notice$dependency_symbols)
     if (!is.null(notice$mechanical_retry)) details <- c(details, paste(
       "Mechanical retry recorded; dynamic parse/eval involved:", isTRUE(notice$mechanical_retry$dynamic_code),
       "; candidate:", notice$revision_id, "; selected review verdict:", component_review_verdict(histories[[cid]])))

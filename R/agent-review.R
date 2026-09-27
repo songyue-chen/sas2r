@@ -361,7 +361,7 @@ review_program_revision <- function(
       context$priority_dependencies %||% review_context_dependencies(history %||% context$history))))
   review_scope <- if (length(context$focus_outputs) && !isTRUE(context$full_review)) "focused" else "full"
   phase <- context$phase %||% "program"
-  diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution, policy = context$config$agent_evidence %||% "code_only") else NULL
+  diagnostics <- if (!is.null(context$execution)) bounded_agent_diagnostics(context$execution, policy = context$config$agent_evidence %||% "code_only", source_code = r_code) else NULL
   if (!is.null(diagnostics)) {
     # Static review uses observations, not their per-attempt storage locations.
     # Retain the original records and fixer diagnostics for navigation/debugging.
@@ -378,6 +378,10 @@ review_program_revision <- function(
     "Unresolved graph facts:", unres_txt,
     "Output lineage:", lineage_txt,
     guidance$text,
+    if (length(context$discrepancy_summary)) c(
+      "Investigation-only comparison patterns (not desired values and not proof of a translation defect):",
+      jsonlite::toJSON(context$discrepancy_summary, auto_unbox = TRUE, null = "null", na = "null"),
+      "Trace these columns through the SAS and selected R. Return only independently source-grounded SAS/R contradictions, not comparison counts or patterns. The reference may be inconsistent with the source. Do not invent source changes to fit it."),
     revision$dependency_notices,
     if (!is.null(diagnostics)) c("Bounded executor observations (not reviewer execution):",
       jsonlite::toJSON(diagnostics, auto_unbox = TRUE, null = "null")),

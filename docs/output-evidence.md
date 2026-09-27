@@ -150,9 +150,9 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 
 `sas2r` processes datasets locally and controls which evidence enters model requests. Source code, comments, paths and execution diagnostics can still contain confidential information; these controls are not automatic de-identification. See the [full privacy explanation](model-privacy.md).
 
-- **Dataset Files Are Processed Locally**: Dataset reading and comparison happen in the local R process or its subprocesses. The normal translation workflow does not attach complete dataset or TLF files to model requests. Values embedded in code, logs or permitted previews may still reach the model.
+- **Dataset Files Are Processed Locally**: Dataset reading and comparison happen in the local R process or its subprocesses. The normal translation workflow does not attach complete dataset or TLF files to model requests. Values already embedded in source code or comments may still reach the model; records, previews and raw runtime logs are excluded.
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
-- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. `code_only` omits these previews; source code and error messages may themselves contain data. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
+- **Agent evidence**: Both `code_only` and the legacy `bounded` policy exclude dataset row numbers, subject identifiers, key values, cell values, previews and raw runtime messages. Focused investigation receives only approved aggregate patterns; fixers and candidate acceptance remain reference-blind. Full comparisons stay local. See [model privacy](model-privacy.md).
 - **Data Residency Compliance**: Organizations must ensure configured model endpoints comply with their enterprise data residency and privacy obligations.
 
 ---

@@ -76,7 +76,7 @@ TOOL_DESCRIPTIONS <- c(
   lookup_rulebook = "Look up deterministic SAS-to-R semantic rules.",
   find_macro = "Find indexed SAS macro definitions by name.",
   get_macro_source = "Read bounded source for an indexed SAS macro.",
-  read_dependency_context = "Read a 12000-character page of SAS source or selected R code for a direct dependency or downstream consumer. Follow next_offset for the remainder. No data or reference outputs are exposed.",
+  read_dependency_context = "Read a page of SAS source or selected R code for a related dependency or consumer, including indirect calls. Follow next_offset for the remainder. No data or reference outputs are exposed.",
   list_macro_files = "List indexed SAS macro source filenames.",
   search_docs = "Search the configured local documentation mirror.",
   search_skills = "Search registered skills in the curated catalogue.",
@@ -122,8 +122,16 @@ validate_tool_arguments <- function(args, schema, name) {
 }
 
 TOOL_IMPLS <- list(
-  read_dependency_context = function(ctx) function(args) {
-    read_dependency_context(ctx, args$component_id, args$language, args$offset %||% 1L)
+  read_dependency_context = function(ctx) {
+    unavailable <- character()
+    function(args) {
+      key <- paste(args$component_id, args$language, args$offset %||% 1L, sep = ":")
+      if (key %in% unavailable) return(list(error = "unchanged_context_unavailable",
+        guidance = "This page is unavailable in the selected revision snapshot. Defer the unresolved context; repeating the request cannot supply it."))
+      result <- read_dependency_context(ctx, args$component_id, args$language, args$offset %||% 1L)
+      if (!is.null(result$error) || identical(result$status, "unavailable")) unavailable <<- c(unavailable, key)
+      result
+    }
   },
   read_unit_context = function(ctx) function(args) {
     inputs <- if (!is.null(ctx$project$lineage) && !is.null(ctx$unit_stmts)) {

@@ -369,6 +369,12 @@ normalize_migration_config <- function(config) {
   }
   out <- list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
        smoke_timeout = timeout("smoke_timeout", 60), bundle_timeout = timeout("bundle_timeout", 120))
+  diagnosis <- config[["report_diagnosis"]] %||% "auto"
+  # YAML 1.1 decodes an unquoted off as FALSE; normalize to the one policy name.
+  if (identical(diagnosis, FALSE)) diagnosis <- "off"
+  if (!is_scalar_character(diagnosis) || !diagnosis %in% c("auto", "off"))
+    cli::cli_abort("migration.report_diagnosis must be auto or off", class = "sas2r_config_error")
+  out$report_diagnosis <- diagnosis
   if (!is.null(order)) out$execution_order <- unname(order)
   out
 }

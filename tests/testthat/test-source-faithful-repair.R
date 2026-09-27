@@ -166,7 +166,7 @@ test_that("a legitimate source ID filter survives an inconsistent reference", {
   expect_identical(result$status, "blocked")
 })
 
-test_that("focused review survives reference path changes and checkpoint resume", {
+test_that("changed comparison patterns refresh focused investigation without changing source resume", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   reference <- file.path(fx$root, "reference.rds")
   saveRDS(data.frame(id = 1:2, value = 91:92), reference)
@@ -193,7 +193,9 @@ test_that("focused review survives reference path changes and checkpoint resume"
   expect_identical(migration_resume_fingerprint(next_state), fingerprint)
   next_state <- restore_migration_checkpoint(next_state, fingerprint)
   resumed <- run_bundle_pipeline(next_state)
-  expect_length(fx$state$reviewer_llm$requests(), 1L)
+  # The new reference changes row alignment from 2/3 to 3/3; the approved
+  # investigation evidence changed, although source/checkpoint identity did not.
+  expect_length(fx$state$reviewer_llm$requests(), 2L)
   expect_length(fx$state$fixer_llm$requests(), 0L)
   expect_identical(resumed$status, "blocked")
   expect_identical(resumed$assessment$targets$work.out1$reference_path, other)

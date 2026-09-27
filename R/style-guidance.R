@@ -30,6 +30,7 @@ render_style_guidance <- function(config = list()) {
   absent <- setdiff(candidates, installed)
   paste(c(
     "Style: tidyverse first, faithful always.",
+    "Prefer readable |> pipelines with dplyr::mutate, filter, select, rename, group_by and summarise for ordinary transformations. Avoid repeated column assignment and row indexing when an equivalent pipeline is clearer. Keep base R for behavior that needs it; explain non-obvious choices. Repairs must not restyle unrelated code.",
     if (length(preferred)) c(
       "Prefer these allowlisted, installed packages whenever their functions express the SAS behavior faithfully:",
       paste0("- ", preferred, "::* for ", STYLE_PACKAGE_ROLES[preferred])),

@@ -25,11 +25,11 @@ write_run_navigation <- function(state, report) {
   sources <- if (!is.null(state$graph$nodes)) unique(state$graph$nodes[["source_file"]]) else character()
   sources <- as.character(sources)
   sources <- sources[!is.na(sources) & file.exists(sources)]
-  source_links <- stats::setNames(file.path("report", "sources", sprintf("source-%03d.sas.txt", seq_along(sources))), sources)
+  source_links <- stats::setNames(file.path("report", "sources", sprintf("source-%03d.sas.html", seq_along(sources))), sources)
   for (source in sources) {
     target <- file.path(paths$run_root, source_links[[source]])
     dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
-    if (!file.copy(source, target, overwrite = TRUE)) cli::cli_abort("Could not copy source {.file {source}}")
+    write_report_code_listing(read_sas_source(source), target, source)
   }
   ids <- unique(c(state$schedule$component_id, names(state$selected_revisions),
                   names(report$component_evidence)))
@@ -39,6 +39,12 @@ write_run_navigation <- function(state, report) {
     staged <- rev$staged_file %||% rev$contract$staged_file %||% paste0(id, ".R")
     code_path <- file.path("bundle", user_bundle_path(staged))
     generated <- file.exists(file.path(paths$run_root, code_path))
+    code_listing <- NULL
+    if (generated) {
+      code_listing <- file.path("report", "code", paste0("component-", match(id, ids), ".R.html"))
+      write_report_code_listing(readLines(file.path(paths$run_root, code_path), warn = FALSE),
+        file.path(paths$run_root, code_listing), paste(id, "selected R"))
+    }
     nodes <- state$graph$nodes
     source <- if (!is.null(nodes)) unique(nodes[["source_file"]][nodes$component_id %in% id]) else character()
     source <- source[!is.na(source)]
@@ -48,7 +54,7 @@ write_run_navigation <- function(state, report) {
     targets <- unique(c(names(comparison), state$output_contracts$target_key[
       state$output_contracts$source_file %in% source]))
     components[[id]] <- list(component_id = id, source = source,
-      code = if (generated) code_path else NULL,
+      code = if (generated) code_path else NULL, code_listing = code_listing,
       source_links = unname(source_links[source]),
       revision_id = rev$revision_id %||% NULL, revision_path = rev$r_path %||% NULL,
       dependencies = I(deps),
@@ -107,7 +113,8 @@ write_run_navigation <- function(state, report) {
       paste(key, ass$status %||% "unverified", sep = ": ")
     }, character(1))
     paste0("<tr><td>", run_html_escape(component$component_id), "<br>",
-      if (component$generated) link(component$code, "Open R script") else "Not generated",
+      if (component$generated) paste(link(component$code, "Open R script"),
+        link(component$code_listing, "Numbered R lines"), sep = " | ") else "Not generated",
       "<br>", paste(vapply(seq_along(component$source), function(i) {
         link(component$source_links[[i]], component$source[[i]])
       }, character(1)), collapse = "<br>"),
@@ -153,7 +160,9 @@ write_run_navigation <- function(state, report) {
     '<h1>sas2r migration run</h1>', paste0('<p>', run_html_escape(report$run_id), '</p>'),
     paste0('<section class="outcome ', report$outcome$severity, '" aria-label="Run outcome">'),
     paste0('<h2>', run_html_escape(migration_outcome_lines(report$outcome)[1L]), '</h2>'),
-    paste0('<pre>', run_html_escape(paste(migration_outcome_lines(report$outcome)[-1L], collapse = "\n")), '</pre>'),
+    paste0('<p>', run_html_escape(report$outcome$reason), '</p>'),
+    paste0('<pre>', run_html_escape(paste(c(paste(names(report$outcome$stages),
+      unlist(report$outcome$stages), sep = ": "), paste("Next action:", report$outcome$next_action)), collapse = "\n")), '</pre>'),
     paste0('<p><a href="#components">Affected components and checks</a> | ',
       link("report/translation.md", "Full report"), ' | ', link("diagnostics", "Diagnostics"),
       paste(vapply(names(report$outcome$bundle_logs), function(name)
@@ -164,6 +173,15 @@ write_run_navigation <- function(state, report) {
     paste0('<nav>', paste(c(link("bundle/README.md", "Bundle instructions"), link("report/translation.md", "Translation report"),
       link("report/report.json", "Machine report"), link("manifest.json", "Run manifest"),
       link("diagnostics", "Diagnostics")), collapse = " | "), '</nav>'),
+    '<h2>Dataset discrepancies</h2>',
+    '<p>Rows aligned means paired records, not equal values. Columns present in both means matching names, not matching types or contents. SAS source remains authoritative.</p>',
+    run_html_table(discrepancy_table(report$discrepancy_summaries %||% list())),
+    paste0('<p>', run_html_escape(report$report_diagnosis$reason %||%
+      "Explanatory diagnosis was not performed for this report."), '</p>'),
+    run_dataset_details(report, components, comparisons, link),
+    '<h2>Repair decisions</h2>', run_html_table(report$repair_table %||% data.frame()),
+    '<p>Acceptance for rerun is separate from output validation. Remaining blockers and the stopping reason appear in the run outcome and component checks.</p>',
+    '<h2>Warnings and diagnostics</h2>', run_advisory_groups(report$outcome$details),
     '<h2 id="components">Programs and called macros</h2>',
     if (length(rows)) c('<div style="overflow-x:auto"><table><thead><tr><th>Component / source</th><th>Dependencies</th><th>Checks</th><th>Review</th><th>Execution</th><th>Output assessment</th><th>Next action</th></tr></thead><tbody>', rows, '</tbody></table></div>') else '<p>No component code was generated.</p>',
     '<h2>Saved outputs</h2>', if (any(!unresolved_rows)) c('<ul>', output_rows[!unresolved_rows], '</ul>') else '<p>No concrete output targets were recorded.</p>',

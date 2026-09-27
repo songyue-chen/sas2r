@@ -8,6 +8,10 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   }
 
   primary_rev <- state$selected_revisions[[primary_cid]]
+  events <- current_component_evidence(state$histories[[primary_cid]])$events %||% list()
+  reference_triggered <- any(vapply(events, function(e)
+    identical(e$type, "source_mismatch_review") && isTRUE(e$adopted) &&
+      !is.null(e$basis_id) && identical(e$basis_id, packet$review$review_id), logical(1)))
 
   bundle_ev <- attempt_rec
   bundle_ev$bundle_id <- attempt_rec$attempt_id
@@ -55,6 +59,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   if (!isTRUE(fixed_rev$checks$pass)) {
     state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
       component_id = primary_cid, revision_id = fixed_rev$revision_id,
+      reference_triggered_review = reference_triggered,
       r_path = fixed_rev$r_path, mechanical_retry = fixed_rev$mechanical_retry,
       candidate_review = "unreviewed", errors = fixed_rev$checks$errors)))
     return(list(state = state, applied = FALSE, reason = paste(
@@ -107,6 +112,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     }
     retained$diagnostics$rejected_repairs <- c(retained$diagnostics$rejected_repairs,
       list(list(component_id = primary_cid, revision_id = fixed_rev$revision_id,
+        reference_triggered_review = reference_triggered,
         revisions = rejected_revisions,
         r_path = fixed_rev$r_path, helper_path = if (has_helper_patch) hp_dest else NULL,
         errors = rejection)))
@@ -121,6 +127,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     round = round + 1L,
     component_id = fixed_rev$component_id %||% primary_cid,
     revision_id = fixed_rev$revision_id,
+    reference_triggered_review = reference_triggered,
     diagnosis = fixed_rev$diagnosis,
     summary = fixed_rev$summary,
     patch_hash = fixed_rev$patch_hash,
@@ -197,6 +204,73 @@ collect_bundle_diagnostics <- function(state, attempt) {
     }
   }
   list(failures = failures, executions = records, blocked = blocked)
+}
+
+# A runtime call suggests a review target, not fault ownership. Accept only a
+# unique, related, selected macro with a canonical function definition; aliases
+# and dynamic/ambiguous calls stay on the existing caller repair path.
+runtime_callee_component <- function(state, caller, condition) {
+  text <- execution_call_text(condition$call)
+  call <- if (!is.null(text)) tryCatch(parse(text = text), error = function(e) NULL)
+  call_names <- unique(c(rev(condition$call_names), execution_call_names(call)))
+  if (!length(call_names)) return(NULL)
+  related <- intersect(context_component_dependencies(state$graph, caller), names(state$selected_revisions))
+  called <- unique(unlist(lapply(c(caller, related), function(cid)
+    r_call_names(revision_code(state$selected_revisions[[cid]]))), use.names = FALSE))
+  for (name in intersect(call_names, called)) {
+    candidates <- Filter(function(cid) {
+      contract <- component_macro_contract(state$project, state$graph, cid)
+      if (is.null(contract) || !identical(contract$name, name)) return(FALSE)
+      definitions <- tryCatch(helper_definitions(revision_code(state$selected_revisions[[cid]])),
+        error = function(e) list())
+      name %in% names(definitions)
+    }, related)
+    if (length(candidates)) return(if (length(candidates) == 1L) candidates[[1L]] else NULL)
+  }
+  NULL
+}
+
+# Reuse the ordinary full source review and its exact-context cache. Only a
+# source-grounded callee finding enters the existing dependency-ordered queue;
+# otherwise the caller remains eligible. Original execution attribution stays
+# intact, and no raw condition message or runtime values enter the review.
+review_bundle_callees <- function(state, attempt, diagnostic, round) {
+  diagnostic$callee_reviews <- list()
+  reviewed <- character()
+  for (caller in setdiff(names(diagnostic$failures), names(diagnostic$non_translation_failures))) {
+    if (is.null(state$reviewer_llm) || !usage_budget_allows_future(state$usage_budget)) break
+    condition <- diagnostic$failures[[caller]]
+    cid <- runtime_callee_component(state, caller, condition)
+    if (is.null(cid) || cid %in% reviewed) next
+    if (identical(component_review_verdict(state$histories[[cid]]), "repair_required")) next
+    reviewed <- c(reviewed, cid)
+    execution <- attempt
+    execution$condition <- condition
+    execution$failed_component_id <- caller
+    review <- tryCatch(review_program_revision(state$selected_revisions[[cid]],
+      context = list(project = state$project, config = state$config, phase = "bundle",
+        execution = execution, selected_revisions = state$selected_revisions,
+        priority_dependencies = caller, helper_code = runtime_helper_code(state$runtime),
+        source_input_identity = state$input_manifest %||% input_hash_manifest(state$project)),
+      llm = state$reviewer_llm, usage = state$usage_budget, paths = state$paths,
+      history = state$histories[[cid]], round = round, attempt_id = attempt$attempt_id),
+      error = function(e) {
+        if (critical_translation_error(e)) stop(e)
+        list(verdict = "review_unavailable", reason = conditionMessage(e))
+      })
+    # Only a completed clean full review or an actionable source finding can
+    # update evidence. Other outcomes remain observations in the diagnostics.
+    adopted <- identical(review$verdict, "reviewed_no_material_finding") ||
+      (identical(review$verdict, "repair_required") && length(source_grounded_review_findings(review)) > 0L)
+    if (!is.null(review$history) && adopted)
+      state$histories[[cid]] <- review$history
+    diagnostic$callee_reviews[[cid]] <- list(caller = caller, component_id = cid,
+      review_id = review$review_id, verdict = review$verdict, reason = review$reason,
+      reused = isTRUE(review$reused))
+    signal_bundle_event("bundle_source_review_completed", component_id = cid,
+      attempt_id = attempt$attempt_id, reason = paste("Runtime callee review:", review$verdict))
+  }
+  list(state = state, diagnostic = diagnostic)
 }
 
 # Group findings by known failing component or the source-derived output writer.

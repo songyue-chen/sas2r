@@ -67,7 +67,61 @@ translate_expr <- function(txt) {
       merged <- c(merged, "%notin%"); i <- i + 2L
     } else { merged <- c(merged, out[i]); i <- i + 1L }
   }
-  paste(merged, collapse = " ")
+  paste(expand_comparison_chains(merged), collapse = " ")
+}
+
+# SAS's implied AND is an exception to ordinary operator evaluation:
+# https://support.sas.com/documentation/cdl/en/lrcon/65287/HTML/default/p00iah2thp63bmn1lt20esag14lh.htm
+# Work on tokens, keeping explicit parentheses and logical/list boundaries.
+# Longer chains remain unsupported rather than guessing their evaluation.
+expand_comparison_chains <- function(tokens, on_chain = function() NULL) {
+  comparisons <- c("<", "<=", ">", ">=", "==", "!=")
+  grouped <- character()
+  i <- 1L
+  while (i <= length(tokens)) {
+    if (tokens[i] != "(") {
+      grouped <- c(grouped, tokens[i]); i <- i + 1L
+      next
+    }
+    end <- i + 1L; depth <- 1L
+    while (end <= length(tokens) && depth > 0L) {
+      if (tokens[end] == "(") depth <- depth + 1L
+      if (tokens[end] == ")") depth <- depth - 1L
+      if (depth > 0L) end <- end + 1L
+    }
+    if (depth != 0L) return(tokens) # ordinary parse diagnostics own this
+    body <- if (end > i + 1L) tokens[seq.int(i + 1L, end - 1L)] else character()
+    # Keep the entire parenthesized body atomic for comparisons at this level.
+    grouped <- c(grouped, paste(c("(", expand_comparison_chains(body, on_chain), ")"), collapse = " "))
+    i <- end + 1L
+  }
+  split_at <- which(grouped %in% c("&", "|", ","))
+  boundaries <- c(0L, split_at, length(grouped) + 1L)
+  result <- character()
+  for (j in seq_len(length(boundaries) - 1L)) {
+    start <- boundaries[j] + 1L; end <- boundaries[j + 1L] - 1L
+    part <- if (end >= start) grouped[seq.int(start, end)] else character()
+    all_ops <- which(part %in% c(comparisons, "%in%", "%notin%"))
+    if (length(all_ops) >= 2L) on_chain()
+    if (length(all_ops) >= 2L && any(part[all_ops] %in% c("%in%", "%notin%")))
+      cli::cli_abort("comparison chains with membership operators are unsupported",
+        class = "sas2r_expr_parse_error")
+    ops <- which(part %in% comparisons)
+    if (length(ops) > 2L) cli::cli_abort("comparison chains longer than two comparisons are unsupported",
+      class = "sas2r_expr_parse_error")
+    if (length(ops) == 2L && ops[1L] > 1L && diff(ops) > 1L && ops[2L] < length(part)) {
+      # DATA-step NOT has unary precedence, unlike R's !. Defer this
+      # unparenthesized form rather than negate the whole implied conjunction.
+      if ("!" %in% part) cli::cli_abort("unparenthesized NOT in a comparison chain is unsupported",
+        class = "sas2r_expr_parse_error")
+      lhs <- part[seq_len(ops[2L] - 1L)]
+      rhs <- part[seq.int(ops[1L] + 1L, length(part))]
+      part <- c("(", "(", lhs, ")", "&", "(", rhs, ")", ")")
+    }
+    result <- c(result, part)
+    if (j <= length(split_at)) result <- c(result, grouped[split_at[j]])
+  }
+  result
 }
 
 #' Comma-separate the elements of a translated `%in%` / `%notin%` list

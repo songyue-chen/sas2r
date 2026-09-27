@@ -4,16 +4,18 @@
 \alias{sas2r_libref_stop}
 \title{Signal a runtime library error}
 \usage{
-sas2r_libref_stop(cls, msg)
+sas2r_libref_stop(cls, msg, identifiers = character())
 }
 \arguments{
 \item{cls}{Character scalar giving the specific error class.}
 
 \item{msg}{Character scalar error message.}
+
+\item{identifiers}{Technical names for structured diagnostics, checked against code before agent use.}
 }
 \value{
 Does not return normally. Signals an error with classes \code{cls},
-\code{sas2r_libref_error}, \code{error}, and \code{condition}, and fields \code{message} and \code{call}.
+\code{sas2r_libref_error}, \code{error}, and \code{condition}, and fields \code{message}, \code{call} and \code{identifiers}.
 }
 \description{
 Signal a runtime library error

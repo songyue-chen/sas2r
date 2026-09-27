@@ -126,3 +126,42 @@ test_that("variable tokens fold to lowercase like SAS name resolution", {
   # Mapped functions keep their R target's spelling; only bare names fold.
   expect_identical(tr("UPCASE(Sex)"), "toupper(sex)")
 })
+
+test_that("SAS comparison chains expand to implied AND before missing handling", {
+  h <- new.env(parent = globalenv())
+  sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), h)
+  h$x <- c(NA, -1, 0, 2, 5, 6)
+  evaluate <- function(text) eval(parse(text = wrap_missing(tr(text), "x")), h)
+  expect_identical(evaluate("0 < x <= 5"), c(FALSE, FALSE, FALSE, TRUE, TRUE, FALSE))
+  expect_identical(evaluate(". < x < 5"), c(FALSE, TRUE, TRUE, TRUE, FALSE, FALSE))
+  expect_identical(evaluate("not (0 < x <= 5)"), c(TRUE, TRUE, TRUE, FALSE, FALSE, TRUE))
+  expect_identical(evaluate("0 < x <= 5 and x ne 2"), c(FALSE, FALSE, FALSE, FALSE, TRUE, FALSE))
+  expect_identical(evaluate("2 = x = 2"), c(FALSE, FALSE, FALSE, TRUE, FALSE, FALSE))
+  expect_identical(evaluate("0 ne x ne 5"), c(TRUE, TRUE, FALSE, TRUE, FALSE, TRUE))
+  # Explicit source parentheses intentionally compare a Boolean with a number.
+  expect_true(all(evaluate("(0 < x) < 5")))
+  expect_identical(tr('upcase("a < b < c") = "A < B < C"'), 'toupper("a < b < c") == "A < B < C"')
+  expect_error(tr("0 < x < 5 < 10"), class = "sas2r_expr_parse_error")
+  expect_error(tr("not 0 < x <= 5"), class = "sas2r_expr_parse_error")
+  expect_error(tr("0 < x in (1, 2)"), class = "sas2r_expr_parse_error")
+})
+
+test_that("chained DATA-step conditions no longer require an LLM fallback", {
+  statements <- sas_units(sas_statements("data out; set work.input; if 0 < x <= 5 then flag=1; run;"))
+  ir <- parse_data_step(statements[statements$unit_type == "data_step", ])
+  emitted <- emit_data_step(ir)
+  expect_false(any(grepl("expr_parse|unsupported", emitted$flags)))
+  expect_no_error(parse(text = emitted$code))
+  h <- new.env(parent = globalenv())
+  sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), h)
+  h$lib_read <- function(...) data.frame(x = c(-1, 2, 6, NA))
+  h$lib_write <- function(...) invisible(NULL)
+  eval(parse(text = emitted$code), h)
+  expect_equal(h$out$flag, c(NA, 1, NA, NA))
+  # New flag is reset for each row, not carried forward from x=2.
+  project <- list(statements = transform(statements, file = "main.sas"))
+  expect_match(paste(source_comparison_context(project, "main"), collapse = "\n"), "implied AND", fixed = TRUE)
+  lint <- lint_r_code("flag <- (0 < x) <= 5")
+  expect_true(any(lint$kind == "nested_comparison" & lint$level == "warn"))
+  expect_false(any(lint$kind == "nested_comparison" & lint$level == "error"))
+})

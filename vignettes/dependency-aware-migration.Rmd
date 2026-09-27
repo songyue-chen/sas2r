@@ -297,7 +297,8 @@ separately from the comparison result.
 `sas2r` keeps reference comparison answers out of translation and repair agents:
 
 - **Transmission Boundary**: Prompts carry SAS and R code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports stay in local reports and the public comparison API. Project tool overrides cannot restore comparison access for these agents.
-- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` adds capped candidate-output summaries and previews to execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. The default `code_only` omits these previews; source code and error messages may themselves contain data.
+- **Agent evidence**: Both `code_only` and the legacy `bounded` policy exclude dataset row numbers, subject identifiers, key values, cell values, previews and raw runtime messages. Focused mismatch investigation receives approved aggregate patterns; fixers and candidate acceptance remain reference-blind. Source code and comments are not automatically de-identified.
+- **Human diagnosis**: The start page shows dataset dimensions, row alignment, shared column names, measured differences, repair decisions and numbered source/code links. AI explanations reuse current reviews or make one bounded request under the existing usage budget; `migration.report_diagnosis: off` disables them. Advice cannot change validation or feed repairs. A 100% row-alignment result does not mean equal values.
 - **Data Residency**: All dataset reading, execution, and comparison run in local R processes on your infrastructure; confirm your configured endpoint meets your organization's data residency obligations before enabling an LLM provider.
 
 ## Parity Disclaimer

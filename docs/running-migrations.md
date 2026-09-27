@@ -624,6 +624,68 @@ parallel execution remains opt-in until the paired live comparison is completed.
 See the [migration evidence guide](migration-evidence.md#parallel-coordination-and-evidence)
 for requested/effective concurrency, process logs and interrupted-work accounting.
 
+## Understand discrepancies and repairs
+
+Open `START_HERE.html` for the dataset comparison table before the detailed
+warnings. It lists dimensions, paired rows, common column names and the variables
+that differ. A 100% row-alignment result does not mean that the values match;
+column-name overlap does not imply equal types or contents. Missing measurements
+are shown as unavailable. Expanded sections link code and local comparison details,
+show reference paths when known, and distinguish measured differences from possible
+causes. The repair table shows retained candidates, rejected patches and their reasons.
+
+Component fixes check local source translation. Bundle fixes follow the related
+program/macro chain, fix the earliest source-grounded error and rerun in a fresh
+shared WORK session. They can retrieve indirect dependencies and downstream code.
+Declared order is separate from code relevance; the latest preceding WORK writer
+matters. Unknown dynamic writers stay unknown, with possible predecessors identified.
+For deferred permanent reads, agents can inspect earlier programs that wrote the
+same bound dataset and their called macros. These remain possible writers, not
+proof of which program produced the runtime data.
+
+When a runtime error identifies an upstream macro function, bundle repair first
+reviews that macro together with its callers. The executor records bare function
+names from the live call stack, without argument values, to find the innermost
+uniquely matched selected macro. This also covers errors in arithmetic, dplyr and
+local helpers within a macro. A source-grounded macro finding enters the existing
+repair queue; a faithful macro leaves the caller
+eligible instead. The execution record still names the program that stopped.
+This review uses the configured review budget and reuses an unchanged review
+request. Missing, dynamic or ambiguous callees retain the ordinary caller path;
+deterministic non-translation failures keep their existing classification.
+An unavailable extra review or a finding without source grounding preserves the
+earlier evidence for unchanged code; its outcome remains in the attempt
+diagnostics. Macros already awaiting a repair enter the existing queue without
+another callee review.
+
+Translations must not invent metadata or punctuation restrictions. A rejection
+needs source-required behavior or a demonstrated limitation, and a source-required
+failure must remain visible. The advisory `regex_bracket_escape` notice identifies
+literal base R patterns where backslash-letter escapes inside brackets can match
+letters instead of control characters or character classes. It does not automatically
+reject code or authorize removing a source check. Dynamic patterns and engine
+settings need source review.
+
+SAS code, its called macros/includes and execution order remain authoritative.
+References can guide investigation but cannot supply replacement business logic.
+If R faithfully follows SAS while a reference differs, the comparison remains
+failed and the programmer should investigate source, input and reference versions.
+
+```yaml
+migration:
+  report_diagnosis: auto  # or off; default auto
+```
+
+Measured summaries need no AI. Optional report explanations reuse current code
+reviews or make at most one additional request through the reviewer adapter under
+the existing usage budget. The run announces that code and aggregate patterns may
+be sent to the provider. No LLM, no remaining budget or a failed diagnosis leaves
+measurements available and reports the limitation. Explanations remain advisory,
+never change status and never feed another agent. The focused reviewer gets
+categorical mismatch patterns without exact counts or offsets; fixers and candidate acceptance get source/code
+findings without reference targets. Neither evidence policy permits record previews
+or raw runtime logs. See [model privacy](model-privacy.md).
+
 ## Code style and packages
 
 Translated code is written for maintenance as well as fidelity. Two
@@ -634,7 +696,13 @@ dialect: tidyverse
 allowlist: [base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate, tibble, haven, stats, utils, graphics, grDevices, grid]
 ```
 
-`dialect: tidyverse` is the default. The translator, macro translator and fixer
+`dialect: tidyverse` is the default. Ordinary transformations now explicitly prefer
+`|>` with `dplyr::mutate`, `filter`, `select`, `rename`, `group_by` and `summarise`
+when faithful to SAS. Fixers preserve that style but do not restyle unrelated code.
+For additional preferences, put a plain-language style instruction in `dialect`,
+for example `dialect: "Prefer dplyr pipelines and explicit namespace calls; preserve SAS helpers"`.
+
+The translator, macro translator and fixer
 receive a style block naming the allowlisted, installed tidyverse packages to
 prefer and what each is for: dplyr for DATA step logic and PROC SQL, tidyr for
 PROC TRANSPOSE, ggplot2 for figures, stringr for character functions, forcats

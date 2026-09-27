@@ -362,10 +362,10 @@ sas2r_libname_clear <- function(libref) {
   invisible(NULL)
 }
 
-sas2r_libref_stop <- function(cls, msg) {
+sas2r_libref_stop <- function(cls, msg, identifiers = character()) {
   stop(structure(
     class = c(cls, "sas2r_libref_error", "error", "condition"),
-    list(message = msg, call = NULL)
+    list(message = msg, call = NULL, identifiers = identifiers)
   ))
 }
 
@@ -379,7 +379,7 @@ sas2r_lib_entry <- function(libref) {
   reg <- registry[[tolower(libref)]]
   if (is.null(reg)) {
     sas2r_libref_stop("sas2r_unknown_libref",
-                      paste0("Unknown libref: ", libref))
+                      paste0("Unknown libref: ", libref), identifiers = libref)
   }
   reg
 }
@@ -491,28 +491,28 @@ lib_read <- function(libref, member, ...) {
   # feedback instead of being silently reinterpreted.
   canonical <- 'lib_read("lib", "member")'
   if (length(list(...)) > 0L) {
-    stop("lib_read(): dataset=/table= aliases are not accepted; use ",
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_read_arguments", paste0("lib_read(): dataset=/table= aliases are not accepted; use ",
+         canonical))
   }
   if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
       is.na(libref) || !nzchar(libref)) {
-    stop("lib_read() takes a libref and a member as two separate strings; use ",
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_read_arguments", paste0("lib_read() takes a libref and a member as two separate strings; use ",
+         canonical))
   }
   # The combined form lives in the libref position only. The member is left
   # to sas2r_lib_member_path(), whose path-traversal refusal must keep its
   # own classed condition rather than be pre-empted here.
   if (grepl(".", libref, fixed = TRUE)) {
-    stop('lib_read() does not accept combined "lib.member" references; use ',
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_read_arguments", paste0('lib_read() does not accept combined "lib.member" references; use ',
+         canonical))
   }
   if (missing(member)) {
-    stop("lib_read() needs both a libref and a member; use ", canonical,
-         ' -- a single-argument call no longer defaults to "work".', call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_read_arguments", paste0("lib_read() needs both a libref and a member; use ", canonical,
+         ' -- a single-argument call no longer defaults to "work".'))
   }
   if (!is.character(member) || length(member) != 1L || is.na(member) || !nzchar(member)) {
-    stop("lib_read() takes a libref and a member as two separate strings; use ",
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_read_arguments", paste0("lib_read() takes a libref and a member as two separate strings; use ",
+         canonical))
   }
   reg <- sas2r_lib_entry(libref)
   w_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
@@ -529,9 +529,10 @@ lib_read <- function(libref, member, ...) {
     env <- sas2r_registry_env()
     root <- get0(".sas2r_execution_root", envir = env, inherits = FALSE,
                  ifnotfound = getwd())
-    stop("Dataset not found: ", libref, ".", member,
-         "\nSearched: ", paste(searched, collapse = ", "),
-         "\nExecution root: ", root, call. = FALSE)
+    sas2r_libref_stop("sas2r_dataset_not_found",
+      paste0("Dataset not found: ", libref, ".", member,
+        "\nSearched: ", paste(searched, collapse = ", "), "\nExecution root: ", root),
+      identifiers = paste(libref, member, sep = "."))
   }
   df <- if (target$type == "rds") readRDS(target$path)
   else if (target$type == "sas7bdat") haven::read_sas(target$path)
@@ -545,47 +546,47 @@ lib_write <- function(df, libref, member, ...) {
   # See lib_read() for why the other forms are rejected rather than absorbed.
   canonical <- 'lib_write(df, "lib", "member")'
   if (length(list(...)) > 0L) {
-    stop("lib_write(): dataset=/table= aliases are not accepted; use ",
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write(): dataset=/table= aliases are not accepted; use ",
+         canonical))
   }
   if (missing(df)) {
-    stop("lib_write() takes the data frame first; use ", canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the data frame first; use ", canonical))
   }
   if (is.character(df)) {
-    stop("lib_write() takes the data frame first; use ", canonical,
-         ' -- the first argument was the string "', df[1], '".', call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the data frame first; use ", canonical,
+         ' -- the first argument was the string "', df[1], '".'))
   }
   if (missing(libref) || !is.character(libref) || length(libref) != 1L ||
       is.na(libref) || !nzchar(libref)) {
-    stop("lib_write() takes the libref and member as two separate strings after ",
-         "the data frame; use ", canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the libref and member as two separate strings after ",
+         "the data frame; use ", canonical))
   }
   if (grepl(".", libref, fixed = TRUE)) {
-    stop('lib_write() does not accept combined "lib.member" references; use ',
-         canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0('lib_write() does not accept combined "lib.member" references; use ',
+         canonical))
   }
   if (missing(member)) {
-    stop("lib_write() needs both a libref and a member; use ", canonical,
-         ' -- a two-argument call no longer defaults to "work".', call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() needs both a libref and a member; use ", canonical,
+         ' -- a two-argument call no longer defaults to "work".'))
   }
   if (!is.character(member) || length(member) != 1L || is.na(member) || !nzchar(member)) {
-    stop("lib_write() takes the libref and member as two separate strings after ",
-         "the data frame; use ", canonical, call. = FALSE)
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the libref and member as two separate strings after ",
+         "the data frame; use ", canonical))
   }
   reg <- sas2r_lib_entry(libref)
   w_dir <- if (!is.null(reg$write_path)) reg$write_path else reg$path
   if (is.null(w_dir) || is.na(w_dir) || !nzchar(w_dir)) {
-    stop("No writable path configured for libref: ", libref, call. = FALSE)
+    sas2r_libref_stop("sas2r_library_unavailable", paste0("No writable path configured for libref: ", libref), identifiers = libref)
   }
   dir.create(w_dir, showWarnings = FALSE, recursive = TRUE)
   fmt <- if (is.null(reg$write)) "rds" else reg$write
   df <- as.data.frame(df)
-  if (!fmt %in% c("rds", "xpt")) stop("Unsupported write format: ", fmt, call. = FALSE)
+  if (!fmt %in% c("rds", "xpt")) sas2r_libref_stop("sas2r_write_format", paste0("Unsupported write format: ", fmt))
   target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
   pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
   on.exit(unlink(pending), add = TRUE)
   if (fmt == "rds") saveRDS(df, pending) else haven::write_xpt(df, pending)
-  if (!file.rename(pending, target)) stop("Could not replace dataset member: ", target, call. = FALSE)
+  if (!file.rename(pending, target)) sas2r_libref_stop("sas2r_library_unavailable", paste0("Could not replace dataset member: ", target))
   invisible(df)
 }
 

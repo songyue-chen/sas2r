@@ -77,7 +77,10 @@ test_that("identical executor observations reuse review across fresh attempt loc
   expect_false(grepl(first$stdout_path, prompt, fixed = TRUE))
   # Full execution records retain useful locations for people and the fixer.
   expect_true(file.exists(read_attempt_record(first$attempt_dir)$stderr_path))
-  for (change in list(list(condition = list(message = "different error")),
+  context$execution <- utils::modifyList(second, list(condition = list(message = "different unclassified error")))
+  # A raw message is local-only; unchanged source and approved facts reuse review.
+  expect_true(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
+  for (change in list(list(condition = list(class = c("subscriptOutOfBoundsError", "error", "condition"))),
                      list(exit_status = 2L))) {
     context$execution <- utils::modifyList(second, change)
     expect_false(isTRUE(review_program_revision(rev, context, reviewer, history = again$history)$reused))
@@ -121,7 +124,9 @@ test_that("bundle fix and full review receive integration focus without referenc
     request <- worker$requests()[[1]]
     prompt <- request_task_text(request)
     expect_match(prompt, "Bundle integration focus", fixed = TRUE)
-    expect_match(prompt, "translation fault p01", fixed = TRUE)
+    expect_match(prompt, "unclassified_error", fixed = TRUE)
+    if (identical(worker, fx$state$reviewer_llm))
+      expect_false(grepl("translation fault p01", prompt, fixed = TRUE))
     expect_match(prompt, "full semantic review", fixed = TRUE)
     expect_false(grepl("SECRET_REFERENCE", prompt))
     expect_false("read_comparison_report" %in% names(request$tools))

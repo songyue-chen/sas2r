@@ -207,6 +207,7 @@ llm:
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
+#   report_diagnosis: auto  # off disables advisory report explanations
 #   # Optional: all root programs, in one shared WORK session; paths relative here.
 #   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
 #   # List each root once; startup, called macros and includes keep their roles.
@@ -231,10 +232,11 @@ dialect: tidyverse
 # ------------------------------------------------------------------------------
 # 9. Data & Model Privacy Boundary
 # ------------------------------------------------------------------------------
-# Models receive SAS/R code, input schema metadata, helper interfaces and errors.
-# Reference comparison reports and digests stay local, outside authoring tools.
-# agent_evidence = "bounded" permits capped candidate-output previews, which may
-# contain row numbers, key values, cell values and subject identifiers.
-# The default "code_only" omits previews; code and errors may still contain data.
+# Models receive SAS/R code, schema names, helper interfaces and structured errors.
+# No dataset row numbers, subject identifiers, key values, cell values,
+# previews or raw runtime messages under code_only or legacy bounded.
+# Focused investigation/report diagnosis may receive aggregate mismatch patterns;
+# fixers and candidate acceptance receive source-grounded evidence only.
+# Complete comparison details stay local. Source code is not de-identified.
 # Dataset generation and comparison run locally. Confirm your model endpoint
 # meets your organization's data residency and governance requirements.

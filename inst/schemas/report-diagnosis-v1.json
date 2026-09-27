@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Advisory migration report explanation",
+  "type": "object",
+  "properties": {
+    "explanations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "component_id": {
+            "type": "string"
+          },
+          "sas_evidence": {
+            "type": "string"
+          },
+          "r_evidence": {
+            "type": "string"
+          },
+          "possible_cause": {
+            "type": "string"
+          },
+          "next_action": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "component_id",
+          "sas_evidence",
+          "r_evidence",
+          "possible_cause",
+          "next_action"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "explanations"
+  ],
+  "additionalProperties": false
+}

@@ -38,7 +38,9 @@
 #' @param outputs Optional character vector or list specifying output contract overrides.
 #'   Reference paths supplied here resolve from the calling working directory.
 #'   Output overrides are retained in the returned project for reuse.
-#' @param agent_evidence Agent evidence policy ("code_only" or "bounded"). Defaults to "code_only".
+#' @param agent_evidence Agent evidence policy ("code_only" or legacy "bounded").
+#'   Both exclude record previews and raw runtime messages. Focused investigation
+#'   may receive approved aggregate patterns; fixers remain reference-blind.
 #' @param llm Optional `sas2r_llm` instance for agent-assisted translation, review, and repair.
 #'   For parallel execution, a custom adapter needs a self-contained, zero-argument
 #'   function in `attr(llm, "parallel_factory")` that returns a fresh adapter.
@@ -347,6 +349,9 @@ sas_translate <- function(
   if (!isTRUE(keep_raw_attempts)) {
     prune_rejected_attempt_outputs(paths, keep_raw = FALSE)
   }
+
+  # Report advice is terminal output: it cannot influence repair or status.
+  state$report_diagnosis <- migration_report_diagnosis(state)
 
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()

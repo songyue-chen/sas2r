@@ -34,17 +34,36 @@ direct_component_dependencies <- function(graph, component_id, downstream = FALS
   eligible <- nodes[!nodes$type %in% c("external_input", "final_output", "unresolved_dependency"), ]
   from <- if (downstream) "to" else "from"
   to <- if (downstream) "from" else "to"
-  incoming <- graph$edges[graph$edges[[to]] %in% eligible$node_id[eligible$component_id == component_id], ]
+  incoming <- graph$edges[graph$edges$type != "execution_before" &
+    graph$edges[[to]] %in% eligible$node_id[eligible$component_id == component_id], ]
   result <- eligible$component_id[match(incoming[[from]], eligible$node_id)]
   sort(setdiff(unique(result[!is.na(result)]), component_id), method = "radix")
+}
+
+# Follow semantic relationships in one direction. Execution-order edges only
+# schedule programs; they do not make every earlier program relevant code.
+context_component_dependencies <- function(graph, component_id, downstream = FALSE) {
+  seen <- component_id
+  pending <- component_id
+  while (length(pending)) {
+    next_ids <- unique(unlist(lapply(pending, function(cid)
+      direct_component_dependencies(graph, cid, downstream)), use.names = FALSE))
+    pending <- setdiff(next_ids, seen)
+    seen <- c(seen, pending)
+  }
+  sort(setdiff(seen, component_id), method = "radix")
 }
 
 # Code-only context shared by all three roles. Neighbour identifiers come from
 # the graph; R bodies come from the selected revision snapshot, never outputs.
 agent_dependency_bodies <- function(project, component_id, selected_revisions = list(),
                                     graph = project$graph, requested = NULL) {
-  ids <- unique(c(direct_component_dependencies(graph, component_id),
-    direct_component_dependencies(graph, component_id, downstream = TRUE)))
+  ids <- unique(c(context_component_dependencies(graph, component_id),
+    context_component_dependencies(graph, component_id, downstream = TRUE)))
+  possible <- component_read_context(graph, component_id)$possible
+  ids <- unique(c(ids, possible, unlist(lapply(possible, function(cid)
+    context_component_dependencies(graph, cid)), use.names = FALSE)))
+  ids <- setdiff(ids, component_id)
   if (!is.null(requested)) ids <- intersect(ids, requested)
   stats::setNames(lapply(ids, function(cid) list(
     sas = component_source_text(graph, cid),
@@ -58,7 +77,7 @@ read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
     ctx$selected_revisions %||% list(), ctx$graph %||% ctx$project$graph,
     requested = component_id)
   body <- bodies[[component_id]]
-  if (is.null(body)) return(list(error = "not_a_direct_dependency_or_consumer"))
+  if (is.null(body)) return(list(error = "not_a_related_dependency_or_consumer"))
   code <- body[[language]]
   size <- nchar(code)
   end <- min(size, offset + 11999L)
@@ -73,9 +92,11 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
                                  body_limit = 6000L, packet_limit = 24000L,
                                  config = project$config %||% list(), priority_dependencies = character(),
                                  include_consumers = FALSE) {
-  deps <- direct_component_dependencies(graph, component_id)
-  consumers <- if (isTRUE(include_consumers)) direct_component_dependencies(graph, component_id, downstream = TRUE) else character()
-  deps <- unique(c(deps, consumers))
+  deps <- context_component_dependencies(graph, component_id)
+  read_context <- component_read_context(graph, component_id)
+  source_comparisons <- source_comparison_context(project, component_id)
+  consumers <- if (isTRUE(include_consumers)) context_component_dependencies(graph, component_id, downstream = TRUE) else character()
+  deps <- unique(c(deps, consumers, read_context$possible))
   environment <- agent_package_facts(config$allowlist)
   projections <- source_projection_context(project, component_id)
   while (length(projections) && nchar(paste(render_source_projections(projections), collapse = "\n")) >
@@ -88,10 +109,12 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
   called <- vapply(bodies, function(b) b$symbol %in% calls, logical(1))
   cited <- deps %in% priority_dependencies | vapply(bodies, function(b)
     b$symbol %in% priority_dependencies, logical(1))
-  deps <- deps[order(!cited, !called, seq_along(deps))]
+  deps <- deps[order(!cited, !called, !deps %in% read_context$possible,
+    match(deps, read_context$possible, nomatch = length(deps) + 1L), seq_along(deps))]
   bodies <- bodies[deps]
   scope <- migration_hash(list(component_id, macro, available_bodies, environment, projections, consumers,
-    policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
+    reads = read_context, source_comparisons = source_comparisons,
+    execution_order = graph$execution_order, policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
   facts <- list()
   add_fact <- function(kind, subject, value) {
     id <- paste0("fact_", substr(migration_hash(list(scope, kind, subject)), 1L, 16L))
@@ -105,15 +128,29 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
       environment$r_version, "; ", paste(names(versions),
         ifelse(versions == "unknown", "not installed", versions), collapse = ", "), "."),
     "Runtime helper signatures, behavior and limits are in the shared authoritative helper reference.",
-    "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Direct dependencies and consumers are readable.",
-    if (length(additional_consumers)) paste("Additional downstream consumer IDs:", paste(utils::head(additional_consumers, 32L), collapse = ", ")),
-    render_source_projections(projections))
+    "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Related transitive dependencies and consumers are readable; execution-only predecessors are excluded.",
+    if (length(additional_consumers)) paste("Additional related code IDs:", paste(utils::head(additional_consumers, 32L), collapse = ", ")),
+    render_source_projections(projections),
+    "Source/order summaries below are bounded excerpts; omitted facts remain unknown.",
+    paste("Declared execution order:", substr(paste(graph$execution_order %||% character(), collapse = " -> "), 1L, 2000L)),
+    "WORK reads use the latest preceding write. Selected writers below are static source/order facts; unknown writers and possible preceding programs do not establish runtime provenance.",
+    substr(as.character(jsonlite::toJSON(read_context$reads, auto_unbox = TRUE, null = "null")), 1L, 4000L),
+    substr(paste(source_comparisons, collapse = "\n"), 1L, 2000L))
   params <- macro$parameters
   if (!is.null(params) && nrow(params)) for (i in utils::head(seq_len(nrow(params)), 32L)) {
     if (!identical(params$default_status[i], "unresolved")) next
     id <- add_fact("macro_default", params$name[i], "unresolved_source_expansion")
     text <- c(text, paste(id, "macro_default", params$name[i],
       "needs source expansion/context; an omitted argument is not an established literal default."))
+  }
+  # New source/order facts share the existing packet ceiling. Reserve room for
+  # dependency labels and the omission notice even for a small requested packet.
+  intro <- paste(text, collapse = "\n")
+  intro_limit <- max(0L, packet_limit - 200L)
+  if (nchar(intro) > intro_limit) {
+    notice <- "\n[Source context truncated; omitted facts remain unknown. Use paged code retrieval.]"
+    text <- substr(paste0(substr(intro, 1L, max(0L, intro_limit - nchar(notice))), notice), 1L, intro_limit)
+    facts <- Filter(function(f) grepl(f$id, text, fixed = TRUE), facts)
   }
   # Reserve all labels before allocating body text, including labels for
   # dependencies whose bodies no longer fit. They still need explicit status.
@@ -123,7 +160,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     paste(id, "dependency_body", body$symbol, "component", cid,
       "selected revision", body$revision,
       "available characters: sas", nchar(body$sas), "r", nchar(body$r),
-      if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency")
+      if (cid %in% read_context$possible) "possible preceding writer (unconfirmed)" else
+        if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency")
   }, character(1))
   label_budget <- max(0L, packet_limit - nchar(paste(text, collapse = "\n")) - 150L)
   included <- deps[cumsum(nchar(headers) + 80L) <= label_budget]
@@ -155,7 +193,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     add_fact("dependency_body", body$symbol, if (complete) "complete" else "missing_or_truncated")
     text <- c(text, headers[[cid]], pieces)
   }
-  if (length(deps) > length(included)) text <- c(text, "Additional direct dependencies omitted by packet limit; no behavior is implied.")
+  if (length(deps) > length(included)) text <- c(text, "Additional dependencies omitted by packet limit; no behavior is implied.")
   identity <- migration_hash(list(scope, allocation_policy = "paired-v1", selected = included))
   text <- sub(scope, identity, text, fixed = TRUE)
   facts <- lapply(facts, function(f) { f$scope <- identity; f })

@@ -128,7 +128,9 @@ test_that("actual subprocess diagnostics reach the fixer without data previews",
   fixer <- recording_fixer(function(req) valid_program_fix_response(evidence_ids = req$evidence_ids))
   fix_program_revision(fx$revision, smoke = smoke, llm = fixer)
   prompt <- request_task_text(fixer$requests()[[1]])
-  expect_match(prompt, "missing required column: outcome", fixed = TRUE)
+  expect_match(prompt, "unclassified_error", fixed = TRUE)
+  # The raw subprocess message is not present in this supplied revision.
+  expect_false(grepl("missing required column: outcome", prompt, fixed = TRUE))
   expect_match(prompt, smoke$stderr_path, fixed = TRUE)
   expect_match(prompt, '"exit_status": 1', fixed = TRUE)
   expect_match(prompt, '"output_previews":', fixed = TRUE)

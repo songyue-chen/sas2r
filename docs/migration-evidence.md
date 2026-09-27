@@ -67,11 +67,11 @@ It remains selected until a new attempt meets the replacement criteria; repair
 and usage limits still apply. A regression against an attempt selected within
 the current pipeline stops further repair and retains that attempt.
 
-Under the default `agent_evidence = "code_only"` policy, agents receive source code, inferred schemas, project paths and execution diagnostics without explicit dataset previews. Code, comments and errors can still contain patient values or identifiers; this policy does not de-identify them. See the [full privacy explanation](model-privacy.md).
+Agents receive source code, inferred schemas, project paths and structured technical execution facts. Neither evidence policy sends dataset previews or raw runtime messages. Source code and comments are not automatically de-identified. See the [full privacy explanation](model-privacy.md).
 
 ### Source-based repair and selection
 
-A reference mismatch alone does not authorize code changes. It can request one focused source review per unchanged component context, grouping affected outputs. The reviewer traces SAS and R operations without reference counts, values or mismatch-variable hints. An unavailable investigation consumes its opportunity; reference-only changes and resume do not reset it. Actual source, input, dependency or reviewer-context changes may justify a new review within finite budgets.
+A reference mismatch alone does not authorize code changes. It can request one focused source review per unchanged component context, grouping affected outputs. The focused reviewer receives relative row/column sizes, column/type differences and categorical mismatch patterns, but no exact counts, record values or offset targets. Its findings must identify conflicting SAS/R operations. An unavailable investigation consumes its opportunity for that context. Resume or a reference-path change alone does not reset it; changed approved patterns or actual source, input, dependency or reviewer context may justify a new investigation within finite budgets. Fixers and candidate acceptance remain reference-blind.
 
 An inconclusive extra review is recorded separately and retains any completed review of the unchanged code. Only an actionable material source finding updates its active review evidence. An unexplained upstream reference mismatch does not establish that downstream differences are inherited: independent source review remains available within the same per-component cap. Known upstream repair findings take precedence.
 
@@ -198,7 +198,7 @@ translation quality.
 `sas2r` enforces a declared, bounded boundary between local data and remote language models:
 
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
-- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. These may contain row numbers, key values, cell values and subject identifiers. `code_only` omits these previews; source code and error messages may themselves contain data. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
+- **Agent evidence**: Both `code_only` and the legacy `bounded` policy exclude dataset row numbers, subject identifiers, key values, cell values, previews and raw runtime messages. Focused investigation receives only approved aggregate patterns; fixers and candidate acceptance remain reference-blind. Full comparisons stay local. See [model privacy](model-privacy.md).
 - **Data Residency**: Dataset reading, execution and comparison run locally; confirm your configured endpoint meets your enterprise data residency obligations.
 
 ## Regulatory Review & Validation Disclaimer

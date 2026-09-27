@@ -85,6 +85,21 @@ no_call_site_graph <- function() {
   list(schema_version = "1", nodes = nodes, edges = edges)
 }
 
+test_that("smoke failures retain live function names without argument values", {
+  fx <- callable_macro_fixture()
+  fx$selected$macro_def <- paste(c(
+    'calc_total <- function(a, b) {',
+    '  .check <- function(x) stop(x)',
+    '  .check(a)', '}'), collapse = "\n")
+  fx$selected$caller_prog <- 'calc_total(paste0("record", "_value_", 77123), 2)'
+  plan <- build_program_smoke_plan(fx$graph, "caller_prog", fx$selected)
+  smoke <- run_program_smoke(plan, fx$runtime, fx$attempt_dir)
+  expect_false(smoke$passed)
+  expect_identical(smoke$condition$message, "record_value_77123")
+  expect_true(all(c("calc_total", ".check") %in% smoke$condition$call_names))
+  expect_false(any(grepl("record|77123|paste0", smoke$condition$call_names)))
+})
+
 test_that("program smoke executes a real dependency prefix or defers honestly", {
   fx <- callable_macro_fixture()
   plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
@@ -174,7 +189,7 @@ test_that("program smoke passes when code executes successfully", {
   expect_true(file.exists(smoke$stderr_path))
 })
 
-test_that("bounded_agent_diagnostics respects code_only, bounded, and full policies", {
+test_that("all diagnostic policies preserve local logs without sending their contents", {
   fx <- callable_macro_fixture()
   plan <- build_program_smoke_plan(fx$graph, "macro_def", fx$selected)
   smoke <- run_program_smoke(plan, fx$runtime, fx$attempt_dir)
@@ -183,7 +198,8 @@ test_that("bounded_agent_diagnostics respects code_only, bounded, and full polic
   diag_code <- bounded_agent_diagnostics(smoke, policy = "code_only")
   expect_identical(diag_code$policy, "code_only")
   expect_true(!is.null(diag_code$condition_message))
-  expect_match(diag_code$condition_message, "first defect")
+  expect_identical(diag_code$condition_kind, "unclassified_error")
+  expect_false(grepl("first defect", diag_code$condition_message, fixed = TRUE))
   expect_true(!is.null(diag_code$log_excerpt))
   expect_null(diag_code$dataset_rows)
   expect_null(diag_code$output_previews)
@@ -192,7 +208,7 @@ test_that("bounded_agent_diagnostics respects code_only, bounded, and full polic
   diag_bounded <- bounded_agent_diagnostics(smoke, policy = "bounded")
   expect_identical(diag_bounded$policy, "bounded")
   expect_true(!is.null(diag_bounded$condition_message))
-  expect_true(!is.null(diag_bounded$output_metadata))
+  expect_null(diag_bounded$output_metadata)
 
   # full policy
   diag_full <- bounded_agent_diagnostics(smoke, policy = "full")
@@ -287,11 +303,11 @@ test_that("program smoke handles multi-step dependency prefix and work outputs",
   expect_true("my_output.rds" %in% names(smoke$output_hashes))
   expect_identical(smoke$executed_component_ids, c("comp_setup", "comp_mid", "comp_target"))
 
-  # Test bounded diagnostics preview of generated dataset
+  # Legacy policy labels no longer authorize opening a generated dataset.
   diag_bounded <- bounded_agent_diagnostics(smoke, policy = "bounded")
-  expect_true("my_output" %in% names(diag_bounded$output_metadata))
-  expect_identical(diag_bounded$output_metadata$my_output$row_count, 3L)
-  expect_identical(diag_bounded$output_metadata$my_output$columns, c("id", "result"))
+  expect_null(diag_bounded$output_metadata)
+  expect_null(diag_bounded$output_previews)
+  expect_identical(diag_bounded$log_excerpt, character())
 })
 
 test_that("build_program_smoke_plan and run_program_smoke validate arguments", {
@@ -304,7 +320,7 @@ test_that("execution call locations are formatted once and absent calls remain a
   for (value in list(call, 'stop("boom")')) {
     execution <- list(condition = list(message = "boom", call = value))
     for (policy in c("code_only", "bounded")) {
-      expect_identical(bounded_agent_diagnostics(execution, policy)$source_location, 'stop("boom")')
+      expect_identical(bounded_agent_diagnostics(execution, policy, source_code = 'stop("boom")')$source_location, 'stop("boom")')
     }
   }
   for (value in list(NULL, "NULL", "", NA_character_)) {

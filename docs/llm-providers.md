@@ -685,8 +685,8 @@ both can multiply attempts and spending.
 `sas2r` maintains a declared, bounded boundary between local data and remote language models:
 
 - **Default Model Evidence**: Source and generated code, input schema metadata, helper interfaces and execution diagnostics. Reference comparison summaries, digests, values and reports do not enter code-writing requests or tools; project overrides cannot restore the comparison tool.
-- **Bounded Candidate Evidence**: `agent_evidence = "bounded"` permits capped candidate-output summaries and previews in execution diagnostics. `code_only` omits these previews. Complete reference comparisons remain in local reports and the public comparison API. Source inputs retain their input role even when also used as references.
+- **Agent evidence**: Both `code_only` and the legacy `bounded` policy exclude dataset row numbers, subject identifiers, key values, cell values, previews and raw runtime messages. Focused investigation receives only approved aggregate patterns; fixers and candidate acceptance remain reference-blind. Full comparisons stay local. See [model privacy](model-privacy.md).
 - **Data Residency**: All dataset reading, writing, and execution take place in local R processes on your infrastructure; confirm the endpoint you configure meets your enterprise data residency obligations.
 
-Source code, comments and errors can themselves contain patient information.
+Source code and comments can themselves contain patient information. Raw runtime messages stay local.
 `code_only` does not de-identify them. Read the [full privacy guidance](model-privacy.md).

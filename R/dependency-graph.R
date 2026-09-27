@@ -328,6 +328,7 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
   # dataset identity as preflight. Superseded writers are not dependencies.
   node_ids <- unlist(unit_node_map, use.names = FALSE)[match(lineage$unit_id, units$unit_id)]
   used_writers <- integer()
+  read_facts <- list()
   reads <- producers$events %||% lapply(which(lineage$role == "reads"), function(row)
     list(row = row, writer = producers$writer[row]))
   for (event in reads) {
@@ -353,6 +354,17 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
       from = provider_id, to = consumer_id, type = "reads_dataset",
       resolution = if (is.na(writer)) "external" else "resolved",
       source_file = lineage$file[row], line = lineage$line[row], detail = ds)
+    read_facts[[length(read_facts) + 1L]] <- list(
+      component_id = component_ids[match(consumer_id, unlist(unit_node_map, use.names = FALSE))],
+      dataset = ds, source_file = lineage$file[row], line = lineage$line[row],
+      writer_status = if (!is.na(writer)) "selected_by_source_order" else
+        if (isTRUE(event$deferred)) "deferred" else
+          if (startsWith(ds, "work.")) {
+            if (any(lineage$unit_id == lineage$unit_id[row] & lineage$dataset == ds &
+                    lineage$role == "creates" & lineage$proc %in% "append")) "created_if_missing" else "no_producer"
+          } else "external",
+      writer = if (!is.na(writer)) component_ids[match(provider_id, unlist(unit_node_map, use.names = FALSE))] else NULL,
+      possible_preceding_programs = unique(component_ids[match(event$possible_writers %||% character(), units$file)]))
   }
 
   ordered_files <- producers$execution_files
@@ -579,7 +591,8 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
   result <- list(
     schema_version = "1",
     nodes = nodes_df,
-    edges = edges_df
+    edges = edges_df,
+    dataset_reads = read_facts
   )
   if (!is.null(ordered_files)) result$execution_order <- vapply(ordered_files, function(file)
     component_ids[match(file, units$file)], "", USE.NAMES = FALSE)
