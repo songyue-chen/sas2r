@@ -4,9 +4,10 @@
 # All sections are optional. Relative paths are resolved relative to the
 # directory containing this configuration file.
 #
-# The SAS programs to translate are not listed here: pass their folder (or one
-# .sas file) as the path argument of sas_preflight() and sas_translate();
-# recursive = TRUE includes subfolders. Called macro folders go under macros.
+# Select the SAS source scope with the path argument of sas_preflight() and
+# sas_translate(): a folder or one .sas file; recursive = TRUE includes subfolders.
+# migration.execution_order can order all roots in that scope; it does not select
+# or add source files. Called macro folders go under macros.
 #
 # SOURCE AUTHORITY & PRECEDENCE:
 # 1. An accessible point-of-use source LIBNAME in SAS code is authoritative.
@@ -109,7 +110,8 @@ environment:
 # completion nor accuracy. Claude's full allowance is conditional: see below.
 # Startup verifies explicit settings and sets their effective capabilities.
 # Unsupported, ignored, or unverified settings stop the run before agent work.
-# Probe calls share the run budget; sas_preflight() stays offline.
+# Probe calls share the run budget. sas_preflight(diagnose = "off") stays offline.
+# Default preflight diagnosis can send bounded SAS source/paths/findings to this LLM.
 # Do not add temperature/top_p overrides to these reasoning profiles.
 # Cloud/local providers and connector limitations: docs/llm-providers.md.
 # timeout_seconds bounds each HTTP transfer attempt, not inactivity: receiving
@@ -198,15 +200,21 @@ llm:
 #                                       # >= llm.max_output_tokens when both are set
 
 # ------------------------------------------------------------------------------
-# 8. Concurrent Translation Workflows
+# 8. Execution Order and Concurrent Translation Workflows
 # ------------------------------------------------------------------------------
 # Set with the sas_translate() argument max_parallel_translations (default 1).
 # It counts whole program-or-macro workflows, including their review and repair.
 # Start at 1; compare with 2 after checking outputs, quota and memory.
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
+#   # Optional: all root programs, in one shared WORK session; paths relative here.
+#   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
+#   # List each root once; startup, called macros and includes keep their roles.
+#   # Reads use the latest preceding write. A future writer cannot supply a read.
+#   # Ordered roots translate sequentially; helper workflows may still overlap.
+#   # Smoke checks replay the whole preceding session for each root.
 #   max_parallel_translations: 1
-#   smoke_timeout: 60       # seconds for a component smoke check
+#   smoke_timeout: 60       # seconds per replayed root in explicit-order mode; total otherwise
 #   bundle_timeout: 120     # seconds for the whole study; increase for larger data
 
 # ------------------------------------------------------------------------------

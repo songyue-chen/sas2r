@@ -359,14 +359,26 @@ normalize_migration_config <- function(config) {
       cli::cli_abort("{name} must be a finite positive number of seconds", class = "sas2r_config_error")
     value
   }
-  list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
+  order <- config[["execution_order"]]
+  if (!is.null(order)) {
+    if (is.list(order) && is.null(names(order)) &&
+        all(vapply(order, is_scalar_character, logical(1)))) order <- unlist(order, use.names = FALSE)
+    if (!is.character(order) || !length(order) || anyNA(order) || any(!nzchar(trimws(order))))
+      cli::cli_abort("migration.execution_order must be a non-empty list of program paths",
+                     class = "sas2r_config_error")
+  }
+  out <- list(max_parallel_translations = normalize_max_parallel_translations(config[["max_parallel_translations"]]),
        smoke_timeout = timeout("smoke_timeout", 60), bundle_timeout = timeout("bundle_timeout", 120))
+  if (!is.null(order)) out$execution_order <- unname(order)
+  out
 }
 
 normalize_project_config <- function(config, root) {
   assert_exact_names(config, PROJECT_CONFIG_KEYS)
   root <- include_normalize_path(root)
   config$migration <- normalize_migration_config(config$migration)
+  if (!is.null(config$migration$execution_order))
+    config$migration$execution_order <- config_anchor_paths(config$migration$execution_order, root)
   config$libraries <- normalize_library_entries(config$libraries, root)
   for (field in c("macro_search_path", "include_roots", "autoexec")) {
     config[[field]] <- config_anchor_paths(config[[field]], root)
@@ -408,8 +420,8 @@ find_config <- function(start = ".") {
 #' primary supported case: built-in defaults let a bare SAS script be
 #' scanned, assessed, and translated with no setup at all.
 #' Every relative configured path -- `libraries`, `macros.search_path`,
-#' `includes.roots`, `environment.autoexec`, and output/comparison reference
-#' paths -- is resolved against the
+#' `includes.roots`, `environment.autoexec`, `migration.execution_order`, and
+#' output/comparison reference paths -- is resolved against the
 #' configuration file's own directory, never against the working directory:
 #' those roots reach `%include` occurrence identity, which must not depend on
 #' where the scan was launched from. One anchoring rule governs these paths, so a
@@ -424,10 +436,19 @@ find_config <- function(start = ".") {
 #' @details YAML boolean settings use `true` and `false`. Tokens such as `N`,
 #'   `Y`, `yes`, and `no` remain strings, preserving clinical metadata keys.
 #'   Quote string metadata values that look numeric, such as SAS format `"8."`.
+#'
+#'   `migration.execution_order` optionally lists every executable root program
+#'   exactly once, in its intended order within one shared WORK session. Reads
+#'   use the latest preceding completed write; a later writer cannot supply an
+#'   earlier read. List roots only: called macros, startup and included files
+#'   retain their existing roles. The list orders the scanned source scope;
+#'   `path` and `recursive` in [sas_preflight()] or [sas_translate()] still select
+#'   that scope. Omitting the order retains inferred dependencies. Changing the
+#'   order on a previously scanned project requires rescanning the sources.
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
-#'   `include_roots`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
+#'   `include_roots`, `migration`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
 #' @examples
 #' # Read the demo project configuration shipped with the package.
 #' cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",
@@ -486,6 +507,8 @@ sas_config <- function(path = NULL, start = ".") {
     source = src,
     raw = raw
   ), class = "sas2r_config")
+  if (!is.null(config$migration$execution_order))
+    config$migration$execution_order <- config_rebase_paths(config$migration$execution_order, src)
   # Style keys are optional scalars: present only when the file sets them, so
   # a file without them keeps the package defaults and the same field names.
   if (!is.null(raw$dialect)) config$dialect <- as.character(unlist(raw$dialect))[1L]

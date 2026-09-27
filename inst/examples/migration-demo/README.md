@@ -19,7 +19,7 @@ demo <- tempfile("sas2r-migration-demo-")
 dir.create(demo)
 file.copy(list.files(installed_demo, full.names = TRUE), demo, recursive = TRUE)
 source(file.path(demo, "make-input.R"), chdir = TRUE)
-check <- sas_preflight(demo)
+check <- sas_preflight(demo, diagnose = "off")
 check$inputs
 check$readiness
 ```
@@ -33,7 +33,9 @@ Rscript /path/to/migration-demo/make-input.R /path/to/migration-demo/data
 ```
 
 Running without a destination from another directory fails with setup guidance.
-Preflight makes no model calls. With data prepared it can still identify source
+This explicit offline preflight makes no model calls. The default `diagnose = "auto"`
+can send bounded SAS statements, paths and findings to a configured LLM. With
+data prepared it can still identify source
 features needing translation/review; this is expected, not a missing API key.
 
 ## Translate and inspect

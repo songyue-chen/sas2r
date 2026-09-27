@@ -328,13 +328,18 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
   # dataset identity as preflight. Superseded writers are not dependencies.
   node_ids <- unlist(unit_node_map, use.names = FALSE)[match(lineage$unit_id, units$unit_id)]
   used_writers <- integer()
-  for (row in which(lineage$role == "reads")) {
-    consumer_id <- node_ids[row]
+  reads <- producers$events %||% lapply(which(lineage$role == "reads"), function(row)
+    list(row = row, writer = producers$writer[row]))
+  for (event in reads) {
+    row <- event$row
+    consumer_id <- if (!is.null(event$reader_root) && !is.na(event$reader_root))
+      file_first_unit_map[[event$reader_root]] else node_ids[row]
     if (is.na(consumer_id)) next
-    writer <- producers$writer[row]
+    writer <- event$writer
     ds <- lineage$dataset[row]
     if (!is.na(writer)) {
-      provider_id <- node_ids[writer]
+      provider_id <- if (!is.null(event$writer_root) && !is.na(event$writer_root))
+        file_first_unit_map[[event$writer_root]] else node_ids[writer]
       if (is.na(provider_id)) next
       used_writers <- c(used_writers, writer)
       edge_list[[length(edge_list) + 1L]] <- list(
@@ -348,6 +353,16 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
       from = provider_id, to = consumer_id, type = "reads_dataset",
       resolution = if (is.na(writer)) "external" else "resolved",
       source_file = lineage$file[row], line = lineage$line[row], detail = ds)
+  }
+
+  ordered_files <- producers$execution_files
+  if (length(ordered_files) > 1L) for (i in seq_len(length(ordered_files) - 1L)) {
+    edge_list[[length(edge_list) + 1L]] <- list(
+      from = file_first_unit_map[[ordered_files[i]]],
+      to = file_first_unit_map[[ordered_files[i + 1L]]],
+      type = "execution_before", resolution = "resolved",
+      source_file = ordered_files[i], line = NA_integer_,
+      detail = "migration.execution_order")
   }
   for (row in setdiff(which(lineage$role == "creates"), used_writers)) {
     provider_id <- node_ids[row]
@@ -561,11 +576,14 @@ build_dependency_graph <- function(project, output_contracts = NULL, producers =
     )
   }
 
-  list(
+  result <- list(
     schema_version = "1",
     nodes = nodes_df,
     edges = edges_df
   )
+  if (!is.null(ordered_files)) result$execution_order <- vapply(ordered_files, function(file)
+    component_ids[match(file, units$file)], "", USE.NAMES = FALSE)
+  result
 }
 
 #' Compute stable dependency schedule
@@ -969,6 +987,8 @@ dataset_producers <- function(project, effective = effective_librefs(project)) {
   }
   paths[startsWith(lineage$dataset, "work.")] <- "<session work>"
   identity <- paste(lineage$dataset, paths, sep = "\r")
+  if (!is.null(project$config$migration$execution_order))
+    return(ordered_dataset_producers(project, paths, identity))
   # Unknown bindings retain name-based ordering, but no usable path. Preflight
   # still reports them as unresolved; a guessed dependency is not availability.
   candidates <- which(lineage$role == "creates")

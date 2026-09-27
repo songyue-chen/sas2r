@@ -208,6 +208,11 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   if (length(norm_env) > 0L) {
     program_files <- program_files[!include_scan_key(program_files) %in% norm_env]
   }
+  declared_order <- config$migration$execution_order
+  if (length(declared_order)) {
+    rank <- match(include_scan_key(program_files), include_scan_key(declared_order))
+    program_files <- program_files[order(rank, seq_along(program_files), na.last = TRUE)]
+  }
 
   # Each queued item carries the occurrence that pulled it in, so an included
   # file always knows its include site (NA for roots, which have none).

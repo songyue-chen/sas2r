@@ -49,6 +49,7 @@ translation_pipeline_coverage <- function(project, graph, schedule) {
     components = list(), execution_roles = list(), translation_positions = list(),
     bundle_positions = list(), status = character(), reason = character())
   list(status = if (length(issues)) "invalid" else "complete", sources = sources,
+    order_source = if (is.null(graph$execution_order)) "inferred" else "configured",
     execution_order = bundle$execution_order, issues = issues,
     cycle_components = schedule$component_id[schedule$group_kind == "cycle"])
 }
@@ -66,6 +67,7 @@ pipeline_coverage_lines <- function(pipeline) {
     pipeline$status, sum(pipeline$sources$status == "covered"),
     sum(pipeline$sources$status == "excluded"), sum(pipeline$sources$status == "unplanned")),
     paste(if (length(pipeline$cycle_components)) "Provisional main-program draft order (dependency cycle):" else
+      if (identical(pipeline$order_source, "configured")) "Main programs in configured execution order:" else
       "Main programs in dependency order:", if (length(pipeline$execution_order))
       paste(pipeline$execution_order, collapse = " -> ") else "(none)"))
 }

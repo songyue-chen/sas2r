@@ -13,8 +13,9 @@ test_that("conflicting YAML settings stop preflight and translation before work"
   # Loading config alone remains valid: a function argument can override it.
   expect_identical(sas_config(config)$migration$max_parallel_translations, 4L)
   for (entry in list(sas_preflight, sas_translate)) {
-    error <- tryCatch(entry(root, config = config, out_dir = file.path(root, "out")),
-                      error = identity)
+    args <- list(path = root, config = config, out_dir = file.path(root, "out"))
+    if (identical(entry, sas_preflight)) args$diagnose <- "off"
+    error <- tryCatch(do.call(entry, args), error = identity)
     expect_s3_class(error, "sas2r_parallel_config_error")
     message <- conditionMessage(error)
     for (text in c("migration.max_parallel_translations: 4", "llm.max_tries: 2",
@@ -31,17 +32,17 @@ test_that("preflight accepts both valid alternatives and honors concurrency over
   writeLines("data out; x=1; run;", file.path(root, "p.sas"))
   cfg <- list(migration = list(max_parallel_translations = 4L),
     llm = list(provider = "deepseek", model = "offline", max_tries = 2L))
-  expect_identical(sas_preflight(root, config = cfg,
+  expect_identical(sas_preflight(root, diagnose = "off", config = cfg,
     max_parallel_translations = 1L)$max_parallel_translations, 1L)
   cfg$migration$max_parallel_translations <- 1L
-  expect_identical(sas_preflight(root, config = cfg)$max_parallel_translations, 1L)
-  expect_error(sas_preflight(root, config = cfg, max_parallel_translations = 4L),
+  expect_identical(sas_preflight(root, diagnose = "off", config = cfg)$max_parallel_translations, 1L)
+  expect_error(sas_preflight(root, diagnose = "off", config = cfg, max_parallel_translations = 4L),
     class = "sas2r_parallel_config_error")
   cfg$llm$max_tries <- 1L
-  expect_identical(sas_preflight(root, config = cfg,
+  expect_identical(sas_preflight(root, diagnose = "off", config = cfg,
     max_parallel_translations = 4L)$max_parallel_translations, 4L)
   cfg$llm$max_tries <- NULL
-  expect_identical(sas_preflight(root, config = cfg,
+  expect_identical(sas_preflight(root, diagnose = "off", config = cfg,
     max_parallel_translations = 4L)$max_parallel_translations, 4L)
 })
 
