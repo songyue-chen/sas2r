@@ -1,5 +1,5 @@
-The current source version is 0.5.6. The notes below describe the previously
-submitted 0.5.5 archive; they are historical evidence, not validation of 0.5.6.
+The current source version is 0.5.7. The notes below describe the previously
+submitted 0.5.5 archive; they are historical evidence, not validation of 0.5.7.
 
 ## Previous submission: sas2r 0.5.5
 

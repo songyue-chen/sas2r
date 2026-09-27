@@ -1,4 +1,4 @@
-# sas2r (development version)
+# sas2r 0.5.7
 
 - Trace related code through indirect macro, include and dataset dependencies;
   exclude scheduling-only edges and distinguish selected WORK writers from
