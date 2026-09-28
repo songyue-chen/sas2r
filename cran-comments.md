@@ -1,23 +1,24 @@
-The current source version is 0.5.8. The notes below describe the previously
-submitted 0.5.5 archive; they are historical evidence, not validation of 0.5.8.
+## Resubmission: sas2r 0.5.8
 
-## Previous submission: sas2r 0.5.5
+This resubmission addresses the manual review of 0.5.5, which reported an overall
+check time of 14 minutes, including 12 minutes for tests.
 
-This was the first CRAN submission of sas2r, version 0.5.5.
+The submitted source contains a smaller representative test suite. Extended
+integration matrices and repeated translation, review, repair and startup
+scenarios remain on the public `develop` branch and run in CI against the installed
+release package. The submission tests cover package features using small synthetic
+fixtures, including actual translation, execution, repair, resume, exports,
+parallel execution, reference comparison and source-faithful repair. Selecting the
+smaller suite does not change package implementation.
 
-The package provides dependency-aware translation of SAS programs to R, execution of generated code, comparison with supplied reference datasets, and reporting of unresolved translation and validation findings. Rule-based translation works offline without a SAS installation. Optional language-model translation, review, and repair use a user-configured provider through ellmer and may require an account and API credentials.
+Examples, vignettes and tests require neither a SAS installation nor provider
+credentials or paid API calls. Checks use at most two translation workers.
 
-The source archive was built with R 4.6.1 and checked with R CMD check --as-cran on Linux. The same archive passed win-builder checks on Windows R-release 4.6.1 and R-devel (2026-09-25 r90590), including PDF and HTML manuals:
+Version 0.5.8 also includes the documented fixes since 0.5.5: source-based repair
+and diagnosis improvements, consistent autoexec library initialization across
+preflight/execution/export, and reduced repeated scanner work. See NEWS.md.
 
-R-release: https://win-builder.r-project.org/JFdR234d25IO/
-R-devel: https://win-builder.r-project.org/zb9rqkmw4Rnj/
+## Validation
 
-All three checks report 0 errors, 0 warnings, and one NOTE:
-
-    New submission
-
-Checks of the same source revision also passed on Linux R-devel, Windows and macOS R 4.6.1, and the declared minimum R 4.1.3. The full installed-package suite and offline ellmer integration checks pass in CI.
-
-Examples, vignettes, and automated tests require neither a SAS installation nor provider credentials or paid API calls. Checks use at most two translation workers. Extended process-heavy scenarios run in CI; the CRAN test profile retains unit tests and representative translation, execution, review, repair, resume, dependency, and output-validation coverage.
-
-On win-builder, the complete checks took 938 seconds (R-release) and 924 seconds (R-devel). The test suites took 810 and 789 seconds elapsed, respectively; both reported 8,862 passing assertions, no failures, and no test warnings. The longest individual example took under two seconds.
+Final archive check results and measured timings will be recorded here before
+submission. CRAN acceptance has not been received.

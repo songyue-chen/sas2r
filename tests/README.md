@@ -1,38 +1,39 @@
-# Development tests
+# Release tests
 
-This complete suite is maintained on `develop`. The release branch `main` ships
-a smaller suite and records the development commit used for full validation in
-`.github/development-test-ref`. See [the release workflow](../docs/releasing.md).
+`main` contains the smaller test suite shipped to CRAN. `develop` retains the
+complete suite, including the scenarios omitted here. This selection is made in
+the release branch: no `skip_on_cran()` calls or `NOT_CRAN` switches select tests
+in this directory.
 
-## Existing test profiles
+## Retained coverage
 
-CRAN checks use `NOT_CRAN=false`. They retain unit tests and representative
-public translation, review, repair, resume, export, dependency, output-validation,
-and one/two-worker execution cases. They require no SAS installation, provider
-credentials, paid requests, or fixture-package installation.
+| Feature | Representative coverage retained on main |
+| --- | --- |
+| Scanning, includes, macros and dependencies | Scanner, macro, include, graph, schedule and execution-order tests; called-macro translation and execution |
+| Deterministic translation and runtime helpers | Transpilation, expressions, DATA steps, SQL, merge, means, frequency, source populations and helper semantics |
+| Public workflows | Translation results, disabled execution, code retrieval, export, reports, resume and the dataset/TLF migration demo |
+| Agent translation, review and repair | Generation, review/fix, smoke checks, immediate repair, fresh bundle reruns and runtime macro attribution |
+| Source-faithful repair | The complete `test-source-faithful-repair.R`, seeded semantic defects and cross-component diagnosis; reference matches cannot authorize source regressions |
+| Parallel work and incomplete inputs | Configuration and real two-worker execution with missing inputs; partial execution and readiness/status gates |
+| Autoexec and library bindings | Static scope/order, CLEAR and fallback checks; direct, included/CLEAR and conditional-fallback inputs through smoke, bundle and moved exports; representative dynamic-name advisories |
+| Outputs and evidence | Dataset comparisons, rows, cells, alignment, output contracts, TLF requirements, QC, lineage/evidence levels and reports |
+| Providers and accounting | Offline provider/configuration contracts, request handling, usage ledger, privacy and budget checks |
 
-The full independent-program concurrency and public acceptance matrices run in CI.
-Smaller worker, dependency, failure, repair and output-gate cases remain in the
-CRAN profile. Full CI uses four programs across one to four workers with exact
-request/cost accounting, real overlap and complete output-value assertions. Symbolic-link scenarios skip only when the OS cannot create
-the link; worker tests wait for actual request admission before interruption.
+The extended acceptance, concurrency and accumulated integration regression
+matrices remain on `develop`. Main also selects fewer repeated repair, review,
+macro-attribution and startup scenarios. Retained tests preserve their correctness
+assertions; fixtures use synthetic data and no paid provider calls.
 
-The `installed-tests` and `no-sas-tarball` CI jobs use `NOT_CRAN=true` and run
-the complete test suite against installed packages. This includes:
+## Full release validation
 
-- The public acceptance and relative-path execution matrices.
-- The extended public-workflow regression suite in `test-review-first-public.R`.
-- Twenty-component repair and repeated-helper-edit scenarios.
-- Complete late-dependency retrieval across all agent roles.
-- Parallel crash/resume and helper-rollback integrations.
-- Environment-observation execution and dependency reassessment after resume.
-- All one-to-four-worker combinations and the full drafting/execution cross-product.
-- The bundled ellmer installation fixture.
+`.github/development-test-ref` records the development commit containing the
+complete tests for this release. Both installed-package CI jobs install the release
+package first, restore that commit's `tests/` into the CI checkout, and run the full
+suite with `NOT_CRAN=true`. Thus later changes on `develop` cannot silently change
+an older release's validation. The CRAN check jobs run the smaller shipped suite.
 
-These process-heavy scenarios are marked with `skip_on_cran()` to leave check-time
-margin on CRAN. Smaller tests for the same mechanisms remain in the CRAN profile;
-the extended cases remain required CI gates. Mock transport retries retain their
-attempts and assertions but use a zero backoff because no external service is called.
+Run this suite from the repository's `tests/` directory against an installed package
+with `Rscript -e 'testthat::test_check("sas2r")'`. Check the built archive with
+`NOT_CRAN=false R CMD check --as-cran sas2r_0.5.8.tar.gz`.
 
-Run all source-tree tests with `NOT_CRAN=true Rscript -e 'testthat::test_local()'`.
-Check a built archive with `NOT_CRAN=false R CMD check --as-cran sas2r_*.tar.gz`.
+See [the release workflow](../docs/releasing.md) before preparing the next version.

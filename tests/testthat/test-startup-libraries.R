@@ -21,15 +21,12 @@ startup_library_llm <- function(code) recording_reviewer(function(req) {
 
 test_that("autoexec-only inputs work in preflight, smoke, bundle and exported execution", {
   skip_if_not_installed("dplyr")
-  expected_values <- c(direct = 1, include = 2, clear = 3, unrelated_control = 1,
-    conditional_fallback = 3, shadow_config = 1, unused_conditional = 1,
-    superseded_conditional = 1, program_clear = 3, conditional_clear = 3,
-    conditional_unavailable = 3)
+  expected_values <- c(direct = 1, clear = 3, conditional_fallback = 3)
   for (scenario in names(expected_values)) {
     root <- startup_library_fixture()
     config <- list()
     expected <- unname(expected_values[scenario])
-    if (scenario %in% c("include", "clear")) {
+    if (scenario == "clear") {
       writeLines("libname input 'second';", file.path(root, "binding.inc"))
       writeLines(c("libname input 'first';", "%include 'binding.inc';"),
         file.path(root, "autoexec.sas"))
@@ -39,39 +36,12 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
       config <- list(autoexec = file.path(root, c("autoexec.sas", "clear.sas")),
         libraries = list(input = file.path(root, "fallback")))
     }
-    if (scenario == "unrelated_control") {
-      writeLines(c("%if &sysscp = WIN %then %do; options nonumber; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
     if (scenario == "conditional_fallback") {
       writeLines("%if &switch %then %do; libname input 'first'; %end;",
         file.path(root, "autoexec.sas"))
     }
-    if (scenario == "unused_conditional") {
-      writeLines(c("%if &switch %then %do; libname scratch 'second'; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "superseded_conditional") {
-      writeLines(c("%if &switch %then %do; libname input 'second'; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "program_clear") {
-      writeLines(c("libname input clear;", "data work.result; set input.source; run;"),
-        file.path(root, "main.sas"))
-    }
-    if (scenario == "conditional_clear") {
-      writeLines(c("libname input 'first';",
-        "%if &switch %then %do; libname input clear; %end;"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "conditional_unavailable") {
-      writeLines("%if &switch %then %do; libname input 'unavailable'; %end;",
-        file.path(root, "autoexec.sas"))
-    }
-    if (scenario %in% c("unused_conditional", "superseded_conditional"))
-      config$libraries <- list(input = file.path(root, "first"))
-    advisory <- scenario %in% c("conditional_fallback", "shadow_config", "conditional_clear",
-      "conditional_unavailable")
-    if (advisory || scenario == "program_clear")
+    advisory <- scenario == "conditional_fallback"
+    if (advisory)
       config$libraries <- list(input = file.path(root, "fallback"))
     input <- file.path(root, c("first", "second", "fallback")[expected], "source.sas7bdat")
     before <- cli::hash_file_sha256(input)
@@ -337,39 +307,21 @@ test_that("startup shadow warnings follow reads and writes through includes and 
   }
 })
 
-test_that("startup advisories survive macro, dynamic-name and library-level execution", {
+test_that("startup advisories survive dynamic-name execution", {
   skip_if_not_installed("dplyr")
   for (conditional in c(FALSE, TRUE)) {
-    for (use in c("macro", "autocall", "dynamic", "copy")) {
+    for (use in "dynamic") {
       root <- startup_library_fixture()
       main <- file.path(root, "main.sas")
       if (conditional) writeLines(
         "%if &switch %then %do; libname input 'first'; %end;", file.path(root, "autoexec.sas"))
       config <- list(libraries = list(input = file.path(root, "fallback")))
-      macro <- c("%macro readit;", "data work.result; set input.source; run;", "%mend;")
-      macro_r <- "readit <- function() lib_write(lib_read('input', 'source'), 'work', 'result')"
-      if (use == "macro") {
-        writeLines(c(macro, "%readit;"), main)
-        main_r <- paste(macro_r, "readit()", sep = "\n")
-      } else if (use == "autocall") {
-        dir.create(file.path(root, "macros"))
-        writeLines(macro, file.path(root, "macros", "readit.sas"))
-        config$macro_search_path <- file.path(root, "macros")
-        writeLines("%readit;", main)
-        main_r <- "readit()"
-      } else if (use == "dynamic") {
-        writeLines(c("%let inlib = input;", "data work.result; set &inlib..source; run;"), main)
-        main_r <- "lib_write(lib_read('input', 'source'), 'work', 'result')"
-      } else {
-        writeLines(c("proc copy in=input out=work; run;",
-          "data work.result; set work.source; run;"), main)
-        main_r <- paste("for (m in lib_members('input')) lib_write(lib_read('input', m), 'work', m)",
-          "lib_write(lib_read('work', 'source'), 'work', 'result')", sep = "\n")
-      }
+      writeLines(c("%let inlib = input;", "data work.result; set &inlib..source; run;"), main)
+      main_r <- "lib_write(lib_read('input', 'source'), 'work', 'result')"
       kind <- if (conditional) "autoexec_bindings_deferred" else "autoexec_library_shadows_config"
       check <- sas_preflight(main, config = config, diagnose = "off")
       expect_true(kind %in% check$findings$kind, info = use)
-      code_for <- function(id) if (identical(id, "main")) main_r else macro_r
+      code_for <- function(id) main_r
       llm <- recording_reviewer(function(req) {
         if (identical(req$role, "reviewer")) return(good_review())
         if (identical(req$role, "fixer")) return(valid_program_fix_response(code = code_for(req$component_id)))

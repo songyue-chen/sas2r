@@ -1,8 +1,8 @@
-test_that("missing data and source permit drafts in sequential and parallel runs", {
+test_that("missing data and source preserve drafts while independent parallel work executes", {
   skip_if_not_installed("dplyr")
-  for (workers in c(1L, 2L)) for (execute in c(FALSE, TRUE)) {
-    # CRAN covers serial drafting and parallel execution; CI runs the full cross-product.
-    if (!identical(Sys.getenv("NOT_CRAN"), "true") && execute != (workers == 2L)) next
+  {
+    workers <- 2L
+    execute <- TRUE
     fx <- repair_workflow_fixture(n = 3L, failures = integer(), chain = TRUE)
     writeLines(c('%include "unavailable.sas";', '%unavailable_macro();',
       'data work.out1; set missing.input; retain marker 1; run;'), file.path(fx$root, "p01.sas"))
@@ -38,51 +38,6 @@ test_that("missing data and source permit drafts in sequential and parallel runs
   }
 })
 
-test_that("new worker findings preserve upstream and downstream drafts and their warnings", {
-  for (workers in c(1L, 2L)) {
-    fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
-    state <- fx$state
-    state$selected_revisions$p01$contract$discovered_dependencies <- "work.unknown"
-    llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 0)
-    state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
-    state$parallel <- resolve_parallel_execution(state, workers)
-    result <- run_program_pipeline(state, execute = TRUE, max_program_repair_rounds = 0L)
-    expect_identical(result$component_stage$p01, "settled")
-    expect_identical(result$component_stage$p02, "settled")
-    expect_setequal(result$diagnostics$dependency_findings$p01$affected, fx$ids)
-    expect_match(paste(component_readiness_context(result$project, "p02"), collapse = "\n"), "work.unknown", fixed = TRUE)
-    expect_true(result$selected_revisions$p02$smoke$deferred)
-  }
-})
-
-test_that("cycles allow provisional drafts without executing an invented order", {
-  for (workers in c(1L, 2L)) {
-    root <- withr::local_tempdir()
-    writeLines('data work.a; set work.b; run;', file.path(root, "a.sas"))
-    writeLines('data work.b; set work.a; run;', file.path(root, "b.sas"))
-    result <- sas_translate(root, out_dir = file.path(root, "out"),
-      llm = parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 0),
-      max_parallel_translations = workers, max_program_repair_rounds = 0L)
-    expect_identical(result$status, "needs_review")
-    expect_setequal(names(result$component_evidence), c("a", "b"))
-    expect_match(paste(result$diagnostics$execution_deferred, collapse = " "), "Dependency cycle")
-  }
-})
-
-test_that("a sequential component exception preserves its draft and continues other work", {
-  fx <- repair_workflow_fixture(n = 2L, failures = integer())
-  original <- check_component_revision
-  local_mocked_bindings(check_component_revision = function(state, component_id) {
-    if (component_id == "p01") stop("component check crashed")
-    original(state, component_id)
-  })
-  result <- run_program_pipeline(fx$state, execute = FALSE)
-  expect_identical(result$component_stage$p01, "failed")
-  expect_identical(result$component_stage$p02, "settled")
-  expect_true(file.exists(result$selected_revisions$p01$r_path))
-  expect_match(result$diagnostics$component_failures$p01$reason, "component check crashed")
-})
-
 test_that("critical errors still stop instead of being downgraded to component warnings", {
   fx <- repair_workflow_fixture(n = 2L, failures = integer())
   local_mocked_bindings(check_component_revision = function(...) stop(llm_settings_error("provider unavailable")))
@@ -90,38 +45,6 @@ test_that("critical errors still stop instead of being downgraded to component w
   empty <- withr::local_tempdir()
   writeLines("/* no active source */", file.path(empty, "empty.sas"))
   expect_error(sas_translate(empty, out_dir = file.path(empty, "out")), class = "sas2r_no_translation_source")
-})
-
-test_that("a critical provider setup failure remains terminal across process workers", {
-  fx <- repair_workflow_fixture(n = 2L, failures = integer())
-  state <- fx$state
-  llm <- parallel_test_llm(list(reviewer = valid_program_review_response()), delay = 0)
-  # A source reference retains its whole file, even when the factory is tiny.
-  # This used to exceed process-start argument/environment limits on Linux.
-  factory <- eval(parse(text = c(paste0("# ", strrep("source metadata ", 70000L)),
-    'function() { stop(llm_settings_error("provider configuration unusable")) }'), keep.source = TRUE))
-  environment(factory) <- asNamespace("sas2r")
-  attr(llm, "parallel_factory") <- factory
-  state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
-  state$parallel <- resolve_parallel_execution(state, 2L)
-  expect_error(run_program_pipeline(state, execute = FALSE), class = "sas2r_parallel_worker_error")
-  expect_identical(state$usage_budget$request_count, 0L)
-})
-
-test_that("a critical late stop reports and preserves completed public-run code", {
-  fx <- repair_workflow_fixture(n = 2L, failures = integer())
-  original <- check_component_revision
-  local_mocked_bindings(check_component_revision = function(state, component_id) {
-    if (component_id == "p02") stop(llm_settings_error("provider no longer available"))
-    original(state, component_id)
-  })
-  out <- file.path(fx$root, "run")
-  expect_error(sas_translate(fx$root, out_dir = out, config = fx$state$config, execute = FALSE),
-    class = "sas2r_llm_settings_error")
-  report <- read_json_record(list.files(out, pattern = "^report.json$", recursive = TRUE, full.names = TRUE)[1L])
-  expect_match(report$outcome$stages$Translation, "2 of 2", fixed = TRUE)
-  expect_identical(report$outcome$title, "Run incomplete - failed")
-  expect_true(any(grepl("programs/p01.R$", list.files(out, recursive = TRUE))))
 })
 
 test_that("missing references do not select code-only mode or prevent execution", {

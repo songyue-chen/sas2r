@@ -149,57 +149,6 @@ previously_selected_bundle_fixture <- function(missing_output = FALSE, envir = p
   fx
 }
 
-test_that("a prior run's execution success does not prevent repairs in a new run", {
-  fx <- previously_selected_bundle_fixture(missing_output = TRUE)
-  expect_true(fx$prior$attempt$passed)
-  expect_identical(fx$prior$status, "blocked")
-  prior_dir <- fx$prior$selected_attempt$attempt_dir
-  retained <- character()
-  events <- character()
-  result <- withCallingHandlers(
-    run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L),
-    sas2r_bundle_event = function(e) {
-      events <<- c(events, e$event)
-      if (identical(e$event, "bundle_fixer_invoked")) {
-        retained <<- c(retained, jsonlite::read_json(fx$state$paths$selected)$attempt_dir)
-      }
-    }
-  )
-
-  # Selection is scoped to the current run; old output artifacts remain intact.
-  expect_length(retained, 2L)
-  expect_false(any(retained == prior_dir))
-  expect_false("bundle_early_stop" %in% events)
-  expect_false("bundle_previous_selection_retained" %in% events)
-  expect_identical(fx$get_fixer_calls(), 2L)
-  expect_identical(result$attempts$sequence, 1:3)
-  expect_identical(result$status, "migration_ready")
-  expect_identical(result$selected_attempt$attempt_dir, result$attempt$attempt_dir)
-  expect_identical(jsonlite::read_json(fx$state$paths$selected)$attempt_dir,
-    result$attempt$attempt_dir)
-  expect_false(identical(result$attempt$attempt_dir, prior_dir))
-  expect_true(file.exists(file.path(prior_dir, "adam", "out1.rds")))
-  expect_equal(readRDS(file.path(result$attempt$attempt_dir, "adam", "out2.rds")),
-    data.frame(USUBJID = c("01", "02"), TRT = c("A", "B"), DERIVED = 1))
-})
-
-test_that("older artifacts stay intact while a new run records its own failed selection", {
-  fx <- previously_selected_bundle_fixture()
-  # The manually constructed prior revisions have no independent review evidence.
-  expect_identical(fx$prior$status, "needs_review")
-  prior_record <- file.path(fx$prior$attempt$attempt_dir, "record.json")
-  record_before <- readLines(prior_record)
-  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
-
-  expect_identical(fx$get_fixer_calls(), 1L)
-  expect_identical(result$attempts$sequence, 1:2)
-  expect_identical(result$current_run_status, "blocked")
-  expect_identical(result$status_reason, "max_bundle_repair_rounds_reached")
-  expect_identical(result$selected_attempt$run_id, fx$state$paths$run_id)
-  expect_identical(readLines(prior_record), record_before)
-  expect_true(file.exists(file.path(fx$prior$attempt$attempt_dir, "adam", "out2.rds")))
-})
-
 test_that("an unsupported assertion does not authorize a regressive patch", {
   fx <- sequential_bundle_defects_fixture()
   # Start with prog_a working, prog_b working, but out2 fails an assertion
@@ -231,96 +180,6 @@ test_that("an unsupported assertion does not authorize a regressive patch", {
   expect_identical(result$selected_revisions$prog_b$r_code, fx$fixed_r_code_b)
   expect_length(fx$state$fixer_llm$requests(), 0L)
 
-})
-
-test_that("no-op identical patch stops bundle repair early", {
-  fx <- sequential_bundle_defects_fixture()
-  # Fixer returns identical buggy code
-  fx$state$fixer_llm <- recording_fixer(function(context) {
-    valid_program_fix_response(
-      code = fx$state$selected_revisions$prog_a$r_code,
-      diagnosis = "No changes made",
-      summary = "Identical code",
-      evidence_ids = c("bundle_attempt_001")
-    )
-  })
-
-  result <- run_bundle_pipeline(
-    fx$state, max_bundle_repair_rounds = 2L, execute = TRUE
-  )
-
-  expect_identical(result$attempts$sequence, 1L)
-  expect_identical(result$status, "blocked")
-})
-
-test_that("helper snapshot patch invalidates closures and re-reviews before rerun", {
-  fx <- sequential_bundle_defects_fixture()
-  helper_patch_content <- "# patched helper\nsas_custom_helper <- function(x) x\n"
-
-  fx$state$fixer_llm <- recording_fixer(function(context) {
-    valid_program_fix_response(
-      code = fx$fixed_r_code_a,
-      diagnosis = "Patched helper and prog_a",
-      summary = "Updated helper snapshot",
-      evidence_ids = c("bundle_attempt_001"),
-      bundle_helper_patch = list(
-        path = "sas2r-helpers.R",
-        content = helper_patch_content,
-        reason = "missing helper function"
-      )
-    )
-  })
-
-  result <- run_bundle_pipeline(
-    fx$state, max_bundle_repair_rounds = 1L, execute = TRUE
-  )
-
-  # Check that repair record includes helper patch
-  expect_length(result$repairs, 1L)
-  expect_false(is.null(result$repairs[[1L]]$helper_patch))
-  expect_identical(result$repairs[[1L]]$helper_patch$path, "sas2r-helpers.R")
-})
-
-test_that("bundle repair loop emits structured progress events", {
-  fx <- sequential_bundle_defects_fixture()
-  events_captured <- list()
-
-  withCallingHandlers(
-    run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L, execute = TRUE),
-    sas2r_bundle_event = function(e) {
-      events_captured[[length(events_captured) + 1L]] <<- e
-    }
-  )
-
-  ev_types <- vapply(events_captured, function(e) e$event, character(1))
-  expect_true("bundle_attempt_started" %in% ev_types)
-  expect_true("bundle_attempt_completed" %in% ev_types)
-  expect_true("bundle_gate_evaluated" %in% ev_types)
-  expect_true("bundle_fixer_invoked" %in% ev_types)
-  expect_true("bundle_attempt_selected" %in% ev_types)
-})
-
-test_that("bundle repair packet honors the agent_evidence policy sas_translate stored", {
-  attempt <- list(attempt_id = "att_1", passed = TRUE)
-  assessment <- list(targets = list())
-
-  # The sas_translate() argument is stored on the state and must reach the
-  # diagnostics policy; the documented default is code_only, not bounded.
-  state_arg <- list(agent_evidence = "code_only", config = list(),
-                    selected_revisions = list())
-  packet <- build_bundle_repair_packet(state_arg, attempt, assessment)
-  expect_identical(packet$bounded_diagnostics$policy, "code_only")
-
-  # No policy anywhere: the documented default is code_only.
-  state_default <- list(config = list(), selected_revisions = list())
-  packet <- build_bundle_repair_packet(state_default, attempt, assessment)
-  expect_identical(packet$bounded_diagnostics$policy, "code_only")
-
-  # Config-level policy is honored when no argument-level policy exists.
-  state_cfg <- list(config = list(agent_evidence = "bounded"),
-                    selected_revisions = list())
-  packet <- build_bundle_repair_packet(state_cfg, attempt, assessment)
-  expect_identical(packet$bounded_diagnostics$policy, "bounded")
 })
 
 test_that("bundle repair evidence never carries raw cell values to the fixer", {
@@ -417,20 +276,4 @@ test_that("bundle execution diagnostics reach each causal fixer request", {
   expect_match(prompts[1], "Bug A in prog_a: unhandled syntax", fixed = TRUE)
   expect_match(prompts[2], "Bug B in prog_b: variable missing", fixed = TRUE)
   expect_true(all(grepl("bundle_stderr.log", prompts, fixed = TRUE)))
-})
-
-test_that("a blocked current run identifies the older bundle it leaves selected", {
-  fx <- sequential_bundle_defects_fixture()
-  previous <- complete_attempt(init_attempt(fx$state$paths, kind = "bundle", sequence = 99L), passed = TRUE)
-  select_attempt(fx$state$paths, previous, list(status = "migration_ready"))
-  lines <- character()
-  handler <- sas2r_progress_cli_handler(emit = function(line) lines <<- c(lines, line))
-  expect_no_warning(result <- withCallingHandlers(
-    run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 0L), sas2r_progress = handler))
-  expect_identical(result$current_run_status, "blocked")
-  expect_null(result$selected_attempt)
-  expect_identical(result[["attempt"]]$attempt_id, "bundle_attempt_001")
-  expect_true(any(grepl("previous selected bundle retained", lines, fixed = TRUE)))
-  expect_true(any(grepl("bundle_attempt_099", lines, fixed = TRUE)))
-  expect_identical(jsonlite::read_json(fx$state$paths$selected)$attempt_id, "bundle_attempt_099")
 })

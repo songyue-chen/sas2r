@@ -151,34 +151,6 @@ test_that("standalone macro gates reject missing zero-argument functions and top
   expect_true(check_program_revision(file, contract)$pass)
 })
 
-test_that("several called definitions in one library file stay separate in staging and agent context", {
-  root <- called_macro_fixture()
-  file <- file.path(root, "macros", "utilities.sas")
-  writeLines(c("%macro scale(value=1); %eval(&value*2); %mend;",
-               "%macro shift(value=0); %eval(&value+1); %mend;",
-               "%macro unused(); %never_needed; %mend;"), file)
-  writeLines("%shift(value=4);", file.path(root, "programs", "second.sas"))
-  p <- sas_project(file.path(root, "programs"), cache = TRUE)
-  again <- sas_project(file.path(root, "programs"), cache = TRUE)
-  expect_identical(p$units, again$units)
-  expect_setequal(called_macro_units(p)$name, c("add", "scale", "shift"))
-  out <- withr::local_tempdir()
-  baseline <- sas_transpile(p, out)
-  for (name in c("scale", "shift")) {
-    id <- paste0("macro__", name)
-    context <- build_translator_context(id, p, baseline, p$graph, p$schedule)
-    expect_match(context$sas_text, paste0("%macro ", name), fixed = TRUE)
-    expect_false(grepl("unused", context$sas_text, fixed = TRUE))
-    expect_false(grepl(paste0("%macro ", setdiff(c("scale", "shift"), name)), context$sas_text, fixed = TRUE))
-    expect_identical(component_source_text(p$graph, id), context$sas_text)
-    rows <- baseline$manifest[baseline$manifest$unit_id %in% context$comp_stmts$unit_id, ]
-    expect_identical(unique(rows$staged_file), paste0("R/macros/", name, ".R"))
-  }
-  writeLines("data work.second; x=4; run;", file.path(root, "programs", "second.sas"))
-  changed <- sas_project(file.path(root, "programs"), cache = TRUE)
-  expect_setequal(called_macro_units(changed)$name, c("add", "scale"))
-})
-
 test_that("recursive call cycles terminate discovery and remain visible", {
   root <- called_macro_fixture()
   writeLines("%macro scale(value=1); %add(value=&value); %mend;",
@@ -220,17 +192,6 @@ test_that("uncalled macro includes do not activate files and called includes def
   expect_identical(p$macros$resolution$status[p$macros$resolution$name == "scale"], "unresolved")
 })
 
-test_that("a macro without an AI translation is emitted as deferred with failing interface checks", {
-  root <- called_macro_fixture()
-  result <- sas_translate(file.path(root, "programs", "first.sas"),
-    out_dir = withr::local_tempdir(), execute = FALSE,
-    max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L)
-  expect_identical(result$status, "blocked")
-  header <- readLines(file.path(result$bundle_dir, "macros/add.R"))[1L]
-  expect_match(header, "macro_deferred", fixed = TRUE)
-  expect_false(grepl("llm_authored", header, fixed = TRUE))
-})
-
 test_that("an autocall file symlink resolves to its scanned definition", {
   root <- called_macro_fixture()
   external <- file.path(root, "shared_add.sas")
@@ -253,27 +214,6 @@ test_that("nested macro definitions are deferred instead of sharing a translatio
   expect_true("macro_nested_definition_unsupported" %in% p$findings$kind)
   expect_equal(nrow(p$called_macros), 0L)
   expect_identical(p$status, "needs_attention")
-})
-
-test_that("unavailable macros produce drafts and actionable warnings", {
-  root <- called_macro_fixture()
-  file <- file.path(root, "programs", "first.sas")
-  for (source in c("%not_in_library;", "%&name;")) {
-    writeLines(source, file)
-    result <- sas_translate(file, out_dir = file.path(root, "out"), execute = FALSE)
-    expect_identical(result$status, "blocked")
-    expect_true(length(result$diagnostics$readiness$warnings) > 0L)
-    expect_match(paste(readiness_warning_lines(result$diagnostics$readiness), collapse = " "),
-      "macros.search_path", fixed = TRUE)
-    expect_true(length(result$component_evidence) > 0L)
-  }
-  writeLines("%add(value=3);", file)
-  writeLines("%macro scale(value=1); %missing_nested; %mend;",
-             file.path(root, "macros", "utilities.sas"))
-  result <- sas_translate(file, out_dir = file.path(root, "out"), execute = FALSE)
-  expect_match(paste(readiness_warning_lines(result$diagnostics$readiness), collapse = " "),
-    "missing_nested", fixed = TRUE)
-  expect_length(list.files(file.path(root, "out"), pattern = "START_HERE.html", recursive = TRUE), 3L)
 })
 
 test_that("local macro definitions and SAS builtins need no search path", {

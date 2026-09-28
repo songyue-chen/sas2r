@@ -69,34 +69,6 @@ test_that("metadata context keeps unsupported behavior visible to the existing r
   expect_match(context, "Keep unresolved behavior in uncertainty", fixed = TRUE)
 })
 
-test_that("environment observations reach bundle execution while required outputs are checked", {
-  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
-  fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
-  source <- file.path(fx$root, "p01.sas")
-  writeLines(c('libname raw "&INPUT_LOCATION";',
-    sub("value =", "retain marker 1; value =", readLines(source), fixed = TRUE)), source)
-  translated <- sub("x$value <-", "x$marker <- 1\nx$value <-", fx$fixed$p01, fixed = TRUE)
-  observations <- c("SASHELP.VEXTFL", "DICTIONARY.EXTFILES", "INPUT_LOCATION")
-  responses <- list(
-    "translator:p01" = valid_program_translation_response(translated,
-      suspected_dependencies = observations),
-    "translator:p02" = valid_program_translation_response(fx$fixed$p02),
-    reviewer = valid_program_review_response())
-  result <- sas_translate(fx$root, out_dir = file.path(fx$root, "public-run"),
-    config = fx$state$config, llm = parallel_test_llm(responses),
-    max_parallel_translations = 2L, max_program_repair_rounds = 0L,
-    max_bundle_repair_rounds = 0L, outputs = "work.out2")
-  expect_length(result$diagnostics$dependency_findings, 0L)
-  expect_identical(result$status, "migration_ready")
-  report <- read_json_record(result$report_json_path)
-  expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED (1 attempt", fixed = TRUE)
-  expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "out2.rds"))$value, 12:14)
-  paths <- migration_paths(result$out_dir, result$run_id)
-  manifest <- read_json_record(paths$manifest)
-  contract <- read_json_record(file.path(dirname(manifest$components$p01$revision_path), "contract.json"))
-  expect_identical(contract$suspected_dependencies, observations)
-})
-
 test_that("recognizing metadata does not bypass execution failures", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   source <- file.path(fx$root, "p01.sas")
@@ -111,36 +83,6 @@ test_that("recognizing metadata does not bypass execution failures", {
   expect_identical(result$status, "blocked")
   report <- read_json_record(result$report_json_path)
   expect_match(report$outcome$stages[["Bundle execution"]], "1 failed", fixed = TRUE)
-})
-
-test_that("resume reassesses old dependency blocks and retains genuine ones", {
-  skip_on_cran() # Extended integration scenario; both installed-package CI jobs run it.
-  for (finding in c("SASHELP.VEXTFL", "work.missing")) {
-    fx <- repair_workflow_fixture(n = 2L, failures = integer(), chain = TRUE)
-    state <- fx$state
-    state$selected_revisions$p01$contract$discovered_dependencies <- finding
-    llm <- parallel_test_llm(list(reviewer = valid_program_review_response()))
-    state$translator_llm <- state$reviewer_llm <- state$fixer_llm <- llm
-    state$parallel <- resolve_parallel_execution(state, 2L)
-    state$resume_fingerprint <- migration_resume_fingerprint(state)
-    # This is how the previous scheduler recorded both kinds of finding.
-    blocked <- state
-    blocked$diagnostics$dependency_findings$p01 <- list(findings = finding,
-      affected = c("p01", "p02"), reason = "source_reconciliation_required")
-    blocked$diagnostics$execution_deferred <- finding
-    write_migration_checkpoint(blocked, state$resume_fingerprint)
-    resumed <- restore_migration_checkpoint(state, state$resume_fingerprint)
-    result <- run_program_pipeline(resumed, execute = FALSE)
-    expect_null(result$diagnostics$execution_deferred)
-    if (finding == "SASHELP.VEXTFL") {
-      expect_length(result$diagnostics$dependency_findings, 0L)
-      expect_identical(result$component_stage$p02, "settled")
-    } else {
-      expect_identical(result$component_stage$p02, "settled")
-      expect_true(length(component_execution_reasons(result, "p02")) > 0L)
-      expect_identical(result$diagnostics$dependency_findings$p01$findings, finding)
-    }
-  }
 })
 
 test_that("macro variables defined by project source are producers, not missing dependencies", {
