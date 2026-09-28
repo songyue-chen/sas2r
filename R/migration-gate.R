@@ -888,6 +888,8 @@ assess_final_outputs <- function(
     targets = assessed_targets,
     contracts = contract_df,
     lineage_evidence = overall_lineage,
+    startup_findings = as.character(project$flags$detail[project$flags$kind %in%
+      c("autoexec_bindings_deferred", "autoexec_library_shadows_config")]),
     lineage_by_target = lineage_summaries,
     evidence_histories = updated_histories,
     all_required_passed = all_req_passed,
@@ -977,7 +979,7 @@ derive_bundle_status <- function(assessment) {
   }
 
   # 2. Check for needs_review conditions
-  if (exec_deferred || !any_required_targets) {
+  if (exec_deferred || !any_required_targets || length(assessment$startup_findings)) {
     return("needs_review")
   }
   # A partial attempt executed only part of the configured pipeline. It can

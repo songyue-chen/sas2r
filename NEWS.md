@@ -2,6 +2,9 @@
 
 - Apply supported autoexec library bindings consistently during preflight,
   execution and bundle export, including reassignment and CLEAR fallbacks.
+  A usable startup source path now takes precedence over a different
+  `libraries:` path during execution; preflight reports the shadowed fallback.
+  Conditional bindings remain advisory when configured fallbacks resolve inputs.
 - Reduce repeated work in SAS scanning while preserving source and dependency
   information.
 - Fix macro investigation when a project function shares a name with R's error

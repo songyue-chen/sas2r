@@ -48,7 +48,7 @@ translation_readiness <- function(project, plan) {
   }
   # These scanner findings cannot always be attached to a schedule edge. Keep
   # their scope explicit instead of pretending the scanner resolved the source.
-  global <- c("autoexec_missing", "autoexec_bindings_deferred", "include_depth_exceeded", "include_cycle",
+  global <- c("autoexec_missing", "include_depth_exceeded", "include_cycle",
     "libref_context_truncated", "macro_dependency_analysis_deferred",
     "macro_library_initialization_unsupported", "macro_include_requires_expansion",
     "macro_nested_definition_unsupported")
@@ -58,6 +58,9 @@ translation_readiness <- function(project, plan) {
   }
   for (i in which(project$flags$kind %in% global)) add(project$flags$kind[i], project$flags$detail[i],
     flag_components(project$flags$detail[i]))
+  for (i in which(project$flags$kind %in% c("autoexec_bindings_deferred", "autoexec_library_shadows_config")))
+    add(project$flags$kind[i], project$flags$detail[i], blocks_execution = FALSE,
+      action = "Review the startup SAS and selected library paths. Execution can continue when required inputs are available; configured libraries are fallbacks, not overrides.")
   for (i in which(project$flags$kind %in% c("dynamic_dataset_reference", "macro_data_flow_deferred",
       "dataset_statement_deferred", "libref_engine_unsupported")))
     add(project$flags$kind[i], project$flags$detail[i], flag_components(project$flags$detail[i]), blocks_execution = FALSE,

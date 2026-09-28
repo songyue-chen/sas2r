@@ -1014,6 +1014,8 @@ run_bundle_pipeline <- function(
     unknown <- final_assessment$lineage_evidence$unknown_output_targets
     manual <- names(Filter(function(target) identical(target$status, "unassessed_file"), required))
     review_notes <- c(
+      if (length(final_assessment$startup_findings)) paste0("startup_libraries_require_review: ",
+        paste(final_assessment$startup_findings, collapse = "; ")),
       if (!length(required)) paste0("no_required_outputs: No required output was assessed. ",
         "Declare output targets or remove deliverables from outputs.optional."),
       if (length(unknown)) paste0("unknown_output_lineage: ", paste(unknown, collapse = ", "),

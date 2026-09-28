@@ -21,11 +21,13 @@ startup_library_llm <- function(code) recording_reviewer(function(req) {
 
 test_that("autoexec-only inputs work in preflight, smoke, bundle and exported execution", {
   skip_if_not_installed("dplyr")
-  for (scenario in c("direct", "include", "clear")) {
+  expected_values <- c(direct = 1, include = 2, clear = 3, unrelated_control = 1,
+    conditional_fallback = 3, shadow_config = 1)
+  for (scenario in names(expected_values)) {
     root <- startup_library_fixture()
     config <- list()
-    expected <- match(scenario, c("direct", "include", "clear"))
-    if (scenario != "direct") {
+    expected <- unname(expected_values[scenario])
+    if (scenario %in% c("include", "clear")) {
       writeLines("libname input 'second';", file.path(root, "binding.inc"))
       writeLines(c("libname input 'first';", "%include 'binding.inc';"),
         file.path(root, "autoexec.sas"))
@@ -35,15 +37,28 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
       config <- list(autoexec = file.path(root, c("autoexec.sas", "clear.sas")),
         libraries = list(input = file.path(root, "fallback")))
     }
+    if (scenario == "unrelated_control") {
+      writeLines(c("%if &sysscp = WIN %then %do; options nonumber; %end;",
+        "libname input 'first';"), file.path(root, "autoexec.sas"))
+    }
+    if (scenario == "conditional_fallback") {
+      writeLines("%if &switch %then %do; libname input 'first'; %end;",
+        file.path(root, "autoexec.sas"))
+    }
+    if (scenario %in% c("conditional_fallback", "shadow_config"))
+      config$libraries <- list(input = file.path(root, "fallback"))
     input <- file.path(root, c("first", "second", "fallback")[expected], "source.sas7bdat")
     before <- cli::hash_file_sha256(input)
     main <- file.path(root, "main.sas")
     check <- sas_preflight(main, config = config, diagnose = "off")
     expect_identical(check$inputs$status[check$inputs$dataset == "input.source"], "available")
+    expect_false(any(vapply(check$readiness$warnings, `[[`, logical(1), "blocks_execution")))
     result <- sas_translate(main, config = config, out_dir = withr::local_tempdir(),
       outputs = list(datasets = "work.result"),
       llm = startup_library_llm(list(main = "lib_write(lib_read('input', 'source'), 'work', 'result')")))
-    expect_identical(result$status, "migration_ready")
+    advisory <- scenario %in% c("conditional_fallback", "shadow_config")
+    expect_identical(result$status, if (advisory) "needs_review" else "migration_ready")
+    if (advisory) expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
     expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value, expected)
     events <- current_component_evidence(result$component_evidence$main)$events
     expect_true(any(vapply(events, function(event)
@@ -148,4 +163,89 @@ test_that("unresolved and conditional startup assignments remain deferred", {
   expect_true("autoexec_bindings_deferred" %in% project$flags$kind)
   check <- sas_preflight(main, diagnose = "off")
   expect_false(any(check$inputs$status == "available"))
+  expect_true(any(vapply(check$readiness$warnings, function(x)
+    x$kind == "input_unresolved" && x$blocks_execution, logical(1))))
+  expect_false(any(vapply(check$readiness$warnings, function(x)
+    x$kind == "autoexec_bindings_deferred" && x$blocks_execution, logical(1))))
+  result <- sas_translate(main, out_dir = withr::local_tempdir(),
+    outputs = list(datasets = "work.result"),
+    llm = startup_library_llm(list(main = "lib_write(lib_read('input', 'source'), 'work', 'result')")))
+  report <- read_json_record(result$report_json_path)
+  expect_identical(result$status, "needs_review")
+  expect_identical(report$outcome$stages$`Bundle execution`, "NOT RUN (0 attempts)")
+})
+
+test_that("startup control follows block scope, include occurrences and reassignment order", {
+  root <- startup_library_fixture()
+  main <- file.path(root, "main.sas")
+  config <- list(libraries = list(input = file.path(root, "fallback")))
+  writeLines("%include 'binding.inc';", file.path(root, "nested.inc"))
+  writeLines("libname input 'second';", file.path(root, "binding.inc"))
+  cases <- list(
+    # A possible later assignment displaces certainty about an earlier one.
+    later_conditional = c("libname input 'first';",
+      "%if &switch %then %do; %include 'nested.inc'; %end;"),
+    # A later unconditional assignment establishes the binding again.
+    later_unconditional = c("%if &switch %then %do; libname input 'first'; %end;",
+      "%include 'nested.inc';"),
+    nested_control = c("%if &a %then %do; %if &b %then %do; options nonumber; %end; %end;",
+      "libname input 'second';"),
+    # The same include is conditional in one occurrence and unconditional later.
+    repeated_include = c("%if &switch %then %do; %include 'nested.inc'; %end;",
+      "%include 'nested.inc';"),
+    macro_include = c("libname input 'first';",
+      "%macro unused(); %include 'nested.inc'; %mend;"),
+    conditional_clear = c("libname input 'first';",
+      "%if &switch %then %do; libname input clear; %end;"),
+    unrelated_library = c("%if &switch %then %do; libname other 'second'; %end;",
+      "libname input 'first';"),
+    # Cross-file blocks are deliberately deferred, not partially interpreted.
+    unbalanced = c("%if &switch %then %do;", "libname input 'first';"),
+    jump = c("%if &switch %then %goto done;", "libname input 'first';", "%done:;"),
+    inline_assignment = c("libname input 'first';", "%if &switch %then libname input 'second';"),
+    inline_include = c("libname input 'first';", "%if &switch %then %include 'nested.inc';"))
+  expected <- c("fallback", "second", "second", "second", "first", "fallback", "first",
+    "fallback", "fallback", "fallback", "fallback")
+  for (i in seq_along(cases)) {
+    writeLines(cases[[i]], file.path(root, "autoexec.sas"))
+    project <- sas_project(main, config = config)
+    selected <- file.path(root, expected[i])
+    expect_equal(startup_libref_map(project)$input$path, selected, info = names(cases)[i])
+    expect_equal(resolve_libref_at(project$libref_registry, "input", main, 1L)$selected_path,
+      selected, info = names(cases)[i])
+  }
+})
+
+test_that("preflight makes a shadowed configured library visible without blocking execution", {
+  root <- startup_library_fixture()
+  main <- file.path(root, "main.sas")
+  config <- list(libraries = list(input = file.path(root, "fallback")))
+  check <- sas_preflight(main, config = config, diagnose = "off")
+  warnings <- Filter(function(x) x$kind == "autoexec_library_shadows_config", check$readiness$warnings)
+  expect_length(warnings, 1L)
+  expect_false(warnings[[1L]]$blocks_execution)
+  expect_match(warnings[[1L]]$detail, file.path(root, "first"), fixed = TRUE)
+  expect_match(warnings[[1L]]$detail, file.path(root, "fallback"), fixed = TRUE)
+  expect_match(warnings[[1L]]$detail, "autoexec.sas", fixed = TRUE)
+  printed <- paste(capture.output(print(check), type = "message"), collapse = "\n")
+  expect_match(printed, "takes precedence over configured fallback", fixed = TRUE)
+  for (source in c("libname input 'fallback';", "libname input clear;",
+    "libname input '/unavailable-source-folder';",
+    "%if &switch %then %do; libname input 'first'; %end;")) {
+    writeLines(source, file.path(root, "autoexec.sas"))
+    check <- sas_preflight(main, config = config, diagnose = "off")
+    expect_false("autoexec_library_shadows_config" %in% check$findings$kind)
+  }
+})
+
+test_that("an include in an unrelated startup macro does not defer other bindings", {
+  root <- startup_library_fixture()
+  writeLines("options nonumber;", file.path(root, "options.inc"))
+  writeLines(c("%macro setup_options(); %include 'options.inc'; %mend;",
+    "libname input 'first';"), file.path(root, "autoexec.sas"))
+  check <- sas_preflight(file.path(root, "main.sas"), diagnose = "off")
+  expect_false("autoexec_bindings_deferred" %in% check$findings$kind)
+  expect_false(any(vapply(check$readiness$warnings, `[[`, logical(1), "blocks_execution")))
+  expect_equal(check$inputs$library_path, file.path(root, "first"))
+  expect_identical(check$inputs$status, "available")
 })

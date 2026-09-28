@@ -223,7 +223,7 @@ print.sas2r_preflight <- function(x, ...) {
 }
 
 preflight_blocking_findings <- function() c(
-    "autoexec_missing", "autoexec_bindings_deferred", "unresolved_include", "dynamic_include", "include_cycle",
+    "autoexec_missing", "unresolved_include", "dynamic_include", "include_cycle",
     "include_depth_exceeded", "unresolved_macro", "dependency_cycle",
     "libref_context_truncated", "libref_undeclared", "libref_engine_unsupported",
     "dynamic_dataset_reference", "backward_dependency", "macro_data_flow_deferred",
@@ -232,4 +232,5 @@ preflight_blocking_findings <- function() c(
     "macro_nested_definition_unsupported", "macro_dependency_analysis_deferred")
 
 preflight_advisory_findings <- function() c("autoexec_autodiscovered", "macro_shadowing",
+  "autoexec_bindings_deferred", "autoexec_library_shadows_config",
   "sasautos_from_environment", "sasautos_from_program", "macro_expansion_unverified")
