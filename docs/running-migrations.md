@@ -113,8 +113,12 @@ An unconditional startup LIBNAME with a usable local path takes precedence over
 `libraries:`. The configured path is a fallback after CLEAR, or when the source
 binding is unavailable or conditional; it is not an override. Previously,
 execution could use the configured path while preflight selected the source
-path. Both now select the source path. If the two paths differ, preflight reports
-`autoexec_library_shadows_config` with both paths. Review this advisory before
+path. Both now select the source path. When a dataset read or write uses a
+startup source path that differs from its configured fallback, preflight reports
+`autoexec_library_shadows_config` with both paths. This advisory keeps the final
+status at `needs_review`. Remove an unnecessary `libraries:` entry, make it match
+the intended startup path, or change the startup LIBNAME supplied for migration
+to resolve the conflict. Review this advisory before
 running an existing configuration, particularly if you configured a test copy
 of the input directory. To change a usable source binding, update the startup
 LIBNAME in the SAS source supplied for migration.
@@ -123,12 +127,16 @@ effect where they appear, while WORK datasets remain available across roots.
 
 This does not execute arbitrary SAS startup code. Unresolved paths, assignments
 inside macro definitions and startup control flow still need review. Conditional
-startup bindings are reported as `autoexec_bindings_deferred`; provide explicit
+startup bindings affecting dataset reads or writes are reported as
+`autoexec_bindings_deferred`; provide explicit
 `libraries:` fallbacks in `_sas2r.yml` and review the original startup logic.
 This finding is advisory: available inputs allow smoke and bundle execution,
 while the migration retains `needs_review`. Without a usable fallback, an
 input that depends on a conditional binding remains unresolved and blocks
-execution. Unrelated, balanced `%if` / `%do` blocks do not defer unconditional
+execution. Unused libraries and bindings replaced before any dataset read or
+write do not produce these startup advisories. A startup macro definition that
+can change a used library still requires review because macro calls are not
+evaluated. Unrelated, balanced `%if` / `%do` blocks do not defer unconditional
 library assignments. Includes inherit their enclosing startup control or macro
 definition. Inline conditional statements, cross-file or unbalanced blocks,
 jumps and early exits defer the prologue rather than guessing which assignments

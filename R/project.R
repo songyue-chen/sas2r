@@ -779,18 +779,6 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   # Startup control is not evaluated. Defer affected bindings while keeping
   # unrelated, unconditional assignments usable.
   libref_registry <- defer_startup_bindings(libref_registry, statements, env_files)
-  frames <- libref_registry$frames
-  startup_frames <- frames$frame_index[vapply(frames$key_prefix,
-    function(key) key[1L] <= length(env_files), logical(1))]
-  events <- libref_registry$events
-  rows <- events$frame_index %in% startup_frames & events$conditional
-  if (any(rows)) {
-    flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
-      kind = "autoexec_bindings_deferred",
-      detail = paste("Conditional startup bindings require review; configured library fallbacks can supply them:",
-        paste(unique(events$libref[rows]), collapse = ", "), "in",
-        paste(unique(events$file[rows]), collapse = ", ")))
-  }
   for (ctx in libref_registry$truncated_contexts) {
     flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
       kind = "libref_context_truncated", detail = ctx)
@@ -803,6 +791,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   ))
   bound <- attach_lineage_bindings(lineage, libref_registry)
   lineage <- bound$lineage
+  flags_list[[length(flags_list) + 1L]] <- startup_library_findings(
+    libref_registry, bound$records, env_files)
 
   draft_proj <- structure(list(
     project_dir = root, librefs = librefs, libref_registry = libref_registry,
@@ -825,19 +815,6 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
       root_programs = program_files
     )
   ), class = "sas2r_project")
-
-  for (record in startup_libref_bindings(draft_proj)) {
-    if (identical(record$status, "bound") && !isTRUE(record$context_truncated) &&
-        identical(record$selection_origin, "source") &&
-        !is.na(record$configured_path) &&
-        !identical(include_scan_key(record$selected_path), include_scan_key(record$configured_path))) {
-      flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
-        kind = "autoexec_library_shadows_config",
-        detail = paste0(record$libref, ": startup path ", record$selected_path,
-          " (", record$file, ":", record$line, ") takes precedence over configured fallback ",
-          record$configured_path))
-    }
-  }
 
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
   validate_effective_qc(config$outputs, config$comparison_rules, output_contracts)

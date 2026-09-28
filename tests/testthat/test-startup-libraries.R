@@ -22,7 +22,8 @@ startup_library_llm <- function(code) recording_reviewer(function(req) {
 test_that("autoexec-only inputs work in preflight, smoke, bundle and exported execution", {
   skip_if_not_installed("dplyr")
   expected_values <- c(direct = 1, include = 2, clear = 3, unrelated_control = 1,
-    conditional_fallback = 3, shadow_config = 1)
+    conditional_fallback = 3, shadow_config = 1, unused_conditional = 1,
+    superseded_conditional = 1, program_clear = 3)
   for (scenario in names(expected_values)) {
     root <- startup_library_fixture()
     config <- list()
@@ -45,7 +46,21 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
       writeLines("%if &switch %then %do; libname input 'first'; %end;",
         file.path(root, "autoexec.sas"))
     }
-    if (scenario %in% c("conditional_fallback", "shadow_config"))
+    if (scenario == "unused_conditional") {
+      writeLines(c("%if &switch %then %do; libname scratch 'second'; %end;",
+        "libname input 'first';"), file.path(root, "autoexec.sas"))
+    }
+    if (scenario == "superseded_conditional") {
+      writeLines(c("%if &switch %then %do; libname input 'second'; %end;",
+        "libname input 'first';"), file.path(root, "autoexec.sas"))
+    }
+    if (scenario == "program_clear") {
+      writeLines(c("libname input clear;", "data work.result; set input.source; run;"),
+        file.path(root, "main.sas"))
+    }
+    if (scenario %in% c("unused_conditional", "superseded_conditional"))
+      config$libraries <- list(input = file.path(root, "first"))
+    if (scenario %in% c("conditional_fallback", "shadow_config", "program_clear"))
       config$libraries <- list(input = file.path(root, "fallback"))
     input <- file.path(root, c("first", "second", "fallback")[expected], "source.sas7bdat")
     before <- cli::hash_file_sha256(input)
@@ -57,6 +72,8 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
       outputs = list(datasets = "work.result"),
       llm = startup_library_llm(list(main = "lib_write(lib_read('input', 'source'), 'work', 'result')")))
     advisory <- scenario %in% c("conditional_fallback", "shadow_config")
+    expect_identical(any(check$findings$kind %in%
+      c("autoexec_bindings_deferred", "autoexec_library_shadows_config")), advisory)
     expect_identical(result$status, if (advisory) "needs_review" else "migration_ready")
     if (advisory) expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
     expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value, expected)
@@ -253,4 +270,59 @@ test_that("an include in an unrelated startup macro does not defer other binding
   expect_false(any(vapply(check$readiness$warnings, `[[`, logical(1), "blocks_execution")))
   expect_equal(check$inputs$library_path, file.path(root, "first"))
   expect_identical(check$inputs$status, "available")
+})
+
+test_that("startup macro library review is limited to used libraries", {
+  skip_if_not_installed("dplyr")
+  for (used in c(FALSE, TRUE)) {
+    root <- startup_library_fixture()
+    libref <- if (used) "input" else "scratch"
+    path <- if (used) "first" else "second"
+    writeLines(c("%macro tmp;", sprintf("libname %s '%s';", libref, path),
+      "%mend;", "libname input 'first';"), file.path(root, "autoexec.sas"))
+    code <- sprintf("tmp <- function() sas2r_libname_assign('%s', %s, engine = 'sas7bdat')",
+      libref, deparse(file.path(root, path)))
+    # This startup macro uses the same translation/repair path whether its
+    # library is used or unused; the advisory itself does not invoke repair.
+    llm <- recording_reviewer(function(req) {
+      if (identical(req$role, "reviewer")) return(good_review())
+      if (identical(req$role, "fixer")) return(valid_program_fix_response(code = code))
+      good_translation(if (identical(req$component_id, "main"))
+        "lib_write(lib_read('input', 'source'), 'work', 'result')" else code)
+    })
+    result <- sas_translate(file.path(root, "main.sas"), out_dir = withr::local_tempdir(),
+      config = list(libraries = list(input = file.path(root, "first"))),
+      outputs = list(datasets = "work.result"), llm = llm)
+    expect_identical(result$status, if (used) "needs_review" else "migration_ready")
+    expect_identical("autoexec_bindings_deferred" %in% result$project$flags$kind, used)
+    expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value, 1)
+    if (used) {
+      expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
+      # An open-code call must retain the warning too: the static projection
+      # does not evaluate a macro that can reassign this used library.
+      writeLines(c("%macro tmp; libname input 'second'; %mend;",
+        "libname input 'first';", "%tmp;"), file.path(root, "autoexec.sas"))
+      project <- sas_project(file.path(root, "main.sas"))
+      expect_true("autoexec_bindings_deferred" %in% project$flags$kind)
+    }
+  }
+})
+
+test_that("startup shadow warnings follow reads and writes through includes and program changes", {
+  root <- startup_library_fixture()
+  writeLines("libname input 'first';", file.path(root, "binding.inc"))
+  writeLines("%include 'binding.inc';", file.path(root, "autoexec.sas"))
+  config <- list(libraries = list(input = file.path(root, "fallback")))
+  cases <- list(
+    unused = "data work.result; value = 1; run;",
+    replaced = c("libname input 'second';", "data work.result; set input.source; run;"),
+    cleared = c("libname input clear;", "data work.result; set input.source; run;"),
+    read_before_clear = c("data work.result; set input.source; run;", "libname input clear;"),
+    write = "data input.result; value = 1; run;")
+  for (name in names(cases)) {
+    writeLines(cases[[name]], file.path(root, "main.sas"))
+    project <- sas_project(file.path(root, "main.sas"), config = config)
+    expect_identical("autoexec_library_shadows_config" %in% project$flags$kind,
+      name %in% c("read_before_clear", "write"), info = name)
+  }
 })

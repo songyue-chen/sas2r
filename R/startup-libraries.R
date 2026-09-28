@@ -65,3 +65,48 @@ defer_startup_bindings <- function(registry, statements, env_files) {
   registry$events <- events
   registry
 }
+
+# Report startup uncertainty only for libraries used by dataset reads or writes.
+# Reuse lineage's point-of-use records instead of resolving the bindings again.
+startup_library_findings <- function(registry, records, env_files) {
+  findings <- tibble::tibble(kind = character(), detail = character())
+  if (!length(records) || !length(env_files)) return(findings)
+  frames <- registry$frames
+  startup <- vapply(frames$key_prefix,
+    function(key) key[1L] <= length(env_files), logical(1))
+  occurrences <- stats::na.omit(frames$include_occurrence_id[startup])
+  used <- unique(vapply(records, `[[`, character(1), "libref"))
+  events <- registry$events
+  # Conditional events outside open control are macro-definition events,
+  # including inherited definition scope in includes. Macro calls are not
+  # evaluated, so keep review for a definition that can change a used library.
+  definitions <- which(events$frame_index %in% frames$frame_index[startup] &
+    events$conditional & !seq_len(nrow(events)) %in% registry$startup_control_rows &
+    events$libref %in% c(used, "_all_"))
+  deferred <- if (length(definitions))
+    paste0(events$libref[definitions], " in ", events$file[definitions]) else character()
+  for (record in records) {
+    from_startup <- record$file %in% env_files ||
+      record$include_occurrence_id %in% occurrences
+    if (!from_startup) next
+    if (identical(record$fallback_reason, "source_binding_conditional") ||
+        identical(record$status, "conditionally_bound")) {
+      deferred <- c(deferred, paste0(record$libref, " in ", record$file))
+    }
+    if (identical(record$status, "bound") && !isTRUE(record$context_truncated) &&
+        identical(record$selection_origin, "source") &&
+        !is.na(record$configured_path) &&
+        !identical(include_scan_key(record$selected_path), include_scan_key(record$configured_path))) {
+      findings <- rbind(findings, tibble::tibble(
+        kind = "autoexec_library_shadows_config",
+        detail = paste0(record$libref, ": startup path ", record$selected_path,
+          " (", record$file, ":", record$line, ") takes precedence over configured fallback ",
+          record$configured_path)))
+    }
+  }
+  if (length(deferred)) findings <- rbind(findings, tibble::tibble(
+    kind = "autoexec_bindings_deferred",
+    detail = paste("Conditional startup bindings used by dataset reads or writes require review;",
+      "configured library fallbacks can supply them:", paste(unique(deferred), collapse = ", "))))
+  unique(findings)
+}
