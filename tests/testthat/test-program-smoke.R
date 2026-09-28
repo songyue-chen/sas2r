@@ -97,7 +97,20 @@ test_that("smoke failures retain live function names without argument values", {
   expect_false(smoke$passed)
   expect_identical(smoke$condition$message, "record_value_77123")
   expect_true(all(c("calc_total", ".check") %in% smoke$condition$call_names))
+  expect_false(any(c("h", "stop", ".handleSimpleError") %in% smoke$condition$call_names))
   expect_false(any(grepl("record|77123|paste0", smoke$condition$call_names)))
+})
+
+test_that("smoke capture preserves project functions that share error-handler names", {
+  fx <- callable_macro_fixture()
+  for (name in c("h", "stop")) {
+    fx$selected$macro_def <- sprintf('calc_total <- function(a, b) { %s <- function() 1 + "a"; %s() }', name, name)
+    plan <- build_program_smoke_plan(fx$graph, "caller_prog", fx$selected)
+    smoke <- run_program_smoke(plan, fx$runtime, fx$attempt_dir)
+    expect_false(smoke$passed)
+    expect_equal(sum(smoke$condition$call_names == name), 1L)
+    expect_false(".handleSimpleError" %in% smoke$condition$call_names)
+  }
 })
 
 test_that("program smoke executes a real dependency prefix or defers honestly", {

@@ -55,7 +55,8 @@ macro_call_scan <- function(units) {
     unverified <- integer()
     # These compilation-time quoting spans are literal for dependency lookup.
     # Runtime unquoting can reactivate their contents and is deferred below.
-    quotes <- gregexpr("%(?:nrstr|str|unquote)\\s*\\(", visible_text(raw),
+    visible <- visible_text(raw)
+    quotes <- gregexpr("%(?:nrstr|str|unquote)\\s*\\(", visible,
                        ignore.case = TRUE, perl = TRUE)[[1L]]
     lengths <- attr(quotes, "match.length")
     for (k in which(quotes > 0L)) {
@@ -92,7 +93,9 @@ macro_call_scan <- function(units) {
       if (name == "unquote" && grepl("&", body) && !grepl("%", body)) unverified <- c(unverified, pos)
       if (name == "unquote" && grepl("%", body)) deferred <- c(deferred, pos)
     }
-    clean <- visible_text(paste(clean, collapse = ""))
+    # Most files need no quoting rewrite. Reuse their lexical mask instead of
+    # classifying every character a second time.
+    clean <- if (identical(clean, chars)) visible else visible_text(paste(clean, collapse = ""))
     for (pos in unique(deferred)) {
       owner <- which(ends >= pos)[1L]
       findings <- rbind(findings, tibble::tibble(

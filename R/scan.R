@@ -34,6 +34,7 @@ sas_scan <- function(text) {
   stopifnot(is.character(text), length(text) == 1L)
   chars <- strsplit(text, "", fixed = TRUE)[[1]]
   n <- length(chars)
+  whitespace <- grepl("[[:space:]]", chars)
   mask <- character(n)
   state <- "code"
   macro_comment <- FALSE
@@ -70,7 +71,7 @@ sas_scan <- function(text) {
           if (tok %in% DL_TOKENS) state <- "datalines"
           last_split <- i
           at_stmt_start <- TRUE
-        } else if (!grepl("[[:space:]]", ch)) at_stmt_start <- FALSE
+        } else if (!whitespace[i]) at_stmt_start <- FALSE
       }
     } else if (state == "sq") {
       mask[i] <- "s"
@@ -249,7 +250,7 @@ split_macro_statement <- function(txt, l_start, l_end, positions) {
   }
 
   tok <- regmatches(txt, regexpr("^%?[A-Za-z_][A-Za-z0-9_]*", txt))
-  tibble::tibble(
+  tibble::new_tibble(list(
     text = txt,
     first_token = if (identical(tolower(tok), "%inc")) "%include" else if (length(tok)) tolower(tok) else "",
     type = "code",
@@ -257,7 +258,7 @@ split_macro_statement <- function(txt, l_start, l_end, positions) {
     line_end = l_end,
     char_start = min(positions),
     char_end = max(positions)
-  )
+  ), nrow = 1L)
 }
 
 empty_sas_statements <- function() {
@@ -419,7 +420,7 @@ sas_source_records <- function(text, source_file = NULL) {
     }
   })
 
-  res <- do.call(rbind, out)
+  res <- fast_bind(out, empty_sas_statements()[setdiff(names(empty_sas_statements()), "stmt_id")])
   res <- res[!(res$type == "code" & res$text == ""), ]
   if (is.null(res) || nrow(res) == 0L) {
     return(list(statements = empty_sas_statements(), comments = comments))

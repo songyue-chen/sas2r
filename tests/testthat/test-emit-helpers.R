@@ -23,7 +23,7 @@ transpiled_text <- function(project, out) {
                         collapse = "\n"))
 }
 
-test_that("the registry seeds configured libraries and work, never a source binding", {
+test_that("startup does not apply a program-level source binding early", {
   root <- withr::local_tempdir()
   cfg <- file.path(root, "cfg"); dir.create(cfg)
   p <- libref_emit_fixture(
@@ -44,7 +44,7 @@ test_that("the registry seeds configured libraries and work, never a source bind
 
 test_that("write_autoexec reads the projection rather than reparsing librefs", {
   # The discriminating test for "no independent reparse": the projection is
-  # doctored so its seed disagrees with everything in the project, and the file
+  # doctored so its startup map disagrees with the project, and the file
   # has to follow the projection. A write_autoexec() that still built entries
   # from project$librefs or project$flags would ignore both edits.
   root <- withr::local_tempdir()
@@ -52,7 +52,7 @@ test_that("write_autoexec reads the projection rather than reparsing librefs", {
     root, c("libname adam \"src\";", "data x; set adam.adsl; run;"),
     dirs = "src")
   effective <- sas2r:::effective_librefs(p)
-  effective$seed <- list(ghost = list(read_path = "/somewhere/ghost",
+  effective$startup <- list(ghost = list(read_path = "/somewhere/ghost",
                                       write_path = "/somewhere/ghost",
                                       engine = "sas7bdat", write = "xpt"))
   effective$undeclared <- "phantom"
@@ -83,14 +83,14 @@ test_that("a seed path is confined on the way into the registry, as a statement 
                    list(work = list(read_path = "a\nb", write_path = "a\nb", engine = "rds",
                                     write = "rds")))) {
     doctored <- effective
-    doctored$seed <- bad
+    doctored$startup <- bad
     expect_error(sas2r:::write_autoexec(p, out, doctored),
                  class = "sas2r_libref_path_error")
   }
   # A configured path that is merely absolute and outside the project is not
   # refused -- a study library legitimately lives elsewhere.
   doctored <- effective
-  doctored$seed <- list(ghost = list(read_path = tempdir(), write_path = tempdir(), engine = "sas7bdat",
+  doctored$startup <- list(ghost = list(read_path = tempdir(), write_path = tempdir(), engine = "sas7bdat",
                                      write = "rds"))
   expect_no_error(sas2r:::write_autoexec(p, out, doctored))
 })

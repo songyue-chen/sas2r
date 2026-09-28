@@ -232,4 +232,5 @@ preflight_blocking_findings <- function() c(
     "macro_nested_definition_unsupported", "macro_dependency_analysis_deferred")
 
 preflight_advisory_findings <- function() c("autoexec_autodiscovered", "macro_shadowing",
+  "autoexec_bindings_deferred", "autoexec_library_shadows_config",
   "sasautos_from_environment", "sasautos_from_program", "macro_expansion_unverified")

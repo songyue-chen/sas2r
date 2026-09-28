@@ -75,9 +75,10 @@ includes:
 # ------------------------------------------------------------------------------
 # 5. Autoexec & Environment
 # ------------------------------------------------------------------------------
-# SAS autoexec files to scan for startup context.
-# Autoexec LIBNAME statements are not yet applied during execution;
-# configure input library bindings under libraries: above.
+# SAS autoexec files, in startup order. Supported literal LIBNAME bindings
+# and resolved includes also initialize smoke runs and exported bundles.
+# Dynamic/conditional startup logic still needs review; configure explicit
+# library fallbacks under libraries: above when it cannot be resolved.
 environment:
   autoexec:
     - autoexec.sas

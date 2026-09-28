@@ -105,9 +105,58 @@ files and asks you to rename the conflicting source and rescan.
 Complete coverage is separate from input availability and translation quality;
 preflight can still report `needs_attention` for other findings.
 
-LIBNAME statements in `autoexec.sas` are recognized by preflight but are not yet
-applied during execution. Configure input library bindings under `libraries:` in
-`_sas2r.yml`, even if preflight reports those autoexec bindings as available.
+Supported literal LIBNAME statements in configured autoexec files, including
+resolved includes, now supply the same startup bindings in preflight, smoke
+execution, full runs and exported bundles. Assignments and CLEAR follow source
+order; CLEAR restores a configured `libraries:` fallback when one exists.
+An unconditional startup LIBNAME with a usable local path takes precedence over
+`libraries:`. The configured path is a fallback after CLEAR, or when the source
+binding is unavailable or conditional; it is not an override. Previously,
+execution could use the configured path while preflight selected the source
+path. Both now select the source path. When a dataset read or write uses a
+startup source path that differs from its configured fallback, preflight reports
+`autoexec_library_shadows_config` with both paths. This advisory keeps the final
+status at `needs_review`. Remove an unnecessary `libraries:` entry, make it match
+the intended startup path, or change the startup LIBNAME supplied for migration
+to resolve the conflict. Review this advisory before
+running an existing configuration, particularly if you configured a test copy
+of the input directory. To change a usable source binding, update the startup
+LIBNAME in the SAS source supplied for migration.
+Each root program starts with these bindings. Its own LIBNAME statements take
+effect where they appear, while WORK datasets remain available across roots.
+
+This does not execute arbitrary SAS startup code. Unresolved paths, assignments
+inside macro definitions and startup control flow still need review. Conditional
+startup bindings affecting dataset reads or writes are reported as
+`autoexec_bindings_deferred`; provide explicit
+`libraries:` fallbacks in `_sas2r.yml` and review the original startup logic.
+This finding is advisory: available inputs allow smoke and bundle execution,
+while the migration retains `needs_review`. Without a usable fallback, an
+input that depends on a conditional binding remains unresolved and blocks
+execution. For static dataset reads and writes outside macro definitions,
+unused libraries and bindings replaced before use do not produce these startup
+advisories. Additional possible uses are checked conservatively against the
+startup bindings: dataset positions inside scanned project and autocall macro
+definitions, `PROC COPY` library options (`in=`, `out=`), and `PROC DATASETS`
+library options (`library=`, `lib=`). A literal library prefix such as
+`input.&member` checks only that library. A dynamic prefix such as
+`&inlib..source` or a fully dynamic dataset name checks every startup library.
+This includes `data &out`, even when the macro variable ultimately names a
+WORK dataset: the scanner does not evaluate that variable.
+These checks do not expand macros or establish their execution position, so
+they can warn about an uncalled macro, a library that a dynamic name never uses,
+or a binding replaced before such a use. A startup macro definition that
+can change a used library still requires review because macro calls are not
+evaluated. Unrelated, balanced `%if` / `%do` blocks do not defer unconditional
+library assignments. Includes inherit their enclosing startup control or macro
+definition. Inline conditional statements, cross-file or unbalanced blocks,
+jumps and early exits defer the prologue rather than guessing which assignments
+run; no macro conditions are evaluated.
+
+These checks do not inspect generated code text (`CALL EXECUTE` or SQL stored
+in macro variables) or library uses inside SAS function calls such as
+`%sysfunc(exist(...))`. Review the intended library paths for those forms even
+if no startup advisory appears.
 
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel

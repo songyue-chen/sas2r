@@ -776,6 +776,9 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     project_root = root,
     anchors = identity_anchors
   )
+  # Startup control is not evaluated. Defer affected bindings while keeping
+  # unrelated, unconditional assignments usable.
+  libref_registry <- defer_startup_bindings(libref_registry, statements, env_files)
   for (ctx in libref_registry$truncated_contexts) {
     flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
       kind = "libref_context_truncated", detail = ctx)
@@ -810,6 +813,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
       root_programs = program_files
     )
   ), class = "sas2r_project")
+
+  flags_list[[length(flags_list) + 1L]] <- startup_library_findings(draft_proj, bound$records)
 
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
   validate_effective_qc(config$outputs, config$comparison_rules, output_contracts)

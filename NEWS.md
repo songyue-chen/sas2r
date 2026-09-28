@@ -1,10 +1,17 @@
+# sas2r 0.5.8
+
+- Improve startup library handling across preflight, execution and exports.
+  Usable SAS startup paths take precedence over configured library fallbacks.
+- Speed up SAS project scanning.
+- Bug fixes for dependency handling, startup warnings and macro error diagnosis.
+
 # sas2r 0.5.7
 
 - Add clearer dataset discrepancy reports with optional AI explanations and
   repair decisions.
 - Improve repairs across programs and macros using related SAS and R code.
-  SAS source remains authoritative; dataset values and raw runtime messages
-  stay out of AI diagnostic prompts.
+  SAS source remains authoritative; dataset row numbers, key values, cell values,
+  subject identifiers and raw runtime messages stay out of AI diagnostic prompts.
 - Improve SAS comparison-chain handling and translation guidance for DATA-step
   retention and dplyr style.
 - Bug fixes for dataset dependency tracking, macro error diagnosis and review

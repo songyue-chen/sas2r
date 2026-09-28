@@ -50,9 +50,9 @@ LIBREF_LOCAL_ENGINES <- c("", "base", "v9", "v8", "v7", "v6", "sas7bdat")
 #' once here rather than spelled out at each construction site.
 #'
 #' `status` is one of `"bound"`, `"conditionally_bound"`, `"unbound"`, or
-#' `"ambiguous_libref"`. `"conditionally_bound"` means the only source binding
-#' sits inside a macro definition, so it runs only if something calls that
-#' macro: the location is reported but not established, and a consumer that
+#' `"ambiguous_libref"`. `"conditionally_bound"` means the source binding
+#' depends on an unexpanded macro definition or startup control block:
+#' the location is reported but not established, and a consumer that
 #' needs an established one must treat it as it treats `"unbound"`.
 #'
 #' `selected_path` is canonical but **unconfined**: a source `LIBNAME` may name
@@ -677,11 +677,15 @@ libref_event_at <- function(events, i) {
 #' then downgrade the answer, so an accessible unconditional binding written
 #' above it would lose its own point of use -- exactly the contract
 #' [resolve_libref_at()] exists to keep.
+#' Open startup control is different: its body may execute and replace an
+#' earlier binding, so those events remain candidates in execution order.
 #'
 #' @param events `registry$events`.
 #' @param rows Candidate row indices for this libref in this context.
 #' @param key_prefix Execution-order key prefix of the frame.
 #' @param line Line of the point of use.
+#' @param startup_control_rows Events in open startup control that may change
+#'   an earlier binding, unlike statements in uncalled macro definitions.
 #' @return A list with `event` (from [libref_event_at()], or `NULL`),
 #'   `ambiguous`, and `had_assign` -- whether an *establishing* assignment for
 #'   this libref was visible, which is what separates "cleared here" from
@@ -689,7 +693,7 @@ libref_event_at <- function(events, i) {
 #'   macro definition establishes nothing, so a later clear had nothing of its
 #'   to take away and must not report that it did.
 #' @noRd
-libref_visible_event <- function(events, rows, key_prefix, line) {
+libref_visible_event <- function(events, rows, key_prefix, line, startup_control_rows = integer()) {
   none <- list(event = NULL, ambiguous = FALSE, had_assign = FALSE)
   if (!length(rows)) return(none)
   keys <- events$key
@@ -700,9 +704,10 @@ libref_visible_event <- function(events, rows, key_prefix, line) {
   if (!length(rows)) return(none)
   had_assign <- any(events$action[rows] == "assign" &
                       !events$conditional[rows])
-  # Conditional events are non-establishing, so they are not even candidates
-  # while an unconditional one is visible.
-  pool <- rows[!events$conditional[rows]]
+  # Uncalled definitions cannot displace an established binding. Open startup
+  # control can: a later conditional reassignment makes the location unknown
+  # until an unconditional statement establishes it again.
+  pool <- rows[!events$conditional[rows] | rows %in% startup_control_rows]
   if (!length(pool)) pool <- rows
   # Maxima under a non-transitive relation -- see libref_key_cmp(). Ties are
   # accumulated rather than broken, so an inseparable pair leaves two maxima
@@ -719,9 +724,7 @@ libref_visible_event <- function(events, rows, key_prefix, line) {
   }
   # `conditional` is part of the effect: two tied statements that differ only
   # in whether a macro definition encloses them are not the same binding, so
-  # the tie must be reported rather than settled by whichever came first. The
-  # pool above is homogeneous in `conditional`, so this is a guard on that
-  # invariant rather than a case reachable today.
+  # the tie must be reported rather than settled by whichever came first.
   effects <- unique(paste(events$action[maxima], events$engine[maxima],
                           events$path_expression[maxima],
                           events$conditional[maxima],
@@ -869,7 +872,8 @@ libref_binding_in_frame <- function(registry, libref, line, rows, key_prefix,
     )
   }
 
-  found <- libref_visible_event(registry$events, rows, key_prefix, line)
+  found <- libref_visible_event(registry$events, rows, key_prefix, line,
+    registry$startup_control_rows %||% integer())
   if (found$ambiguous) {
     return(libref_binding_record(
       libref = libref, status = "ambiguous_libref", selection_origin = "none",
@@ -1345,8 +1349,9 @@ empty_effective_librefs <- function() {
 #' @param project A `sas2r_project` object.
 #' @return A `sas2r_effective_librefs` list with
 #'   * `version` -- [LIBREF_REGISTRY_VERSION], the schema the rows answer to;
-#'   * `seed` -- the normalized configured libraries, the only bindings that
-#'     exist before the program runs a statement;
+#'   * `seed` -- the normalized configured libraries, retained for CLEAR and
+#'     unavailable source-binding fallbacks;
+#'   * `startup` -- those libraries after the supported autoexec prologue;
 #'   * `bindings` -- a tibble carrying exactly [EFFECTIVE_LIBREF_FIELDS];
 #'   * `undeclared` -- librefs a generated read or write needs and no binding
 #'     establishes, in first-use order;
@@ -1362,6 +1367,7 @@ effective_librefs <- function(project) {
     )
   }
   seed <- registry$libraries %||% list()
+  startup <- startup_libref_map(project)
 
   # `work` is filtered out of statements exactly as it is out of references:
   # it is the session library the generated seed creates, and resolving a
@@ -1395,7 +1401,7 @@ effective_librefs <- function(project) {
 
   if (!length(kind)) {
     return(structure(
-      list(version = LIBREF_REGISTRY_VERSION, seed = seed,
+      list(version = LIBREF_REGISTRY_VERSION, seed = seed, startup = startup,
            bindings = empty_effective_librefs(), undeclared = character(),
            session_library = session_library),
       class = "sas2r_effective_librefs"
@@ -1452,11 +1458,59 @@ effective_librefs <- function(project) {
       bindings$status %in% c("unbound", "conditionally_bound")])
 
   structure(
-    list(version = LIBREF_REGISTRY_VERSION, seed = seed, bindings = bindings,
+    list(version = LIBREF_REGISTRY_VERSION, seed = seed, startup = startup, bindings = bindings,
          undeclared = as.character(undeclared),
          session_library = session_library),
     class = "sas2r_effective_librefs"
   )
+}
+
+# Resolve immediately after the configured prologue, before any root statement.
+# Reuse the ordered registry so includes, reassignment and CLEAR have exactly
+# the same meaning here as at a source read. Configuration remains a separate
+# fallback: a later CLEAR must not restore an autoexec assignment.
+startup_libref_bindings <- function(project) {
+  registry <- project$libref_registry
+  seed <- registry$libraries %||% list()
+  env_files <- project$dependency_facts$env_files %||% character()
+  if (!length(env_files) || !nrow(registry$frames)) return(list())
+  frames <- registry$frames
+  context <- frames$context_id[1L]
+  frame <- frames[frames$context_id == context, ][1L, ]
+  truncated <- libref_context_truncated(registry, frame)
+  events <- registry$events
+  events <- events[events$context_id == context, ]
+  librefs <- setdiff(unique(c(names(seed), events$libref)), c("work", "_all_"))
+  out <- list()
+  for (libref in librefs) {
+    rows <- libref_candidate_rows(registry$events, libref)[[as.character(context)]] %||% integer()
+    out[[libref]] <- libref_binding_in_frame(registry, libref, line = 0L,
+      rows = rows, key_prefix = length(env_files) + 1L,
+      frame_file = frame$file, context_root = frame$root_program,
+      configured_path = seed[[libref]]$path %||% NA_character_,
+      truncated = truncated)
+  }
+  out
+}
+
+startup_libref_map <- function(project) {
+  seed <- project$libref_registry$libraries %||% list()
+  out <- seed
+  bindings <- startup_libref_bindings(project)
+  for (libref in names(bindings)) {
+    record <- bindings[[libref]]
+    if (identical(record$status, "bound") && !isTRUE(record$context_truncated)) {
+      entry <- seed[[libref]] %||% list()
+      entry$path <- record$selected_path
+      if (identical(record$selection_origin, "source")) entry$engine <- "sas7bdat"
+      entry$engine <- entry$engine %||% "sas7bdat"
+      entry$write <- entry$write %||% "rds"
+      out[[libref]] <- entry
+    } else {
+      out[[libref]] <- NULL
+    }
+  }
+  out
 }
 
 #' Zero-row prototype of the `LIBNAME work` statement table
@@ -1554,7 +1608,7 @@ confine_libref_path <- function(path, libref) {
 #' @noRd
 build_attempt_library_map <- function(project, attempt_dir) {
   effective <- if (inherits(project, "sas2r_effective_librefs")) project else effective_librefs(project)
-  seed <- effective$seed
+  seed <- effective$startup
   out <- list()
   for (libref in names(seed)) {
     if (libref == "work") next
@@ -1576,4 +1630,3 @@ build_attempt_library_map <- function(project, attempt_dir) {
   )
   out
 }
-

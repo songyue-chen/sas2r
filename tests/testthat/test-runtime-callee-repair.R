@@ -1,5 +1,5 @@
 runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_abort = FALSE,
-                                   fault = NULL, envir = parent.frame()) {
+                                   fault = NULL, with_h = FALSE, envir = parent.frame()) {
   root <- withr::local_tempdir(.local_envir = envir)
   dir.create(file.path(root, "macros"))
   writeLines(if (nested) '%wrapper(label=Sensor reading);' else '%empty_frame(label=Sensor reading);',
@@ -11,6 +11,10 @@ runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_
     file.path(root, "macros", "empty_frame.sas"))
   if (source_abort) writeLines("%macro empty_frame(label=); %abort cancel; %mend;",
     file.path(root, "macros", "empty_frame.sas"))
+  if (with_h) {
+    writeLines("%macro h(); %put Synthetic helper; %mend;", file.path(root, "macros", "h.sas"))
+    writeLines(c("%h();", readLines(file.path(root, "main.sas"))), file.path(root, "main.sas"))
+  }
   project <- sas_project(file.path(root, "main.sas"),
     config = list(macro_search_path = file.path(root, "macros")))
   state <- new_migration_state(project, file.path(root, "migration"))
@@ -25,6 +29,10 @@ runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_
   if (nested) {
     fixed$macro__wrapper <- 'wrapper <- function(label = "") empty_frame(label = label)'
     fixed$main <- 'wrapper(label = "Sensor reading")'
+  }
+  if (with_h) {
+    fixed$macro__h <- "h <- function() invisible(NULL)"
+    fixed$main <- paste("h()", fixed$main, sep = "\n")
   }
   code <- fixed
   if (caller_fault) code$main <- 'empty_frame(label = "Sensor reading", extra = 1)' else
@@ -55,6 +63,25 @@ runtime_callee_fixture <- function(caller_fault = FALSE, nested = FALSE, source_
   state$fixer_llm <- recording_fixer(function(req) valid_program_fix_response(fixed[[req$component_id]]))
   list(state = state, fixed = fixed, root = root)
 }
+
+test_that("an error handler cannot masquerade as a related project macro named h", {
+  fx <- runtime_callee_fixture(with_h = TRUE, fault = '1 + "a"')
+  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
+  first <- result$diagnostics$bundle_repair$attempts$bundle_attempt_001
+  expect_identical(names(first$callee_reviews), "macro__empty_frame")
+  expect_false("h" %in% first$failures$main$call_names)
+  expect_identical(vapply(result$repairs, "[[", "", "component_id"), "macro__empty_frame")
+  expect_true(result$attempt$passed)
+  expect_identical(result$selected_revisions$macro__h$r_code, fx$fixed$macro__h)
+})
+
+test_that("a genuinely failing project macro named h remains a callee candidate", {
+  fx <- runtime_callee_fixture(with_h = TRUE)
+  fx$state$selected_revisions$macro__h$r_code <- 'h <- function() stop("synthetic")'
+  attempt <- run_bundle_attempt(fx$state, sequence = 1L)
+  expect_identical(runtime_callee_component(fx$state, "main", attempt$condition), "macro__h")
+  expect_equal(sum(attempt$condition$call_names == "h"), 1L)
+})
 
 test_that("a real callee failure repairs the source-defective macro and preserves its caller", {
   fx <- runtime_callee_fixture()
