@@ -36,4 +36,4 @@ Run this suite from the repository's `tests/` directory against an installed pac
 with `Rscript -e 'testthat::test_check("sas2r")'`. Check the built archive with
 `NOT_CRAN=false R CMD check --as-cran sas2r_0.5.8.tar.gz`.
 
-See [the release workflow](../docs/releasing.md) before preparing the next version.
+See [the release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) before preparing the next version.
