@@ -1,16 +1,9 @@
-# sas2r (development version)
+# sas2r 0.5.8
 
-- Apply supported autoexec library bindings consistently during preflight,
-  execution and bundle export, including reassignment and CLEAR fallbacks.
-  A usable startup source path now takes precedence over a different
-  `libraries:` path during execution. Startup advisories cover dataset reads and
-  writes, including possible uses in macros, dynamic names and library-level
-  procedures; conditional bindings and shadowed fallbacks allow
-  execution with available inputs but retain `needs_review`.
-- Reduce repeated work in SAS scanning while preserving source and dependency
-  information.
-- Fix macro investigation when a project function shares a name with R's error
-  handler.
+- Improve startup library handling across preflight, execution and exports.
+  Usable SAS startup paths take precedence over configured library fallbacks.
+- Speed up SAS project scanning.
+- Bug fixes for dependency handling, startup warnings and macro error diagnosis.
 
 # sas2r 0.5.7
 
