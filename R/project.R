@@ -791,8 +791,6 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   ))
   bound <- attach_lineage_bindings(lineage, libref_registry)
   lineage <- bound$lineage
-  flags_list[[length(flags_list) + 1L]] <- startup_library_findings(
-    libref_registry, bound$records, env_files)
 
   draft_proj <- structure(list(
     project_dir = root, librefs = librefs, libref_registry = libref_registry,
@@ -815,6 +813,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
       root_programs = program_files
     )
   ), class = "sas2r_project")
+
+  flags_list[[length(flags_list) + 1L]] <- startup_library_findings(draft_proj, bound$records)
 
   output_contracts <- infer_output_contracts(draft_proj, config$outputs)
   validate_effective_qc(config$outputs, config$comparison_rules, output_contracts)

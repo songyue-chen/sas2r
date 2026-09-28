@@ -133,8 +133,17 @@ startup bindings affecting dataset reads or writes are reported as
 This finding is advisory: available inputs allow smoke and bundle execution,
 while the migration retains `needs_review`. Without a usable fallback, an
 input that depends on a conditional binding remains unresolved and blocks
-execution. Unused libraries and bindings replaced before any dataset read or
-write do not produce these startup advisories. A startup macro definition that
+execution. For static dataset reads and writes outside macro definitions,
+unused libraries and bindings replaced before use do not produce these startup
+advisories. Additional possible uses are checked conservatively against the
+startup bindings: dataset positions inside scanned project and autocall macro
+definitions, `PROC COPY` library options (`in=`, `out=`), and `PROC DATASETS`
+library options (`library=`, `lib=`). A literal library prefix such as
+`input.&member` checks only that library. A dynamic prefix such as
+`&inlib..source` or a fully dynamic dataset name checks every startup library.
+These checks do not expand macros or establish their execution position, so
+they can warn about an uncalled macro, a library that a dynamic name never uses,
+or a binding replaced before such a use. A startup macro definition that
 can change a used library still requires review because macro calls are not
 evaluated. Unrelated, balanced `%if` / `%do` blocks do not defer unconditional
 library assignments. Includes inherit their enclosing startup control or macro

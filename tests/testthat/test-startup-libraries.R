@@ -336,3 +336,86 @@ test_that("startup shadow warnings follow reads and writes through includes and 
       name %in% c("read_before_clear", "write"), info = name)
   }
 })
+
+test_that("startup advisories survive macro, dynamic-name and library-level execution", {
+  skip_if_not_installed("dplyr")
+  for (conditional in c(FALSE, TRUE)) {
+    for (use in c("macro", "autocall", "dynamic", "copy")) {
+      root <- startup_library_fixture()
+      main <- file.path(root, "main.sas")
+      if (conditional) writeLines(
+        "%if &switch %then %do; libname input 'first'; %end;", file.path(root, "autoexec.sas"))
+      config <- list(libraries = list(input = file.path(root, "fallback")))
+      macro <- c("%macro readit;", "data work.result; set input.source; run;", "%mend;")
+      macro_r <- "readit <- function() lib_write(lib_read('input', 'source'), 'work', 'result')"
+      if (use == "macro") {
+        writeLines(c(macro, "%readit;"), main)
+        main_r <- paste(macro_r, "readit()", sep = "\n")
+      } else if (use == "autocall") {
+        dir.create(file.path(root, "macros"))
+        writeLines(macro, file.path(root, "macros", "readit.sas"))
+        config$macro_search_path <- file.path(root, "macros")
+        writeLines("%readit;", main)
+        main_r <- "readit()"
+      } else if (use == "dynamic") {
+        writeLines(c("%let inlib = input;", "data work.result; set &inlib..source; run;"), main)
+        main_r <- "lib_write(lib_read('input', 'source'), 'work', 'result')"
+      } else {
+        writeLines(c("proc copy in=input out=work; run;",
+          "data work.result; set work.source; run;"), main)
+        main_r <- paste("for (m in lib_members('input')) lib_write(lib_read('input', m), 'work', m)",
+          "lib_write(lib_read('work', 'source'), 'work', 'result')", sep = "\n")
+      }
+      kind <- if (conditional) "autoexec_bindings_deferred" else "autoexec_library_shadows_config"
+      check <- sas_preflight(main, config = config, diagnose = "off")
+      expect_true(kind %in% check$findings$kind, info = use)
+      code_for <- function(id) if (identical(id, "main")) main_r else macro_r
+      llm <- recording_reviewer(function(req) {
+        if (identical(req$role, "reviewer")) return(good_review())
+        if (identical(req$role, "fixer")) return(valid_program_fix_response(code = code_for(req$component_id)))
+        good_translation(code_for(req$component_id))
+      })
+      result <- sas_translate(main, config = config, out_dir = withr::local_tempdir(),
+        outputs = list(datasets = "work.result"), llm = llm)
+      expect_identical(result$status, "needs_review", info = use)
+      expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
+      expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value,
+        if (conditional) 3 else 1, info = use)
+    }
+  }
+})
+
+test_that("possible startup uses distinguish literal library prefixes from dynamic names", {
+  root <- startup_library_fixture()
+  config <- list(libraries = list(input = file.path(root, "fallback")))
+  # Every case checks the public preflight result. None adds static input
+  # lineage; these uses must retain the appropriate startup advisory anyway.
+  cases <- list(
+    macro_read = "%macro readit; data work.result; set input.source; run; %mend;",
+    macro_write = "%macro writeit; data input.result; value = 1; run; %mend;",
+    macro_sql = "%macro readit; proc sql; create table work.result as select * from input.source; quit; %mend;",
+    dynamic_member = "data work.result; set input.&member; run;",
+    dynamic_name = "data work.result; set &dataset; run;",
+    dynamic_write = "data &outlib..result; value = 1; run;",
+    copy_in = "proc copy in=input out=work; run;",
+    copy_out = "proc copy in=work out=input; run;",
+    copy_dynamic = "proc copy in=&inlib out=work; run;",
+    datasets_library = "proc datasets library=input; contents data=_all_; quit;",
+    datasets_lib = "proc datasets lib=input; contents data=_all_; quit;",
+    work_member = "data work.result; set work.&member; run;",
+    other_member = "data work.result; set other.&member; run;",
+    dataset_option = "data work.result; set work.source(where=(value=&limit)); run;",
+    source_string = "data work.result; text='input.source &inlib'; run;")
+  for (conditional in c(FALSE, TRUE)) {
+    writeLines(if (conditional)
+      "%if &switch %then %do; libname input 'first'; %end;" else "libname input 'first';",
+      file.path(root, "autoexec.sas"))
+    kind <- if (conditional) "autoexec_bindings_deferred" else "autoexec_library_shadows_config"
+    for (name in names(cases)) {
+      writeLines(cases[[name]], file.path(root, "main.sas"))
+      check <- sas_preflight(file.path(root, "main.sas"), config = config, diagnose = "off")
+      expect_identical(kind %in% check$findings$kind,
+        !name %in% c("work_member", "other_member", "dataset_option", "source_string"), info = name)
+    }
+  }
+})

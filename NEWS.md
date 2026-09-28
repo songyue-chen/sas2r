@@ -3,8 +3,9 @@
 - Apply supported autoexec library bindings consistently during preflight,
   execution and bundle export, including reassignment and CLEAR fallbacks.
   A usable startup source path now takes precedence over a different
-  `libraries:` path during execution. Startup advisories apply to libraries used
-  by dataset reads or writes; conditional bindings and shadowed fallbacks allow
+  `libraries:` path during execution. Startup advisories cover dataset reads and
+  writes, including possible uses in macros, dynamic names and library-level
+  procedures; conditional bindings and shadowed fallbacks allow
   execution with available inputs but retain `needs_review`.
 - Reduce repeated work in SAS scanning while preserving source and dependency
   information.

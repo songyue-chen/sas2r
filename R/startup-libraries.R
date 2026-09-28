@@ -66,11 +66,56 @@ defer_startup_bindings <- function(registry, statements, env_files) {
   registry
 }
 
-# Report startup uncertainty only for libraries used by dataset reads or writes.
-# Reuse lineage's point-of-use records instead of resolving the bindings again.
-startup_library_findings <- function(registry, records, env_files) {
+# Possible library uses omitted from static lineage. Do not infer macro call
+# order or expand names: literal prefixes identify a library, while a dynamic
+# prefix can name any startup library. Dataset options are excluded by the
+# shared dataset-position parser.
+nonlineage_library_uses <- function(statements) {
+  librefs <- character()
+  dynamic <- FALSE
+  rows <- which(statements$type == "code" &
+    statements$first_token %in% dataset_candidate_tokens() &
+    (statements$unit_type == "macro_def" | statements$first_token == "proc" |
+      grepl("[&%]", statements$text)))
+  for (row in rows) {
+    token <- statements$first_token[row]
+    macro <- statements$unit_type[row] == "macro_def"
+    unit_type <- if (macro) {
+      if (token %in% c("data", "set", "merge", "update")) "data_step" else "proc_step"
+    } else statements$unit_type[row]
+    refs <- dataset_statement_refs(statements$text[row], token, unit_type)
+    datasets <- c(refs$creates, refs$reads)
+    if (!macro) datasets <- datasets[grepl("[&%]", datasets)]
+    # An explicit prefix remains known when only the member is dynamic.
+    literal <- grepl("^[A-Za-z_]\\w*\\.", datasets)
+    librefs <- c(librefs, sub("\\..*$", "", datasets[literal]))
+    dynamic <- dynamic || any(grepl("[&%]", datasets[!literal]))
+    if (token == "proc" && refs$proc %in% c("copy", "datasets")) {
+      flat <- dataset_tokens(statements$text[row])$flat
+      keys <- if (refs$proc == "copy") c("in", "out") else c("library", "lib")
+      libraries <- unlist(lapply(keys, function(key) dataset_option_values(flat, key)),
+        use.names = FALSE)
+      librefs <- c(librefs, libraries[grepl("^[A-Za-z_]\\w*$", libraries)])
+      dynamic <- dynamic || any(grepl("[&%]", libraries))
+    }
+  }
+  list(librefs = setdiff(unique(tolower(librefs)), "work"), dynamic = dynamic)
+}
+
+# Reuse exact point-of-use records for static lineage. Other possible reads or
+# writes use the startup projection, since their execution position is unknown.
+startup_library_findings <- function(project, records) {
   findings <- tibble::tibble(kind = character(), detail = character())
-  if (!length(records) || !length(env_files)) return(findings)
+  env_files <- project$dependency_facts$env_files
+  if (!length(env_files)) return(findings)
+  registry <- project$libref_registry
+  extra <- nonlineage_library_uses(project$statements)
+  if (extra$dynamic || length(extra$librefs)) {
+    startup_records <- startup_libref_bindings(project)
+    if (!extra$dynamic) startup_records <- startup_records[names(startup_records) %in% extra$librefs]
+    records <- c(records, startup_records)
+  }
+  if (!length(records)) return(findings)
   frames <- registry$frames
   startup <- vapply(frames$key_prefix,
     function(key) key[1L] <= length(env_files), logical(1))
@@ -113,7 +158,7 @@ startup_library_findings <- function(registry, records, env_files) {
   }
   if (length(deferred)) findings <- rbind(findings, tibble::tibble(
     kind = "autoexec_bindings_deferred",
-    detail = paste("Conditional startup bindings used by dataset reads or writes require review;",
+    detail = paste("Conditional startup bindings used or possibly used by dataset reads or writes require review;",
       "configured library fallbacks can supply them:", paste(unique(deferred), collapse = ", "))))
   unique(findings)
 }
