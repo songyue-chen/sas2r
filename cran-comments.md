@@ -20,5 +20,21 @@ preflight/execution/export, and reduced repeated scanner work. See NEWS.md.
 
 ## Validation
 
-Final archive check results and measured timings will be recorded here before
-submission. CRAN acceptance has not been received.
+The final source archive was built with R 4.6.1 and checked on Ubuntu using
+`R CMD check --as-cran`, including the PDF manual and vignettes:
+
+- Total check time: 4 minutes 10 seconds; tests: 166 seconds elapsed.
+- 0 errors, 0 warnings, 1 NOTE: "New submission".
+
+The same package implementation and test selection also passed on Windows
+(7 minutes 48 seconds overall), macOS (4 minutes 37 seconds), R-devel
+(5 minutes 56 seconds) and R 4.1.3 (5 minutes 41 seconds). These checks used
+`--as-cran`; Windows, macOS and R 4.1.3 used `--no-manual`. The final archive
+includes a documentation-link correction, which was rechecked on Ubuntu.
+Times are elapsed measurements on GitHub-hosted runners.
+
+The complete development suite passed against the installed release package
+in CI (10,645 assertions, 0 failures, 0 test warnings), including the separate
+clean-library tarball and migration acceptance checks. The local release test
+profile decreased from 362 to 118 seconds. No package implementation was changed
+to achieve this reduction. CRAN acceptance has not been received.
