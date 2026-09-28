@@ -141,6 +141,8 @@ definitions, `PROC COPY` library options (`in=`, `out=`), and `PROC DATASETS`
 library options (`library=`, `lib=`). A literal library prefix such as
 `input.&member` checks only that library. A dynamic prefix such as
 `&inlib..source` or a fully dynamic dataset name checks every startup library.
+This includes `data &out`, even when the macro variable ultimately names a
+WORK dataset: the scanner does not evaluate that variable.
 These checks do not expand macros or establish their execution position, so
 they can warn about an uncalled macro, a library that a dynamic name never uses,
 or a binding replaced before such a use. A startup macro definition that
@@ -150,6 +152,11 @@ library assignments. Includes inherit their enclosing startup control or macro
 definition. Inline conditional statements, cross-file or unbalanced blocks,
 jumps and early exits defer the prologue rather than guessing which assignments
 run; no macro conditions are evaluated.
+
+These checks do not inspect generated code text (`CALL EXECUTE` or SQL stored
+in macro variables) or library uses inside SAS function calls such as
+`%sysfunc(exist(...))`. Review the intended library paths for those forms even
+if no startup advisory appears.
 
 The main programs are listed in dependency order; this does not mean they are
 independent. A consumer waits for its upstream components during parallel
