@@ -12,7 +12,7 @@ independent programming or your organization's statistical QC procedures.
 **Release status:** 0.5.8 is being prepared for CRAN resubmission; it has not
 yet been accepted. `main` is the release branch. Ongoing development and the
 complete test suite live on [`develop`](https://github.com/songyue-chen/sas2r/tree/develop).
-See the [release workflow](docs/releasing.md) for validation and branch roles.
+See the [release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) for validation and branch roles.
 
 [Quickstart](#quickstart) · [AI models](#choosing-an-ai-model) ·
 [Parallel translation](#parallel-translation-opt-in) ·

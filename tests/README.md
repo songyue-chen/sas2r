@@ -2,7 +2,7 @@
 
 This complete suite is maintained on `develop`. The release branch `main` ships
 a smaller suite and records the development commit used for full validation in
-`.github/development-test-ref`. See [the release workflow](../docs/releasing.md).
+`.github/development-test-ref`. See [the release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md).
 
 ## Existing test profiles
 
