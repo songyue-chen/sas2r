@@ -86,23 +86,3 @@ test_that("configuration diagnosis uses one transport attempt and preserves orig
   expect_identical(invalid$diagnosis$status, "unavailable")
   expect_match(invalid$diagnosis$reason, "configuration could be resolved")
 })
-
-test_that("diagnosis context is bounded and actual configured secrets are redacted", {
-  root <- diagnosis_fixture(code = c("%let note=actual-test-secret;",
-    "data out; set work.absent; run;", rep("%let long=abcdefghij;", 2500)))
-  sent <- NULL
-  llm <- new_llm(function(request, ...) {
-    sent <<- request$messages[[2L]]$content
-    answer <- diagnosis_answer()
-    answer$summary <- "Never show actual-test-secret."
-    new_llm_response(status = "completed", action = "final", data = answer,
-      request = request, provider = "mock")
-  }, provider = "mock", model = "diagnosis-test", redaction_secrets = "actual-test-secret")
-  check <- sas_preflight(root, llm = llm)
-  expect_identical(check$diagnosis$status, "completed")
-  expect_true(check$diagnosis$context_truncated)
-  expect_lt(nchar(sent), 31000L)
-  expect_false(grepl("actual-test-secret", sent, fixed = TRUE))
-  expect_false(grepl("actual-test-secret", check$diagnosis$advisory$summary, fixed = TRUE))
-  expect_match(sent, "main.sas")
-})

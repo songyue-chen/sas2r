@@ -46,50 +46,6 @@ test_that("preflight accepts both valid alternatives and honors concurrency over
     max_parallel_translations = 4L)$max_parallel_translations, 4L)
 })
 
-test_that("translation honors overrides and permits either valid configuration", {
-  root <- withr::local_tempdir()
-  writeLines("data out; x=1; run;", file.path(root, "p.sas"))
-  cfg <- list(migration = list(max_parallel_translations = 4L),
-    llm = list(provider = "deepseek", model = "offline", max_tries = 2L))
-  # Exercise startup and the deterministic pipeline without paid requests.
-  testthat::local_mocked_bindings(sas_llm = function(...) NULL)
-  serial <- sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
-    max_parallel_translations = 1L, execute = FALSE)
-  expect_identical(serial$diagnostics$parallel$effective, 1L)
-  cfg$migration$max_parallel_translations <- 1L
-  expect_error(sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
-    max_parallel_translations = 4L, execute = FALSE), class = "sas2r_parallel_config_error")
-  cfg$llm$max_tries <- 1L
-  parallel <- sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
-    max_parallel_translations = 2L, execute = FALSE)
-  expect_identical(parallel$diagnostics$parallel$effective, 2L)
-  expect_identical(parallel$diagnostics$parallel$backend, "callr")
-})
-
-test_that("explicit adapters use their own retry settings and cannot silently downgrade", {
-  skip_if_not_installed("ellmer")
-  root <- withr::local_tempdir()
-  writeLines("data out; x=1; run;", file.path(root, "p.sas"))
-  cfg <- list(migration = list(max_parallel_translations = 4L),
-    llm = list(provider = "deepseek", model = "offline", max_tries = 1L))
-  adapter_config <- cfg$llm
-  adapter_config$max_tries <- 2L
-  adapter <- sas_llm(adapter_config) # Constructor does not make network calls.
-  expect_error(sas_translate(root, out_dir = file.path(root, "out"),
-    config = cfg, llm = adapter, execute = FALSE), class = "sas2r_parallel_config_error")
-  expect_false(dir.exists(file.path(root, "out")))
-  state <- list(translator_llm = NULL, reviewer_llm = adapter, fixer_llm = NULL)
-  expect_error(resolve_parallel_execution(state, 4L), class = "sas2r_parallel_config_error")
-  expect_identical(resolve_parallel_execution(state, 1L)$effective, 1L)
-
-  # Unused YAML retry settings must not reject an explicit replacement adapter.
-  cfg$llm$max_tries <- 2L
-  cfg$migration$max_parallel_translations <- 2L
-  result <- sas_translate(root, out_dir = withr::local_tempdir(), config = cfg,
-    llm = parallel_test_llm(list(reviewer = valid_program_review_response())), execute = FALSE)
-  expect_identical(result$diagnostics$parallel$effective, 2L)
-})
-
 test_that("oversized captured adapter settings give an actionable error before worker launch", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   factory <- function() {

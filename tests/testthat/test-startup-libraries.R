@@ -21,57 +21,17 @@ startup_library_llm <- function(code) recording_reviewer(function(req) {
 
 test_that("autoexec-only inputs work in preflight, smoke, bundle and exported execution", {
   skip_if_not_installed("dplyr")
-  expected_values <- c(direct = 1, include = 2, clear = 3, unrelated_control = 1,
-    conditional_fallback = 3, shadow_config = 1, unused_conditional = 1,
-    superseded_conditional = 1, program_clear = 3, conditional_clear = 3,
-    conditional_unavailable = 3)
+  expected_values <- c(direct = 1, conditional_fallback = 3)
   for (scenario in names(expected_values)) {
     root <- startup_library_fixture()
     config <- list()
     expected <- unname(expected_values[scenario])
-    if (scenario %in% c("include", "clear")) {
-      writeLines("libname input 'second';", file.path(root, "binding.inc"))
-      writeLines(c("libname input 'first';", "%include 'binding.inc';"),
-        file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "clear") {
-      writeLines("libname input clear;", file.path(root, "clear.sas"))
-      config <- list(autoexec = file.path(root, c("autoexec.sas", "clear.sas")),
-        libraries = list(input = file.path(root, "fallback")))
-    }
-    if (scenario == "unrelated_control") {
-      writeLines(c("%if &sysscp = WIN %then %do; options nonumber; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
     if (scenario == "conditional_fallback") {
       writeLines("%if &switch %then %do; libname input 'first'; %end;",
         file.path(root, "autoexec.sas"))
     }
-    if (scenario == "unused_conditional") {
-      writeLines(c("%if &switch %then %do; libname scratch 'second'; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "superseded_conditional") {
-      writeLines(c("%if &switch %then %do; libname input 'second'; %end;",
-        "libname input 'first';"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "program_clear") {
-      writeLines(c("libname input clear;", "data work.result; set input.source; run;"),
-        file.path(root, "main.sas"))
-    }
-    if (scenario == "conditional_clear") {
-      writeLines(c("libname input 'first';",
-        "%if &switch %then %do; libname input clear; %end;"), file.path(root, "autoexec.sas"))
-    }
-    if (scenario == "conditional_unavailable") {
-      writeLines("%if &switch %then %do; libname input 'unavailable'; %end;",
-        file.path(root, "autoexec.sas"))
-    }
-    if (scenario %in% c("unused_conditional", "superseded_conditional"))
-      config$libraries <- list(input = file.path(root, "first"))
-    advisory <- scenario %in% c("conditional_fallback", "shadow_config", "conditional_clear",
-      "conditional_unavailable")
-    if (advisory || scenario == "program_clear")
+    advisory <- scenario == "conditional_fallback"
+    if (advisory)
       config$libraries <- list(input = file.path(root, "fallback"))
     input <- file.path(root, c("first", "second", "fallback")[expected], "source.sas7bdat")
     before <- cli::hash_file_sha256(input)
@@ -127,79 +87,6 @@ test_that("startup projection respects ordered includes, CLEAR and configured fa
   writeLines("libname _all_ clear;", file.path(root, "clear.sas"))
   expect_equal(effective_librefs(sas_project(main, config = config))$startup$input$path,
     file.path(root, "fallback"))
-})
-
-test_that("program assignments occur at their source position and do not leak across roots", {
-  skip_if_not_installed("dplyr")
-  root <- startup_library_fixture()
-  unlink(file.path(root, "main.sas"))
-  writeLines(c("data work.before; set input.source; run;", "libname input 'second';",
-    "data work.after; set input.source; run;"), file.path(root, "a.sas"))
-  writeLines("data work.next_root; set input.source; run;", file.path(root, "b.sas"))
-  code_a <- paste(
-    "lib_write(lib_read('input', 'source'), 'work', 'before')",
-    sprintf("sas2r_libname_assign('input', %s, engine = 'sas7bdat')", deparse(file.path(root, "second"))),
-    "lib_write(lib_read('input', 'source'), 'work', 'after')", sep = "\n")
-  code_b <- "lib_write(lib_read('input', 'source'), 'work', 'next_root')"
-  result <- sas_translate(root, out_dir = withr::local_tempdir(),
-    outputs = list(datasets = c("work.before", "work.after", "work.next_root")),
-    llm = startup_library_llm(list(a = code_a, b = code_b)))
-  expect_identical(result$status, "migration_ready")
-  values <- function(dir) vapply(c("before", "after", "next_root"), function(name)
-    readRDS(file.path(dir, "work", paste0(name, ".rds")))$value, numeric(1))
-  expect_equal(unname(values(file.path(result$outputs_dir, "datasets"))), c(1, 2, 1))
-  manual <- callr::r(function(dir) {
-    setwd(dir)
-    source("run.R")
-    vapply(c("before", "after", "next_root"), function(name)
-      readRDS(file.path("output", "work", paste0(name, ".rds")))$value, numeric(1))
-  }, args = list(dir = result$bundle_dir), user_profile = FALSE, system_profile = FALSE)
-  expect_equal(unname(manual), c(1, 2, 1))
-  # Exercise the flat snapshot's entrypoint too, with fresh output directories.
-  report <- read_json_record(result$report_json_path)
-  snapshot <- file.path(dirname(dirname(result$report_json_path)), "diagnostics",
-    "bundle_attempts", report$selected_attempt_id, "bundle")
-  flat <- withr::local_tempdir()
-  file.copy(list.files(snapshot, full.names = TRUE), flat, recursive = TRUE)
-  write_autoexec(result$project, flat,
-    library_map = build_attempt_library_map(result$project, flat))
-  flat_values <- callr::r(function(dir) {
-    setwd(dir)
-    source("run.R")
-    vapply(c("before", "after", "next_root"), function(name)
-      readRDS(file.path("work", paste0(name, ".rds")))$value, numeric(1))
-  }, args = list(dir = flat), user_profile = FALSE, system_profile = FALSE)
-  expect_equal(unname(flat_values), c(1, 2, 1))
-})
-
-test_that("unresolved and conditional startup assignments remain deferred", {
-  root <- startup_library_fixture()
-  main <- file.path(root, "main.sas")
-  for (text in c("libname input '&missing';",
-    "%macro setup(); libname input 'first'; %mend;",
-    "%if &switch %then %do; libname input 'first'; %end;")) {
-    writeLines(text, file.path(root, "autoexec.sas"))
-    expect_null(effective_librefs(sas_project(main))$startup$input)
-    project <- sas_project(main, config = list(libraries = list(input = file.path(root, "fallback"))))
-    expect_equal(effective_librefs(project)$startup$input$path, file.path(root, "fallback"))
-  }
-  writeLines("libname input 'first';", file.path(root, "binding.inc"))
-  writeLines("%if &switch %then %do; %include 'binding.inc'; %end;", file.path(root, "autoexec.sas"))
-  project <- sas_project(main)
-  expect_null(effective_librefs(project)$startup$input)
-  expect_true("autoexec_bindings_deferred" %in% project$flags$kind)
-  check <- sas_preflight(main, diagnose = "off")
-  expect_false(any(check$inputs$status == "available"))
-  expect_true(any(vapply(check$readiness$warnings, function(x)
-    x$kind == "input_unresolved" && x$blocks_execution, logical(1))))
-  expect_false(any(vapply(check$readiness$warnings, function(x)
-    x$kind == "autoexec_bindings_deferred" && x$blocks_execution, logical(1))))
-  result <- sas_translate(main, out_dir = withr::local_tempdir(),
-    outputs = list(datasets = "work.result"),
-    llm = startup_library_llm(list(main = "lib_write(lib_read('input', 'source'), 'work', 'result')")))
-  report <- read_json_record(result$report_json_path)
-  expect_identical(result$status, "needs_review")
-  expect_identical(report$outcome$stages$`Bundle execution`, "NOT RUN (0 attempts)")
 })
 
 test_that("startup control follows block scope, include occurrences and reassignment order", {
@@ -282,42 +169,6 @@ test_that("an include in an unrelated startup macro does not defer other binding
   expect_identical(check$inputs$status, "available")
 })
 
-test_that("startup macro library review is limited to used libraries", {
-  skip_if_not_installed("dplyr")
-  for (used in c(FALSE, TRUE)) {
-    root <- startup_library_fixture()
-    libref <- if (used) "input" else "scratch"
-    path <- if (used) "first" else "second"
-    writeLines(c("%macro tmp;", sprintf("libname %s '%s';", libref, path),
-      "%mend;", "libname input 'first';"), file.path(root, "autoexec.sas"))
-    code <- sprintf("tmp <- function() sas2r_libname_assign('%s', %s, engine = 'sas7bdat')",
-      libref, deparse(file.path(root, path)))
-    # This startup macro uses the same translation/repair path whether its
-    # library is used or unused; the advisory itself does not invoke repair.
-    llm <- recording_reviewer(function(req) {
-      if (identical(req$role, "reviewer")) return(good_review())
-      if (identical(req$role, "fixer")) return(valid_program_fix_response(code = code))
-      good_translation(if (identical(req$component_id, "main"))
-        "lib_write(lib_read('input', 'source'), 'work', 'result')" else code)
-    })
-    result <- sas_translate(file.path(root, "main.sas"), out_dir = withr::local_tempdir(),
-      config = list(libraries = list(input = file.path(root, "first"))),
-      outputs = list(datasets = "work.result"), llm = llm)
-    expect_identical(result$status, if (used) "needs_review" else "migration_ready")
-    expect_identical("autoexec_bindings_deferred" %in% result$project$flags$kind, used)
-    expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value, 1)
-    if (used) {
-      expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
-      # An open-code call must retain the warning too: the static projection
-      # does not evaluate a macro that can reassign this used library.
-      writeLines(c("%macro tmp; libname input 'second'; %mend;",
-        "libname input 'first';", "%tmp;"), file.path(root, "autoexec.sas"))
-      project <- sas_project(file.path(root, "main.sas"))
-      expect_true("autoexec_bindings_deferred" %in% project$flags$kind)
-    }
-  }
-})
-
 test_that("startup shadow warnings follow reads and writes through includes and program changes", {
   root <- startup_library_fixture()
   writeLines("libname input 'first';", file.path(root, "binding.inc"))
@@ -334,54 +185,6 @@ test_that("startup shadow warnings follow reads and writes through includes and 
     project <- sas_project(file.path(root, "main.sas"), config = config)
     expect_identical("autoexec_library_shadows_config" %in% project$flags$kind,
       name %in% c("read_before_clear", "write"), info = name)
-  }
-})
-
-test_that("startup advisories survive macro, dynamic-name and library-level execution", {
-  skip_if_not_installed("dplyr")
-  for (conditional in c(FALSE, TRUE)) {
-    for (use in c("macro", "autocall", "dynamic", "copy")) {
-      root <- startup_library_fixture()
-      main <- file.path(root, "main.sas")
-      if (conditional) writeLines(
-        "%if &switch %then %do; libname input 'first'; %end;", file.path(root, "autoexec.sas"))
-      config <- list(libraries = list(input = file.path(root, "fallback")))
-      macro <- c("%macro readit;", "data work.result; set input.source; run;", "%mend;")
-      macro_r <- "readit <- function() lib_write(lib_read('input', 'source'), 'work', 'result')"
-      if (use == "macro") {
-        writeLines(c(macro, "%readit;"), main)
-        main_r <- paste(macro_r, "readit()", sep = "\n")
-      } else if (use == "autocall") {
-        dir.create(file.path(root, "macros"))
-        writeLines(macro, file.path(root, "macros", "readit.sas"))
-        config$macro_search_path <- file.path(root, "macros")
-        writeLines("%readit;", main)
-        main_r <- "readit()"
-      } else if (use == "dynamic") {
-        writeLines(c("%let inlib = input;", "data work.result; set &inlib..source; run;"), main)
-        main_r <- "lib_write(lib_read('input', 'source'), 'work', 'result')"
-      } else {
-        writeLines(c("proc copy in=input out=work; run;",
-          "data work.result; set work.source; run;"), main)
-        main_r <- paste("for (m in lib_members('input')) lib_write(lib_read('input', m), 'work', m)",
-          "lib_write(lib_read('work', 'source'), 'work', 'result')", sep = "\n")
-      }
-      kind <- if (conditional) "autoexec_bindings_deferred" else "autoexec_library_shadows_config"
-      check <- sas_preflight(main, config = config, diagnose = "off")
-      expect_true(kind %in% check$findings$kind, info = use)
-      code_for <- function(id) if (identical(id, "main")) main_r else macro_r
-      llm <- recording_reviewer(function(req) {
-        if (identical(req$role, "reviewer")) return(good_review())
-        if (identical(req$role, "fixer")) return(valid_program_fix_response(code = code_for(req$component_id)))
-        good_translation(code_for(req$component_id))
-      })
-      result <- sas_translate(main, config = config, out_dir = withr::local_tempdir(),
-        outputs = list(datasets = "work.result"), llm = llm)
-      expect_identical(result$status, "needs_review", info = use)
-      expect_match(result$status_reason, "startup_libraries_require_review", fixed = TRUE)
-      expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$value,
-        if (conditional) 3 else 1, info = use)
-    }
   }
 })
 

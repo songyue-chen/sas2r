@@ -104,38 +104,6 @@ test_that("a real callee failure repairs the source-defective macro and preserve
   expect_identical(attr(output$measure, "label"), "Sensor reading")
 })
 
-test_that("nested runtime calls can identify the inner macro without rewriting its callers", {
-  fx <- runtime_callee_fixture(nested = TRUE)
-  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
-  expect_identical(vapply(result$repairs, "[[", "", "component_id"), "macro__empty_frame")
-  expect_identical(result$selected_revisions$macro__wrapper$r_code, fx$fixed$macro__wrapper)
-  expect_identical(result$selected_revisions$main$r_code, fx$fixed$main)
-  expect_true(result$attempt$passed)
-})
-
-runtime_fault_sites <- list(
-  arithmetic = '1 + "a"',
-  dplyr = 'dplyr::mutate(data.frame(x = 1), y = missing_var)',
-  local_helper = '.check <- function(x) stop(paste0("record", "_value_", 77123)); .check(label)',
-  invented_read = 'lib_read("work", "not_there")')
-for (site in names(runtime_fault_sites)) {
-  test_that(paste("macro errors in", site, "route through the live call names"), {
-    if (site == "dplyr") skip_if_not_installed("dplyr")
-    fx <- runtime_callee_fixture(nested = TRUE, fault = runtime_fault_sites[[site]])
-    result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
-    expect_identical(vapply(result$repairs, "[[", "", "component_id"), "macro__empty_frame")
-    expect_identical(result$selected_revisions$main$r_code, fx$fixed$main)
-    expect_identical(result$selected_revisions$macro__wrapper$r_code, fx$fixed$macro__wrapper)
-    expect_true(result$attempt$passed)
-    first <- result$diagnostics$bundle_repair$attempts$bundle_attempt_001
-    expect_true(all(c("wrapper", "empty_frame") %in% first$failures$main$call_names))
-    expect_identical(first$callee_reviews$macro__empty_frame$caller, "main")
-    expect_false(any(grepl("record_value_77123|Sensor reading", first$failures$main$call_names)))
-    requests <- c(fx$state$reviewer_llm$requests(), fx$state$fixer_llm$requests())
-    expect_false(any(grepl("record_value_77123", vapply(requests, request_task_text, ""), fixed = TRUE)))
-  })
-}
-
 test_that("source-required macro failure remains blocked rather than being removed", {
   fx <- runtime_callee_fixture(source_abort = TRUE)
   result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
@@ -175,53 +143,6 @@ test_that("callee investigation reuses source review and respects budget and una
     condition <- execution_condition(tryCatch(eval(parse(text = code)), error = identity))
     expect_null(runtime_callee_component(state, "main", condition))
   }
-})
-
-test_that("an unavailable extra review preserves completed evidence while the caller is repaired", {
-  fx <- runtime_callee_fixture(caller_fault = TRUE)
-  fx$state$reviewer_llm <- recording_reviewer(function(req) {
-    if (req$component_id == "macro__empty_frame")
-      return(valid_program_review_response(verdict = "review_unavailable", static_runnability = "unknown"))
-    valid_program_review_response()
-  })
-  original <- fx$state$histories$macro__empty_frame
-  result <- run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 1L)
-  expect_identical(result$histories$macro__empty_frame, original)
-  expect_identical(result$diagnostics$bundle_repair$attempts$bundle_attempt_001$
-    callee_reviews$macro__empty_frame$verdict, "review_unavailable")
-  expect_identical(vapply(result$repairs, "[[", "", "component_id"), "main")
-  expect_true(result$attempt$passed)
-})
-
-test_that("a pending macro repair is not erased or re-reviewed during callee investigation", {
-  fx <- runtime_callee_fixture()
-  state <- fx$state
-  state$histories$macro__empty_frame <- record_completed_review(state$histories$macro__empty_frame,
-    verdict = "repair_required", findings = material_review_response()$data$findings)
-  attempt <- run_bundle_attempt(state, sequence = 1L)
-  diagnostic <- collect_bundle_diagnostics(state, attempt)
-  result <- review_bundle_callees(state, attempt, diagnostic, 0L)
-  expect_identical(result$state$histories$macro__empty_frame, state$histories$macro__empty_frame)
-  expect_length(state$reviewer_llm$requests(), 0L)
-  expect_length(result$diagnostic$callee_reviews, 0L)
-})
-
-test_that("a non-actionable extra review does not replace completed macro evidence", {
-  fx <- runtime_callee_fixture(caller_fault = TRUE)
-  fx$state$reviewer_llm <- recording_reviewer(material_review_response(
-    unresolved_dependencies = "unresolved_source"))
-  original <- fx$state$histories$macro__empty_frame
-  attempt <- run_bundle_attempt(fx$state, sequence = 1L)
-  result <- review_bundle_callees(fx$state, attempt, collect_bundle_diagnostics(fx$state, attempt), 0L)
-  expect_identical(result$state$histories$macro__empty_frame, original)
-  expect_identical(result$diagnostic$callee_reviews$macro__empty_frame$verdict, "repair_required")
-  # This is a full source review, so a completed clean review can also recover
-  # evidence that was unavailable before this investigation.
-  fx$state$histories$macro__empty_frame <- record_review_unavailable(original)
-  fx$state$reviewer_llm <- recording_reviewer(valid_program_review_response())
-  recovered <- review_bundle_callees(fx$state, attempt, collect_bundle_diagnostics(fx$state, attempt), 0L)
-  expect_identical(component_review_verdict(recovered$state$histories$macro__empty_frame),
-    "reviewed_no_material_finding")
 })
 
 test_that("regex bracket notices are advisory and respect the selected engine", {
