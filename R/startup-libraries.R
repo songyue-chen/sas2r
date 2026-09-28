@@ -77,20 +77,27 @@ startup_library_findings <- function(registry, records, env_files) {
   occurrences <- stats::na.omit(frames$include_occurrence_id[startup])
   used <- unique(vapply(records, `[[`, character(1), "libref"))
   events <- registry$events
+  conditional <- which(events$frame_index %in% frames$frame_index[startup] & events$conditional)
   # Conditional events outside open control are macro-definition events,
   # including inherited definition scope in includes. Macro calls are not
   # evaluated, so keep review for a definition that can change a used library.
-  definitions <- which(events$frame_index %in% frames$frame_index[startup] &
-    events$conditional & !seq_len(nrow(events)) %in% registry$startup_control_rows &
-    events$libref %in% c(used, "_all_"))
+  definitions <- conditional[!conditional %in% registry$startup_control_rows &
+    events$libref[conditional] %in% c(used, "_all_")]
   deferred <- if (length(definitions))
     paste0(events$libref[definitions], " in ", events$file[definitions]) else character()
   for (record in records) {
     from_startup <- record$file %in% env_files ||
       record$include_occurrence_id %in% occurrences
     if (!from_startup) next
-    if (identical(record$fallback_reason, "source_binding_conditional") ||
-        identical(record$status, "conditionally_bound")) {
+    # The selected event can be conditional even when the resolver reports a
+    # more specific fallback reason, such as CLEAR or an unavailable path.
+    uncertain <- any(events$file[conditional] %in% record$file &
+      events$line[conditional] %in% record$line &
+      events$libref[conditional] %in% c(record$libref, "_all_") &
+      events$action[conditional] %in% record$action &
+      events$path_expression[conditional] %in% record$source_path_expression &
+      events$include_occurrence_id[conditional] %in% record$include_occurrence_id)
+    if (uncertain) {
       deferred <- c(deferred, paste0(record$libref, " in ", record$file))
     }
     if (identical(record$status, "bound") && !isTRUE(record$context_truncated) &&

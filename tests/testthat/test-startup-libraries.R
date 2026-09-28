@@ -23,7 +23,8 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
   skip_if_not_installed("dplyr")
   expected_values <- c(direct = 1, include = 2, clear = 3, unrelated_control = 1,
     conditional_fallback = 3, shadow_config = 1, unused_conditional = 1,
-    superseded_conditional = 1, program_clear = 3)
+    superseded_conditional = 1, program_clear = 3, conditional_clear = 3,
+    conditional_unavailable = 3)
   for (scenario in names(expected_values)) {
     root <- startup_library_fixture()
     config <- list()
@@ -58,9 +59,19 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
       writeLines(c("libname input clear;", "data work.result; set input.source; run;"),
         file.path(root, "main.sas"))
     }
+    if (scenario == "conditional_clear") {
+      writeLines(c("libname input 'first';",
+        "%if &switch %then %do; libname input clear; %end;"), file.path(root, "autoexec.sas"))
+    }
+    if (scenario == "conditional_unavailable") {
+      writeLines("%if &switch %then %do; libname input 'unavailable'; %end;",
+        file.path(root, "autoexec.sas"))
+    }
     if (scenario %in% c("unused_conditional", "superseded_conditional"))
       config$libraries <- list(input = file.path(root, "first"))
-    if (scenario %in% c("conditional_fallback", "shadow_config", "program_clear"))
+    advisory <- scenario %in% c("conditional_fallback", "shadow_config", "conditional_clear",
+      "conditional_unavailable")
+    if (advisory || scenario == "program_clear")
       config$libraries <- list(input = file.path(root, "fallback"))
     input <- file.path(root, c("first", "second", "fallback")[expected], "source.sas7bdat")
     before <- cli::hash_file_sha256(input)
@@ -71,7 +82,6 @@ test_that("autoexec-only inputs work in preflight, smoke, bundle and exported ex
     result <- sas_translate(main, config = config, out_dir = withr::local_tempdir(),
       outputs = list(datasets = "work.result"),
       llm = startup_library_llm(list(main = "lib_write(lib_read('input', 'source'), 'work', 'result')")))
-    advisory <- scenario %in% c("conditional_fallback", "shadow_config")
     expect_identical(any(check$findings$kind %in%
       c("autoexec_bindings_deferred", "autoexec_library_shadows_config")), advisory)
     expect_identical(result$status, if (advisory) "needs_review" else "migration_ready")
