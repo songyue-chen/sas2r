@@ -1,6 +1,6 @@
 name: check
 on:
-  push: { branches: [main] }
+  push: { branches: [main, develop] }
   pull_request: {}
   workflow_dispatch: {}
 permissions:
@@ -101,6 +101,14 @@ jobs:
         run: R CMD INSTALL .
       - name: Execute offline documentation examples
         run: Rscript tools/run-doc-examples.R --installed
+      - name: Restore the release's complete development tests
+        shell: bash
+        run: |
+          if test -f .github/development-test-ref; then
+            test_ref=$(cat .github/development-test-ref)
+            git fetch --no-tags origin "$test_ref"
+            git restore --source="$test_ref" --worktree -- tests
+          fi
       - name: Test installed sas2r
         run: testthat::test_check("sas2r", stop_on_failure = TRUE)
         shell: Rscript {0}
@@ -135,26 +143,31 @@ jobs:
         run: R CMD build --no-manual .
       - name: Install tarball into a clean library
         run: |
-          mkdir -p "$RUNNER_TEMP/cleanlib" "$RUNNER_TEMP/tarball"
+          mkdir -p "$RUNNER_TEMP/cleanlib"
           R CMD INSTALL --library="$RUNNER_TEMP/cleanlib" sas2r_*.tar.gz
-          tar xzf sas2r_*.tar.gz -C "$RUNNER_TEMP/tarball"
-      - name: Acceptance against the installed tarball
+      - name: Restore the release's complete development tests
+        shell: bash
+        run: |
+          if test -f .github/development-test-ref; then
+            test_ref=$(cat .github/development-test-ref)
+            git fetch --no-tags origin "$test_ref"
+            git restore --source="$test_ref" --worktree -- tests
+          fi
+      - name: Complete development suite against the installed tarball
         run: |
           .libPaths(c(Sys.getenv("CLEANLIB"), .libPaths()))
           library(sas2r)
-          # test_dir(), not test_local(): test_local() derives `package`
-          # itself and walks up to the checkout, so it would both duplicate
-          # the argument and run the source tree's tests instead of the
-          # tarball's.
+          # Install the submission archive first, then exercise it with the
+          # full tests from the release's fixed development commit. The
+          # rcmdcheck jobs separately run the tests shipped in the archive.
           res <- testthat::test_dir(
-            file.path(Sys.getenv("TARBALL_TESTS"), "testthat"),
+            "tests/testthat",
             package = "sas2r", load_package = "installed",
             reporter = "summary", stop_on_failure = TRUE
           )
         shell: Rscript {0}
         env:
           CLEANLIB: ${{ runner.temp }}/cleanlib
-          TARBALL_TESTS: ${{ runner.temp }}/tarball/sas2r/tests
       # A bash step: the old first line was R (`.libPaths(c(...))`) under the
       # default shell, so the step died on a bash syntax error before Rscript
       # ever ran. The clean library reaches the child through R_LIBS_USER.
