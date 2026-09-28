@@ -227,8 +227,13 @@ test_that("preflight makes a shadowed configured library visible without blockin
   expect_match(warnings[[1L]]$detail, file.path(root, "first"), fixed = TRUE)
   expect_match(warnings[[1L]]$detail, file.path(root, "fallback"), fixed = TRUE)
   expect_match(warnings[[1L]]$detail, "autoexec.sas", fixed = TRUE)
-  printed <- paste(capture.output(print(check), type = "message"), collapse = "\n")
-  expect_match(printed, "takes precedence over configured fallback", fixed = TRUE)
+  # Console wrapping depends on width and platform-specific temporary paths.
+  for (width in c(32L, 80L, 160L)) {
+    printed <- withr::with_options(list(cli.width = width),
+      paste(capture.output(print(check), type = "message"), collapse = "\n"))
+    printed <- gsub("[[:space:]]+", " ", printed)
+    expect_match(printed, "takes precedence over configured fallback", fixed = TRUE)
+  }
   for (source in c("libname input 'fallback';", "libname input clear;",
     "libname input '/unavailable-source-folder';",
     "%if &switch %then %do; libname input 'first'; %end;")) {
