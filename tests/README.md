@@ -15,7 +15,7 @@ in this directory.
 | Agent translation, review and repair | Generation, review/fix, smoke checks, immediate repair, fresh bundle reruns and runtime macro attribution |
 | Source-faithful repair | The complete `test-source-faithful-repair.R`, seeded semantic defects and cross-component diagnosis; reference matches cannot authorize source regressions |
 | Parallel work and incomplete inputs | Configuration and real two-worker execution with missing inputs; partial execution and readiness/status gates |
-| Autoexec and library bindings | Static scope/order, CLEAR and fallback checks; direct, included/CLEAR and conditional-fallback inputs through smoke, bundle and moved exports; representative dynamic-name advisories |
+| Autoexec and library bindings | Static scope/order, CLEAR and fallback checks; direct and conditional-fallback inputs through smoke, bundle and moved exports; static macro and dynamic-name advisories |
 | Outputs and evidence | Dataset comparisons, rows, cells, alignment, output contracts, TLF requirements, QC, lineage/evidence levels and reports |
 | Providers and accounting | Offline provider/configuration contracts, request handling, usage ledger, privacy and budget checks |
 

@@ -1,41 +1,29 @@
 test_that("missing data and source preserve drafts while independent parallel work executes", {
   skip_if_not_installed("dplyr")
-  {
-    workers <- 2L
-    execute <- TRUE
-    fx <- repair_workflow_fixture(n = 3L, failures = integer(), chain = TRUE)
-    writeLines(c('%include "unavailable.sas";', '%unavailable_macro();',
-      'data work.out1; set missing.input; retain marker 1; run;'), file.path(fx$root, "p01.sas"))
-    # p03 is independent and should still get its execution checks.
-    writeLines('data work.out3; set raw.input; value=value+1; run;', file.path(fx$root, "p03.sas"))
-    responses <- list(translator = valid_program_translation_response(fx$fixed$p01),
-      reviewer = valid_program_review_response())
-    result <- sas_translate(fx$root, out_dir = file.path(fx$root, "run"), config = fx$state$config,
-      llm = parallel_test_llm(responses, delay = 0), max_parallel_translations = workers,
-      execute = execute, max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L)
-    expect_identical(result$status, "needs_review")
-    expect_setequal(names(result$component_evidence), fx$ids)
-    expect_true(all(file.exists(file.path(result$bundle_dir, "programs", paste0(fx$ids, ".R")))))
-    expect_true(length(result$diagnostics$execution_deferred) > 0L)
-    report <- read_json_record(result$report_json_path)
-    expect_match(report$outcome$stages$Translation, "3 of 3", fixed = TRUE)
-    if (execute) {
-      # The independent root runs; the blocked root and its dependent do not.
-      expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED (1 attempt", fixed = TRUE)
-      expect_match(report$outcome$stages[["Bundle execution"]], "not executed: p01, p02", fixed = TRUE)
-      expect_setequal(names(result$diagnostics$deferred_components), c("p01", "p02"))
-    } else {
-      expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)
-    }
-    if (execute) {
-      expect_identical(current_component_evidence(result$component_evidence$p03)$level, "runtime_verified")
-      expect_match(current_component_evidence(result$component_evidence$p02)$runtime_deferred,
-        "Dependencies unavailable", fixed = TRUE)
-    }
-    check <- sas_preflight(fx$root, config = fx$state$config)
-    expect_match(paste(component_readiness_context(check$project, "p02"), collapse = "\n"),
-      "missing logic", fixed = TRUE)
-  }
+  fx <- repair_workflow_fixture(n = 2L, failures = integer())
+  writeLines(c('%include "unavailable.sas";', '%unavailable_macro();',
+    'data work.out1; set missing.input; retain marker 1; run;'), file.path(fx$root, "p01.sas"))
+  responses <- list(translator = valid_program_translation_response(fx$fixed$p01),
+    reviewer = valid_program_review_response())
+  result <- sas_translate(fx$root, out_dir = file.path(fx$root, "run"), config = fx$state$config,
+    outputs = list(datasets = c("work.out1", "work.out2")),
+    llm = parallel_test_llm(responses, delay = 0), max_parallel_translations = 2L,
+    execute = TRUE, max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L)
+  expect_identical(result$status, "needs_review")
+  expect_setequal(names(result$component_evidence), fx$ids)
+  expect_true(all(file.exists(file.path(result$bundle_dir, "programs", paste0(fx$ids, ".R")))))
+  expect_true(length(result$diagnostics$execution_deferred) > 0L)
+  report <- read_json_record(result$report_json_path)
+  expect_match(report$outcome$stages$Translation, "2 of 2", fixed = TRUE)
+  expect_match(report$outcome$stages[["Bundle execution"]], "EXECUTED (1 attempt", fixed = TRUE)
+  expect_match(report$outcome$stages[["Bundle execution"]], "not executed: p01", fixed = TRUE)
+  expect_setequal(names(result$diagnostics$deferred_components), "p01")
+  expect_identical(current_component_evidence(result$component_evidence$p02)$level, "output_verified")
+  actual <- readRDS(file.path(result$outputs_dir, "datasets", "work", "out2.rds"))
+  expect_equal(actual$value, 11:13)
+  check <- sas_preflight(fx$root, config = fx$state$config)
+  expect_match(paste(component_readiness_context(check$project, "p01"), collapse = "\n"),
+    "missing logic", fixed = TRUE)
 })
 
 test_that("critical errors still stop instead of being downgraded to component warnings", {

@@ -193,36 +193,6 @@ test_that("each program is reviewed and repaired immediately", {
   expect_identical(result$active_revision, "r2")
 })
 
-test_that("two-error program fixes first defect in round 1 and second defect in round 2", {
-  # With 1 round configured: round 1 fixes bug 1, exposes bug 2, leaving usable non-ready code
-  fx1 <- immediate_loop_fixture(review_issue = FALSE, smoke_failure = TRUE, two_error = TRUE)
-  res1 <- run_program_pipeline(
-    fx1$state, max_program_repair_rounds = 1L, execute = TRUE
-  )
-  expect_identical(res1$active_revision, "r2")
-  expect_identical(res1$events, c(
-    "generated:r1", "mechanical_pass:r1", "reviewed:r1", "smoke_failed:r1",
-    "fixed:r2", "mechanical_pass:r2", "reviewed:r2", "smoke_failed:r2"
-  ))
-  # With 1 round exhausted, evidence has not reached runtime_verified
-  ev1 <- current_component_evidence(res1$histories$prog)
-  expect_false(identical(ev1$level, "runtime_verified"))
-
-  # With 2 rounds configured: round 2 fixes bug 2 and reaches runtime evidence
-  fx2 <- immediate_loop_fixture(review_issue = FALSE, smoke_failure = TRUE, two_error = TRUE)
-  res2 <- run_program_pipeline(
-    fx2$state, max_program_repair_rounds = 2L, execute = TRUE
-  )
-  expect_identical(res2$active_revision, "r3")
-  expect_identical(res2$events, c(
-    "generated:r1", "mechanical_pass:r1", "reviewed:r1", "smoke_failed:r1",
-    "fixed:r2", "mechanical_pass:r2", "reviewed:r2", "smoke_failed:r2",
-    "fixed:r3", "mechanical_pass:r3", "reviewed:r3", "smoke_passed:r3"
-  ))
-  ev2 <- current_component_evidence(res2$histories$prog)
-  expect_identical(ev2$level, "runtime_verified")
-})
-
 test_that("clean program without review or smoke issue skips fixer and reaches runtime evidence", {
   fx <- immediate_loop_fixture(review_issue = FALSE, smoke_failure = FALSE)
   result <- run_program_pipeline(

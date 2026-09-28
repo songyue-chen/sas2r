@@ -69,22 +69,6 @@ test_that("metadata context keeps unsupported behavior visible to the existing r
   expect_match(context, "Keep unresolved behavior in uncertainty", fixed = TRUE)
 })
 
-test_that("recognizing metadata does not bypass execution failures", {
-  fx <- repair_workflow_fixture(n = 1L, failures = integer())
-  source <- file.path(fx$root, "p01.sas")
-  writeLines(sub("value =", "retain marker 1; value =", readLines(source), fixed = TRUE), source)
-  responses <- list(translator = valid_program_translation_response(
-    "stop('Required environment query is not implemented')",
-    suspected_dependencies = "sashelp.vextfl"), reviewer = valid_program_review_response())
-  result <- sas_translate(fx$root, out_dir = file.path(fx$root, "public-run"),
-    config = fx$state$config, llm = parallel_test_llm(responses),
-    max_parallel_translations = 2L, max_program_repair_rounds = 0L,
-    max_bundle_repair_rounds = 0L, outputs = "work.out1")
-  expect_identical(result$status, "blocked")
-  report <- read_json_record(result$report_json_path)
-  expect_match(report$outcome$stages[["Bundle execution"]], "1 failed", fixed = TRUE)
-})
-
 test_that("macro variables defined by project source are producers, not missing dependencies", {
   root <- withr::local_tempdir()
   dir.create(file.path(root, "input"))

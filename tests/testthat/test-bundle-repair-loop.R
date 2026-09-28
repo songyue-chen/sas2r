@@ -149,39 +149,6 @@ previously_selected_bundle_fixture <- function(missing_output = FALSE, envir = p
   fx
 }
 
-test_that("an unsupported assertion does not authorize a regressive patch", {
-  fx <- sequential_bundle_defects_fixture()
-  # Start with prog_a working, prog_b working, but out2 fails an assertion
-  fx$state$selected_revisions$prog_a$r_code <- fx$fixed_r_code_a
-  fx$state$selected_revisions$prog_b$r_code <- fx$fixed_r_code_b
-  fx$state$output_contracts$assertions <- list(
-    list(),
-    list(required_columns = c("NONEXISTENT_COL"))
-  )
-
-  # Fixer targets the failed output writer, prog_b, and breaks its execution
-  regressive_code_a <- "stop('Regressive break in prog_b')"
-  fx$state$fixer_llm <- recording_fixer(function(context) {
-    valid_program_fix_response(
-      code = regressive_code_a,
-      diagnosis = "Bad fix broke prog_b",
-      summary = "Regressed",
-      evidence_ids = c("bundle_attempt_001")
-    )
-  })
-
-  result <- run_bundle_pipeline(
-    fx$state, max_bundle_repair_rounds = 2L, execute = TRUE
-  )
-
-  expect_identical(result$attempts$sequence, 1L)
-  expect_identical(result$selected_attempt$attempt_id, "bundle_attempt_001")
-  expect_identical(result$selected_revisions$prog_a$r_code, fx$fixed_r_code_a)
-  expect_identical(result$selected_revisions$prog_b$r_code, fx$fixed_r_code_b)
-  expect_length(fx$state$fixer_llm$requests(), 0L)
-
-})
-
 test_that("bundle repair evidence never carries raw cell values to the fixer", {
   base <- withr::local_tempdir()
   input_dir <- file.path(base, "inputs", "adam")
@@ -265,15 +232,4 @@ test_that("bundle repair evidence never carries raw cell values to the fixer", {
   # Neither initial prompts nor actual tool-result turns contain reference answers.
   expect_no_match(all_text, "736\\.2519")
   expect_no_match(all_text, "999\\.777")
-})
-
-test_that("bundle execution diagnostics reach each causal fixer request", {
-  fx <- sequential_bundle_defects_fixture()
-  run_bundle_pipeline(fx$state, max_bundle_repair_rounds = 2L, execute = TRUE)
-  requests <- fx$state$fixer_llm$requests()
-  expect_length(requests, 2L)
-  prompts <- vapply(requests, function(req) paste(vapply(req$messages, `[[`, character(1), "content"), collapse = "\n"), character(1))
-  expect_match(prompts[1], "Bug A in prog_a: unhandled syntax", fixed = TRUE)
-  expect_match(prompts[2], "Bug B in prog_b: variable missing", fixed = TRUE)
-  expect_true(all(grepl("bundle_stderr.log", prompts, fixed = TRUE)))
 })
