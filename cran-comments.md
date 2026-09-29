@@ -16,25 +16,33 @@ credentials or paid API calls. Checks use at most two translation workers.
 
 Version 0.5.8 also includes the documented fixes since 0.5.5: source-based repair
 and diagnosis improvements, consistent autoexec library initialization across
-preflight/execution/export, and reduced repeated scanner work. See NEWS.md.
+preflight/execution/export, and reduced repeated scanner work. Help, vignettes and the shared helper
+reference also clarify output paths, runtime behavior and provider support.
+See NEWS.md.
 
 ## Validation
 
 The final source archive was built with R 4.6.1 and checked on Ubuntu using
 `R CMD check --as-cran`, including the PDF manual and vignettes:
 
-- Total check time: 4 minutes 10 seconds; tests: 166 seconds elapsed.
+- Total check time: 3 minutes 38 seconds; tests: 143 seconds elapsed.
 - 0 errors, 0 warnings, 1 NOTE: "New submission".
 
 The same package implementation and test selection also passed on Windows
-(7 minutes 48 seconds overall), macOS (4 minutes 37 seconds), R-devel
-(5 minutes 56 seconds) and R 4.1.3 (5 minutes 41 seconds). These checks used
-`--as-cran`; Windows, macOS and R 4.1.3 used `--no-manual`. The final archive
-includes a documentation-link correction, which was rechecked on Ubuntu.
-Times are elapsed measurements on GitHub-hosted runners.
+(8 minutes 43 seconds overall), macOS (3 minutes 35 seconds), R-devel
+(5 minutes 23 seconds) and R 4.1.3 (5 minutes 52 seconds). These checks used
+`--as-cran`; Windows, macOS and R 4.1.3 used `--no-manual`. These results include the
+final help, vignette and generated helper-reference corrections. Times are
+elapsed measurements on GitHub-hosted runners.
 
 The complete development suite passed against the installed release package
 in CI (10,645 assertions, 0 failures, 0 test warnings), including the separate
 clean-library tarball and migration acceptance checks. The local release test
 profile decreased from 362 to 118 seconds. No package implementation was changed
 to achieve this reduction. CRAN acceptance has not been received.
+
+All 10 jobs passed for source commit 8c9117d0077f65b885909216745c38d835d66f9d:
+https://github.com/songyue-chen/sas2r/actions/runs/36509994153
+
+Submitted source archive SHA-256:
+562b086c942a5c1547b7c0160614e3e434744239c7f3753f6f4dfe2ee8b2ac0d

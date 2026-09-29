@@ -4,6 +4,7 @@
   Usable SAS startup paths take precedence over configured library fallbacks.
 - Speed up SAS project scanning.
 - Bug fixes for dependency handling, startup warnings and macro error diagnosis.
+- Clarify saved output paths, runtime behavior and provider documentation.
 
 # sas2r 0.5.7
 

@@ -23,14 +23,14 @@ validate connectivity and model capabilities, and \code{\link[=sas_llm_models]{s
 the inventory visible to the configured identity.
 }
 \examples{
-# Constructing an adapter contacts no network and reads no credentials.
+# Constructing an adapter contacts no network.
 if (requireNamespace("ellmer", quietly = TRUE)) {
   llm <- sas_llm(list(provider = "anthropic", model = "claude-sonnet-4-6"))
   class(llm)
 }
 
 \dontrun{
-# Any ellmer-supported provider works; credentials stay with ellmer.
+# Choose one of sas2r's registered providers.
 llm <- sas_llm(list(provider = "openai", model = "gpt-4.1"))
 res <- sas_translate("path/to/sas", llm = llm)
 }
