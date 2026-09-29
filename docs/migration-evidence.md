@@ -300,14 +300,18 @@ reference evidence.
 
 ## Moving a deliverable
 
-`result$outputs_dir` contains all generated files from the selected execution,
-including WORK, named libraries, and TLFs, under their relative paths:
-`work/out.rds`, `adam/adsl.rds`, and `outputs/table.html`, for example.
-The selected attempt's file inventory also drives reports and export.
+`result$outputs_dir` contains selected contract deliverables under
+`datasets/<library>/` and `tlf/`: for example `datasets/work/out.rds`,
+`datasets/adam/adsl.rds`, and `tlf/outputs/table.html`. It is NULL when execution
+is disabled or no selected deliverables were produced. Unrequested scratch
+outputs stay in diagnostics rather than being included as deliverables.
 
-`sas_write(result, "delivery")` writes the selected code and runtime, all generated
-files, reports, a dependency/input guide, and `run.R` (renamed if a source program already uses that name; see `run-order.json`).
-It rebuilds `autoexec.R` so generated library outputs belong to the destination.
+`sas_write(result, "delivery")` writes the selected code and runtime, saved
+deliverables under `saved-outputs/`, reports under `report/`, a dependency/input
+guide, and a dependency-ordered `run.R` with `run-order.json`. Programs are under
+`programs/`, separate from the launcher. Manual reruns write under `output/` and
+do not replace the saved automated results. Input library paths remain in
+`autoexec.R`.
 After moving the folder, run `Rscript run.R` from it, or in R use
 `source("run.R", chdir = TRUE)`. Programs run in dependency order; included modules
 are invoked by their parents. The original attempt is preserved.

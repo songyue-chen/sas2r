@@ -39,8 +39,9 @@ Each process uses the existing translator, reviewer and fixer context builders,
 tools and settings with a snapshot of the selected dependencies. Processes report
 results to the coordinator; they do not share a live conversation. In parallel
 mode, an unresolved dependency finding defers its component and known descendants
-while independent work continues. The affected bundle remains blocked. Automatic
-dependency correction and reassignment are a separate planned extension.
+while independent work continues. Required deferred execution or incomplete
+review prevents the run from becoming `migration_ready` or `validated`; inspect
+the reported status and reason for the affected components.
 
 ## Configuring a Clinical Study Migration (`_sas2r.yml`)
 
@@ -102,8 +103,9 @@ Gemini Flash and DeepSeek Flash are suggested starting points for evaluation;
 stronger frontier models remain available. Choose using source review and output
 evidence for the actual study. See the [provider settings guide](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)
 for provider-specific output limits, timeouts and capabilities.
-On the development branch, Gemini/DeepSeek tool-continuation support still needs
-transport work and validation before these profiles are used for study migrations.
+The adapter preserves native provider conversation history through tool calls.
+Offline replay tests cover tool continuation and parallel workers on ellmer
+0.5.0; they do not establish live-model translation quality or study-level accuracy.
 
 ## Inspect the setup offline
 
@@ -249,7 +251,7 @@ Each translation attempt resolves to one of four authoritative statuses:
 - **`validated`**: Execution, required output checks, and lineage requirements pass, with a passing reference comparison for at least one required target. Other outputs can remain unreferenced.
 - **`migration_ready`**: Execution, required output checks, and lineage requirements pass without passing reference evidence for a required target.
 - **`needs_review`**: Execution was deferred (`execute = FALSE`), or required review/lineage evidence is incomplete or blocked. Programs may still have executed successfully.
-- **`blocked`**: Bundle execution failed or required output checks failed, including missing/unreadable datasets and reference mismatches. Dependency cycles and deferred dependency branches also prevent execution.
+- **`blocked`**: Bundle execution failed or required output checks failed, including missing/unreadable datasets and reference mismatches. Unavailable dependencies defer affected components while independent components can still execute.
 
 Inspect coverage as well as status. The reports separate produced,
 reference-compared, passed, and reference-passed outputs and list
@@ -286,9 +288,12 @@ separately from the comparison result.
 
 ## Attempt Isolation & Copy-on-Write
 
-`sas2r` protects production and raw input datasets from inadvertent mutation during translation:
+The library helpers separate input reads from generated writes during translation:
 
-- Input libraries are mounted read-only.
+- The library registry reads original input members and directs generated writes
+  to attempt-specific output paths. This is a helper-level convention, not a
+  read-only filesystem mount or sandbox; arbitrary generated R can still access
+  files outside the registry.
 - Write targets and scratch WORK libraries are isolated under `<run_id>/diagnostics/bundle_attempts/bundle_attempt_001/`. Every run has its own timestamp-first folder. Open its `START_HERE.html` for reports and all available selected code in `bundle/`. Saved deliverables go to `outputs/`; requested WORK datasets count as deliverables, while unrequested scratch stays in diagnostics. Manual reruns write to `bundle/output/` and do not change the original evidence.
 - Multi-round repairs select improved attempts deterministically and prune rejected attempts according to configuration.
 

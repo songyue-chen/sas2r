@@ -77,8 +77,12 @@ Open it when data moves. The LIBRARIES section reads like this:
 <!-- sas2r-example: offline runtime-3 -->
 ```r
 .sas2r_registry <- list(
-  adam = list(read_path = "/study/data/adam", write_path = "adam", engine = "sas7bdat", write = "rds"),
-  work = list(read_path = "work",             write_path = "work", engine = "rds",      write = "rds")
+  adam = list(read_path = "/study/data/adam",
+              write_path = file.path(.sas2r_output_root, "datasets", "adam"),
+              engine = "sas7bdat", write = "rds"),
+  work = list(read_path = file.path(.sas2r_output_root, "work"),
+              write_path = file.path(.sas2r_output_root, "work"),
+              engine = "rds", write = "rds")
 )
 ```
 
@@ -148,12 +152,13 @@ low and compare the SAS way, trailing blanks are cosmetic, rounding is half away
 The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
 
 ```
-# sas2r runtime helpers -- vendored by sas2r 0.4.0. Do not edit by hand.
+# sas2r runtime helpers -- vendored by sas2r 0.5.8. Do not edit by hand.
 ```
 
-A bundle is frozen on purpose. It always loads its own copy of the runtime, so what a
-validated bundle does depends only on its own contents -- never on which sas2r is installed,
-and never on an upgrade. Fixes to the runtime reach a bundle when it is translated again.
+A bundle always loads its own copy of the runtime, so upgrading sas2r does not
+replace that copy. Results still depend on inputs, R and dependency versions;
+recheck the outputs when those change. Fixes to the runtime reach a bundle when
+it is translated again.
 
 The promise behind that:
 
