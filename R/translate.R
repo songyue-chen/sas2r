@@ -78,8 +78,9 @@
 #'   `$output_contracts_path`, `$report_path`, `$report_json_path`, `$component_evidence`,
 #'   `$output_assessments`, `$diagnostics`, `$repair_history`, `$usage`, and `$project`.
 #'   `$outputs_dir` contains selected contract deliverables with their library and
-#'   relative-path layout (for example `work/out.rds`, `adam/adsl.rds`,
-#'   `outputs/table.html`); it is NULL when execution is disabled. The JSON
+#'   relative-path layout (for example `datasets/work/out.rds`,
+#'   `datasets/adam/adsl.rds`, and `tlf/outputs/table.html`); it is NULL when
+#'   execution is disabled or no selected deliverables were produced. The JSON
 #'   report includes separate target/reference/review coverage and effective limits.
 #' @examples
 #' # Translate a small SAS program with the deterministic rule-based engine.
