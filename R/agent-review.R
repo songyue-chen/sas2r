@@ -111,7 +111,7 @@ build_agent_context <- function(project, unit_stmts, transpilation,
 #' @return List with status, issue_codes, explanation, recommended_action, confidence, unit_id, and provenance.
 #' @noRd
 run_review_agent <- function(spec, llm, ctx, unit, staged_code,
-                             routed, usage_budget = NULL, log_dir = ".sas2r") {
+                             routed, usage_budget = NULL, log_dir = tempdir()) {
   if (is.null(usage_budget)) usage_budget <- new_usage_budget()
   unit_id <- unit$unit_id[1]
   staged_txt <- if (!is.null(staged_code) && length(staged_code) > 0L && !is.na(staged_code[1])) {
@@ -241,7 +241,7 @@ run_review_agent <- function(spec, llm, ctx, unit, staged_code,
 #' @return List with status, issue_codes, explanation, recommended_action, confidence, unit_id, and provenance.
 #' @noRd
 review_translation_unit <- function(unit_id, project, transpilation, specs, llm,
-                                    usage_budget = NULL, log_dir = ".sas2r",
+                                    usage_budget = NULL, log_dir = tempdir(),
                                     comparison_reasons = character()) {
   spec <- specs$reviewer
   unit <- project$statements[project$statements$unit_id == unit_id, ]
@@ -497,7 +497,7 @@ review_program_revision <- function(
       "Identify a concrete conflicting source/R operation, or report no established defect.",
       "The comparison may be inconsistent with the SAS. Do not infer desired values or change source rules."
     ) else "Review this SAS component and assembled R program.",
-    log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
+    log_dir = if (!is.null(paths)) paths$logs else tempdir(),
     prompt_vars = prompt_vars,
     audit_context = audit_context,
     usage_budget = usage_budget

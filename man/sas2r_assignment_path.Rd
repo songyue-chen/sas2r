@@ -18,10 +18,4 @@ root, or the working directory when no root is set. The target need not exist.
 \description{
 Registry seed paths are resolved separately by \code{\link[=sas2r_resolve_registry]{sas2r_resolve_registry()}}.
 }
-\examples{
-resolve <- getFromNamespace("sas2r_assignment_path", "sas2r")
-env <- new.env()
-env$.sas2r_execution_root <- tempdir()
-resolve("inputs", env)
-}
 \keyword{internal}

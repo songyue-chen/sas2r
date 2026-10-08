@@ -1,48 +1,43 @@
 ## Resubmission: sas2r 0.5.8
 
-This resubmission addresses the manual review of 0.5.5, which reported an overall
-check time of 14 minutes, including 12 minutes for tests.
+This resubmission addresses the manual review requesting removal of examples
+for unexported functions and correction of file-writing destinations.
 
-The submitted source contains a smaller representative test suite. Extended
-integration matrices and repeated translation, review, repair and startup
-scenarios remain on the public `develop` branch and run in CI against the installed
-release package. The submission tests cover package features using small synthetic
-fixtures, including actual translation, execution, repair, resume, exports,
-parallel execution, reference comparison and source-faithful repair. Selecting the
-smaller suite does not change package implementation.
+- Removed examples from all seven internal helper help topics, including
+  `sas2r_lib_member_file` and `split_ds`. These functions remain internal.
+- Internal audit logging now defaults to the R session temporary directory.
+  The internal lockfile writer requires an explicit destination.
+- Sourcing the installed demo input script only defines its input generator.
+  Both the generator and command-line script require an explicit destination.
+- README and vignette writing examples use temporary destinations. The runtime
+  vignette runs a temporary copy of an exported bundle and restores the caller's
+  working directory through `source(..., chdir = TRUE)`.
+- Added checks for default log destinations and the demo's explicit destination.
+  Regenerated help and the runtime helper reference together.
 
-Examples, vignettes and tests require neither a SAS installation nor provider
-credentials or paid API calls. Checks use at most two translation workers.
-
-Version 0.5.8 also includes the documented fixes since 0.5.5: source-based repair
-and diagnosis improvements, consistent autoexec library initialization across
-preflight/execution/export, and reduced repeated scanner work. Help, vignettes and the shared helper
-reference also clarify output paths, runtime behavior and provider support.
-See NEWS.md.
+The smaller representative submission test suite is retained. The complete
+suite remains on the development branch and is checked against the installed
+release package using `.github/development-test-ref`. Tests use small synthetic
+fixtures, need no SAS installation or provider credentials, and use at most two
+translation workers.
 
 ## Validation
 
-The final source archive was built with R 4.6.1 and checked on Ubuntu using
-`R CMD check --as-cran`, including the PDF manual and vignettes:
+The corrected source archive passes local `R CMD check --as-cran --no-manual`
+on macOS with R 4.4.0:
 
-- Total check time: 3 minutes 38 seconds; tests: 143 seconds elapsed.
-- 0 errors, 0 warnings, 1 NOTE: "New submission".
+- 0 errors, 0 warnings.
+- 2 NOTEs: "New submission" and "unable to verify current time".
+- Shipped tests: 7,316 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 134 seconds.
+- Examples and both rebuilt vignettes passed; no temporary-directory detritus.
 
-The same package implementation and test selection also passed on Windows
-(8 minutes 43 seconds overall), macOS (3 minutes 35 seconds), R-devel
-(5 minutes 23 seconds) and R 4.1.3 (5 minutes 52 seconds). These checks used
-`--as-cran`; Windows, macOS and R 4.1.3 used `--no-manual`. These results include the
-final help, vignette and generated helper-reference corrections. Times are
-elapsed measurements on GitHub-hosted runners.
+The documentation runner executed 17 offline examples, parsed 6 network examples
+without provider calls, and validated 23 configurations. All seven local
+migration acceptance checks passed against the installed archive.
 
-The complete development suite passed against the installed release package
-in CI (10,645 assertions, 0 failures, 0 test warnings), including the separate
-clean-library tarball and migration acceptance checks. The local release test
-profile decreased from 362 to 118 seconds. No package implementation was changed
-to achieve this reduction. CRAN acceptance has not been received.
+Platform checks, PDF manual checks, and the complete development suite also run
+in repository CI for this release revision. The release PR links those results:
+https://github.com/songyue-chen/sas2r/pull/53
 
-All 10 jobs passed for source commit 8c9117d0077f65b885909216745c38d835d66f9d:
-https://github.com/songyue-chen/sas2r/actions/runs/36509994153
-
-Submitted source archive SHA-256:
-562b086c942a5c1547b7c0160614e3e434744239c7f3753f6f4dfe2ee8b2ac0d
+Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.

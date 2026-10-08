@@ -135,9 +135,10 @@ code style keys `dialect` and `allowlist` are described in
 <!-- sas2r-example: offline readme-preflight -->
 ```r
 library(sas2r)
+migration_dir <- tempfile("sas2r-migration-")
 check <- sas_preflight(
   "programs/",                     # the folder of SAS programs to translate
-  config = "_sas2r.yml", out_dir = "migration_output", diagnose = "off"
+  config = "_sas2r.yml", out_dir = migration_dir, diagnose = "off"
 )
 print(check)
 check$inputs       # availability and producer-order status
@@ -154,13 +155,16 @@ for library paths, output requirements and QC profiles.
 
 ### 4. Run it
 
+These examples write under the R session temporary directory. Supply your own
+`migration_dir` and `export_dir` when you want to retain the files.
+
 <!-- sas2r-example: network migration -->
 ```r
 library(sas2r)
 
 result <- sas_translate(
   path = check$project,            # reuse the unchanged source scan
-  out_dir = "migration_output",
+  out_dir = migration_dir,
   max_parallel_translations = 1,   # programs or macros translated at once; see below
   execute = TRUE,                  # actually run the translated programs
   max_program_repair_rounds = 1,   # immediate repair attempts per program
@@ -185,7 +189,8 @@ result$report_path   # a readable report of everything that happened
 cat(sas_code(result, 1))
 
 # Export the selected code, generated outputs, reports, and run guide
-sas_write(result, "r_production/")
+export_dir <- tempfile("sas2r-export-")
+sas_write(result, export_dir)
 ```
 
 Every limit is commented out by default: a run records usage in observe mode
@@ -200,7 +205,7 @@ remains the way to forbid provider calls entirely.
 
 ## Reading the results
 
-Open `migration_output/<run_id>/START_HERE.html` first. It links the code,
+Open `file.path(result$out_dir, result$run_id, "START_HERE.html")` first. It links the code,
 outputs, diagnostics and comparison reports, and states what ran, what was
 skipped, and why a run was blocked or failed. Saved code can be incomplete or
 unvalidated; file existence alone does not establish success.
@@ -236,7 +241,7 @@ the argument to `sas_translate()`:
 
 <!-- sas2r-example: network parallel -->
 ```r
-result <- sas_translate(path = check$project, out_dir = "migration_output",
+result <- sas_translate(path = check$project, out_dir = migration_dir,
                         max_parallel_translations = 2)
 ```
 
