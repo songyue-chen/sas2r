@@ -5,15 +5,27 @@
 \alias{sas_put}
 \title{Apply a SAS format}
 \usage{
-apply_format(x, fmt)
+apply_format(
+  x,
+  fmt,
+  catalog = get0(".sas2r_formats", envir = parent.frame(), inherits = TRUE)
+)
 
-sas_put(x, fmt)
+sas_put(
+  x,
+  fmt,
+  catalog = get0(".sas2r_formats", envir = parent.frame(), inherits = TRUE)
+)
 }
 \arguments{
 \item{x}{The vector to format.}
 
-\item{fmt}{A compiled format: a list with any of \code{values} (a named
-character vector), \code{ranges}, and \code{other}; \code{NULL} formats as character.}
+\item{fmt}{A format name, or a compiled format: a list with any of \code{values}
+(a named character vector), \code{ranges}, and \code{other}; \code{NULL} formats as character.}
+
+\item{catalog}{Named list of compiled formats, used only when \code{fmt} is a
+name. Defaults to \code{.sas2r_formats} in the calling environment or its parents.
+Outside a generated bundle, supply this list explicitly.}
 }
 \value{
 A character vector.
@@ -24,6 +36,11 @@ bundle's \verb{_sas2r_formats.R}): exact \code{values} first, then \code{ranges}
 list with \code{lo}, \code{hi}, \code{label}), then \code{other} for anything unmatched.
 Missing input stays missing unless the format defines \code{other}. \code{sas_put()}
 is \code{PUT(x, fmt.)} and does the same.
+A format name is resolved in the bundle's \code{.sas2r_formats} catalog.
+Names are case-insensitive, with an optional trailing period. Character
+names retain their \code{$} prefix; numeric and character formats are distinct.
+An unknown name is an error. Startup loads the catalog before programs and
+macro functions run; individual formats are not separate R variables.
 }
 \examples{
 sex <- list(values = c(M = "Male", F = "Female"), other = "Unknown")
@@ -31,6 +48,7 @@ apply_format(c("M", "F", "X", NA), sex)
 age <- list(ranges = list(list(lo = 0, hi = 17, label = "<18"),
                           list(lo = 18, hi = 200, label = "18+")))
 sas_put(c(5, 40, NA), age)
+sas_put(c("M", "F"), "$SEX.", catalog = list("$sex" = sex))
 }
 \seealso{
 Other runtime helpers:

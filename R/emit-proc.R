@@ -206,7 +206,7 @@ emit_proc_format <- function(us) {
   compiled <- compile_format_catalog(list(statements = us))
   if (nrow(compiled$flags)) return(list(code = NA_character_, stmt_map = us$stmt_id,
     flags = unique(compiled$flags$reason)))
-  list(code = "# formats compiled into _sas2r_formats.R",
+  list(code = '# formats compiled into _sas2r_formats.R; use sas_put(x, "name.")',
        stmt_map = us$stmt_id, flags = character())
 }
 

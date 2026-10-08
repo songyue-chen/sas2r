@@ -17,6 +17,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   bundle_ev$bundle_id <- attempt_rec$attempt_id
   bundle_ev$execution_id <- attempt_rec$execution_id %||% attempt_rec$attempt_id
   bundle_ev$failing_outputs <- vapply(packet$failed_targets, function(t) t$target_key, character(1))
+  bundle_ev$repair_component_id <- primary_cid
+  bundle_ev$attributable_execution_failure <- isTRUE(packet$attributable_execution_failure)
 
 
   signal_bundle_event(
@@ -356,10 +358,8 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     if (length(intersect(lineage, names(failures)))) next
     subset <- assessment
     subset$targets <- assessment$targets[key]
-    clean_attempt <- attempt
-    clean_attempt$condition <- NULL
-    clean_attempt$passed <- TRUE
-    packet <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
+    packet <- build_bundle_repair_packet(state, attempt, subset, previous_disposition,
+      attributable_execution_failure = FALSE)
     writers <- source_output_writers(state, target$target_key)
     writers <- intersect(writers, names(state$selected_revisions))
     cid <- if (length(writers) == 1L) writers[[1L]] else packet$primary_component_id
@@ -382,7 +382,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
       packet$checks <- NULL
       packet$failed_targets <- list()
     }
-    packet$attempt <- clean_attempt
+    packet$attempt <- attempt
     if (is.null(packets[[cid]])) packets[[cid]] <- packet else {
       packets[[cid]]$source_review_only <- isTRUE(packets[[cid]]$source_review_only) && isTRUE(packet$source_review_only)
       packets[[cid]]$artifact_investigation <- isTRUE(packets[[cid]]$artifact_investigation) || investigate
@@ -405,14 +405,12 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
     pending_checks <- !is.null(checks) && !isTRUE(checks$pass)
     if (!pending_review && !pending_checks) next
     if (is.null(packets[[cid]])) {
-      clean_attempt <- attempt
-      clean_attempt$condition <- NULL
-      clean_attempt$passed <- TRUE
       subset <- assessment
       subset$targets <- list()
-      packets[[cid]] <- build_bundle_repair_packet(state, clean_attempt, subset, previous_disposition)
+      packets[[cid]] <- build_bundle_repair_packet(state, attempt, subset, previous_disposition,
+        attributable_execution_failure = FALSE)
       packets[[cid]]$primary_component_id <- cid
-      packets[[cid]]$attempt <- clean_attempt
+      packets[[cid]]$attempt <- attempt
     }
     packets[[cid]]$code_local <- pending_checks || (pending_review && length(source_grounded_review_findings(review)) > 0L)
     if (isTRUE(packets[[cid]]$code_local)) packets[[cid]]$source_review_only <- FALSE

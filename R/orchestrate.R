@@ -557,13 +557,16 @@ run_program_pipeline <- function(
 #' @param attempt Completed bundle attempt record.
 #' @param assessment Final output assessment record.
 #' @param previous_disposition Optional previous repair disposition summary.
+#' @param attributable_execution_failure Whether the execution failure should
+#'   select the repair target. Independent repairs keep the actual diagnostics.
 #' @return Named list representing the causal repair packet.
 #' @noRd
 build_bundle_repair_packet <- function(
   state,
   attempt,
   assessment,
-  previous_disposition = NULL
+  previous_disposition = NULL,
+  attributable_execution_failure = TRUE
 ) {
   # 1. First stopping runtime condition & component
   stopping_cond <- attempt$condition
@@ -600,7 +603,7 @@ build_bundle_repair_packet <- function(
 
   # 3. Implicated components from stopping error and failed targets lineage
   implicated_cids <- character()
-  if (!is.null(stopping_cid) && nzchar(stopping_cid)) {
+  if (attributable_execution_failure && !is.null(stopping_cid) && nzchar(stopping_cid)) {
     implicated_cids <- c(implicated_cids, stopping_cid)
   }
 
@@ -618,7 +621,7 @@ build_bundle_repair_packet <- function(
 
   # 4. Primary implicated component
   primary_cid <- NULL
-  if (!is.null(stopping_cid) && nzchar(stopping_cid) && stopping_cid %in% names(state$selected_revisions)) {
+  if (attributable_execution_failure && !is.null(stopping_cid) && nzchar(stopping_cid) && stopping_cid %in% names(state$selected_revisions)) {
     primary_cid <- stopping_cid
   } else if (length(implicated_cids) > 0L) {
     sched <- state$schedule %||% (if (!is.null(state$graph)) stable_dependency_schedule(state$graph) else NULL)
@@ -643,6 +646,7 @@ build_bundle_repair_packet <- function(
 
   list(
     primary_component_id = primary_cid,
+    attributable_execution_failure = attributable_execution_failure && isFALSE(attempt$passed),
     implicated_components = implicated_cids,
     stopping_condition = stopping_cond,
     stopping_component_id = stopping_cid,
@@ -952,8 +956,7 @@ run_bundle_pipeline <- function(
         packet$failed_targets <- list()
         if (!is.null(packet$review)) packet$review$findings <- source_grounded_review_findings(packet$review)
         packet$attempt <- attempt_rec
-        packet$attempt$condition <- NULL
-        packet$attempt$passed <- TRUE
+        packet$attributable_execution_failure <- FALSE
       }
       repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
       state$diagnostics$bundle_repair$repair_counts <- repair_counts

@@ -147,6 +147,25 @@ Every one of them reproduces a SAS behavior R does not share by default: missing
 low and compare the SAS way, trailing blanks are cosmetic, rounding is half away from zero,
 `SUM()` and `MEAN()` are row-wise, `MERGE` follows SAS's overlap and `IN=` rules.
 
+Startup loads compiled `PROC FORMAT` definitions into `.sas2r_formats`.
+Generated programs and macro functions can use `sas_put(x, "status.")` or
+`apply_format(x, "$status.")` directly. Names ignore case and accept a trailing
+period; the `$` prefix distinguishes character formats. An unknown name raises
+an error. The selected setup R file is source context, not an additional startup
+script, so its assignments do not create runtime bindings.
+
+Outside a bundle, pass a compiled catalog explicitly:
+
+<!-- sas2r-example: offline runtime-format -->
+```r
+catalog <- list(status = list(values = c("0" = "No", "1" = "Yes")))
+sas_put(c(0, 1), "STATUS.", catalog = catalog)
+```
+
+For `MERGE ... BY`, values may persist within a BY group. They reset at the next
+group: if an input has no row for a key, its unique columns are missing for that
+key. Filling them from a preceding key changes the SAS behavior.
+
 ## Versioning and stability
 
 The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
