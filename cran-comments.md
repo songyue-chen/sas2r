@@ -23,6 +23,21 @@ translation workers.
 
 ## Validation
 
-Fresh source-archive and complete-suite validation results are recorded after
-checking this revision. Earlier submission timings are not reused as evidence
-for the corrected archive.
+The corrected source archive passes local `R CMD check --as-cran --no-manual`
+on macOS with R 4.4.0:
+
+- 0 errors, 0 warnings.
+- 2 NOTEs: "New submission" and "unable to verify current time".
+- Shipped tests: 7,316 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 134 seconds.
+- Examples and both rebuilt vignettes passed; no temporary-directory detritus.
+
+The documentation runner executed 17 offline examples, parsed 6 network examples
+without provider calls, and validated 23 configurations. All seven local
+migration acceptance checks passed against the installed archive.
+
+Platform checks, PDF manual checks, and the complete development suite also run
+in repository CI for this release revision. The release PR links those results:
+https://github.com/songyue-chen/sas2r/pull/53
+
+Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
