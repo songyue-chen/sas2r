@@ -20,9 +20,4 @@ Does not return normally. Signals an error with classes \code{cls},
 \description{
 Signal a runtime library error
 }
-\examples{
-fail <- getFromNamespace("sas2r_libref_stop", "sas2r")
-tryCatch(fail("example_library_error", "Example failure"),
-         sas2r_libref_error = function(e) conditionMessage(e))
-}
 \keyword{internal}

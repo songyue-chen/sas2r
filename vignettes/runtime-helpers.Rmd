@@ -41,12 +41,17 @@ The runtime is generated from the same `R/runtime-*.R` source as the package.
 ## Running a program
 
 Export the bundle with `sas_write()`, then run `Rscript run.R` from that folder.
-For a fresh R session in the exported bundle:
+The examples below copy an existing export into a temporary directory before
+running it. Set `exported_bundle` to the bundle you want to inspect:
 
 <!-- sas2r-example: offline runtime-1 -->
 ```r
-setwd("run_20260907T120000Z_1a2b3c4d")
-source("run.R")
+exported_bundle <- "run_20260907T120000Z_1a2b3c4d"
+bundle <- tempfile("sas2r-runtime-example-")
+dir.create(bundle)
+file.copy(list.files(exported_bundle, full.names = TRUE, all.files = TRUE,
+                     no.. = TRUE), bundle, recursive = TRUE)
+source(file.path(bundle, "run.R"), chdir = TRUE)
 ```
 
 To run selected programs yourself, load the configuration once and run required
@@ -54,8 +59,8 @@ upstream programs before their consumers:
 
 <!-- sas2r-example: offline runtime-2 -->
 ```r
-source("run_20260907T120000Z_1a2b3c4d/autoexec.R", chdir = TRUE)
-source("run_20260907T120000Z_1a2b3c4d/programs/adsl.R")
+source(file.path(bundle, "autoexec.R"), chdir = TRUE)
+source(file.path(bundle, "programs", "adsl.R"), chdir = TRUE)
 ```
 
 Manual dataset writes go to `output/datasets/<library>/`, WORK writes to
@@ -103,7 +108,6 @@ the runtime already loaded and skips its own bootstrap:
 
 <!-- sas2r-example: offline runtime-4 -->
 ```r
-bundle <- "run_20260907T120000Z_1a2b3c4d"
 source(file.path(bundle, "autoexec.R"), chdir = TRUE)   # paths, helpers, formats, once
 
 adsl <- lib_read("adam", "adsl")     # honours the registry's paths and formats
@@ -186,6 +190,13 @@ The promise behind that:
   one minor version.
 - The lint allowlist, the help topic, and the runtime file are held in sync by the package's
   tests, so a helper cannot be added or removed in one place only.
+
+When finished with this example, remove its temporary copy:
+
+<!-- sas2r-example: offline runtime-cleanup -->
+```r
+unlink(bundle, recursive = TRUE)
+```
 
 ## Where this is going
 

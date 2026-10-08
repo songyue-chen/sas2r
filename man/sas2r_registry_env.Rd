@@ -14,11 +14,4 @@ Signals \code{sas2r_no_registry} if no registry is loaded.
 Looks first along the runtime's enclosing environments, then active call
 frames. Load \code{autoexec.R} before calling data-access helpers.
 }
-\examples{
-registry_env <- getFromNamespace("sas2r_registry_env", "sas2r")
-local({
-  .sas2r_registry <- list()
-  is.environment(registry_env())
-})
-}
 \keyword{internal}

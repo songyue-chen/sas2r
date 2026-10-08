@@ -20,7 +20,8 @@ sas_llm_probe(
 
 \item{max_retries}{Maximum retry attempts for a retryable failure.}
 
-\item{log_dir}{Directory the audit log is written to.}
+\item{log_dir}{Directory the audit log is written to. Defaults to the R
+session's temporary directory; supply a directory to retain the log.}
 
 \item{on_charge}{Deprecated compatibility callback.}
 

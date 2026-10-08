@@ -17,12 +17,4 @@ does not read a dataset or return a data frame.
 \description{
 Read one library entry from the loaded registry
 }
-\examples{
-entry <- getFromNamespace("sas2r_lib_entry", "sas2r")
-local({
-  .sas2r_registry <- list(work = list(read_path = tempdir(),
-    write_path = tempdir(), engine = "rds", write = "rds"))
-  entry("WORK")$write_path
-})
-}
 \keyword{internal}

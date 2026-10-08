@@ -101,7 +101,7 @@ for (block in blocks) {
   }
 }
 stopifnot(counts["executed"] >= 6L, counts["configurations"] >= 4L,
-          file.exists("adsl-comparison.md"), file.exists("aligned-comparison.json"),
+          file.exists(env$comparison_file), file.exists(env$alignment_file),
           identical(env$check$model_calls, 0L))
 cat("\nDocumentation checks passed; synthetic study and saved-output fixtures.\n")
 print(counts)

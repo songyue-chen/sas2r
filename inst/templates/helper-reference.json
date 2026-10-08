@@ -36,7 +36,7 @@
     "dots": false
   },
   "sas2r_assignment_path": {
-    "text": "Registry seed paths are resolved separately by sas2r_resolve_registry().\n\nArguments:\npath: Character scalar path, absolute or relative.\nenv: Runtime environment containing .sas2r_execution_root.\n\nReturns:\nA normalized character scalar path. Relative paths use the execution\nroot, or the working directory when no root is set. The target need not exist.\n\nExamples:\nresolve <- getFromNamespace(\"sas2r_assignment_path\", \"sas2r\")\nenv <- new.env()\nenv$.sas2r_execution_root <- tempdir()\nresolve(\"inputs\", env)",
+    "text": "Registry seed paths are resolved separately by sas2r_resolve_registry().\n\nArguments:\npath: Character scalar path, absolute or relative.\nenv: Runtime environment containing .sas2r_execution_root.\n\nReturns:\nA normalized character scalar path. Relative paths use the execution\nroot, or the working directory when no root is set. The target need not exist.",
     "dots": false
   },
   "sas2r_fold_names": {
@@ -44,15 +44,15 @@
     "dots": false
   },
   "sas2r_lib_entry": {
-    "text": "Read one library entry from the loaded registry\n\nArguments:\nlibref: Character scalar library name, matched case-insensitively.\n\nReturns:\nThe registry entry as a list, normally with read_path, write_path,\nengine, and write fields. Signals sas2r_unknown_libref when absent;\ndoes not read a dataset or return a data frame.\n\nExamples:\nentry <- getFromNamespace(\"sas2r_lib_entry\", \"sas2r\")\nlocal({\n  .sas2r_registry <- list(work = list(read_path = tempdir(),\n    write_path = tempdir(), engine = \"rds\", write = \"rds\"))\n  entry(\"WORK\")$write_path\n})",
+    "text": "Read one library entry from the loaded registry\n\nArguments:\nlibref: Character scalar library name, matched case-insensitively.\n\nReturns:\nThe registry entry as a list, normally with read_path, write_path,\nengine, and write fields. Signals sas2r_unknown_libref when absent;\ndoes not read a dataset or return a data frame.",
     "dots": false
   },
   "sas2r_lib_member_file": {
-    "text": "Find a dataset member without reading its contents\n\nArguments:\nreg: A resolved library registry entry.\nmember: A dataset member name, without a path or extension.\n\nReturns:\nA list containing type and path, or NULL for an absent member.\nThe write directory precedes the read directory; formats are tried in\nRDS, SAS7BDAT, XPT order. Directories are not dataset member files.\n\nExamples:\nfind_member <- getFromNamespace(\"sas2r_lib_member_file\", \"sas2r\")\nfind_member(list(path = tempdir()), \"not_created\")",
+    "text": "Find a dataset member without reading its contents\n\nArguments:\nreg: A resolved library registry entry.\nmember: A dataset member name, without a path or extension.\n\nReturns:\nA list containing type and path, or NULL for an absent member.\nThe write directory precedes the read directory; formats are tried in\nRDS, SAS7BDAT, XPT order. Directories are not dataset member files.",
     "dots": false
   },
   "sas2r_lib_member_path": {
-    "text": "Construct a member filename inside a library directory\n\nArguments:\ndir: Character scalar library directory.\nmember: Character scalar dataset member name, without path separators.\next: File extension including its dot, for example \".rds\".\n\nReturns:\nA character scalar filename. Does not read or create the file.\nInvalid member names signal sas2r_libref_member_error.\n\nExamples:\nmember_path <- getFromNamespace(\"sas2r_lib_member_path\", \"sas2r\")\nmember_path(tempdir(), \"measurements\", \".rds\")",
+    "text": "Construct a member filename inside a library directory\n\nArguments:\ndir: Character scalar library directory.\nmember: Character scalar dataset member name, without path separators.\next: File extension including its dot, for example \".rds\".\n\nReturns:\nA character scalar filename. Does not read or create the file.\nInvalid member names signal sas2r_libref_member_error.",
     "dots": false
   },
   "sas2r_libname_assign": {
@@ -64,11 +64,11 @@
     "dots": false
   },
   "sas2r_libref_stop": {
-    "text": "Signal a runtime library error\n\nArguments:\ncls: Character scalar giving the specific error class.\nmsg: Character scalar error message.\nidentifiers: Technical names for structured diagnostics, checked against code before agent use.\n\nReturns:\nDoes not return normally. Signals an error with classes cls,\nsas2r_libref_error, error, and condition, and fields message, call and identifiers.\n\nExamples:\nfail <- getFromNamespace(\"sas2r_libref_stop\", \"sas2r\")\ntryCatch(fail(\"example_library_error\", \"Example failure\"),\n         sas2r_libref_error = function(e) conditionMessage(e))",
+    "text": "Signal a runtime library error\n\nArguments:\ncls: Character scalar giving the specific error class.\nmsg: Character scalar error message.\nidentifiers: Technical names for structured diagnostics, checked against code before agent use.\n\nReturns:\nDoes not return normally. Signals an error with classes cls,\nsas2r_libref_error, error, and condition, and fields message, call and identifiers.",
     "dots": false
   },
   "sas2r_registry_env": {
-    "text": "Looks first along the runtime's enclosing environments, then active call\nframes. Load autoexec.R before calling data-access helpers.\n\nReturns:\nAn environment containing .sas2r_registry, not the registry list.\nSignals sas2r_no_registry if no registry is loaded.\n\nExamples:\nregistry_env <- getFromNamespace(\"sas2r_registry_env\", \"sas2r\")\nlocal({\n  .sas2r_registry <- list()\n  is.environment(registry_env())\n})",
+    "text": "Looks first along the runtime's enclosing environments, then active call\nframes. Load autoexec.R before calling data-access helpers.\n\nReturns:\nAn environment containing .sas2r_registry, not the registry list.\nSignals sas2r_no_registry if no registry is loaded.",
     "dots": false
   },
   "sas2r_resolve_registry": {
@@ -140,7 +140,7 @@
     "dots": false
   },
   "split_ds": {
-    "text": "This internal helper is available in a generated bundle's runtime.\nUse the returned names exactly; it returns a character vector, not a list.\nAccessing an absent name with [[ raises an error, rather than returning NULL.\n\nArguments:\nds: A character scalar such as \"source.measurements\" or \"measurements\".\nmacro_vars: Named character vector of macro variables to substitute\nbefore splitting, without the leading ampersand in each name.\n\nReturns:\nA named character vector of length two, with elements lib and\nmember. A one-level name uses lib = \"work\". There is no libref element.\n\nExamples:\nsplit_ds <- getFromNamespace(\"split_ds\", \"sas2r\")\nparts <- split_ds(\"source.measurements\")\nparts[[\"lib\"]]     # \"source\"\nparts[[\"member\"]]  # \"measurements\"\nsplit_ds(\"measurements\") # c(lib = \"work\", member = \"measurements\")",
+    "text": "This internal helper is available in a generated bundle's runtime.\nUse the returned names exactly; it returns a character vector, not a list.\nAccessing an absent name with [[ raises an error, rather than returning NULL.\n\nArguments:\nds: A character scalar such as \"source.measurements\" or \"measurements\".\nmacro_vars: Named character vector of macro variables to substitute\nbefore splitting, without the leading ampersand in each name.\n\nReturns:\nA named character vector of length two, with elements lib and\nmember. A one-level name uses lib = \"work\". There is no libref element.",
     "dots": false
   }
 }

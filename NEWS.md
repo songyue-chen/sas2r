@@ -2,6 +2,8 @@
 
 - Resolve named formats from the bundle catalog and clarify startup and merge behavior.
 - Preserve actual execution failures when preparing independent code repairs.
+- Correct internal help examples and keep default audit logs and example outputs in temporary directories.
+
 - Improve startup library handling across preflight, execution and exports.
   Usable SAS startup paths take precedence over configured library fallbacks.
 - Speed up SAS project scanning.

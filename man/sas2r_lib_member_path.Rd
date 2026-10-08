@@ -20,8 +20,4 @@ Invalid member names signal \code{sas2r_libref_member_error}.
 \description{
 Construct a member filename inside a library directory
 }
-\examples{
-member_path <- getFromNamespace("sas2r_lib_member_path", "sas2r")
-member_path(tempdir(), "measurements", ".rds")
-}
 \keyword{internal}

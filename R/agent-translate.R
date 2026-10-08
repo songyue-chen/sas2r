@@ -95,7 +95,7 @@ build_context_packet <- function(unit_id, project, config) {
 #' @return List with status, code, flags, confidence, assumptions.
 #' @noRd
 translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
-                                config, log_dir = ".sas2r", macro_index = NULL,
+                                config, log_dir = tempdir(), macro_index = NULL,
                                 on_charge = NULL, usage_budget = NULL) {
   ctxp <- build_context_packet(unit_id, project, config)
   spec <- as.list(specs$translator)

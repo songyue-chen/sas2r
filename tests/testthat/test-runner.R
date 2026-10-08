@@ -28,6 +28,16 @@ test_that("happy path returns validated data", {
   expect_identical(r$data$r_code, "x <- 1")
 })
 
+test_that("an agent without a log destination only writes temporary audit files", {
+  working <- withr::local_tempdir()
+  withr::local_dir(working)
+  result <- run_agent(spec_min(), mock_llm(list(good)), tools = list(),
+                       user_content = "unit")
+  expect_identical(result$status, "ok")
+  expect_true(file.exists(file.path(tempdir(), "llm_log.jsonl")))
+  expect_length(list.files(working, all.files = TRUE, no.. = TRUE), 0L)
+})
+
 test_that("invalid output retries with feedback, then downgrades", {
   bad <- list(type = "final", data = list(assumptions = list()))
   r <- run_agent(spec_min(retries = 1), mock_llm(list(bad, bad)), list(),
