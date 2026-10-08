@@ -77,8 +77,9 @@ comparison <- compare_datasets(
   profile = compare_profile(abs = 1e-8, rel = 0)
 )
 passed(comparison)
-write_comparison_report(comparison, file = "dataset-comparison.md")
-stopifnot(passed(comparison), file.exists("dataset-comparison.md"))
+dataset_file <- tempfile(fileext = ".md")
+write_comparison_report(comparison, file = dataset_file)
+stopifnot(passed(comparison), file.exists(dataset_file))
 ```
 
 For a saved migration, substitute
@@ -107,9 +108,10 @@ report$alignment
 report$mismatches$total_mismatch_cells
 report$resource_state
 report$truncated_fields
-write_comparison_report(report, file = "aligned-comparison.json")
+alignment_file <- tempfile(fileext = ".json")
+write_comparison_report(report, file = alignment_file)
 stopifnot(report$mismatches$total_mismatch_cells == 0L,
-          file.exists("aligned-comparison.json"))
+          file.exists(alignment_file))
 ```
 
 `passed()` does not accept this report class. Inspect missing/extra columns,

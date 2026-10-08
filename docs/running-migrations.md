@@ -906,7 +906,8 @@ comparison <- compare_datasets(
   profile = compare_profile(abs = 1e-8, rel = 0)
 )
 passed(comparison)
-write_comparison_report(comparison, file = "adsl-comparison.md")
+comparison_file <- tempfile(fileext = ".md")
+write_comparison_report(comparison, file = comparison_file)
 stopifnot(passed(comparison))
 ```
 

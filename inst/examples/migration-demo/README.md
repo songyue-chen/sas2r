@@ -18,21 +18,22 @@ installed_demo <- system.file("examples", "migration-demo", package = "sas2r")
 demo <- tempfile("sas2r-migration-demo-")
 dir.create(demo)
 file.copy(list.files(installed_demo, full.names = TRUE), demo, recursive = TRUE)
-source(file.path(demo, "make-input.R"), chdir = TRUE)
+demo_input <- new.env()
+sys.source(file.path(demo, "make-input.R"), envir = demo_input)
+demo_input$make_demo_input(file.path(demo, "data"))
 check <- sas_preflight(demo, diagnose = "off")
 check$inputs
 check$readiness
 ```
 
-`make-input.R` creates `data/input_ds.rds` in the copied demo when sourced with
-`chdir = TRUE`. From a terminal, either run `Rscript make-input.R` inside the
-copied demo, or supply the destination explicitly:
+`make_demo_input()` requires an explicit destination. Sourcing the script only
+defines the function. From a terminal, also supply the destination explicitly:
 
 ```sh
 Rscript /path/to/migration-demo/make-input.R /path/to/migration-demo/data
 ```
 
-Running without a destination from another directory fails with setup guidance.
+Running the script without a destination fails without creating files.
 This explicit offline preflight makes no model calls. The default `diagnose = "auto"`
 can send bounded SAS statements, paths and findings to a configured LLM. With
 data prepared it can still identify source
