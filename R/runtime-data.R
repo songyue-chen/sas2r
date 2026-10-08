@@ -13,12 +13,6 @@
 #' frames. Load `autoexec.R` before calling data-access helpers.
 #' @return An environment containing `.sas2r_registry`, not the registry list.
 #'   Signals `sas2r_no_registry` if no registry is loaded.
-#' @examples
-#' registry_env <- getFromNamespace("sas2r_registry_env", "sas2r")
-#' local({
-#'   .sas2r_registry <- list()
-#'   is.environment(registry_env())
-#' })
 #' @keywords internal
 sas2r_registry_env <- function() {
   env <- parent.env(environment())
@@ -170,11 +164,6 @@ sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
 #' @param env Runtime environment containing `.sas2r_execution_root`.
 #' @return A normalized character scalar path. Relative paths use the execution
 #'   root, or the working directory when no root is set. The target need not exist.
-#' @examples
-#' resolve <- getFromNamespace("sas2r_assignment_path", "sas2r")
-#' env <- new.env()
-#' env$.sas2r_execution_root <- tempdir()
-#' resolve("inputs", env)
 #' @keywords internal
 sas2r_assignment_path <- function(path, env) {
   root <- get0(".sas2r_execution_root", envir = env, inherits = FALSE,
@@ -199,10 +188,6 @@ sas2r_libname_clear <- function(libref) {
 #' @param identifiers Technical names for structured diagnostics, checked against code before agent use.
 #' @return Does not return normally. Signals an error with classes `cls`,
 #'   `sas2r_libref_error`, `error`, and `condition`, and fields `message`, `call` and `identifiers`.
-#' @examples
-#' fail <- getFromNamespace("sas2r_libref_stop", "sas2r")
-#' tryCatch(fail("example_library_error", "Example failure"),
-#'          sas2r_libref_error = function(e) conditionMessage(e))
 #' @keywords internal
 sas2r_libref_stop <- function(cls, msg, identifiers = character()) {
   stop(structure(
@@ -221,13 +206,6 @@ sas2r_libref_stop <- function(cls, msg, identifiers = character()) {
 #' @return The registry entry as a list, normally with `read_path`, `write_path`,
 #'   `engine`, and `write` fields. Signals `sas2r_unknown_libref` when absent;
 #'   does not read a dataset or return a data frame.
-#' @examples
-#' entry <- getFromNamespace("sas2r_lib_entry", "sas2r")
-#' local({
-#'   .sas2r_registry <- list(work = list(read_path = tempdir(),
-#'     write_path = tempdir(), engine = "rds", write = "rds"))
-#'   entry("WORK")$write_path
-#' })
 #' @keywords internal
 sas2r_lib_entry <- function(libref) {
   registry <- get(".sas2r_registry", envir = sas2r_registry_env(), inherits = FALSE)
@@ -245,9 +223,6 @@ sas2r_lib_entry <- function(libref) {
 #' @param ext File extension including its dot, for example `".rds"`.
 #' @return A character scalar filename. Does not read or create the file.
 #'   Invalid member names signal `sas2r_libref_member_error`.
-#' @examples
-#' member_path <- getFromNamespace("sas2r_lib_member_path", "sas2r")
-#' member_path(tempdir(), "measurements", ".rds")
 #' @keywords internal
 sas2r_lib_member_path <- function(dir, member, ext) {
   if (!is.character(member) || length(member) != 1L || is.na(member) ||
@@ -265,9 +240,6 @@ sas2r_lib_member_path <- function(dir, member, ext) {
 #' @return A list containing `type` and `path`, or `NULL` for an absent member.
 #'   The write directory precedes the read directory; formats are tried in
 #'   RDS, SAS7BDAT, XPT order. Directories are not dataset member files.
-#' @examples
-#' find_member <- getFromNamespace("sas2r_lib_member_file", "sas2r")
-#' find_member(list(path = tempdir()), "not_created")
 #' @keywords internal
 sas2r_lib_member_file <- function(reg, member) {
   sas2r_lib_member_path("", member, "")

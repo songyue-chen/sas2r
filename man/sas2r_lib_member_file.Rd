@@ -19,8 +19,4 @@ RDS, SAS7BDAT, XPT order. Directories are not dataset member files.
 \description{
 Find a dataset member without reading its contents
 }
-\examples{
-find_member <- getFromNamespace("sas2r_lib_member_file", "sas2r")
-find_member(list(path = tempdir()), "not_created")
-}
 \keyword{internal}

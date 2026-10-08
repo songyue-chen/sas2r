@@ -112,9 +112,10 @@ Offline replay tests cover tool continuation and parallel workers on ellmer
 <!-- sas2r-example: offline vignette-preflight -->
 ```r
 library(sas2r)
+migration_dir <- tempfile("sas2r-migration-")
 check <- sas_preflight("programs/",   # the folder of SAS programs to translate
                        config = "_sas2r.yml",
-                       out_dir = "migration_output", diagnose = "off")
+                       out_dir = migration_dir, diagnose = "off")
 print(check)
 check$libraries
 check$inputs
@@ -179,7 +180,9 @@ retains dependency inference.
 
 ## Running a Migration in R
 
-To migrate a single SAS script or an entire directory of SAS files, call `sas_translate()`:
+To migrate a single SAS script or an entire directory of SAS files, call
+`sas_translate()`. These examples write under the R session temporary directory;
+supply your own destination when you want to retain the files.
 
 <!-- sas2r-example: network migration -->
 ```r
@@ -191,7 +194,7 @@ readRenviron("~/.Renviron")
 # Translate and execute the study migration
 result <- sas_translate(
   path = check$project,
-  out_dir = "migration_output",
+  out_dir = migration_dir,
   max_parallel_translations = 1L,   # programs or macros translated at once
   execute = TRUE,
   max_program_repair_rounds = 1L,
@@ -216,7 +219,8 @@ cat("Report:", result$report_path, "\n")
 cat(sas_code(result))
 
 # Export selected code, generated outputs, reports, and the dependency/input guide
-sas_write(result, "production_r/")
+export_dir <- tempfile("sas2r-export-")
+sas_write(result, export_dir)
 ```
 
 Outputs preserve library subdirectories: ADSL is at

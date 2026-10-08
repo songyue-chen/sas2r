@@ -21,11 +21,4 @@ This internal helper is available in a generated bundle's runtime.
 Use the returned names exactly; it returns a character vector, not a list.
 Accessing an absent name with \code{[[} raises an error, rather than returning NULL.
 }
-\examples{
-split_ds <- getFromNamespace("split_ds", "sas2r")
-parts <- split_ds("source.measurements")
-parts[["lib"]]     # "source"
-parts[["member"]]  # "measurements"
-split_ds("measurements") # c(lib = "work", member = "measurements")
-}
 \keyword{internal}

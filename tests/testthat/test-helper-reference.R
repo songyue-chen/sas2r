@@ -52,7 +52,7 @@ test_that("the shared helper reference includes argument rules and return values
   for (name in c("sas2r_registry_env", "sas2r_lib_entry", "sas2r_lib_member_path",
                  "sas2r_libref_stop", "sas2r_assignment_path")) {
     expect_match(docs[[name]]$text, "Returns:", fixed = TRUE, info = name)
-    expect_match(docs[[name]]$text, "Examples:", fixed = TRUE, info = name)
+    expect_false(grepl("Examples:", docs[[name]]$text, fixed = TRUE), info = name)
   }
 })
 
@@ -89,7 +89,7 @@ test_that("all three agents receive complete helper contracts without tool calls
     expect_match(system, 'op = "=="', fixed = TRUE, info = agent)
     expect_match(system, 'Returns:\nThe merged data frame.', fixed = TRUE, info = agent)
     expect_match(system, 'named character vector of length two', fixed = TRUE, info = agent)
-    expect_match(system, 'parts[["member"]]', fixed = TRUE, info = agent)
+    expect_match(system, 'There is no libref element', fixed = TRUE, info = agent)
   }
 })
 

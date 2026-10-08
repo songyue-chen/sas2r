@@ -1,12 +1,20 @@
 # Test the migration workflow with a deterministic translator and reviewer.
 # This covers synthetic data and PDF content, not independent SAS equivalence.
 
-test_that("demo input generation requires a destination outside the copied project", {
+test_that("demo input generation only writes to an explicit destination", {
   script <- system.file("examples", "migration-demo", "make-input.R", package = "sas2r")
   expect_true(file.exists(script))
   elsewhere <- withr::local_tempdir()
   withr::local_dir(elsewhere)
-  expect_error(source(script, local = new.env()), "pass its data directory", fixed = TRUE)
+  demo_input <- new.env()
+  sys.source(script, envir = demo_input)
+  expect_error(demo_input$make_demo_input(), "argument.*missing")
+  # Even beside demo.sas, running the script needs an explicit destination.
+  writeLines("data work.out; x=1; run;", "demo.sas")
+  output <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"),
+    c("--vanilla", shQuote(script)), stdout = TRUE, stderr = TRUE))
+  expect_identical(attr(output, "status"), 1L)
+  expect_match(paste(output, collapse = "\n"), "Pass the destination data directory")
   expect_false(dir.exists("data"))
 
   # The command-line destination works even when the caller is elsewhere.
@@ -35,11 +43,13 @@ test_that("migration demo executes from local RDS input and produces dataset and
   dir.create(temp_demo, recursive = TRUE)
   file.copy(list.files(demo_root, full.names = TRUE), temp_demo, recursive = TRUE)
 
-  # Run make-input.R in temp_demo
+  # Generate inputs at the explicitly supplied temporary destination.
   make_input_script <- file.path(temp_demo, "make-input.R")
   expect_true(file.exists(make_input_script))
   withr::local_dir(temp_demo)
-  source(make_input_script, local = new.env())
+  demo_input <- new.env()
+  sys.source(make_input_script, envir = demo_input)
+  demo_input$make_demo_input(file.path(temp_demo, "data"))
 
   input_rds <- file.path(temp_demo, "data", "input_ds.rds")
   expect_true(file.exists(input_rds))
