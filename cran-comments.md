@@ -28,16 +28,20 @@ on macOS with R 4.4.0:
 
 - 0 errors, 0 warnings.
 - 2 NOTEs: "New submission" and "unable to verify current time".
-- Shipped tests: 7,316 assertions passed; 0 failures and 0 test warnings.
-- Test elapsed time: 134 seconds.
+- Shipped tests: 7,385 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 126 seconds.
 - Examples and both rebuilt vignettes passed; no temporary-directory detritus.
 
-The documentation runner executed 17 offline examples, parsed 6 network examples
+The documentation runner executed 18 offline examples, parsed 6 network examples
 without provider calls, and validated 23 configurations. All seven local
 migration acceptance checks passed against the installed archive.
 
-Platform checks, PDF manual checks, and the complete development suite also run
-in repository CI for this release revision. The release PR links those results:
-https://github.com/songyue-chen/sas2r/pull/53
+All 10 CI jobs passed for the package changes in PR #54, including platform
+checks, PDF manual checks, and the complete development suite. The full installed
+development suite passed 10,655 assertions with 0 failures and 0 test warnings.
+The Windows submission tests completed in 379 seconds.
+
+Release PR: https://github.com/songyue-chen/sas2r/pull/54
+Verified CI run: https://github.com/songyue-chen/sas2r/actions/runs/37852182705
 
 Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
