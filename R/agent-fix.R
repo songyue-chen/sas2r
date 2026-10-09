@@ -183,7 +183,8 @@ fix_program_revision <- function(
       "Resolved project functions (call by name; do not redefine):",
       paste(contract$dependency_functions %||% character(), collapse = ", "),
       build_agent_guidance(project, component_id, contract, selected_revisions, config = config,
-        priority_dependencies = bundle$failed_component_id %||% bundle$condition$component_id %||% character(),
+        priority_dependencies = if (isTRUE(bundle$attributable_execution_failure))
+          bundle$failed_component_id %||% bundle$condition$component_id %||% character() else character(),
         include_consumers = identical(mode, "bundle"))$text, sep = "\n"),
     allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
     style = render_style_guidance(config)

@@ -39,6 +39,8 @@ is \code{PUT(x, fmt.)} and does the same.
 A format name is resolved in the bundle's \code{.sas2r_formats} catalog.
 Names are case-insensitive, with an optional trailing period. Character
 names retain their \code{$} prefix; numeric and character formats are distinct.
+Width and decimal specifications are unsupported and raise an error rather
+than silently changing the requested formatting.
 An unknown name is an error. Startup loads the catalog before programs and
 macro functions run; individual formats are not separate R variables.
 }

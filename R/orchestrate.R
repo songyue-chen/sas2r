@@ -52,13 +52,15 @@ new_migration_state <- function(
   staged_dir <- file.path(attempt$attempt_dir, "staged")
   dir.create(staged_dir, recursive = TRUE, showWarnings = FALSE)
   write_helpers(staged_dir)
+  write_formats(compile_format_catalog(p)$catalog, staged_dir)
 
   lib_map <- build_attempt_library_map(p, attempt$attempt_dir)
   write_autoexec(p, staged_dir, library_map = lib_map)
 
   runtime <- list(
     autoexec = file.path(staged_dir, "autoexec.R"),
-    helpers = file.path(staged_dir, "sas2r-helpers.R")
+    helpers = file.path(staged_dir, "sas2r-helpers.R"),
+    formats = file.path(staged_dir, "_sas2r_formats.R")
   )
 
   state <- list(
@@ -145,8 +147,11 @@ normalize_migration_state <- function(
     if (is.null(state$translator_llm) && !is.null(state$llm)) state$translator_llm <- state$llm
     if (is.null(state$runtime) && !is.null(state$paths)) {
       helpers_file <- system.file("templates", "sas2r-helpers.R", package = "sas2r")
+      dir.create(state$paths$staging, recursive = TRUE, showWarnings = FALSE)
+      write_formats(compile_format_catalog(state$project)$catalog, state$paths$staging)
       state$runtime <- list(autoexec = file.path(state$paths$staging, "autoexec.R"),
-                            helpers = helpers_file)
+                            helpers = helpers_file,
+                            formats = file.path(state$paths$staging, "_sas2r_formats.R"))
     }
   }
 

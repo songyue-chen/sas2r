@@ -58,6 +58,9 @@ translation_readiness <- function(project, plan) {
   }
   for (i in which(project$flags$kind %in% global)) add(project$flags$kind[i], project$flags$detail[i],
     flag_components(project$flags$detail[i]))
+  for (i in which(project$flags$kind == "format_redefined"))
+    add("format_redefined", project$flags$detail[i],
+      action = "Review the format redefinitions. Ordered catalog updates are not supported; do not replace them with one global definition.")
   for (i in which(project$flags$kind %in% c("autoexec_bindings_deferred", "autoexec_library_shadows_config")))
     add(project$flags$kind[i], project$flags$detail[i], blocks_execution = FALSE,
       action = "Review the startup SAS and selected library paths. Execution can continue when required inputs are available; configured libraries are fallbacks, not overrides.")

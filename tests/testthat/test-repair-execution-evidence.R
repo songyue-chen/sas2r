@@ -26,6 +26,28 @@ test_that("independent static repairs preserve the failed attempt and its attrib
   expect_identical(queue$p02$stopping_condition, attempt$condition)
 })
 
+test_that("background failures do not displace an independent repair's producers", {
+  fx <- repair_workflow_fixture(n = 3L, failures = 3L, value_errors = 2L, chain = TRUE)
+  fx$state$histories$p02 <- record_completed_review(fx$state$histories$p02,
+    verdict = "repair_required", basis_id = "source-derivation", findings = list(list(
+      category = "translation_defect", severity = "high",
+      sas_evidence = "value = value + 1", r_evidence = "x$value <- x$value + 9",
+      affected_outputs = "work.out2", unresolved_dependencies = character())))
+  attempt <- run_bundle_attempt(fx$state)
+  assessment <- assess_final_outputs(fx$state$output_contracts, attempt,
+    fx$state$graph, fx$state$histories, project = fx$state$project)
+  queue <- bundle_repair_queue(fx$state, attempt, assessment, collect_bundle_diagnostics(fx$state, attempt))
+  expect_false(queue$p02$attributable_execution_failure)
+  repair_bundle_component(fx$state, queue$p02, attempt, round = 0L)
+  requests <- fx$state$fixer_llm$requests()
+  expect_length(requests, 1L)
+  text <- paste(vapply(requests[[1L]]$messages, `[[`, "", "content"), collapse = "\n")
+  dependencies <- regmatches(text, gregexpr("dependency_body p0[13] component p0[13]", text))[[1L]]
+  expect_identical(dependencies, c("dependency_body p01 component p01", "dependency_body p03 component p03"))
+  expect_match(text, '"failed_component_id": "p03"', fixed = TRUE)
+  expect_match(text, '"attributable_execution_failure": false', fixed = TRUE)
+})
+
 test_that("an upstream failure stays visible in a downstream static fix request", {
   fx <- static_repair_evidence_fixture(chain = TRUE)
   fx$state$fixer_llm <- recording_fixer(function(context) {

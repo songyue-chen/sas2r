@@ -229,7 +229,8 @@ preflight_blocking_findings <- function() c(
     "dynamic_dataset_reference", "backward_dependency", "macro_data_flow_deferred",
     "dataset_statement_deferred", "macro_definition_missing",
     "macro_library_initialization_unsupported", "macro_include_requires_expansion",
-    "macro_nested_definition_unsupported", "macro_dependency_analysis_deferred")
+    "macro_nested_definition_unsupported", "macro_dependency_analysis_deferred",
+    "format_redefined")
 
 preflight_advisory_findings <- function() c("autoexec_autodiscovered", "macro_shadowing",
   "autoexec_bindings_deferred", "autoexec_library_shadows_config",

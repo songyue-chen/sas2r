@@ -890,6 +890,15 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
   if (nrow(dynamic)) flags_list[[length(flags_list) + 1L]] <- dynamic
   deferred <- deferred_dataset_findings(statements, defs, resolution)
   if (nrow(deferred)) flags_list[[length(flags_list) + 1L]] <- deferred
+  format_flags <- compile_format_catalog(list(statements = statements))$flags
+  for (reason in unique(format_flags$reason[startsWith(format_flags$reason, "format_redefined:")])) {
+    format_unit_ids <- format_flags$unit_id[format_flags$reason == reason]
+    format_rows <- match(format_unit_ids, statements$unit_id)
+    flags_list[[length(flags_list) + 1L]] <- tibble::tibble(kind = "format_redefined",
+      detail = paste0(sub("^format_redefined:", "", reason),
+        " has conflicting definitions; the startup catalog cannot preserve their execution order. Sources: ",
+        paste(paste0(statements$file[format_rows], ":", statements$line_start[format_rows]), collapse = ", ")))
+  }
   flags <- if (length(flags_list) > 0L) {
     do.call(rbind, flags_list)
   } else {

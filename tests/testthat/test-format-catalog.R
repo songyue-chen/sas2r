@@ -20,7 +20,98 @@ test_that("named formats work through both helpers in caller scope", {
     expect_error(helpers$sas_put(1, "yn", catalog = catalog["$yn"]), "SAS format not found")
     expect_error(helpers$sas_put(1, "yn", catalog = NULL), "SAS format not found")
     expect_error(helpers$sas_put(1, NA_character_, catalog = catalog), "one non-empty string")
+    for (name in c("yn3.", "yn3.2", "$yn8."))
+      expect_error(helpers$sas_put(1, name, catalog = catalog),
+        "format widths and decimal specifications are not supported")
   }
+})
+
+test_that("named formats pass the migration smoke runtime without a repair", {
+  root <- withr::local_tempdir()
+  writeLines("proc format; value yn 0='NO' 1='YES'; run;", file.path(root, "autoexec.sas"))
+  writeLines("data work.result; flag=put(1,yn.); run;", file.path(root, "main.sas"))
+  code <- "lib_write(data.frame(flag = sas_put(1, 'yn.')), 'work', 'result')"
+  llm <- recording_reviewer(function(request) {
+    if (identical(request$role, "reviewer")) return(good_review())
+    if (identical(request$role, "fixer")) stop("Correct format lookup must not need repair")
+    good_translation(code)
+  })
+  result <- sas_translate(file.path(root, "main.sas"), out_dir = withr::local_tempdir(),
+    outputs = list(datasets = "work.result"), llm = llm)
+  expect_identical(result$status, "migration_ready")
+  expect_identical(readRDS(file.path(result$outputs_dir, "datasets", "work", "result.rds"))$flag, "YES")
+  events <- current_component_evidence(result$component_evidence$main)$events
+  smoke <- Filter(function(event) identical(event$type, "program_smoke"), events)
+  expect_true(length(smoke) > 0L)
+  expect_true(all(vapply(smoke, function(event) identical(event$status, "passed"), logical(1))))
+  expect_false(any(vapply(llm$requests(), function(request) identical(request$role, "fixer"), logical(1))))
+
+  # A caller supplying a plain state list must get the same catalog as a new run.
+  state <- unclass(new_migration_state(result$project, withr::local_tempdir()))
+  state$runtime <- NULL
+  state <- normalize_migration_state(state)
+  state$selected_revisions <- list(main = list(r_code = code))
+  plan <- build_program_smoke_plan(state$graph, "main", state$selected_revisions)
+  prepared <- prepare_program_smoke(state, plan, state$attempt$attempt_dir)
+  expect_true(run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)$passed)
+})
+
+test_that("smoke and bundle execution both exclude selected setup assignments", {
+  root <- withr::local_tempdir()
+  writeLines("%let label = EXAMPLE;", file.path(root, "autoexec.sas"))
+  writeLines('data work.result; label="&label"; run;', file.path(root, "main.sas"))
+  project <- sas_project(file.path(root, "main.sas"))
+  state <- new_migration_state(project, withr::local_tempdir())
+  code <- list(setup = "invented_label <- 'EXAMPLE'",
+    main = "lib_write(data.frame(label = invented_label), 'work', 'result')")
+  state$selected_revisions <- lapply(names(code), function(id) list(component_id = id,
+    r_code = code[[id]], staged_file = paste0(id, ".R"),
+    contract = list(component_id = id, staged_file = paste0(id, ".R"))))
+  names(state$selected_revisions) <- names(code)
+  plan <- build_program_smoke_plan(state$graph, "main", state$selected_revisions)
+  expect_false("setup" %in% plan$dependency_prefix)
+  prepared <- prepare_program_smoke(state, plan, state$attempt$attempt_dir)
+  smoke <- run_program_smoke(prepared$plan, prepared$runtime, prepared$attempt_dir)
+  bundle <- run_bundle_attempt(state)
+  expect_false(smoke$passed)
+  expect_false(bundle$passed)
+  expect_match(smoke$condition$message, "invented_label.*not found")
+  expect_match(bundle$condition$message, "invented_label.*not found")
+})
+
+test_that("conflicting format definitions are withheld and defer execution", {
+  root <- withr::local_tempdir()
+  for (i in 1:2) writeLines(c(
+    sprintf("proc format; value ord 1='%s'; run;", c("First", "Second")[i]),
+    sprintf("data work.out%d; label=put(1,ord.); run;", i)), file.path(root, paste0("p", i, ".sas")))
+  check <- sas_preflight(root, diagnose = "off")
+  compiled <- compile_format_catalog(check$project)
+  expect_null(compiled$catalog$ord)
+  expect_true(all(compiled$flags$reason == "format_redefined:ord"))
+  expect_length(unique(compiled$flags$unit_id), 2L)
+  expect_identical(check$status, "needs_attention")
+  expect_true("format_redefined" %in% check$findings$kind)
+  warning <- Filter(function(x) x$kind == "format_redefined", check$readiness$warnings)
+  expect_length(warning, 1L)
+  expect_true(warning[[1L]]$blocks_execution)
+  expect_true(all(c("p1", "p2") %in% warning[[1L]]$affected))
+  llm <- recording_reviewer(function(request) {
+    if (identical(request$role, "reviewer")) return(good_review())
+    good_translation(sprintf("lib_write(data.frame(label = sas_put(1, 'ord.')), 'work', 'out%s')",
+      sub("^p", "", request$component_id)))
+  })
+  result <- sas_translate(check$project, out_dir = withr::local_tempdir(),
+    outputs = list(datasets = c("work.out1", "work.out2")), llm = llm)
+  expect_identical(result$status, "needs_review")
+  expect_match(result$status_reason, "conflicting definitions")
+
+  # Repeating the same definition, including the character variant, is valid.
+  for (i in 1:2) writeLines(c("proc format; value ord 1='First'; value $ord '1'='Text'; run;",
+    sprintf("data work.out%d; label=put(1,ord.); run;", i)), file.path(root, paste0("p", i, ".sas")))
+  repeated <- compile_format_catalog(sas_project(root))
+  expect_equal(nrow(repeated$flags), 0L)
+  expect_identical(sas_put(1, "ord.", catalog = repeated$catalog), "First")
+  expect_identical(sas_put("1", "$ord.", catalog = repeated$catalog), "Text")
 })
 
 test_that("startup loads one compiled catalog for programs and macro functions", {

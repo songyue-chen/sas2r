@@ -156,7 +156,13 @@ Generated programs and macro functions can use `sas_put(x, "status.")` or
 `apply_format(x, "$status.")` directly. Names ignore case and accept a trailing
 period; the `$` prefix distinguishes character formats. An unknown name raises
 an error. The selected setup R file is source context, not an additional startup
-script, so its assignments do not create runtime bindings.
+script, so its assignments do not create runtime bindings in smoke or bundle runs.
+Format widths and decimal specifications (for example, `status8.`) are unsupported
+and raise an explicit error; removing a width can change the source's output.
+Conflicting definitions of the same format name are omitted from the catalog
+and reported by preflight. Execution is deferred because one startup catalog
+cannot preserve changes to a format during a SAS session. Identical repeated
+definitions remain supported.
 
 Outside a bundle, pass a compiled catalog explicitly:
 

@@ -15,6 +15,10 @@ for unexported functions and correction of file-writing destinations.
 - Added checks for default log destinations and the demo's explicit destination.
   Regenerated help and the runtime helper reference together.
 
+Additional fixes align format loading and startup behavior in smoke and bundle
+execution, report unsupported format definitions and widths, and keep unrelated
+execution failures from taking priority in independent repairs.
+
 The smaller representative submission test suite is retained. The complete
 suite remains on the development branch and is checked against the installed
 release package using `.github/development-test-ref`. Tests use small synthetic
@@ -28,20 +32,20 @@ on macOS with R 4.4.0:
 
 - 0 errors, 0 warnings.
 - 2 NOTEs: "New submission" and "unable to verify current time".
-- Shipped tests: 7,385 assertions passed; 0 failures and 0 test warnings.
-- Test elapsed time: 126 seconds.
+- Shipped tests: 7,420 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 136 seconds.
 - Examples and both rebuilt vignettes passed; no temporary-directory detritus.
 
 The documentation runner executed 18 offline examples, parsed 6 network examples
 without provider calls, and validated 23 configurations. All seven local
 migration acceptance checks passed against the installed archive.
 
-All 10 CI jobs passed for the package changes in PR #54, including platform
-checks, PDF manual checks, and the complete development suite. The full installed
-development suite passed 10,655 assertions with 0 failures and 0 test warnings.
-The Windows submission tests completed in 379 seconds.
+An additional 1,084 focused assertions passed against the installed archive
+from the source checkout, with 0 failures, 0 warnings, and 0 skips.
+
+The release PR tracks the current platform checks, PDF manual checks, and
+complete development-suite checks in CI:
 
 Release PR: https://github.com/songyue-chen/sas2r/pull/54
-Verified CI run: https://github.com/songyue-chen/sas2r/actions/runs/37852182705
 
 Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.

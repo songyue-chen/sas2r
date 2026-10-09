@@ -11,6 +11,8 @@
 #' A format name is resolved in the bundle's `.sas2r_formats` catalog.
 #' Names are case-insensitive, with an optional trailing period. Character
 #' names retain their `$` prefix; numeric and character formats are distinct.
+#' Width and decimal specifications are unsupported and raise an error rather
+#' than silently changing the requested formatting.
 #' An unknown name is an error. Startup loads the catalog before programs and
 #' macro functions run; individual formats are not separate R variables.
 #'
@@ -37,6 +39,9 @@ apply_format <- function(x, fmt,
     if (length(fmt) != 1L || is.na(fmt) || !nzchar(fmt))
       stop("Format name must be one non-empty string", call. = FALSE)
     name <- tolower(sub("\\.$", "", fmt))
+    if (grepl("[0-9](\\.[0-9]+)?$", name))
+      stop("SAS format widths and decimal specifications are not supported: ", fmt,
+        ". Preserve the source formatting explicitly; do not drop the width.", call. = FALSE)
     entry <- catalog[[name]]
     if (is.null(entry)) stop("SAS format not found in catalog: ", fmt, call. = FALSE)
     fmt <- entry
