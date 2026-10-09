@@ -16,7 +16,7 @@ Package runtime behavior is unchanged by this timing reduction.
 The complete source-faithful repair suite is unchanged. Format smoke execution,
 setup exclusion, conflicting format definitions and file-writing regressions
 remain in the submitted tests. Full development tests from commit
-`e43392b32d93291175fa3f6671e78d3b8450f8cf` run against the installed release
+`7ae0f92d17239799c57630f20c79867b4ce1884a` run against the installed release
 archive in CI. Windows R-devel is included alongside Windows release.
 
 The earlier manual-review corrections are also retained:
@@ -59,8 +59,13 @@ on macOS with R 4.4.0:
 - Archive inspection confirms that runtime code, help, examples and vignettes
   are unchanged; only tests and the packaging timestamp differ.
 
-The complete pinned development suite is being checked against this installed
-archive. Results and current platform checks are recorded in the release PR.
+The complete development suite passed locally against this installed archive:
+10,775 assertions, no failures or test warnings and two expected skips. A later
+CI failure exposed an overbroad test assertion matching incidental digits in
+paths or hashes. The pinned test commit corrects that assertion and preserves
+the reference-isolation check. Its repair reliability and source-faithful repair
+tests pass against the archive (224 assertions). Current full-suite and platform
+results are recorded in the release PR.
 A new win-builder check is required before declaring the timing issue resolved:
 the previous candidate took 782 seconds there despite faster GitHub checks.
 
