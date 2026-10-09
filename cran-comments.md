@@ -1,7 +1,25 @@
 ## Resubmission: sas2r 0.5.8
 
-This resubmission addresses the manual review requesting removal of examples
-for unexported functions and correction of file-writing destinations.
+This resubmission reduces the Windows check time reported by the incoming
+checks (20 minutes overall, including 16 minutes in tests). A first reduction
+passed GitHub Windows checks but still took 782 seconds on win-builder, with
+550 seconds in tests. We reduced repeated integration work further in response.
+
+The shipped suite contains 89 representative test files instead of 130.
+Public result, export and resume checks share one migration, and transpilation
+checks share one fixture. Separate parallel, macro-bundle, startup-export and
+multi-program execution scenarios remain in the complete development suite;
+their smaller configuration and dependency contracts remain in the archive.
+The test log now prints the ten slowest files to make remote timings visible.
+Package runtime behavior is unchanged by this timing reduction.
+
+The complete source-faithful repair suite is unchanged. Format smoke execution,
+setup exclusion, conflicting format definitions and file-writing regressions
+remain in the submitted tests. Full development tests from commit
+`7ae0f92d17239799c57630f20c79867b4ce1884a` run against the installed release
+archive in CI. Windows R-devel is included alongside Windows release.
+
+The earlier manual-review corrections are also retained:
 
 - Removed examples from all seven internal helper help topics, including
   `sas2r_lib_member_file` and `split_ds`. These functions remain internal.
@@ -29,25 +47,28 @@ translation workers.
 
 ## Validation
 
-The corrected source archive passes local `R CMD check --as-cran --no-manual`
+The revised source archive passes local `R CMD check --as-cran --no-manual`
 on macOS with R 4.4.0:
 
 - 0 errors, 0 warnings.
 - 2 NOTEs: "New submission" and "unable to verify current time".
-- Shipped tests: 7,429 assertions passed; 0 failures and 0 test warnings.
-- Test elapsed time: 137 seconds.
+- Shipped tests: 3,260 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 35 seconds, down from 58 seconds for the first reduction
+  and 137 seconds for the original submitted archive.
 - Examples and both rebuilt vignettes passed; no temporary-directory detritus.
+- Archive inspection confirms that runtime code, help, examples and vignettes
+  are unchanged; only tests and the packaging timestamp differ.
 
-The documentation runner executed 18 offline examples, parsed 6 network examples
-without provider calls, and validated 23 configurations. All seven local
-migration acceptance checks passed against the installed archive.
+The complete development suite passed locally against this installed archive:
+10,775 assertions, no failures or test warnings and two expected skips. A later
+CI failure exposed an overbroad test assertion matching incidental digits in
+paths or hashes. The pinned test commit corrects that assertion and preserves
+the reference-isolation check. Its repair reliability and source-faithful repair
+tests pass against the archive (224 assertions). Current full-suite and platform
+results are recorded in the release PR.
+A new win-builder check is required before declaring the timing issue resolved:
+the previous candidate took 782 seconds there despite faster GitHub checks.
 
-An additional 1,093 focused assertions passed against the installed archive
-from the source checkout, with 0 failures, 0 warnings, and 0 skips.
-
-The release PR tracks the current platform checks, PDF manual checks, and
-complete development-suite checks in CI:
-
-Release PR: https://github.com/songyue-chen/sas2r/pull/54
+Release PR: https://github.com/songyue-chen/sas2r/pull/55
 
 Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
