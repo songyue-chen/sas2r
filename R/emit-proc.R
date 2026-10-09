@@ -165,6 +165,10 @@ compile_format_catalog <- function(project) {
           }
         }
 
+        # Declaration order does not change discrete values or supported non-overlapping ranges.
+        if (length(values)) values <- values[order(names(values), method = "radix")]
+        if (length(ranges)) ranges <- ranges[order(
+          vapply(ranges, `[[`, numeric(1), "lo"), vapply(ranges, `[[`, numeric(1), "hi"))]
         definition <- list(
           values = if (length(values)) values else c(),
           ranges = if (length(ranges)) ranges else NULL,

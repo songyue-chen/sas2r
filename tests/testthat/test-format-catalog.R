@@ -114,6 +114,34 @@ test_that("conflicting format definitions are withheld and defer execution", {
   expect_identical(sas_put("1", "$ord.", catalog = repeated$catalog), "Text")
 })
 
+test_that("equivalent reordered format definitions remain executable", {
+  root <- withr::local_tempdir()
+  definitions <- c(
+    "value ord 1='A' 2='B'; value $ord 'a'='First' 'b'='Second'; value age low-<18='Child' 18-high='Adult' other='Unknown';",
+    "value ord 2='B' 1='A'; value $ord 'b'='Second' 'a'='First'; value age other='Unknown' 18-high='Adult' low-<18='Child';"
+  )
+  for (i in seq_along(definitions)) writeLines(c(
+    paste("proc format;", definitions[i], "run;"),
+    sprintf("data work.out%d; label=put(1,ord.); run;", i)), file.path(root, paste0("p", i, ".sas")))
+  check <- sas_preflight(root, diagnose = "off")
+  compiled <- compile_format_catalog(check$project)
+  expect_equal(nrow(compiled$flags), 0L)
+  expect_false("format_redefined" %in% check$findings$kind)
+  expect_identical(check$status, "ready_for_translation")
+  expect_identical(sas_put(c(2, 1), "ord.", catalog = compiled$catalog), c("B", "A"))
+  expect_identical(sas_put(c("b", "a"), "$ord.", catalog = compiled$catalog), c("Second", "First"))
+  expect_identical(sas_put(c(-1, 17.9, 18, 80, NA), "age.", catalog = compiled$catalog),
+    c("Child", "Child", "Adult", "Adult", "Unknown"))
+
+  # An endpoint change is still a real conflict after ordering is normalized.
+  writeLines(paste("proc format;", sub("18-high", "18<-high", definitions[2], fixed = TRUE), "run;"),
+    file.path(root, "p2.sas"))
+  changed <- compile_format_catalog(sas_project(root))
+  expect_null(changed$catalog$age)
+  expect_true(all(changed$flags$reason == "format_redefined:age"))
+  expect_identical(sas_put(1, "ord.", catalog = changed$catalog), "A")
+})
+
 test_that("startup loads one compiled catalog for programs and macro functions", {
   root <- withr::local_tempdir()
   writeLines("proc format; value yn 0='NO' 1='YES'; value $yn '0'='zero' '1'='one'; run;",

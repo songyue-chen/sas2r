@@ -722,7 +722,7 @@ apply_format <- function(x, fmt,
     name <- tolower(sub("\\.$", "", fmt))
     if (grepl("[0-9](\\.[0-9]+)?$", name))
       stop("SAS format widths and decimal specifications are not supported: ", fmt,
-        ". Preserve the source formatting explicitly; do not drop the width.", call. = FALSE)
+        "; preserve the source formatting explicitly; do not drop the width.", call. = FALSE)
     entry <- catalog[[name]]
     if (is.null(entry)) stop("SAS format not found in catalog: ", fmt, call. = FALSE)
     fmt <- entry

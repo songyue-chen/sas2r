@@ -161,8 +161,9 @@ Format widths and decimal specifications (for example, `status8.`) are unsupport
 and raise an explicit error; removing a width can change the source's output.
 Conflicting definitions of the same format name are omitted from the catalog
 and reported by preflight. Execution is deferred because one startup catalog
-cannot preserve changes to a format during a SAS session. Identical repeated
-definitions remain supported.
+cannot preserve changes to a format during a SAS session. Equivalent repeated
+definitions remain supported, including reordered values and non-overlapping
+numeric ranges.
 
 Outside a bundle, pass a compiled catalog explicitly:
 
