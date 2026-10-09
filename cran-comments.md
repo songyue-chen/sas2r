@@ -3,7 +3,10 @@
 This resubmission reduces the Windows check time reported by the incoming
 checks (20 minutes overall, including 16 minutes in tests). A first reduction
 passed GitHub Windows checks but still took 782 seconds on win-builder, with
-550 seconds in tests. We reduced repeated integration work further in response.
+550 seconds in tests. After reducing repeated integration work further, the
+revised source archive now completes win-builder R-devel checks in 375 seconds
+(6 minutes 15 seconds), including 155 seconds in tests. Installation took
+41 seconds. The result has 0 errors, 0 warnings and only the New submission NOTE.
 
 The shipped suite contains 89 representative test files instead of 130.
 Public result, export and resume checks share one migration, and transpilation
@@ -59,15 +62,27 @@ on macOS with R 4.4.0:
 - Archive inspection confirms that runtime code, help, examples and vignettes
   are unchanged; only tests and the packaging timestamp differ.
 
-The complete development suite passed locally against this installed archive:
-10,775 assertions, no failures or test warnings and two expected skips. A later
-CI failure exposed an overbroad test assertion matching incidental digits in
-paths or hashes. The pinned test commit corrects that assertion and preserves
-the reference-isolation check. Its repair reliability and source-faithful repair
-tests pass against the archive (224 assertions). Current full-suite and platform
-results are recorded in the release PR.
-A new win-builder check is required before declaring the timing issue resolved:
-the previous candidate took 782 seconds there despite faster GitHub checks.
+The complete development suite at the pinned test commit passed locally
+against this installed archive: 10,777 assertions, no failures or test warnings,
+and two expected skips. All 11 CI checks passed, including all six platform
+checks, both installed-package development-suite jobs and all seven acceptance
+gates. A development-test assertion was corrected to distinguish reference
+contents from incidental digits in paths; this does not change the release
+archive.
+
+Win-builder R-devel (2026-10-08 r90650 ucrt) checked the same archive:
+
+- Installation: 41 seconds; overall check: 375 seconds; tests: 155 seconds.
+- 0 errors, 0 warnings, 1 NOTE: "New submission".
+- 3,277 assertions passed; 0 failures, 0 test warnings, 12 source-only skips.
+- Examples, rebuilt vignettes, and the PDF and HTML manuals passed.
+
+Win-builder logs: https://win-builder.r-project.org/UcsR5RJUEQxU/
+
+CI results: https://github.com/songyue-chen/sas2r/actions/runs/37887051787
+
+Source archive SHA-256:
+`9cfd43d8cd9552a87f02360fcb808b7c492f9ce0f5e6a8cab1cf16fbc22856ce`.
 
 Release PR: https://github.com/songyue-chen/sas2r/pull/55
 
