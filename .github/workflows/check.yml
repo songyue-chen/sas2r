@@ -34,8 +34,17 @@ jobs:
           use-public-rspm: true
       # The .Rmd vignette makes pandoc a hard R CMD build dependency.
       - uses: r-lib/actions/setup-pandoc@v2
-      - uses: r-lib/actions/setup-tinytex@v2
+      - name: Install TinyTeX
         if: matrix.manual
+        shell: bash
+        run: |
+          sudo apt-get install -y texinfo
+          # Fetch the official installer directly; GitHub's /raw redirect timed out.
+          curl --fail --location --show-error --retry 3 --connect-timeout 20 --max-time 120 \
+            https://raw.githubusercontent.com/rstudio/tinytex/refs/heads/main/tools/install-bin-unix.sh \
+            --output "$RUNNER_TEMP/install-tinytex.sh"
+          sh "$RUNNER_TEMP/install-tinytex.sh"
+          printf '%s\n' "$HOME"/.TinyTeX/bin/* >> "$GITHUB_PATH"
       - name: Install PDF manual fonts and indexer
         if: matrix.manual
         run: tlmgr install courier inconsolata makeindex
