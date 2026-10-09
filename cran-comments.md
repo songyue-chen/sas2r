@@ -1,23 +1,53 @@
-The current source version is 0.5.8. The notes below describe the previously
-submitted 0.5.5 archive; they are historical evidence, not validation of 0.5.8.
+## Resubmission: sas2r 0.5.8
 
-## Previous submission: sas2r 0.5.5
+This resubmission addresses the manual review requesting removal of examples
+for unexported functions and correction of file-writing destinations.
 
-This was the first CRAN submission of sas2r, version 0.5.5.
+- Removed examples from all seven internal helper help topics, including
+  `sas2r_lib_member_file` and `split_ds`. These functions remain internal.
+- Internal audit logging now defaults to the R session temporary directory.
+  The internal lockfile writer requires an explicit destination.
+- Sourcing the installed demo input script only defines its input generator.
+  Both the generator and command-line script require an explicit destination.
+- README and vignette writing examples use temporary destinations. The runtime
+  vignette runs a temporary copy of an exported bundle and restores the caller's
+  working directory through `source(..., chdir = TRUE)`.
+- Added checks for default log destinations and the demo's explicit destination.
+  Regenerated help and the runtime helper reference together.
 
-The package provides dependency-aware translation of SAS programs to R, execution of generated code, comparison with supplied reference datasets, and reporting of unresolved translation and validation findings. Rule-based translation works offline without a SAS installation. Optional language-model translation, review, and repair use a user-configured provider through ellmer and may require an account and API credentials.
+Additional fixes align format loading and startup behavior in smoke and bundle
+execution, report unsupported format definitions and widths, and keep unrelated
+execution failures from taking priority in independent repairs. Equivalent
+format definitions remain supported when their values or numeric ranges are
+declared in a different order.
 
-The source archive was built with R 4.6.1 and checked with R CMD check --as-cran on Linux. The same archive passed win-builder checks on Windows R-release 4.6.1 and R-devel (2026-09-25 r90590), including PDF and HTML manuals:
+The smaller representative submission test suite is retained. The complete
+suite remains on the development branch and is checked against the installed
+release package using `.github/development-test-ref`. Tests use small synthetic
+fixtures, need no SAS installation or provider credentials, and use at most two
+translation workers.
 
-R-release: https://win-builder.r-project.org/JFdR234d25IO/
-R-devel: https://win-builder.r-project.org/zb9rqkmw4Rnj/
+## Validation
 
-All three checks report 0 errors, 0 warnings, and one NOTE:
+The corrected source archive passes local `R CMD check --as-cran --no-manual`
+on macOS with R 4.4.0:
 
-    New submission
+- 0 errors, 0 warnings.
+- 2 NOTEs: "New submission" and "unable to verify current time".
+- Shipped tests: 7,429 assertions passed; 0 failures and 0 test warnings.
+- Test elapsed time: 137 seconds.
+- Examples and both rebuilt vignettes passed; no temporary-directory detritus.
 
-Checks of the same source revision also passed on Linux R-devel, Windows and macOS R 4.6.1, and the declared minimum R 4.1.3. The full installed-package suite and offline ellmer integration checks pass in CI.
+The documentation runner executed 18 offline examples, parsed 6 network examples
+without provider calls, and validated 23 configurations. All seven local
+migration acceptance checks passed against the installed archive.
 
-Examples, vignettes, and automated tests require neither a SAS installation nor provider credentials or paid API calls. Checks use at most two translation workers. Extended process-heavy scenarios run in CI; the CRAN test profile retains unit tests and representative translation, execution, review, repair, resume, dependency, and output-validation coverage.
+An additional 1,093 focused assertions passed against the installed archive
+from the source checkout, with 0 failures, 0 warnings, and 0 skips.
 
-On win-builder, the complete checks took 938 seconds (R-release) and 924 seconds (R-devel). The test suites took 810 and 789 seconds elapsed, respectively; both reported 8,862 passing assertions, no failures, and no test warnings. The longest individual example took under two seconds.
+The release PR tracks the current platform checks, PDF manual checks, and
+complete development-suite checks in CI:
+
+Release PR: https://github.com/songyue-chen/sas2r/pull/54
+
+Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.

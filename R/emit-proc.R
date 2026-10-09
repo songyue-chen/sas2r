@@ -88,7 +88,8 @@ emit_proc_sort <- function(stmts) {
 #'
 #' Scans all `proc format` units in a project and extracts discrete mappings,
 #' numeric ranges, and `other=` defaults. Flags unsupported features like `picture`,
-#' `invalue`, and `multilabel`.
+#' `invalue`, and `multilabel`. Conflicting definitions of one name are flagged
+#' and omitted because a single startup catalog cannot represent their timing.
 #'
 #' @param project A `sas2r_project` object.
 #' @return A list with elements `catalog` (named list of format definitions) and `flags` (tibble).
@@ -100,6 +101,8 @@ compile_format_catalog <- function(project) {
 
   catalog <- list()
   flags <- list()
+  definition_units <- list()
+  conflicts <- character()
 
   for (uid in fmt_units) {
     us <- st[st$unit_id == uid & st$type == "code", ]
@@ -162,13 +165,29 @@ compile_format_catalog <- function(project) {
           }
         }
 
-        catalog[[nm]] <- list(
+        # Declaration order does not change discrete values or supported non-overlapping ranges.
+        if (length(values)) values <- values[order(names(values), method = "radix")]
+        if (length(ranges)) ranges <- ranges[order(
+          vapply(ranges, `[[`, numeric(1), "lo"), vapply(ranges, `[[`, numeric(1), "hi"))]
+        definition <- list(
           values = if (length(values)) values else c(),
           ranges = if (length(ranges)) ranges else NULL,
           other = other
         )
+        definition_units[[nm]] <- unique(c(definition_units[[nm]], uid))
+        if (!is.null(catalog[[nm]]) && !identical(catalog[[nm]], definition)) {
+          conflicts <- union(conflicts, nm)
+        } else {
+          catalog[[nm]] <- definition
+        }
       }
     }
+  }
+
+  for (nm in conflicts) {
+    flags[[length(flags) + 1L]] <- tibble::tibble(
+      unit_id = definition_units[[nm]], reason = paste0("format_redefined:", nm))
+    catalog[[nm]] <- NULL
   }
 
   list(
@@ -206,7 +225,7 @@ emit_proc_format <- function(us) {
   compiled <- compile_format_catalog(list(statements = us))
   if (nrow(compiled$flags)) return(list(code = NA_character_, stmt_map = us$stmt_id,
     flags = unique(compiled$flags$reason)))
-  list(code = "# formats compiled into _sas2r_formats.R",
+  list(code = '# formats compiled into _sas2r_formats.R; use sas_put(x, "name.")',
        stmt_map = us$stmt_id, flags = character())
 }
 

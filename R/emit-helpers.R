@@ -410,6 +410,7 @@ autoexec_lines <- function(entries, undeclared, work_entry, execution_root = NUL
     sprintf('source(%s, local = environment())', deparse(helpers)),
     ".sas2r_registry <- sas2r_resolve_registry(.sas2r_registry, .sas2r_bundle_root)",
     ".sas2r_library_bindings <- unname(.sas2r_registry)",
+    '# One compiled catalog; use sas_put(x, "name.") for named formats.',
     sprintf('if (file.exists(%s)) source(%s, local = environment())', deparse(formats), deparse(formats)),
     '# Called SAS macros are reusable functions, loaded before any program runs.',
     'local({',

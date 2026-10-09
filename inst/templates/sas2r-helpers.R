@@ -713,8 +713,20 @@ sas_merge <- function(a, b, by,
 # Runtime helpers: formats. Part of the runtime every translated program
 # carries; see ?sas2r_runtime.
 
-apply_format <- function(x, fmt) {
+apply_format <- function(x, fmt,
+                         catalog = get0(".sas2r_formats", envir = parent.frame(), inherits = TRUE)) {
   if (is.null(fmt)) return(as.character(x))
+  if (is.character(fmt)) {
+    if (length(fmt) != 1L || is.na(fmt) || !nzchar(fmt))
+      stop("Format name must be one non-empty string", call. = FALSE)
+    name <- tolower(sub("\\.$", "", fmt))
+    if (grepl("[0-9](\\.[0-9]+)?$", name))
+      stop("SAS format widths and decimal specifications are not supported: ", fmt,
+        "; preserve the source formatting explicitly; do not drop the width.", call. = FALSE)
+    entry <- catalog[[name]]
+    if (is.null(entry)) stop("SAS format not found in catalog: ", fmt, call. = FALSE)
+    fmt <- entry
+  }
   fmt_key <- function(v) {
     if (is.na(v)) NA_character_
     else if (is.numeric(v)) format(v, scientific = FALSE, trim = TRUE)
@@ -748,7 +760,10 @@ apply_format <- function(x, fmt) {
   out
 }
 
-sas_put <- function(x, fmt) apply_format(x, fmt)
+sas_put <- function(x, fmt,
+                    catalog = get0(".sas2r_formats", envir = parent.frame(), inherits = TRUE)) {
+  apply_format(x, fmt, catalog = catalog)
+}
 
 # Runtime helpers: %INCLUDE. Part of the runtime every translated program
 # carries; see ?sas2r_runtime.

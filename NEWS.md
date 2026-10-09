@@ -1,5 +1,8 @@
 # sas2r 0.5.8
 
+- Resolve named formats from the bundle catalog and clarify startup and merge behavior.
+- Preserve actual execution failures when preparing independent code repairs.
+- Align smoke startup with bundle execution and report conflicting format definitions and unsupported widths.
 - Correct internal help examples and keep default audit logs and example outputs in temporary directories.
 
 - Improve startup library handling across preflight, execution and exports.
