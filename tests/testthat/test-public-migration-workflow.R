@@ -31,10 +31,9 @@ test_that("sas_translate returns one complete observable migration result", {
     "pricing_source", "pricing_rates", "usage_limits", "recursive",
     "resume", "keep_raw_attempts", "max_bundle_repairs_per_component", "max_parallel_translations"
   ))
-  result <- sas_translate(
-    migration_demo_file(), out_dir = withr::local_tempdir(),
-    llm = deterministic_migration_llm()
-  )
+  f <- migration_demo_file()
+  out <- withr::local_tempdir()
+  result <- sas_translate(f, out_dir = out, llm = deterministic_migration_llm(), resume = FALSE)
   expect_named(result, c(
     "run_id", "out_dir", "bundle_dir", "outputs_dir", "status",
     "status_reason", "graph_path", "output_contracts_path", "report_path",
@@ -45,6 +44,10 @@ test_that("sas_translate returns one complete observable migration result", {
   expect_warning(written <- sas_write(result, dst), class = "sas2r_unverified_write")
   expect_identical(written, dst)
   expect_true(file.exists(file.path(dst, "report", "translation.md")))
+
+  # An empty mock makes an unexpected new provider call fail on resume.
+  resumed <- sas_translate(f, out_dir = out, llm = mock_llm(list()), resume = TRUE)
+  expect_identical(resumed$status, result$status)
 })
 
 test_that("sas_translate with execute = FALSE snapshots bundle and returns needs_review", {
@@ -86,16 +89,4 @@ test_that("sas_translate with no reviewer records review_unavailable when execut
   expect_identical(result$status, "blocked")
   # Evidence reflects review unavailable without reviewer
   expect_true(length(result$component_evidence) > 0L)
-})
-
-test_that("resume = TRUE reuses completed work without duplicate paid calls", {
-  out <- withr::local_tempdir()
-  f <- migration_demo_file()
-  llm1 <- deterministic_migration_llm()
-  res1 <- sas_translate(f, out_dir = out, llm = llm1, resume = FALSE)
-
-  # Resume with empty LLM (no mock responses); if it attempts new calls it would fail or use calls
-  llm_empty <- mock_llm(list())
-  res2 <- sas_translate(f, out_dir = out, llm = llm_empty, resume = TRUE)
-  expect_identical(res1$status, res2$status)
 })
