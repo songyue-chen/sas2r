@@ -1,7 +1,7 @@
 # A source-defined workflow with seeded generated R execution or value errors.
 repair_workflow_fixture <- function(n = 4L, failures = c(1L, 3L), chain = FALSE,
-                                    value_errors = integer(), envir = parent.frame()) {
-  root <- withr::local_tempdir(.local_envir = envir)
+                                    value_errors = integer(), envir = parent.frame(),
+                                    root = withr::local_tempdir(.local_envir = envir)) {
   inputs <- file.path(root, "inputs")
   dir.create(inputs)
   saveRDS(data.frame(id = 1:3, value = 10:12), file.path(inputs, "input.rds"))

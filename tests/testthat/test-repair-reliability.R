@@ -315,9 +315,13 @@ test_that("paired dependency packets retain dataset producers even without trans
 })
 
 test_that("a warranted follow-up can recover an unavailable full review with explicit scope", {
-  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  # Incidental digits in legitimate paths must not look like reference values.
+  fx <- repair_workflow_fixture(n = 1L, failures = integer(),
+    root = withr::local_tempdir(pattern = 'project999-'))
   fx$state$histories$p01 <- record_review_unavailable(fx$state$histories$p01, 'dependency context incomplete')
-  reference <- file.path(fx$root, 'reference.rds'); saveRDS(data.frame(id = 1, value = 999), reference)
+  reference_value <- 'REFERENCE_ONLY_EXPECTED_VALUE'
+  reference <- file.path(fx$root, 'reference.rds')
+  saveRDS(data.frame(id = 1, value = reference_value), reference)
   fx$state$comparison_rules <- list(references = list(work.out1 = reference))
   result <- run_bundle_pipeline(fx$state)
   expect_identical(component_review_verdict(result$histories$p01), 'reviewed_no_material_finding')
@@ -326,7 +330,9 @@ test_that("a warranted follow-up can recover an unavailable full review with exp
   prompt <- request_task_text(fx$state$reviewer_llm$requests()[[1]])
   expect_match(prompt, 'Full component review with additional focus', fixed = TRUE)
   expect_match(prompt, 'entire component', fixed = TRUE)
-  expect_false(grepl('999|reference.rds', prompt))
+  expect_match(prompt, 'project999-', fixed = TRUE)
+  expect_false(grepl(reference_value, prompt, fixed = TRUE))
+  expect_false(grepl(basename(reference), prompt, fixed = TRUE))
   event <- Filter(function(e) identical(e$type, 'source_mismatch_review'), current_component_evidence(result$histories$p01)$events)[[1]]
   expect_identical(event$review_scope, 'full')
   expect_true(event$adopted)
