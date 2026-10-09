@@ -126,6 +126,9 @@ build_program_smoke_plan <- function(
 
   # Check upstream dependency closure
   deps <- dependency_closure(graph, component_id)
+  # Startup bindings come from autoexec.R in both smoke and bundle execution.
+  # Selected setup translations are source context, not executable programs.
+  deps <- setdiff(deps, nodes$component_id[nodes$type == "setup"])
   if (length(deps) > 0L) {
     missing_deps <- setdiff(deps, names(selected_revisions))
     if (length(missing_deps) > 0L) {
@@ -715,6 +718,8 @@ bounded_agent_diagnostics <- function(execution,
     execution_id = execution$execution_id, component_id = execution$component_id,
     passed = execution$passed, exit_status = execution$exit_status,
     failed_component_id = execution$failed_component_id %||% execution$condition$component_id,
+    repair_component_id = execution$repair_component_id,
+    attributable_execution_failure = execution$attributable_execution_failure,
     blocked_by = execution$blocked_by,
     condition_kind = facts$kind, condition_identifiers = facts$identifiers,
     condition_message = if (isTRUE(execution$passed)) "" else facts$condition_message,

@@ -624,13 +624,16 @@ known_domains:
 
   data_step_pdv_merge:
     classification: known_divergence
-    sas_default: "New assignment variables reset to missing each iteration unless retained. SET/MERGE/UPDATE variables, sum statements and explicit RETAIN have different retention rules; BY-group state and sequential merge semantics also matter."
+    sas_default: "New assignment variables reset to missing each iteration unless retained. MERGE input values may persist within a BY group but reset at the next group; an input absent from a group contributes missing values for its unique variables. SET/UPDATE, sum statements and explicit RETAIN have their own retention rules."
     r_default: "R data-frame operations do not have an implicit PDV or SAS sequential merge state."
     strategy: deferred_pdv_state_model
     implementation_status: deferred
     risk: high
     scope: "DATA-step state and merge behavior outside explicitly implemented IR cases."
     sources:
+      - url: https://support.sas.com/documentation/cdl/en/basess/58133/HTML/default/a001318494.htm
+        accessed: 2026-10-08
+        version: "Step-by-Step Programming with Base SAS Software"
       - url: https://support.sas.com/documentation/cdl/en/lrcon/65287/HTML/default/p1x98c58fc4rgzn1jb5viwl5faz2.htm
         accessed: 2026-09-26
         version: "SAS 9.3"

@@ -35,6 +35,9 @@ semantics that this join-based helper does not implement.
 Do not pre-create missing columns on one input when the other input supplies
 them: that invents an overlap. Preserve genuine overlapping source columns;
 their unsupported repeated-key semantics must not be silently dropped.
+Values from an input can be retained within a BY group, but reset to missing
+at the next BY group. If an input has no row for a key, its unique columns
+are missing for that key; never fill them from a preceding key.
 }
 \examples{
 a <- data.frame(id = c(1, 2), x = c("a", "b"))
