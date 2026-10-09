@@ -1793,7 +1793,8 @@ sas_llm_probe_impl <- function(llm, max_retries, log_dir, on_charge, tier,
 #'
 #' @param llm A `sas2r_llm` adapter from [sas_llm()], or an `llm:` mapping.
 #' @param max_retries Maximum retry attempts for a retryable failure.
-#' @param log_dir Directory the audit log is written to.
+#' @param log_dir Directory the audit log is written to. Defaults to the R
+#'   session's temporary directory; supply a directory to retain the log.
 #' @param on_charge Deprecated compatibility callback.
 #' @param tier Tier whose model is probed (`"cheap"` by default).
 #' @param can_attempt Optional predicate consulted before each attempt.
@@ -1876,7 +1877,7 @@ sas_llm_probe <- function(llm, max_retries = 2L, log_dir = tempdir(),
 
 #' Write pinned LLM configuration and prompt hashes to lockfile
 #' @noRd
-write_llm_lock <- function(cfg, prompts_dir, path = "_sas2r.lock", specs = NULL,
+write_llm_lock <- function(cfg, prompts_dir, path, specs = NULL,
                            requested_parameters = NULL,
                            effective_parameters = NULL,
                            capability_record = NULL) {
@@ -1949,7 +1950,7 @@ write_llm_lock <- function(cfg, prompts_dir, path = "_sas2r.lock", specs = NULL,
 
 #' Append LLM request/response entry to local JSONL log
 #' @noRd
-llm_log <- function(entry, dir = ".sas2r", redactor = redact_llm_secrets) {
+llm_log <- function(entry, dir = tempdir(), redactor = redact_llm_secrets) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
   if (!is.function(redactor)) {
     cli::cli_abort("LLM audit redactor must be a function",

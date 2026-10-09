@@ -183,7 +183,8 @@ fix_program_revision <- function(
       "Resolved project functions (call by name; do not redefine):",
       paste(contract$dependency_functions %||% character(), collapse = ", "),
       build_agent_guidance(project, component_id, contract, selected_revisions, config = config,
-        priority_dependencies = bundle$failed_component_id %||% bundle$condition$component_id %||% character(),
+        priority_dependencies = if (isTRUE(bundle$attributable_execution_failure))
+          bundle$failed_component_id %||% bundle$condition$component_id %||% character() else character(),
         include_consumers = identical(mode, "bundle"))$text, sep = "\n"),
     allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
     style = render_style_guidance(config)
@@ -205,7 +206,7 @@ fix_program_revision <- function(
     llm = llm,
     tools = tools,
     user_content = "Repair the program using the failing evidence.",
-    log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
+    log_dir = if (!is.null(paths)) paths$logs else tempdir(),
     prompt_vars = prompt_vars,
     audit_context = audit_context,
     usage_budget = usage_budget
@@ -248,7 +249,7 @@ fix_program_revision <- function(
         "Proposed R code:", fix_data$r_code,
         if (!is.null(fix_data$bundle_helper_patch)) paste("Proposed helper patch:", fix_data$bundle_helper_patch$content),
         sep = "\n\n"),
-      log_dir = if (!is.null(paths)) paths$logs else ".sas2r",
+      log_dir = if (!is.null(paths)) paths$logs else tempdir(),
       prompt_vars = prompt_vars,
       audit_context = utils::modifyList(audit_context, list(purpose = "mechanical_retry")),
       usage_budget = usage_budget

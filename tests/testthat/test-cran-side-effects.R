@@ -34,3 +34,19 @@ test_that("quiet translation keeps status and reports without console output", {
   report <- read_json_record(result$report_json_path)
   expect_match(report$outcome$stages[["Bundle execution"]], "NOT RUN", fixed = TRUE)
 })
+
+
+test_that("standalone audit logging does not write into the working directory", {
+  working <- withr::local_tempdir()
+  withr::local_dir(working)
+  entry <- list(event = "cran_default_log_location")
+  llm_log(entry)
+  log <- file.path(tempdir(), "llm_log.jsonl")
+  expect_true(file.exists(log))
+  expect_identical(jsonlite::fromJSON(tail(readLines(log), 1L))$event, entry$event)
+  expect_length(list.files(working, all.files = TRUE, no.. = TRUE), 0L)
+
+  prompts <- withr::local_tempdir()
+  expect_error(write_llm_lock(list(), prompts), "argument.*path.*missing")
+  expect_false(file.exists(file.path(working, "_sas2r.lock")))
+})

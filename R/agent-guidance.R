@@ -69,6 +69,10 @@ agent_dependency_bodies <- function(project, component_id, selected_revisions = 
     sas = component_source_text(graph, cid),
     r = selected_revisions[[cid]]$r_code %||% "",
     revision = selected_revisions[[cid]]$revision_id %||% "unavailable",
+    execution_note = if (any(graph$nodes$component_id == cid & graph$nodes$type == "setup")) paste(
+      "Startup source context only: selected setup R code is not executed as a program.",
+      "Startup library bindings and compiled .sas2r_formats are loaded by autoexec.R.",
+      "Use sas_put(x, 'name.') for compiled formats; bindings invented in setup R are unavailable."),
     symbol = selected_revisions[[cid]]$contract$macro_contract$name %||% sub("^macro__", "", cid))), ids)
 }
 
@@ -82,6 +86,7 @@ read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
   size <- nchar(code)
   end <- min(size, offset + 11999L)
   list(component_id = component_id, revision_id = body$revision, language = language,
+    execution_note = body$execution_note,
     status = if (size) "available" else "unavailable", total_characters = size,
     offset = offset, next_offset = if (end < size) end + 1L else NULL,
     code = if (offset <= size) substr(code, offset, end) else "")
@@ -161,7 +166,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
       "selected revision", body$revision,
       "available characters: sas", nchar(body$sas), "r", nchar(body$r),
       if (cid %in% read_context$possible) "possible preceding writer (unconfirmed)" else
-        if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency")
+        if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency",
+      body$execution_note %||% "")
   }, character(1))
   label_budget <- max(0L, packet_limit - nchar(paste(text, collapse = "\n")) - 150L)
   included <- deps[cumsum(nchar(headers) + 80L) <= label_budget]

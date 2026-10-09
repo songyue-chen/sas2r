@@ -1030,7 +1030,7 @@ as.data.frame.sas2r_output_target_plan <- function(x, row.names = NULL, optional
 #' @return The updated `sas2r_output_target_plan` or data frame.
 #' @noRd
 resolve_ambiguous_output_pairs <- function(plan, llm, specs = load_agent_specs(),
-                                          usage_budget = NULL, log_dir = ".sas2r") {
+                                          usage_budget = NULL, log_dir = tempdir()) {
   if (is.null(plan)) return(NULL)
   is_plan_obj <- inherits(plan, "sas2r_output_target_plan")
   plan_tbl <- if (is_plan_obj) plan$plan else plan

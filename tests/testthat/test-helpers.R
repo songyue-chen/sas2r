@@ -8,6 +8,21 @@ helpers_env <- function() {
   e
 }
 
+test_that("match-merge retains values within a BY group and resets between groups", {
+  # SAS MERGE events subjects; BY id; has no source RETAIN or fill-forward step.
+  events <- data.frame(id = c("A", "A", "B", "B", "C"), event = 1:5)
+  subjects <- data.frame(id = c("A", "C"), base = c(10, 20), label = c("first", "last"))
+  for (merge_by in list(sas_merge, helpers_env()$sas_merge)) {
+    result <- merge_by(events, subjects, by = "id", keep = "full")
+    expect_identical(result$id, c("A", "A", "B", "B", "C"))
+    expect_identical(result$base, c(10, 10, NA, NA, 20))
+    expect_identical(result$label, c("first", "first", NA, NA, "last"))
+    reverse <- merge_by(subjects, events, by = "id", keep = "full")
+    expect_identical(reverse$base, result$base)
+    expect_identical(reverse$label, result$label)
+  }
+})
+
 test_that("comparison operators fail clearly instead of silently generating false flags", {
   for (compare in list(chr_cmp, helpers_env()$chr_cmp)) {
     for (op in list("=", "eq", "=>", "", NA_character_, character(), c("==", "!="), 1L)) {

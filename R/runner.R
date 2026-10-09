@@ -389,7 +389,7 @@ AGENT_TOOL_LIMIT_MESSAGE <- paste(
   "using the context already gathered."
 )
 
-run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
+run_agent <- function(spec, llm, tools, user_content, log_dir = tempdir(),
                       prompt_vars = list(), on_charge = NULL,
                       usage_budget = NULL, audit_context = list()) {
   # The console line a person watches names the agent and its target, so the
@@ -419,7 +419,7 @@ run_agent <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
   result
 }
 
-run_agent_impl <- function(spec, llm, tools, user_content, log_dir = ".sas2r",
+run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
                            prompt_vars = list(), on_charge = NULL,
                            usage_budget = NULL, audit_context = list()) {
   if (is.null(usage_budget)) usage_budget <- new_usage_budget()
