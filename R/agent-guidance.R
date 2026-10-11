@@ -57,7 +57,7 @@ context_component_dependencies <- function(graph, component_id, downstream = FAL
 # Code-only context shared by all three roles. Neighbour identifiers come from
 # the graph; R bodies come from the selected revision snapshot, never outputs.
 agent_dependency_bodies <- function(project, component_id, selected_revisions = list(),
-                                    graph = project$graph, requested = NULL) {
+                                    graph = project$graph, requested = NULL, execution = NULL) {
   ids <- unique(c(context_component_dependencies(graph, component_id),
     context_component_dependencies(graph, component_id, downstream = TRUE)))
   possible <- component_read_context(graph, component_id)$possible
@@ -69,6 +69,8 @@ agent_dependency_bodies <- function(project, component_id, selected_revisions = 
     sas = component_source_text(graph, cid),
     r = selected_revisions[[cid]]$r_code %||% "",
     revision = selected_revisions[[cid]]$revision_id %||% "unavailable",
+    revision_note = repair_revision_note(execution, cid,
+      selected_revisions[[cid]]$revision_id %||% "unavailable"),
     execution_note = if (any(graph$nodes$component_id == cid & graph$nodes$type == "setup")) paste(
       "Startup source context only: selected setup R code is not executed as a program.",
       "Startup library bindings and compiled .sas2r_formats are loaded by autoexec.R.",
@@ -79,7 +81,7 @@ agent_dependency_bodies <- function(project, component_id, selected_revisions = 
 read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
   bodies <- agent_dependency_bodies(ctx$project, ctx$component_id,
     ctx$selected_revisions %||% list(), ctx$graph %||% ctx$project$graph,
-    requested = component_id)
+    requested = component_id, execution = ctx$execution)
   body <- bodies[[component_id]]
   if (is.null(body)) return(list(error = "not_a_related_dependency_or_consumer"))
   code <- body[[language]]
@@ -87,6 +89,7 @@ read_dependency_context <- function(ctx, component_id, language, offset = 1L) {
   end <- min(size, offset + 11999L)
   list(component_id = component_id, revision_id = body$revision, language = language,
     execution_note = body$execution_note,
+    revision_note = body$revision_note,
     status = if (size) "available" else "unavailable", total_characters = size,
     offset = offset, next_offset = if (end < size) end + 1L else NULL,
     code = if (offset <= size) substr(code, offset, end) else "")
@@ -96,7 +99,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
                                  selected_revisions = list(), graph = project$graph,
                                  body_limit = 6000L, packet_limit = 24000L,
                                  config = project$config %||% list(), priority_dependencies = character(),
-                                 include_consumers = FALSE) {
+                                 include_consumers = FALSE, execution = NULL) {
   deps <- context_component_dependencies(graph, component_id)
   read_context <- component_read_context(graph, component_id)
   source_comparisons <- source_comparison_context(project, component_id)
@@ -107,7 +110,8 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
   while (length(projections) && nchar(paste(render_source_projections(projections), collapse = "\n")) >
       min(6000L, floor(packet_limit / 3L))) projections <- utils::head(projections, -1L)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
-  available_bodies <- agent_dependency_bodies(project, component_id, selected_revisions, graph)
+  available_bodies <- agent_dependency_bodies(project, component_id, selected_revisions, graph,
+    execution = execution)
   additional_consumers <- setdiff(names(available_bodies), deps)
   bodies <- available_bodies[deps]
   calls <- r_call_names(selected_revisions[[component_id]]$r_code %||% "")
@@ -167,7 +171,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
       "available characters: sas", nchar(body$sas), "r", nchar(body$r),
       if (cid %in% read_context$possible) "possible preceding writer (unconfirmed)" else
         if (cid %in% consumers) "downstream caller/consumer" else "upstream dependency",
-      body$execution_note %||% "")
+      body$execution_note %||% "", body$revision_note %||% "")
   }, character(1))
   label_budget <- max(0L, packet_limit - nchar(paste(text, collapse = "\n")) - 150L)
   included <- deps[cumsum(nchar(headers) + 80L) <= label_budget]

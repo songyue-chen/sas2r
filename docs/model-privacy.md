@@ -55,6 +55,18 @@ Paging uses existing tool limits; repeated unavailable page requests
 stop within the invocation. Review identities include all retrievable selected code,
 so an indirect dependency change invalidates cached evidence.
 
+Bundle fixers also receive revision labels distinguishing shown code from the
+attempt snapshot, up to 12,000 characters of the executed startup script, and
+the existing source-derived dataset lineage tool. Diagnostic smoke executions
+retain their own code identity rather than borrowing a bundle revision binding.
+Startup and helper paths follow the code/path disclosure policy above; raw
+attempt records, logs, population checks, and comparison details are not sent.
+Eligible prior repair conclusions are limited to the same component and current
+run, labeled as unverified, and bounded to 12,000 characters. Reference-triggered
+or unknown-origin narratives are excluded. Acceptance review does not receive
+that history. No-change diagnoses and uncertainty remain in the local report;
+they do not count as applied repairs or change validation status.
+
 The configured `allowlist` (a comma-separated string or YAML list) is used
 consistently in prompts, package facts, helper checks and lint. An explicit list
 replaces the default `base, dplyr, tidyr, ggplot2, stringr, forcats, purrr, lubridate, tibble, haven, stats, utils, graphics, grDevices, grid`.

@@ -966,7 +966,7 @@ run_bundle_pipeline <- function(
       repair_counts[[primary_cid]] <- (repair_counts[[primary_cid]] %||% 0L) + 1L
       state$diagnostics$bundle_repair$repair_counts <- repair_counts
       if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
-      outcome <- repair_bundle_component(state, packet, attempt_rec, round)
+      outcome <- repair_bundle_component(state, packet, attempt_rec, round, prior_repairs = repairs)
       round <- round + 1L
       state <- outcome$state
       if (!is.null(state$resume_fingerprint)) write_migration_checkpoint(state, state$resume_fingerprint)
