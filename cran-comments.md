@@ -45,22 +45,30 @@ The unchanged runtime implementation also passed all seven offline migration
 acceptance gates and the complete release regression suite against an installed
 archive: 1,779 cases, 10,788 passing assertions, no failures or test warnings,
 and three documented skips. This final archive additionally includes the
-subprocess workspace regression. The complete suite and platform checks are
-rerun by release PR #60:
+subprocess workspace regression. All 11 CI checks passed for the tested code in
+release PR #60, including the full installed-package suite, Linux, macOS,
+Windows release and Windows R-devel checks:
 https://github.com/songyue-chen/sas2r/pull/60
 
-The final archive was uploaded to win-builder R-devel on 2026-10-21 at 16:36 UTC.
-The web form confirmed the filename and 736,131-byte size; the Windows check
-result is pending. No CRAN resubmission has been made.
+The final archive also passed win-builder on 2026-10-21 with R Under development
+(2026-10-20 r90728 ucrt), Windows Server 2022 x64:
 
-Source archive SHA-256:
+- 0 errors, 0 warnings, 1 NOTE: CRAN incoming feasibility, "New submission".
+- Installation: 38 seconds; check: 362 seconds (6 minutes 2 seconds).
+- Tests: 152 seconds; 3,285 assertions passed, 0 failures and 0 test warnings.
+  The 12 skipped checks require the source checkout and are covered separately.
+- Examples, rebuilt vignettes, PDF manual and HTML manual passed.
+
+The reported check time is below the ten-minute limit from the earlier review;
+installation plus check time is 400 seconds (6 minutes 40 seconds).
+
+Windows check log:
+https://win-builder.r-project.org/pw4uQ12NRsnW/00check.log
+
+The tested source archive is `sas2r_0.5.8.tar.gz` (736,131 bytes), built from
+release code commit `8746246b3f626eb17ee19b96a7cca6c6b3d80383`.
+Submission notes are excluded from the archive; this results update does not
+require rebuilding the tested package. Source archive SHA-256:
 `2f7dd8d3b65b60e0ac0774976b82ac3f8950f8ca676fe70a9633a734b19ce417`.
-
-## Previous Windows measurement
-
-The earlier timing-only archive passed win-builder R-devel in 375 seconds
-overall, including 155 seconds in tests, with 0 errors, 0 warnings and one
-New submission NOTE. That result belongs to the previous archive and is not a
-Windows timing measurement of this revision.
 
 Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
