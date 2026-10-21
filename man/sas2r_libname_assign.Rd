@@ -42,12 +42,13 @@ write directory. Newly assigned libraries write under the execution output
 \verb{libraries/} folder unless \code{write_path} is explicitly supplied.
 }
 \examples{
-.sas2r_registry <- list()
-sas2r_libname_assign("raw", tempdir(), engine = "rds")
-names(.sas2r_registry)
-sas2r_libname_clear("raw")
-names(.sas2r_registry)
-rm(.sas2r_registry)
+local({
+  .sas2r_registry <- list()
+  sas2r_libname_assign("raw", tempdir(), engine = "rds")
+  names(.sas2r_registry)
+  sas2r_libname_clear("raw")
+  names(.sas2r_registry)
+})
 }
 \seealso{
 Other runtime helpers:

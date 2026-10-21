@@ -51,7 +51,7 @@ bundle <- tempfile("sas2r-runtime-example-")
 dir.create(bundle)
 file.copy(list.files(exported_bundle, full.names = TRUE, all.files = TRUE,
                      no.. = TRUE), bundle, recursive = TRUE)
-source(file.path(bundle, "run.R"), chdir = TRUE)
+source(file.path(bundle, "run.R"), local = new.env(), chdir = TRUE)
 ```
 
 To run selected programs yourself, load the configuration once and run required
@@ -59,8 +59,9 @@ upstream programs before their consumers:
 
 <!-- sas2r-example: offline runtime-2 -->
 ```r
-source(file.path(bundle, "autoexec.R"), chdir = TRUE)
-source(file.path(bundle, "programs", "adsl.R"), chdir = TRUE)
+runtime <- new.env()
+source(file.path(bundle, "autoexec.R"), local = runtime, chdir = TRUE)
+source(file.path(bundle, "programs", "adsl.R"), local = runtime, chdir = TRUE)
 ```
 
 Manual dataset writes go to `output/datasets/<library>/`, WORK writes to
@@ -77,18 +78,22 @@ macro as a separate program.
 
 ## Maintaining `autoexec.R`
 
-Open it when data moves. The LIBRARIES section reads like this:
+Open it when data moves. The LIBRARIES section defines a list like the one
+below. `local()` keeps this example separate from the loaded runtime:
 
 <!-- sas2r-example: offline runtime-3 -->
 ```r
-.sas2r_registry <- list(
-  adam = list(read_path = "/study/data/adam",
-              write_path = file.path(.sas2r_output_root, "datasets", "adam"),
-              engine = "sas7bdat", write = "rds"),
-  work = list(read_path = file.path(.sas2r_output_root, "work"),
-              write_path = file.path(.sas2r_output_root, "work"),
-              engine = "rds", write = "rds")
-)
+local({
+  .sas2r_output_root <- runtime$.sas2r_output_root
+  .sas2r_registry <- list(
+    adam = list(read_path = "/study/data/adam",
+                write_path = file.path(.sas2r_output_root, "datasets", "adam"),
+                engine = "sas7bdat", write = "rds"),
+    work = list(read_path = file.path(.sas2r_output_root, "work"),
+                write_path = file.path(.sas2r_output_root, "work"),
+                engine = "rds", write = "rds")
+  )
+})
 ```
 
 A relative path means *inside this folder*; an absolute path is used as is. So a run folder can
@@ -102,17 +107,18 @@ single program moved out of its folder stops with a message, because its runtime
 ## Using the runtime interactively
 
 Source `autoexec.R` once per session, with `chdir = TRUE` so its own folder is the working
-directory while it loads -- the R counterpart of running a SAS autoexec. It loads the library
-paths, the helpers, and the formats into your session, and every program's header then finds
-the runtime already loaded and skips its own bootstrap:
+directory while it loads -- the R counterpart of running a SAS autoexec. Load the library
+paths, helpers and formats into a dedicated environment. Programs sourced into that
+environment find the runtime already loaded and skip their own bootstrap:
 
 <!-- sas2r-example: offline runtime-4 -->
 ```r
-source(file.path(bundle, "autoexec.R"), chdir = TRUE)   # paths, helpers, formats, once
+runtime <- new.env()
+source(file.path(bundle, "autoexec.R"), local = runtime, chdir = TRUE)
 
-adsl <- lib_read("adam", "adsl")     # honours the registry's paths and formats
+adsl <- runtime$lib_read("adam", "adsl") # honours the registry's paths and formats
 adsl$USUBJID                         # column names resolve case-insensitively
-sas_sort(adsl, by = "usubjid")
+runtime$sas_sort(adsl, by = "usubjid")
 ```
 
 The helpers `autoexec.R` loads are the bundle's own copy, which is the same code sas2r

@@ -5,30 +5,37 @@
 # defines. The runtime finds it where it was loaded:
 # lexically first -- the environment the runtime was sourced into, which is
 # how a bundle program and a test harness both work -- then, for the package
-# form of the runtime, out through the global environment, and finally in any
-# active frame, so a registry defined inside a function is honoured too.
+# form of the runtime, in active local call frames. Package helpers must not
+# fall back to the user's workspace: LIBNAME updates the registry in place.
+# A standalone runtime explicitly sourced into a script's top-level environment
+# uses that chosen environment, preserving direct Rscript execution.
 #' Find the environment holding the runtime library registry
 #'
-#' Looks first along the runtime's enclosing environments, then active call
-#' frames. Load `autoexec.R` before calling data-access helpers.
+#' Looks first along the runtime's enclosing environments, then active local
+#' call frames. Package helpers exclude the global workspace; standalone
+#' helpers use the environment they were explicitly sourced into. Load
+#' `autoexec.R` into a local environment for interactive use.
 #' @return An environment containing `.sas2r_registry`, not the registry list.
 #'   Signals `sas2r_no_registry` if no registry is loaded.
 #' @keywords internal
 sas2r_registry_env <- function() {
   env <- parent.env(environment())
+  runtime_env <- env
   while (!identical(env, emptyenv())) {
-    if (exists(".sas2r_registry", envir = env, inherits = FALSE)) return(env)
+    if ((!identical(env, globalenv()) || identical(env, runtime_env)) &&
+        exists(".sas2r_registry", envir = env, inherits = FALSE)) return(env)
     env <- parent.env(env)
   }
   frames <- sys.frames()
   for (i in rev(seq_along(frames))) {
-    if (exists(".sas2r_registry", envir = frames[[i]], inherits = FALSE)) {
+    if (!identical(frames[[i]], globalenv()) &&
+        exists(".sas2r_registry", envir = frames[[i]], inherits = FALSE)) {
       return(frames[[i]])
     }
   }
   sas2r_libref_stop(
     "sas2r_no_registry",
-    "No libref registry is loaded: source the bundle's autoexec.R first (with chdir = TRUE)"
+    "No libref registry is loaded in a local environment: source the bundle's autoexec.R with local = runtime, chdir = TRUE, where runtime <- new.env()"
   )
 }
 
@@ -109,12 +116,13 @@ sas2r_resolve_registry <- function(registry, root) {
 #'   `sas2r_libname_clear()` returns `NULL`, invisibly.
 #' @family runtime helpers
 #' @examples
-#' .sas2r_registry <- list()
-#' sas2r_libname_assign("raw", tempdir(), engine = "rds")
-#' names(.sas2r_registry)
-#' sas2r_libname_clear("raw")
-#' names(.sas2r_registry)
-#' rm(.sas2r_registry)
+#' local({
+#'   .sas2r_registry <- list()
+#'   sas2r_libname_assign("raw", tempdir(), engine = "rds")
+#'   names(.sas2r_registry)
+#'   sas2r_libname_clear("raw")
+#'   names(.sas2r_registry)
+#' })
 #' @export
 sas2r_libname_assign <- function(libref, read_path, write_path = read_path,
                                  engine = "sas7bdat", write = "rds") {
@@ -413,8 +421,9 @@ sas2r_fold_names <- function(df) {
 #'
 #' The registry is the `.sas2r_registry` list a bundle's `autoexec.R`
 #' defines; in a translated program it is loaded by the bootstrap header. To
-#' use these helpers interactively, source that file first, with
-#' `chdir = TRUE`.
+#' use these helpers interactively, create `runtime <- new.env()` and source
+#' that file with `local = runtime, chdir = TRUE`, then call
+#' `runtime$lib_read()` or `runtime$lib_write()`.
 #'
 #' @param libref The libref, as a single string.
 #' @param member The dataset member name, as a single string.
@@ -424,14 +433,16 @@ sas2r_fold_names <- function(df) {
 #'   `lib_write()` returns `df`, invisibly.
 #' @family runtime helpers
 #' @examples
-#' lib <- tempfile("lib"); dir.create(lib)
-#' .sas2r_registry <- list(
-#'   raw = list(read_path = lib, write_path = lib, engine = "rds", write = "rds")
-#' )
-#' lib_write(data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2)), "raw", "dm")
-#' dm <- lib_read("raw", "dm")
-#' dm$usubjid          # case-insensitive column access
-#' rm(.sas2r_registry)
+#' local({
+#'   lib <- tempfile("lib"); dir.create(lib)
+#'   .sas2r_registry <- list(
+#'     raw = list(read_path = lib, write_path = lib, engine = "rds", write = "rds")
+#'   )
+#'   lib_write(data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2)), "raw", "dm")
+#'   dm <- lib_read("raw", "dm")
+#'   dm$usubjid          # case-insensitive column access
+#'   unlink(lib, recursive = TRUE)
+#' })
 #' @export
 lib_read <- function(libref, member, ...) {
   # Exactly one call form: lib_read("lib", "member"). The rejected forms --
@@ -565,10 +576,13 @@ lib_write <- function(df, libref, member, ...) {
 #' @return The names of removed members, invisibly.
 #' @family runtime helpers
 #' @examples
-#' .sas2r_registry <- list(work = list(path = tempfile("work"), write = "rds"))
-#' lib_write(data.frame(x = 1), "work", "scratch")
-#' lib_delete("work", "scratch")
-#' rm(.sas2r_registry)
+#' local({
+#'   folder <- tempfile("work")
+#'   .sas2r_registry <- list(work = list(path = folder, write = "rds"))
+#'   lib_write(data.frame(x = 1), "work", "scratch")
+#'   lib_delete("work", "scratch")
+#'   unlink(folder, recursive = TRUE)
+#' })
 #' @export
 lib_delete <- function(libref, members) {
   if (!is.character(members) || anyNA(members) ||

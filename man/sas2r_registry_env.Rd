@@ -11,7 +11,9 @@ An environment containing \code{.sas2r_registry}, not the registry list.
 Signals \code{sas2r_no_registry} if no registry is loaded.
 }
 \description{
-Looks first along the runtime's enclosing environments, then active call
-frames. Load \code{autoexec.R} before calling data-access helpers.
+Looks first along the runtime's enclosing environments, then active local
+call frames. Package helpers exclude the global workspace; standalone
+helpers use the environment they were explicitly sourced into. Load
+\code{autoexec.R} into a local environment for interactive use.
 }
 \keyword{internal}

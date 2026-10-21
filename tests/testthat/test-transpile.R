@@ -463,8 +463,6 @@ test_that("sourcing a driver into a sandbox leaves globalenv untouched", {
 
   watched <- c(".sas2r_registry", "lib_read", "lib_write", "from_include",
                "sas2r_source_include")
-  withr::defer(suppressWarnings(rm(list = intersect(watched, ls(globalenv(), all.names = TRUE)),
-                                   envir = globalenv())))
   expect_false(any(vapply(watched, exists, logical(1),
                           envir = globalenv(), inherits = FALSE)))
 
@@ -678,9 +676,6 @@ test_that("a dual-role module bootstraps standalone and skips it as an include",
 
   watched <- c(".sas2r_registry", "lib_read", "lib_write", "sas2r_source_include",
                "prepped", "after", ".sas2r_boot_root", ".sas2r_boot_file")
-  withr::defer(suppressWarnings(rm(
-    list = intersect(watched, ls(globalenv(), all.names = TRUE)),
-    envir = globalenv())))
   expect_false(any(vapply(watched, exists, logical(1),
                           envir = globalenv(), inherits = FALSE)))
 

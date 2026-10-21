@@ -406,7 +406,7 @@ sas2r_progress_cli_handler <- function(emit = NULL) {
   # pipe, so a long run emits nothing until it exits. stderr is unbuffered and
   # is where status belongs, leaving stdout clean for piped output.
   emit <- emit %||% function(line) {
-    cli::cat_line(line, file = stderr())
+    message(line)
     flush(stderr())
   }
   tally <- new_sas2r_progress_tally()

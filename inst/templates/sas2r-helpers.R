@@ -256,23 +256,28 @@ sas_true <- function(x) {
 # defines. The runtime finds it where it was loaded:
 # lexically first -- the environment the runtime was sourced into, which is
 # how a bundle program and a test harness both work -- then, for the package
-# form of the runtime, out through the global environment, and finally in any
-# active frame, so a registry defined inside a function is honoured too.
+# form of the runtime, in active local call frames. Package helpers must not
+# fall back to the user's workspace: LIBNAME updates the registry in place.
+# A standalone runtime explicitly sourced into a script's top-level environment
+# uses that chosen environment, preserving direct Rscript execution.
 sas2r_registry_env <- function() {
   env <- parent.env(environment())
+  runtime_env <- env
   while (!identical(env, emptyenv())) {
-    if (exists(".sas2r_registry", envir = env, inherits = FALSE)) return(env)
+    if ((!identical(env, globalenv()) || identical(env, runtime_env)) &&
+        exists(".sas2r_registry", envir = env, inherits = FALSE)) return(env)
     env <- parent.env(env)
   }
   frames <- sys.frames()
   for (i in rev(seq_along(frames))) {
-    if (exists(".sas2r_registry", envir = frames[[i]], inherits = FALSE)) {
+    if (!identical(frames[[i]], globalenv()) &&
+        exists(".sas2r_registry", envir = frames[[i]], inherits = FALSE)) {
       return(frames[[i]])
     }
   }
   sas2r_libref_stop(
     "sas2r_no_registry",
-    "No libref registry is loaded: source the bundle's autoexec.R first (with chdir = TRUE)"
+    "No libref registry is loaded in a local environment: source the bundle's autoexec.R with local = runtime, chdir = TRUE, where runtime <- new.env()"
   )
 }
 

@@ -1,5 +1,6 @@
 # sas2r 0.5.8
 
+- Make progress messages suppressible while preserving execution logs, and keep runtime state out of the global workspace.
 - Resolve named formats from the bundle catalog and clarify startup and merge behavior.
 - Preserve actual execution failures when preparing independent code repairs.
 - Align smoke startup with bundle execution and report conflicting format definitions and unsupported widths.
