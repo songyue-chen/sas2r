@@ -40,7 +40,10 @@ current time). The shipped tests take 40 seconds locally. Examples and rebuilt
 vignettes pass, with no temporary-directory detritus.
 
 All seven offline migration acceptance gates pass against the installed archive.
-The complete release regression suite and platform CI checks are still running.
+The complete pinned regression suite passes against the installed archive:
+1,779 cases, 10,788 passing assertions, no failures or test warnings, and three
+documented skips. Platform CI results are recorded in release PR #60:
+https://github.com/songyue-chen/sas2r/pull/60
 The updated archive has not been submitted to CRAN or win-builder.
 
 Source archive SHA-256:
