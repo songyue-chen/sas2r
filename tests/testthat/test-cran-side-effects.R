@@ -65,6 +65,46 @@ test_that("runtime library changes stay in the local registry", {
   expect_identical(ls(envir = globalenv(), all.names = TRUE), workspace_names)
 })
 
+test_that("package helpers ignore a registry in the user's workspace", {
+  from_source <- requireNamespace("pkgload", quietly = TRUE) &&
+    isTRUE(pkgload::is_dev_package("sas2r"))
+  result <- callr::r(function(package_root, from_source) {
+    if (from_source) {
+      pkgload::load_all(package_root, quiet = TRUE)
+    } else {
+      loadNamespace("sas2r")
+    }
+    root <- tempfile("workspace-registry-")
+    dir.create(root)
+    on.exit(unlink(root, recursive = TRUE), add = TRUE)
+    saveRDS(data.frame(value = 1), file.path(root, "result.rds"))
+    registry <- list(work = list(read_path = root, write_path = root,
+                                 engine = "rds", write = "rds"))
+    # Seed only this disposable subprocess, never the test runner's workspace.
+    assign(".sas2r_registry", registry, envir = globalenv())
+    workspace_names <- ls(envir = globalenv(), all.names = TRUE)
+    read <- tryCatch(sas2r::lib_read("work", "result"), error = identity)
+    clear <- tryCatch(sas2r::sas2r_libname_clear("work"), error = identity)
+    bind <- tryCatch(sas2r::sas2r_libname_assign("other", root, engine = "rds"),
+                     error = identity)
+    list(
+      read_rejected = inherits(read, "sas2r_no_registry"),
+      clear_rejected = inherits(clear, "sas2r_no_registry"),
+      bind_rejected = inherits(bind, "sas2r_no_registry"),
+      registry_unchanged = identical(
+        get(".sas2r_registry", envir = globalenv(), inherits = FALSE), registry),
+      workspace_unchanged = identical(
+        ls(envir = globalenv(), all.names = TRUE), workspace_names)
+    )
+  }, args = list(package_root = find.package("sas2r"), from_source = from_source),
+  libpath = .libPaths())
+  expect_true(result$read_rejected)
+  expect_true(result$clear_rejected)
+  expect_true(result$bind_rejected)
+  expect_true(result$registry_unchanged)
+  expect_true(result$workspace_unchanged)
+})
+
 test_that("quiet execution preserves failure logs and leaves the workspace unchanged", {
   root <- withr::local_tempdir()
   writeLines("data work.result; value = 1; run;", file.path(root, "main.sas"))
