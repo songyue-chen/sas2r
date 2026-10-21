@@ -142,10 +142,7 @@ test_that("an outcome updates the tally without drawing its own line", {
 })
 
 test_that("progress goes to stderr so it appears while the run is still going", {
-  # cli::cat_line() writes to stdout, which is block-buffered when redirected:
-  # a long run showed nothing until it exited, which is precisely when progress
-  # stops being useful. Status belongs on stderr by convention anyway, leaving
-  # stdout clean for whatever a caller pipes.
+  # Messages remain on stderr, leaving stdout clean for piped output.
   withr::local_options(sas2r.progress = TRUE)
 
   on_stderr <- capture.output(
@@ -159,6 +156,16 @@ test_that("progress goes to stderr so it appears while the run is still going", 
 
   expect_match(paste(on_stderr, collapse = " "), "translate 1/3")
   expect_identical(on_stdout, character())
+})
+
+test_that("progress remains visible by default and can be suppressed as messages", {
+  withr::local_options(sas2r.progress = TRUE)
+  expect_message(with_sas2r_progress(signal_sas2r_progress("translate", 1L, 3L)),
+                 "translate 1/3")
+  expect_silent(suppressMessages(with_sas2r_progress({
+    signal_sas2r_progress("translate", 1L, 3L)
+    signal_program_smoke_event("program_smoke_started", "main")
+  })))
 })
 
 test_that("progress defaults on everywhere except under testthat", {

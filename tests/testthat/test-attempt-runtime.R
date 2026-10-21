@@ -17,16 +17,6 @@ attempt_runtime_fixture <- function(envir = parent.frame()) {
   lib_map <- build_attempt_library_map(project, candidate_root)
   write_autoexec(project, staged_dir, library_map = lib_map)
   write_helpers(staged_dir)
-  before_objs <- ls(envir = globalenv(), all.names = TRUE)
-  withr::defer({
-    after_objs <- ls(envir = globalenv(), all.names = TRUE)
-    new_objs <- setdiff(after_objs, before_objs)
-    if (length(new_objs) > 0L) {
-      rm(list = new_objs, envir = globalenv())
-    }
-  }, envir = envir)
-
-
   list(
 
 
@@ -44,7 +34,8 @@ attempt_runtime_fixture <- function(envir = parent.frame()) {
 test_that("attempt runtime uses candidate-first copy-on-write libraries", {
   fx <- attempt_runtime_fixture()
   before <- unname(tools::md5sum(fx$input_file))
-  source(fx$autoexec, chdir = TRUE)
+  workspace_names <- ls(envir = globalenv(), all.names = TRUE)
+  source(fx$autoexec, local = environment(), chdir = TRUE)
 
   original <- lib_read("adam", "adsl")
   changed <- transform(original, TRT = "candidate")
@@ -55,4 +46,5 @@ test_that("attempt runtime uses candidate-first copy-on-write libraries", {
   expect_true(file.exists(file.path(fx$candidate_root, "adam", "adsl.rds")))
   expect_identical(split_ds("&plotds", macro_vars = c(plotds = "plot_ready")),
                    c(lib = "work", member = "plot_ready"))
+  expect_identical(ls(envir = globalenv(), all.names = TRUE), workspace_names)
 })

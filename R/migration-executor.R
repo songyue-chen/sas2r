@@ -241,10 +241,14 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   replay <- file.path(dir, "run.R")
   writeLines(c(
     "# Partial component smoke replay; not a validated final bundle.",
+    "local({",
+    "old <- getwd()",
+    "on.exit(setwd(old), add = TRUE)",
     sprintf("setwd(%s)", encodeString(normalizePath(dir, winslash = "/"), quote = '\"')),
-    'source("autoexec.R", chdir = TRUE)',
-    vapply(files[execute_ids], function(f) sprintf("source(%s)", encodeString(f, quote = '\"')), character(1)),
-    plan$call_site %||% character()
+    'source("autoexec.R", local = environment(), chdir = TRUE)',
+    vapply(files[execute_ids], function(f) sprintf("source(%s, local = environment())", encodeString(f, quote = '\"')), character(1)),
+    plan$call_site %||% character(),
+    "})"
   ), replay)
   plan$input_project <- state$project
   plan$input_hashes <- state$input_manifest %||% list()
@@ -402,24 +406,25 @@ run_program_smoke <- function(
     registry_seed <- get0(".sas2r_registry", envir = execution_env, inherits = FALSE)
     executed_components <- character()
     executed_calls <- character()
-    current <- component_id
-    population_checks <- list()
-    call_names <- character()
+    diagnostics <- new.env(parent = emptyenv())
+    diagnostics$current <- component_id
+    diagnostics$population_checks <- list()
+    diagnostics$call_names <- character()
     execute_component <- function(id, code) {
-      current <<- id
-      call_names <<- character()
+      diagnostics$current <- id
+      diagnostics$call_names <- character()
       if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
       observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
-        population_checks[[id]] <<- observer$finish()
+        diagnostics$population_checks[[id]] <- observer$finish()
         observer$restore()
       })
       withCallingHandlers(eval(parse(text = code), envir = execution_env),
         error = function(e) {
           calls <- sys.calls()
-          call_names <<- format_call_names(calls, lapply(seq_along(calls), sys.function))
+          diagnostics$call_names <- format_call_names(calls, lapply(seq_along(calls), sys.function))
         })
-      call_names <<- character()
+      diagnostics$call_names <- character()
     }
 
     tryCatch({
@@ -443,18 +448,18 @@ run_program_smoke <- function(
       success = TRUE,
       executed_components = executed_components,
       executed_calls = executed_calls,
-      population_checks = population_checks
+      population_checks = diagnostics$population_checks
     )
     }, error = function(e) {
-      cat("Error: ", conditionMessage(e), "\n", sep = "", file = stderr())
+      message("Error: ", conditionMessage(e))
       list(
       success = FALSE, executed_components = executed_components,
-      executed_calls = executed_calls, failed_component_id = current,
-      population_checks = population_checks,
+      executed_calls = executed_calls, failed_component_id = diagnostics$current,
+      population_checks = diagnostics$population_checks,
       condition = list(message = conditionMessage(e), class = class(e),
                        call = format_call(conditionCall(e)), identifiers = e$identifiers,
-                       call_names = call_names,
-                       component_id = current, population_check = e$population_check)
+                       call_names = diagnostics$call_names,
+                       component_id = diagnostics$current, population_check = e$population_check)
     )})
   }
 
@@ -600,12 +605,13 @@ agent_error_facts <- function(condition, source_code = "") {
   if (!length(condition)) return(list(kind = "none", identifiers = character(),
     condition_class = character(), source_location = NA_character_, condition_message = ""))
   source_code <- paste(source_code, collapse = "\n")
-  identifiers <- unique(tolower(regmatches(source_code,
+  facts <- new.env(parent = emptyenv())
+  facts$identifiers <- unique(tolower(regmatches(source_code,
     gregexpr("[A-Za-z_][A-Za-z0-9_.]*", source_code, perl = TRUE))[[1L]]))
-  calls <- character()
+  facts$calls <- character()
   walk <- function(x) {
     if (is.call(x)) {
-      calls <<- c(calls, paste(deparse(x), collapse = " "))
+      facts$calls <- c(facts$calls, paste(deparse(x), collapse = " "))
       # Registry calls express one dataset name as two literal arguments.
       fn <- as.character(x[[1L]])
       if (utils::tail(fn, 1L) %in% c("lib_read", "lib_exists", "lib_write")) {
@@ -613,7 +619,7 @@ agent_error_facts <- function(condition, source_code = "") {
         if (utils::tail(fn, 1L) == "lib_write") args <- args[-1L]
         if (length(args) >= 2L && all(vapply(args[1:2], function(a)
             is.character(a) && length(a) == 1L, logical(1))))
-          identifiers <<- unique(c(identifiers, tolower(paste(args[[1L]], args[[2L]], sep = "."))))
+          facts$identifiers <- unique(c(facts$identifiers, tolower(paste(args[[1L]], args[[2L]], sep = "."))))
       }
     }
     if (is.call(x) || is.expression(x)) for (i in seq_along(x)) {
@@ -648,7 +654,7 @@ agent_error_facts <- function(condition, source_code = "") {
     matched <- lines[grepl(patterns[[candidate]], lines, perl = TRUE)]
     if (!length(matched)) next
     found <- sub(patterns[[candidate]], "\\1", matched, perl = TRUE)
-    found <- unique(found[tolower(found) %in% identifiers])
+    found <- unique(found[tolower(found) %in% facts$identifiers])
     if (length(found)) { kind <- candidate; found_names <- found; break }
   }
   # Fixed labels carry no interpolated values: row sizes and type-error values
@@ -677,7 +683,7 @@ agent_error_facts <- function(condition, source_code = "") {
   if (length(helper)) {
     kind <- unname(helper_kinds[helper[1L]])
     names_in_condition <- unlist(lapply(causes, function(e) e$identifiers), use.names = FALSE)
-    found_names <- unique(c(found_names, names_in_condition[tolower(names_in_condition) %in% identifiers]))
+    found_names <- unique(c(found_names, names_in_condition[tolower(names_in_condition) %in% facts$identifiers]))
   }
   classes <- intersect(raw_classes,
     c("error", "condition", "simpleError", "rlang_error", "dplyr:::mutate_error",
@@ -685,7 +691,7 @@ agent_error_facts <- function(condition, source_code = "") {
       "vctrs_error_incompatible_type", "vctrs_error_subscript_oob", names(helper_kinds)))
   # A call is safe only if it occurs verbatim in the supplied code tree.
   call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
-  location <- intersect(call_text, calls)
+  location <- intersect(call_text, facts$calls)
   location <- if (length(location)) location[1L] else NA_character_
   labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
     column_not_found = "Column not found", function_not_found = "Function not found",
@@ -879,6 +885,7 @@ run_bundle_attempt <- function(
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
     population_checks <- list()
+    diagnostics <- new.env(parent = emptyenv())
     for (item in execution_order) {
       assign(".sas2r_registry", registry_seed, envir = execution_env)
       writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
@@ -897,19 +904,19 @@ run_bundle_attempt <- function(
 
       if (!is.na(target_file) && file.exists(target_file)) {
         observer <- observe_population(population_specs[[item]], execution_env)
-        call_names <- character()
+        diagnostics$call_names <- character()
         tryCatch({
           withCallingHandlers(sys.source(target_file, envir = execution_env),
             error = function(e) {
               calls <- sys.calls()
-              call_names <<- format_call_names(calls, lapply(seq_along(calls), sys.function))
+              diagnostics$call_names <- format_call_names(calls, lapply(seq_along(calls), sys.function))
             })
-          call_names <- character()
+          diagnostics$call_names <- character()
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
-            population_checks = population_checks, call_names = call_names), auto_unbox = TRUE), status_file)
+            population_checks = population_checks, call_names = diagnostics$call_names), auto_unbox = TRUE), status_file)
         })
         bindings <- get(".sas2r_registry", envir = execution_env)
         for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))

@@ -19,8 +19,9 @@
 #' @param out_dir Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
 #'   Relative paths resolve from the calling working directory before workers start.
 #'   Source parsing caches use the R session's temporary directory, not the input
-#'   project. To silence routine console output, set `options(sas2r.progress = FALSE)`
-#'   and wrap the call in `suppressMessages()`; saved reports remain available.
+#'   project. Wrap the call in `suppressMessages()` to silence routine console
+#'   output, or use `options(sas2r.progress = FALSE)` to hide progress only.
+#'   Returned results, saved reports and execution logs remain available.
 #' @param config Optional configuration list, YAML path, or `sas2r_config` object.
 #'   With a reused project, a plain list replaces only its supplied top-level
 #'   fields; omitted fields inherit, and explicit `NULL` resets a field. A YAML
@@ -180,7 +181,7 @@ sas_translate <- function(
   state$output_contracts <- setup$plan$contracts
   state$diagnostics$pipeline <- setup$plan$pipeline
   if (sas2r_progress_enabled()) {
-    cli::cat_line(pipeline_coverage_lines(setup$plan$pipeline), file = stderr())
+    message(paste(pipeline_coverage_lines(setup$plan$pipeline), collapse = "\n"))
     flush(stderr())
   }
   require_complete_pipeline(setup$plan$pipeline)

@@ -33,10 +33,13 @@ The whole request is checked before any file is removed, and input library
 files in a separate read directory are never deleted.
 }
 \examples{
-.sas2r_registry <- list(work = list(path = tempfile("work"), write = "rds"))
-lib_write(data.frame(x = 1), "work", "scratch")
-lib_delete("work", "scratch")
-rm(.sas2r_registry)
+local({
+  folder <- tempfile("work")
+  .sas2r_registry <- list(work = list(path = folder, write = "rds"))
+  lib_write(data.frame(x = 1), "work", "scratch")
+  lib_delete("work", "scratch")
+  unlink(folder, recursive = TRUE)
+})
 }
 \seealso{
 Other runtime helpers:
