@@ -39,18 +39,21 @@ becomes repair feedback instead of being silently reinterpreted.
 
 The registry is the \code{.sas2r_registry} list a bundle's \code{autoexec.R}
 defines; in a translated program it is loaded by the bootstrap header. To
-use these helpers interactively, source that file first, with
-\code{chdir = TRUE}.
+use these helpers interactively, create \code{runtime <- new.env()} and source
+that file with \verb{local = runtime, chdir = TRUE}, then call
+\code{runtime$lib_read()} or \code{runtime$lib_write()}.
 }
 \examples{
-lib <- tempfile("lib"); dir.create(lib)
-.sas2r_registry <- list(
-  raw = list(read_path = lib, write_path = lib, engine = "rds", write = "rds")
-)
-lib_write(data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2)), "raw", "dm")
-dm <- lib_read("raw", "dm")
-dm$usubjid          # case-insensitive column access
-rm(.sas2r_registry)
+local({
+  lib <- tempfile("lib"); dir.create(lib)
+  .sas2r_registry <- list(
+    raw = list(read_path = lib, write_path = lib, engine = "rds", write = "rds")
+  )
+  lib_write(data.frame(USUBJID = c("01", "02"), AVAL = c(1, 2)), "raw", "dm")
+  dm <- lib_read("raw", "dm")
+  dm$usubjid          # case-insensitive column access
+  unlink(lib, recursive = TRUE)
+})
 }
 \seealso{
 Other runtime helpers:

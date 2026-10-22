@@ -20,6 +20,11 @@ absence from the CRAN archive does not make them optional release checks.
    from step 1. Keep that file absent on `develop`, where CI tests its own current
    sources. The fixed ID prevents future development tests from being run against
    an older release accidentally.
+   If a release-only correction needs updated full tests while `develop` has
+   moved on, use a compatible test snapshot and retain it with a permanent
+   `release-tests-*` tag. Record its commit ID in the pin and its tag in
+   `cran-comments.md`. Keep the tag after deleting its working branch so CI
+   can still fetch the commit; restore only `tests/` from that snapshot.
 4. Run `R CMD build`, then `R CMD check --as-cran` on the resulting archive. Check
    total elapsed time as well as test time on Windows and Linux, with comfortable
    margin below the limit CRAN gave in its review.
