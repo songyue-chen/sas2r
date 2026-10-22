@@ -1,5 +1,9 @@
 # sas2r 0.5.8
 
+- Make progress messages suppressible while preserving execution logs, and keep runtime state out of the global workspace.
+- Package calls such as top-level `sas2r::lib_read()` now error when only a
+  workspace registry is available. Source the bundle's `autoexec.R` into
+  `runtime <- new.env()` with `local = runtime`, then use `runtime$lib_read()`.
 - Resolve named formats from the bundle catalog and clarify startup and merge behavior.
 - Preserve actual execution failures when preparing independent code repairs.
 - Align smoke startup with bundle execution and report conflicting format definitions and unsupported widths.

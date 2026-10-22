@@ -315,31 +315,6 @@ outbound_request_strings <- function(x) {
   character()
 }
 
-# A trace only an in-process evaluation of model-authored R can leave. The
-# counter lives in this session's memory, so the sandboxed synthetic execution
-# the verification gates perform in a callr subprocess cannot reach it and
-# cannot produce a false positive: a nonzero count means this session itself
-# ran the model's code.
-local_exec_sentinel <- function(name = "sas2r_exec_sentinel_marker",
-                                .local_envir = parent.frame()) {
-  state <- new.env(parent = emptyenv())
-  state$hits <- 0L
-  if (exists(name, envir = globalenv(), inherits = FALSE)) {
-    stop("exec sentinel name '", name, "' is already bound in globalenv()")
-  }
-  assign(name, function() {
-    state$hits <- state$hits + 1L
-    TRUE
-  }, envir = globalenv())
-  withr::defer(rm(list = name, envir = globalenv()), envir = .local_envir)
-  list(
-    # Parses, lints clean (an unknown function is `info`, not `error`), and
-    # calls the sentinel the moment anything evaluates it.
-    code = paste0("adam_adsl <- ", name, "()"),
-    hits = function() state$hits
-  )
-}
-
 test_usage_budget <- function(mode = "observe", max_calls = 100L) {
   new_usage_budget(mode = mode, max_calls = max_calls)
 }

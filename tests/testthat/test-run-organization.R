@@ -164,10 +164,10 @@ test_that("manual output-root changes apply to every write and allow supplied up
   writeLines(text, path)
   value <- callr::r(function(bundle) {
     setwd(bundle)
-    source("autoexec.R")
+    source("autoexec.R", local = environment())
     dir.create(file.path(.sas2r_output_root, "tlf"), recursive = TRUE)
     setwd(file.path(.sas2r_output_root, "tlf"))
-    source(file.path(.sas2r_bundle_root, "programs", "report & review.R"))
+    source(file.path(.sas2r_bundle_root, "programs", "report & review.R"), local = environment())
     lib_read("raw", "final")$value
   }, args = list(bundle = bundle))
   expect_equal(value, c(40, 80))

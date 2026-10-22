@@ -228,9 +228,10 @@ mismatch alone does not justify a repair: first confirm that both results use th
 same source programs, inputs and analysis definitions.
 
 Use `resume = TRUE` to reuse compatible saved work; repair counts and recorded
-spending are retained. `options(sas2r.progress = FALSE)` hides routine console
-updates; also wrap the call in `suppressMessages()` to hide the final summary
-and report locations. Returned results and saved reports remain available. Source
+spending are retained. `options(sas2r.progress = FALSE)` hides progress updates.
+Wrap the call in `suppressMessages()` to hide all routine messages, including
+progress, the final summary and report locations. Returned results, saved reports
+and execution error logs remain available. Source
 parsing caches use session-temporary storage and do not modify input projects. See
 [logs, repairs and resume](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#reading-the-progress-log).
 

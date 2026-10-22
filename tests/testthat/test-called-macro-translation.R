@@ -128,9 +128,9 @@ test_that("called macros generate reusable files and execute through the public 
   suppressWarnings(sas_write(result, exported))
   values <- callr::r(function(bundle) {
     setwd(bundle)
-    source("autoexec.R")
-    source("programs/first.R")
-    source("programs/second.R")
+    source("autoexec.R", local = environment())
+    source("programs/first.R", local = environment())
+    source("programs/second.R", local = environment())
     c(lib_read("work", "first")$x, lib_read("work", "second")$x)
   }, args = list(bundle = exported))
   expect_identical(values, c(6, 8))

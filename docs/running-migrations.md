@@ -413,9 +413,9 @@ It controls console output only: translation, parallelism and quality checks
 run the same way. The final outcome and report locations remain visible, and
 saved diagnostics and HTML reports are still written. The final outcome also
 includes the pipeline summary. Tests disable routine progress by default.
-With progress disabled, wrap `sas_translate()` in `suppressMessages()` to hide
-the final summary and report locations too. This does not suppress errors or
-change returned results or saved reports.
+Wrap `sas_translate()` in `suppressMessages()` to hide all routine messages,
+including progress, the final summary and report locations. This does not
+suppress errors or change returned results, saved reports or execution logs.
 
 Source parsing and macro-index caches live in the R session's temporary
 directory. They do not write into the input project and disappear when the

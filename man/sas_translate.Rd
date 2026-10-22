@@ -32,8 +32,9 @@ sas_translate(
 \item{out_dir}{Output directory path for generated R bundle, attempts, and reports. Defaults to a temporary directory.
 Relative paths resolve from the calling working directory before workers start.
 Source parsing caches use the R session's temporary directory, not the input
-project. To silence routine console output, set \code{options(sas2r.progress = FALSE)}
-and wrap the call in \code{suppressMessages()}; saved reports remain available.}
+project. Wrap the call in \code{suppressMessages()} to silence routine console
+output, or use \code{options(sas2r.progress = FALSE)} to hide progress only.
+Returned results, saved reports and execution logs remain available.}
 
 \item{config}{Optional configuration list, YAML path, or \code{sas2r_config} object.
 With a reused project, a plain list replaces only its supplied top-level
