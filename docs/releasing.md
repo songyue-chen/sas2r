@@ -1,8 +1,7 @@
 # Release and development branches
 
-`main` is the default branch and represents the stable CRAN release. Until the
-first acceptance, it holds the release candidate and the README identifies its
-pending status. `develop` holds ongoing work and the complete regression suite.
+`main` is the default branch and represents the stable CRAN release.
+`develop` holds ongoing work and the complete regression suite.
 Start feature branches from `develop` and target development pull requests there.
 
 The release branch ships a smaller set of tests covering the public API and
@@ -39,8 +38,7 @@ absence from the CRAN archive does not make them optional release checks.
    its checksum and check logs. GitHub's automatic source downloads are not a
    replacement for the archive produced by `R CMD build`.
 7. After acceptance, promote the accepted release to `main`, tag its source commit
-   (for example `v0.5.8`), and update the README's release status. For this first
-   submission, the explicitly labelled candidate may already be on `main`.
+   (for example `v0.5.8`), and update the README's release status.
 
 Release-only test reductions and `.github/development-test-ref` must not be merged
 back into `develop`. Bring shared documentation and CI improvements across
