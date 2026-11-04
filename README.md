@@ -9,9 +9,9 @@ The package **does not require SAS** to translate or run generated R. Comparing
 results with SAS requires matching reference outputs. AI review does not replace
 independent programming or your organization's statistical QC procedures.
 
-**Release status:** 0.5.8 is being prepared for CRAN resubmission; it has not
-yet been accepted. `main` is the release branch. Ongoing development and the
-complete test suite live on [`develop`](https://github.com/songyue-chen/sas2r/tree/develop).
+**Release status:** sas2r 0.5.8 is available on [CRAN](https://CRAN.R-project.org/package=sas2r).
+`main` is the release branch. Ongoing development and the complete test suite
+live on [`develop`](https://github.com/songyue-chen/sas2r/tree/develop).
 See the [release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) for validation and branch roles.
 
 [Quickstart](#quickstart) · [AI models](#choosing-an-ai-model) ·
@@ -71,12 +71,14 @@ Deterministic workflows can run without ellmer.
 
 <!-- sas2r-example: network install -->
 ```r
-# install.packages("remotes")
+install.packages("sas2r")
+
+# For optional AI translation:
 install.packages("ellmer")
-remotes::install_github("songyue-chen/sas2r")
 ```
 
-For unreleased development changes, install `songyue-chen/sas2r@develop` instead.
+For unreleased development changes, install `remotes` and then run
+`remotes::install_github("songyue-chen/sas2r@develop")` instead.
 
 Installed examples are available without a GitHub checkout. Locate them with
 `system.file("examples", package = "sas2r")`; its README explains how to copy the
