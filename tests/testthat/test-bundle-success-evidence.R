@@ -44,6 +44,11 @@ test_that("bundle reconciliation requires a completed execution of the active bi
   once <- record_bundle_execution(history, attempt)
   twice <- record_bundle_execution(once, attempt)
   expect_identical(once, twice)
+  next_run <- attempt
+  next_run$attempt_dir <- paste0(attempt$attempt_dir, "-next-run")
+  # Attempt IDs restart at bundle_attempt_001 in each run.
+  expect_length(Filter(function(e) identical(e$type, "bundle_execution"),
+    current_component_evidence(record_bundle_execution(once, next_run))$events), 2L)
   expect_length(Filter(function(e) identical(e$type, "bundle_execution"),
     current_component_evidence(once)$events), 1L)
 
