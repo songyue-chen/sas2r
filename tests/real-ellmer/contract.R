@@ -799,7 +799,11 @@ anthropic_requests <- Filter(
   function(request) endsWith(request$path, "/anthropic/v1/messages"), requests
 )
 gemini_requests <- Filter(
-  function(request) grepl("^/gemini/v1beta/models/.*:generateContent$",
+  function(request) grepl(if (utils::packageVersion("ellmer") >= "0.5.1") {
+    "^/gemini/v1beta/interactions$"
+  } else {
+    "^/gemini/v1beta/models/.*:generateContent$"
+  },
                           request$path),
   requests
 )
@@ -807,7 +811,10 @@ if (length(anthropic_requests) != 1L) {
   stop("the production adapter did not reach the Anthropic Messages protocol")
 }
 if (length(gemini_requests) != 1L) {
-  stop("the production adapter did not reach the Gemini generateContent protocol")
+  stop("the production adapter did not reach the expected Gemini protocol")
+}
+if (utils::packageVersion("ellmer") >= "0.5.1") {
+  stopifnot(identical(gemini_requests[[1]]$body$model, "offline-gemini-model"))
 }
 if (!identical(anthropic_requests[[1]]$body$model, "offline-anthropic-model")) {
   stop("the Anthropic Messages request lost the configured model selector")

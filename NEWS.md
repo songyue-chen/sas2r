@@ -1,5 +1,9 @@
 # sas2r 0.6.0 beta
 
+- Normalize Gemini Interactions token usage with ellmer 0.5.1, keeping cached
+  input, visible output, and reasoning tokens distinct. Exercise both current
+  and earlier Gemini protocols in the offline provider contract checks.
+
 - Save relative report targets under `outputs/tlf/` without repeating a leading
   source `outputs/` directory. Meaningful subdirectories are retained and report
   lookup no longer substitutes another file with the same basename. New generated
