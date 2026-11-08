@@ -16,7 +16,7 @@ With the default `agent_evidence = "code_only"`, a request can contain:
 | SAS source and comments | Program statements, macro definitions and calls, included source, attached comments, and literal values written in the source |
 | Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
 | Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
-| Execution diagnostics | Recognized error kinds, standard condition classes, failed component identifiers, source-verified object/dataset/column names, source call locations and local log paths; no raw messages or log contents |
+| Execution diagnostics | Recognized error kinds (including printing/argument failures such as `invalid printing width`), standard condition classes, failed component identifiers, source-verified object/dataset/column names, source call locations and local log paths; no raw messages or log contents |
 | Investigation/report summaries only | Relative row/column sizes, complete/partial row pairing, type differences, some/all/missing-only variable differences and enumerated patterns; no exact counts, difference amounts or per-record values |
 | Guidance and lookup results | Helper interfaces, installed-package versions, translation rules, registered skills and enabled local documentation mirrors |
 

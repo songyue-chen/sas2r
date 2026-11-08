@@ -21,7 +21,8 @@ jobs:
     env:
       NOT_CRAN: "false"
       _R_CHECK_LIMIT_CORES_: "true"
-      _R_CHECK_CRAN_INCOMING_CHECK_FILE_URIS_: "true"
+      # Routine checks include the published release; run incoming checks when preparing a submission.
+      _R_CHECK_CRAN_INCOMING_: "false"
       # Use TinyTeX directly instead of the host's texi2dvi shell driver.
       R_TEXI2DVICMD: "emulation"
       SAS2R_WORKER_FAILURE_LOG_DIR: ${{ github.workspace }}/worker-failure-logs
@@ -37,7 +38,9 @@ jobs:
         if: matrix.manual
       - name: Install PDF manual fonts and indexer
         if: matrix.manual
-        run: tlmgr install courier inconsolata makeindex
+        run: |
+          tlmgr update --self
+          tlmgr install courier inconsolata makeindex
       - name: Verify indexed PDF manual toolchain
         if: matrix.manual
         run: R CMD Rd2pdf --no-preview --internals --force --output="$RUNNER_TEMP/sas2r-manual.pdf" .
