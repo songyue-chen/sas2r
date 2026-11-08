@@ -50,7 +50,7 @@ The scripts and corrected example are separate tutorial materials on this branch
 
 ```r
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "d3cdf57d60d40a7108909a7516f44435e0f7aa5b")
+remotes::install_github("songyue-chen/sas2r", ref = "ba21d25578f075fd5408220dc30445517f7c75d5")
 ```
 
 Restart R after installation if sas2r was already loaded. This commit belongs to
@@ -80,8 +80,9 @@ PR #64 targeting `develop`; it has not been merged or submitted to CRAN by this 
 
 See [live verification](verification/README.md) for the real OpenAI test and its
 saved evidence. The video reconstructs interfaces; it is not a screen recording.
-The latest real run repaired a missing PDF Obs column and passed review, smoke,
-bundle and tutorial output checks, including source-derived column order.
+The latest final-commit run passed review, smoke, bundle and tutorial output
+checks without repairs, including source-derived column order. The video shows
+a clearly labeled earlier beta run to demonstrate a missing-Obs-column repair.
 Reports are saved under `migration-output/<run_id>/outputs/tlf/`, with no extra
 `outputs/` beneath `tlf/`. AVAL_FLAG comes first because LENGTH precedes SET.
 A successful probe alone does not verify a full migration or tool calling.

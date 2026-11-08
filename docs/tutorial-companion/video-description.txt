@@ -2,7 +2,7 @@ Learn how to use sas2r in RStudio for an AI-assisted SAS-to-R migration. This wa
 
 This update uses sas2r 0.6.0 beta from GitHub PR #64, not the current CRAN release. Install the tested commit to reproduce it:
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "d3cdf57d60d40a7108909a7516f44435e0f7aa5b")
+remotes::install_github("songyue-chen/sas2r", ref = "ba21d25578f075fd5408220dc30445517f7c75d5")
 Restart R after installation if sas2r was already loaded.
 https://github.com/songyue-chen/sas2r/pull/64
 
@@ -46,14 +46,14 @@ Chapters:
 02:24 Install & store your key
 03:17 Prepare the demo project
 04:41 Copy the model settings into _sas2r.yml
-06:14 Check the inputs and model connection
+06:15 Check the inputs and model connection
 07:32 Translate and follow the console
 08:20 Translator → reviewer → fixer
-09:18 Inspect the results
-10:25 Export your R code
-11:05 Continue with your project
+09:20 Inspect the results
+10:27 Export your R code
+11:07 Continue with your project
 
-This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the pinned 0.6.0 beta commit, ellmer 0.5.0, R 4.4.0, and gpt-5.6-luna. It reached migration_ready after the reviewer identified a missing observation-number column in the PDF and the fixer restored it. Review, execution, dataset checks, source-derived column order, and PDF-text checks passed. Actual AI runs can differ.
+This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the pinned 0.6.0 beta commit, ellmer 0.5.0, R 4.4.0, and gpt-5.6-luna. The final tested run reached migration_ready without repairs. Review, execution, dataset checks, source-derived column order, and PDF-text checks passed. The fixer segment is explicitly labeled as a separate earlier beta run, where the reviewer identified a missing Obs column and the fixer restored it. Actual AI runs can differ.
 
 Saved PDF: <working-directory>/migration-output/<run_id>/outputs/tlf/table1.pdf
 There is no additional outputs/ beneath tlf/. The generated report writer uses sas_output_path() to create the directory under the run's output root. AVAL_FLAG is the first dataset column because LENGTH precedes SET in the SAS source.

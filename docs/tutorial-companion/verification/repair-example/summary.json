@@ -1,0 +1,37 @@
+{
+  "run_id": "run_20261108T221151Z_f3aca9b7",
+  "package_version": "0.6.0 beta",
+  "commit": "d3cdf57d60d40a7108909a7516f44435e0f7aa5b",
+  "pr": 64,
+  "target_branch": "develop",
+  "status": "migration_ready",
+  "R": "4.4.0",
+  "ellmer": "0.5.0",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "provider_calls": 12,
+  "estimated_usd": 0.0474,
+  "unknown_cost_calls": 1,
+  "elapsed_seconds": 124.5,
+  "component_fixes": 1,
+  "bundle_fixes": 0,
+  "pdf_path": "outputs/tlf/table1.pdf",
+  "dataset_columns": [
+    "aval_flag",
+    "usubjid",
+    "avisitn",
+    "aval",
+    "trtp",
+    "high_flag"
+  ],
+  "checks": [
+    "dataset values",
+    "missingness",
+    "flags",
+    "row order",
+    "source-derived column order",
+    "PDF text",
+    "standalone export without API key or sas2r loaded"
+  ],
+  "sas_reference_supplied": false
+}
