@@ -10,7 +10,8 @@ results with SAS requires matching reference outputs. AI review does not replace
 independent programming or your organization's statistical QC procedures.
 
 **Release status:** sas2r 0.5.8 is available on [CRAN](https://CRAN.R-project.org/package=sas2r).
-`main` is the release branch. Ongoing development and the complete test suite
+`main` currently includes an **unsubmitted release-candidate fix** for execution
+error diagnostics; this fix is not yet on CRAN. Ongoing development and the complete test suite
 live on [`develop`](https://github.com/songyue-chen/sas2r/tree/develop).
 See the [release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) for validation and branch roles.
 
