@@ -1,0 +1,45 @@
+{
+  "columns": ["aval_flag", "usubjid", "avisitn", "aval", "trtp", "high_flag"],
+  "rows": [
+    [
+      "RECORDED",
+      "01",
+      "1",
+      "12.5",
+      "TRT A",
+      "1"
+    ],
+    [
+      "RECORDED",
+      "05",
+      "1",
+      "14.2",
+      "TRT A",
+      "1"
+    ],
+    [
+      "RECORDED",
+      "03",
+      "2",
+      "15",
+      "TRT A",
+      "1"
+    ],
+    [
+      "MISSING",
+      "02",
+      "1",
+      "NA",
+      "TRT B",
+      "0"
+    ],
+    [
+      "RECORDED",
+      "04",
+      "2",
+      "9.8",
+      "TRT B",
+      "0"
+    ]
+  ]
+}

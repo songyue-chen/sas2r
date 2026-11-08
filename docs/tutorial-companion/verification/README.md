@@ -1,8 +1,8 @@
 # Live tutorial verification — 0.6.0 beta
 
-The main walkthrough reconstructs OpenAI run `run_20261108T222306Z_d7870d6a`,
+The main walkthrough reconstructs OpenAI run `run_20261108T223814Z_5cbabbcf`,
 using [PR #64](https://github.com/songyue-chen/sas2r/pull/64), final commit
-`ba21d25578f075fd5408220dc30445517f7c75d5`. Metadata is 0.6.0; this is a beta,
+`17d94c00a42a4cb845a308dcf35ff68866af16fd`. Metadata is 0.6.0; this is a beta,
 not the CRAN release. Versions and estimated usage are in summary.json.
 
 The selected code passed review, smoke execution, bundle execution and required

@@ -1,10 +1,10 @@
 [1] TRUE
 [1] TRUE
-Generated input dataset: <tutorial-project>/data/input_ds.rds
+Generated input dataset: ~/sas2r-demo/data/input_ds.rds
 Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned files.
 Main programs in dependency order: demo
-  Loaded versions: sas2r=0.6.0, ellmer=0.5.0, R=4.4.0
-Execution root: <tutorial-project>
+  Loaded versions: sas2r=0.6.0, ellmer=0.5.1, R=4.4.0
+Execution root: ~/sas2r-demo
 Translation workers: 1 requested, 1 effective; local execution and repair: 1 at a time.
 translator: 30 tool calls per invocation
 reviewer: 30 tool calls per invocation
@@ -13,14 +13,14 @@ Repair limits: immediate_per_component=2, bundle_per_component=2, bundle_overall
   settings  gpt-5.6-luna: probing -- reasoning_effort=high, max_output_tokens=128000
   settings  gpt-5.6-luna: verified -- reasoning_effort=high, max_output_tokens=128000
   translator  demo (r1): program_translation
-  translator  demo (r1): ok, 3 tool calls
+  translator  demo (r1): ok, 2 tool calls
   coordinator  demo (r1): program generated
   coordinator  demo (r1): mechanical checks passed
   reviewer  demo (r1): reviewing
   reviewer  demo (r1): review completed: reviewed_no_material_finding
   coordinator  demo (r1): review completed -- reviewed_no_material_finding
-  smoke  demo: started [demo_44d03e20c20d]
-  smoke  demo: passed [demo_44d03e20c20d]
+  smoke  demo: started [demo_90477ce7341]
+  smoke  demo: passed [demo_90477ce7341]
   coordinator  all components: final component review started
   coordinator  all components: final component review completed -- 0 reviewed, 1 reused, 0 unavailable
   bundle  first pass started
@@ -38,10 +38,10 @@ Bundle execution: EXECUTED (1 attempt; 1 ran to completion, 0 failed; 0 deferred
 Bundle-level fixes: NOT INVOKED
 Required validation: PASSED (see reference coverage)
 Next action: Inspect output and reference coverage before use.
-Details: <tutorial-project>/migration-output/run_20261108T222306Z_d7870d6a/START_HERE.html
-  bundle  Elapsed: 109.2 seconds. Provider calls: 7. Known spend: $0.0220 (billed $0.0000; estimated $0.0220; unknown cost calls: 1).  bundle  Known token totals: input 99460; output 10365 (includes reasoning 7736). Cached input 57313; cache creation 42093. Unknown input usage calls: 1; unknown output usage calls: 1.  bundle  Effective limits (soft): max_usd=2, max_calls=60, max_retries=unlimited, max_tool_calls=unlimited, max_wall_time=unlimited, max_request_bytes=unlimited, max_request_chars=unlimited, max_input_tokens=unlimited, max_output_tokens=unlimited
-Start here: <tutorial-project>/migration-output/run_20261108T222306Z_d7870d6a/START_HERE.html
-Bundle: <tutorial-project>/migration-output/run_20261108T222306Z_d7870d6a/bundle
-Saved outputs: <tutorial-project>/migration-output/run_20261108T222306Z_d7870d6a/outputs
+Details: ~/sas2r-demo/migration-output/run_20261108T223814Z_5cbabbcf/START_HERE.html
+  bundle  Elapsed: 106.8 seconds. Provider calls: 7. Known spend: $0.0238 (billed $0.0000; estimated $0.0238; unknown cost calls: 1).  bundle  Known token totals: input 101263; output 11571 (includes reasoning 8802). Cached input 57313; cache creation 43896. Unknown input usage calls: 1; unknown output usage calls: 1.  bundle  Effective limits (soft): max_usd=2, max_calls=60, max_retries=unlimited, max_tool_calls=unlimited, max_wall_time=unlimited, max_request_bytes=unlimited, max_request_chars=unlimited, max_input_tokens=unlimited, max_output_tokens=unlimited
+Start here: ~/sas2r-demo/migration-output/run_20261108T223814Z_5cbabbcf/START_HERE.html
+Bundle: ~/sas2r-demo/migration-output/run_20261108T223814Z_5cbabbcf/bundle
+Saved outputs: ~/sas2r-demo/migration-output/run_20261108T223814Z_5cbabbcf/outputs
 PASS: 5 rows, values, missingness, flags, row order, and PDF text. These are tutorial checks, not SAS-reference equivalence.
 PASS: live OpenAI run, tutorial dataset checks, and all five PDF rows.

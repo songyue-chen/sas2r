@@ -1,3 +1,6 @@
-Export executed. Inspect <tutorial-project>/exported-r/output; manual execution does not update the original migration report.
+Export executed. Inspect ~/sas2r-demo/exported-r/output; manual execution does not update the original migration report.
+Warning message:
+In graphics::plot.window(xlim = c(0, xmax), ylim = c(0, max(3L,  :
+  "axes" is not a graphical parameter
 PASS: 5 rows, values, missingness, flags, row and column order, and PDF text. These are tutorial checks, not SAS-reference equivalence.
 PASS: exported R and dataset/PDF tutorial checks without an OpenAI key or sas2r loaded.

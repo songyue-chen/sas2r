@@ -2,7 +2,7 @@
 
 **[Download the corrected tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
 
-Revision 4 supplies a corrected, self-contained tutorial example for the tested
+Revision 5 supplies a corrected, self-contained tutorial example for the tested
 [0.6.0 beta / PR #64](https://github.com/songyue-chen/sas2r/pull/64). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
 `example/`, into a **new, empty RStudio project**. Open `demo.R` and run it section
 by section. Keep earlier runs for diagnosis; use a fresh project for this revision.
@@ -50,14 +50,14 @@ The scripts and corrected example are separate tutorial materials on this branch
 
 ```r
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "ba21d25578f075fd5408220dc30445517f7c75d5")
+remotes::install_github("songyue-chen/sas2r", ref = "17d94c00a42a4cb845a308dcf35ff68866af16fd")
 ```
 
 Restart R after installation if sas2r was already loaded. This commit belongs to
 PR #64 targeting `develop`; it has not been merged or submitted to CRAN by this tutorial.
 
 
-1. Install the pinned PR build and supporting packages using the commands below.
+1. Install the pinned PR build and supporting packages using the commands above.
    Store your OpenAI credential in your user `.Renviron`, save, and restart R.
    Never print or share the key.
 2. Copy **all** extracted companion contents into a new project, including `example/`.
