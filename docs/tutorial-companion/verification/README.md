@@ -1,33 +1,28 @@
-# Live tutorial verification
+# Live tutorial verification — 0.6.0 beta
 
-The video reconstructs actual OpenAI run `run_20261108T205513Z_acf3756e` on the
-final PR #63 build `e9d120613d1254ae3772f26d9eb7bac23cba5636`. This is not the CRAN
-release. See summary.json for versions, calls and estimated usage.
+The video reconstructs OpenAI run `run_20261108T221151Z_f3aca9b7`, using
+[PR #64](https://github.com/songyue-chen/sas2r/pull/64), commit
+`d3cdf57d60d40a7108909a7516f44435e0f7aa5b`. The package metadata is 0.6.0;
+this is a beta preview, not the CRAN release. Versions and usage are in summary.json.
 
-The initial review passed. Smoke execution could not open `outputs/table1.pdf`.
-The first repair created the directory. The next smoke check exposed an invalid
-printing width of 100000. The second repair used a supported width of 10000.
-Revision three passed review, smoke execution, bundle execution and output checks.
-Dataset values, missingness, flags, row order and PDF text passed the companion
-checks. All five subject IDs appear in the PDF. Column order and PDF layout are
-not independently compared with SAS. No independent SAS reference is supplied.
+The initial draft passed smoke execution. Review identified a missing Obs column
+in default PROC PRINT output. One fixer invocation restored it. Revision two
+passed review, smoke execution, bundle execution, and required output checks.
 
-The export runner explicitly prepares the relative PDF folder, which some earlier
-selected revisions required. Exported R and its dataset/PDF checks passed in a
-fresh process without an API key and without the sas2r namespace loaded. It does
-not change the original migration status.
+The PDF was saved at `outputs/tlf/table1.pdf`, with no second outputs directory
+beneath tlf and no write into the source project's outputs folder. Dataset values,
+missingness, flags, row order, source-derived column order, all five subject IDs,
+and expected PDF text passed. AVAL_FLAG precedes input columns because the SAS
+LENGTH declaration precedes SET. No independent SAS reference is supplied;
+PDF layout equivalence is not established. The generated PDF is shown unchanged.
 
-A separate replay of the user's earlier selected code reproduced the stale
-runtime blocker: before the fix, smoke failed and the complete bundle succeeded
-but status remained needs_review. On the final build, smoke still failed, bundle
-execution and output checks passed, and status was migration_ready. The historical
-error is preserved. No model calls were needed for the replay. See replay-summary.txt.
+The standalone export passed the same checks in a fresh R process without an
+OpenAI key or sas2r loaded. The runtime created `output/tlf/`; no folder workaround
+was needed. Manual execution does not update the original migration report.
 
-An additional live run on the first PR implementation also passed (12 calls,
-$0.0439 known estimated cost). It proposed one repair, rejected it after review,
-and successfully executed the retained revision in the full bundle. This reinforces
-why completed requests and smoke tests must be distinguished from final readiness.
+A separate initial beta run also passed without repairs (8 provider calls,
+approximately $0.0386 estimated usage). AI generation and repair sequences vary.
 
 live-console.txt abbreviates local tutorial paths. selected-code.R and table1.pdf
-are unchanged generated artifacts. PDF content and tutorial expectations do not
-establish SAS-reference equivalence or production readiness.
+are unchanged generated artifacts. replay-summary.txt is retained historical
+PR #63 evidence, not evidence from this beta run.

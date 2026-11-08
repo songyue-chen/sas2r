@@ -3,7 +3,7 @@
 # Review required before any production use.
 
 # sas2r bootstrap: run from the bundle folder (autoexec.R holds the library
-# paths and loads the runtime), or source("autoexec.R", chdir = TRUE) once per session first.
+# paths and loads the runtime), or source("autoexec.R", local = environment(), chdir = TRUE) once per session first.
 if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) source("autoexec.R", local = environment(), chdir = TRUE)
 
 raw_input <- lib_read("raw", "input_ds") |>
@@ -16,69 +16,66 @@ stg1 <- raw_input |>
       "MISSING",
       "RECORDED"
     )
-  )
+  ) |>
+  dplyr::select(aval_flag, dplyr::everything())
+
 lib_write(stg1, "work", "stg1")
 
 stg_sort <- sas_sort(
   stg1,
   by = c("trtp", "avisitn")
 )
+
 lib_write(stg_sort, "work", "stg_sort")
 
 final_ds <- stg_sort |>
   dplyr::mutate(
     high_flag = sas_if_else(
-      sas_true(
-        chr_cmp(aval_flag, "RECORDED", op = "==") & (aval > 10)
-      ),
+      chr_cmp(aval_flag, "RECORDED", op = "==") &
+        chr_cmp(aval, 10, op = ">"),
       1,
       0
     )
   )
+
 lib_write(final_ds, "adam", "final_ds")
 
-render_proc_print <- function(df) {
-  shown <- data.frame(
-    Obs = seq_len(nrow(df)),
-    df,
-    check.names = FALSE,
+pdf_path <- sas_output_path("outputs/table1.pdf", environment())
+grDevices::pdf(pdf_path)
+
+print_columns <- cbind(
+  data.frame(Obs = seq_len(nrow(final_ds)), stringsAsFactors = FALSE),
+  as.data.frame(
+    lapply(final_ds, sas_display),
     stringsAsFactors = FALSE
   )
-  shown <- as.data.frame(
-    lapply(shown, sas_display),
-    check.names = FALSE,
-    stringsAsFactors = FALSE
-  )
-
-  old_options <- options(width = 10000L)
-  on.exit(options(old_options), add = TRUE)
-  lines <- utils::capture.output(print(shown, row.names = FALSE))
-  page_size <- 50L
-  starts <- seq.int(1L, max(1L, length(lines)), by = page_size)
-
-  for (start in starts) {
-    stop <- min(start + page_size - 1L, length(lines))
-    page_lines <- lines[start:stop]
-    graphics::par(mar = c(0, 0, 0, 0))
-    graphics::plot.new()
-    graphics::plot.window(
-      xlim = c(0, 1),
-      ylim = c(0.5, length(page_lines) + 0.5)
-    )
-    graphics::text(
-      x = 0,
-      y = seq(length(page_lines), 1L),
-      labels = page_lines,
-      adj = c(0, 1),
-      family = "mono",
-      cex = 0.7
-    )
-  }
+)
+print_header <- paste(names(print_columns), collapse = "  ")
+print_body <- if (nrow(print_columns) == 0L) {
+  character()
+} else {
+  apply(as.matrix(print_columns), 1L, paste, collapse = "  ")
 }
 
-output_path <- "outputs/table1.pdf"
-dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
-grDevices::pdf(file = output_path)
-render_proc_print(final_ds)
+page_starts <- if (length(print_body) == 0L) 1L else seq.int(1L, length(print_body), by = 39L)
+for (page_start in page_starts) {
+  page_end <- min(page_start + 38L, length(print_body))
+  page_lines <- if (length(print_body) == 0L) {
+    print_header
+  } else {
+    c(print_header, print_body[page_start:page_end])
+  }
+
+  graphics::plot.new()
+  graphics::text(
+    x = 0.01,
+    y = seq(0.95, 0.05, length.out = length(page_lines)),
+    labels = page_lines,
+    adj = c(0, 0.5),
+    cex = 0.7,
+    family = "mono"
+  )
+}
+
 grDevices::dev.off()
 

@@ -1,4 +1,4 @@
-sas2r tutorial companion — tested GitHub build (revision 3)
+sas2r tutorial companion — 0.6.0 beta (revision 4)
 
 Use a NEW, writable RStudio project for this revision. Extract the ZIP, open
 companion/, and copy ALL its contents into the project, including example/.
@@ -20,10 +20,10 @@ Files and provenance
   They are NOT SAS-generated reference results and do not prove SAS equivalence.
 
 Steps
-1. Install the tested build for this update (PR #63; not yet CRAN):
+1. Install the tested build for this update (0.6.0 beta; not yet CRAN):
    install.packages(c("remotes", "ellmer", "pdftools"))
-   remotes::install_github("songyue-chen/sas2r", ref = "e9d120613d1254ae3772f26d9eb7bac23cba5636")
-   https://github.com/songyue-chen/sas2r/pull/63
+   remotes::install_github("songyue-chen/sas2r", ref = "d3cdf57d60d40a7108909a7516f44435e0f7aa5b")
+   https://github.com/songyue-chen/sas2r/pull/64
    Restart R if sas2r was already loaded.
 2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.
    Check nzchar(Sys.getenv("OPENAI_API_KEY")); never print the credential.
@@ -46,7 +46,7 @@ Steps
    and PDF text content. It stops on a mismatch. Inspect the PDF visually too.
 10. After the checks pass, export into a new folder with sas_write(). Read the
     exported README.md. In a fresh session in your project, run
-    source("run-export.R"). It prepares the relative PDF folder for this example
+    source("run-export.R"). The runtime creates the report folder automatically
     and runs exported-r/run.R without any provider calls. Then inspect the outputs.
     The standalone runner does not change the original migration status.
 
@@ -64,3 +64,11 @@ Downloads and verification
 https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
 https://CRAN.R-project.org/package=sas2r
 https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
+
+Output locations in this beta
+- Run: migration-output/<run_id>/outputs/tlf/table1.pdf
+- Standalone export: exported-r/output/tlf/table1.pdf
+There is no extra outputs/ beneath tlf/. The runtime creates parent directories.
+The checker also verifies column order: AVAL_FLAG comes first because LENGTH
+precedes SET in the SAS source. This is a source-derived tutorial check, not
+independent SAS output or formatting equivalence.

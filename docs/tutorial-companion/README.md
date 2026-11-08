@@ -2,8 +2,8 @@
 
 **[Download the corrected tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
 
-Revision 3 supplies a corrected, self-contained tutorial example for the tested
-[PR #63 build](https://github.com/songyue-chen/sas2r/pull/63). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
+Revision 4 supplies a corrected, self-contained tutorial example for the tested
+[0.6.0 beta / PR #64](https://github.com/songyue-chen/sas2r/pull/64). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
 `example/`, into a **new, empty RStudio project**. Open `demo.R` and run it section
 by section. Keep earlier runs for diagnosis; use a fresh project for this revision.
 
@@ -14,7 +14,8 @@ miss during dependency discovery. It also leaves `AVAL_FLAG` at the seven-charac
 length established by `'MISSING'`, truncating `'RECORDED'`. The corrected tutorial
 uses `set raw.input_ds;` and `length AVAL_FLAG $8;` explicitly. These are documented
 source changes, not changes to the installed package or a workaround that hides
-translation differences. The pinned package build also reconciles successful bundle execution with earlier smoke failures for the same selected revision.
+translation differences. The 0.6.0 beta fixes report-path mapping, checks supported LENGTH-before-SET
+column order, and includes the post-0.5.8 repair-context and execution-evidence fixes.
 
 `demo.R` now checks that `raw.input_ds` is available **before paid provider calls**,
 allows up to two component repair rounds, preserves existing YAML settings, and checks the generated dataset and PDF before
@@ -38,7 +39,7 @@ Do not overwrite it with the original CRAN example.
 | [preflight-llm.R](companion/preflight-llm.R) | Real provider probe and latest log entry. |
 | [read-llm-log.R](companion/read-llm-log.R) | Model activity from the returned run's log. |
 | [verify-output.R](companion/verify-output.R) | Dataset and PDF-content checks after execution. |
-| [run-export.R](companion/run-export.R) | Prepares the example PDF directory and runs the standalone export in a fresh session. |
+| [run-export.R](companion/run-export.R) | Runs the standalone export in a fresh session. |
 | [example/](companion/example) | Corrected SAS, base YAML, input generator, expected values, and provenance notes. |
 | [README.txt](companion/README.txt) | Step-by-step setup and interpretation. |
 
@@ -49,11 +50,11 @@ The scripts and corrected example are separate tutorial materials on this branch
 
 ```r
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "e9d120613d1254ae3772f26d9eb7bac23cba5636")
+remotes::install_github("songyue-chen/sas2r", ref = "d3cdf57d60d40a7108909a7516f44435e0f7aa5b")
 ```
 
 Restart R after installation if sas2r was already loaded. This commit belongs to
-PR #63 targeting `develop`; it has not been merged or submitted to CRAN by this tutorial.
+PR #64 targeting `develop`; it has not been merged or submitted to CRAN by this tutorial.
 
 
 1. Install the pinned PR build and supporting packages using the commands below.
@@ -72,16 +73,17 @@ PR #63 targeting `develop`; it has not been merged or submitted to CRAN by this 
 7. Inspect status, generated R, `START_HERE.html`, and the model log. Run the output
    checks; inspect the PDF visually. Export after checking the results.
 8. In a fresh session in the tutorial project, run `source("run-export.R")` to
-   prepare this example's relative PDF directory and execute the exported code.
+   execute the exported code. The runtime creates output/tlf/ automatically.
    This uses no sas2r namespace or model connection and does not update the original report.
 
 ## Verification and limits
 
 See [live verification](verification/README.md) for the real OpenAI test and its
 saved evidence. The video reconstructs interfaces; it is not a screen recording.
-The latest real run repaired two execution errors and passed review, smoke,
-bundle and tutorial output checks. A separate saved-code replay verifies the
-stale runtime-evidence fix without making model requests.
+The latest real run repaired a missing PDF Obs column and passed review, smoke,
+bundle and tutorial output checks, including source-derived column order.
+Reports are saved under `migration-output/<run_id>/outputs/tlf/`, with no extra
+`outputs/` beneath `tlf/`. AVAL_FLAG comes first because LENGTH precedes SET.
 A successful probe alone does not verify a full migration or tool calling.
 
 `example/expected-final.csv` contains tutorial expectations derived from the

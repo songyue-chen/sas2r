@@ -1,10 +1,10 @@
-Learn how to use sas2r in RStudio for an AI-assisted SAS-to-R migration. This walkthrough covers provider choice, OpenAI setup, API credits, .Renviron, _sas2r.yml, offline input preflight, connection probing, console logs, translation, a real translator–reviewer–fixer attempt, output inspection, and independent R-code export.
+Learn how to use sas2r in RStudio for an AI-assisted SAS-to-R migration. This walkthrough covers provider choice, OpenAI setup, API credits, .Renviron, _sas2r.yml, offline input preflight, connection probing, console logs, translation, a real translator–reviewer–fixer sequence, output inspection, and independent R-code export.
 
-This update uses the tested GitHub PR #63 build, not the current CRAN release. Install the pinned commit to reproduce it:
+This update uses sas2r 0.6.0 beta from GitHub PR #64, not the current CRAN release. Install the tested commit to reproduce it:
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "e9d120613d1254ae3772f26d9eb7bac23cba5636")
+remotes::install_github("songyue-chen/sas2r", ref = "d3cdf57d60d40a7108909a7516f44435e0f7aa5b")
 Restart R after installation if sas2r was already loaded.
-https://github.com/songyue-chen/sas2r/pull/63
+https://github.com/songyue-chen/sas2r/pull/64
 
 sas2r uses the ellmer R package to interact with large language models. Choose among sas2r's supported providers, including OpenAI, Anthropic (Claude), Google Gemini (Gemini API), and DeepSeek. Cloud integrations for enterprise deployments include Amazon Bedrock on AWS, Azure OpenAI on Microsoft Azure, and Google Cloud through the Vertex AI API. This tutorial uses OpenAI as one example; provider-specific credentials, configuration, and model access are required.
 
@@ -22,7 +22,7 @@ https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-c
 
 The original example is included in the CRAN sas2r package. This tutorial uses the corrected example supplied separately in the GitHub download, together with demo.R, preflight-llm.R, read-llm-log.R, verify-output.R, and run-export.R. Extract the ZIP, open companion/, and copy ALL contents, including example/, into a new RStudio project. Use a fresh project if you tried an older download.
 
-The corrected SAS explicitly reads raw.input_ds and declares AVAL_FLAG as eight characters. The script checks input availability before making paid requests and checks dataset values and PDF text after execution. expected-final.csv contains tutorial expectations, not independently SAS-generated references.
+The corrected SAS explicitly reads raw.input_ds and declares AVAL_FLAG as eight characters. The script checks input availability before making paid requests and checks dataset values, row and column order, and PDF text after execution. expected-final.csv contains tutorial expectations, not independently SAS-generated references.
 
 Configuration: copy the 11 commented OpenAI YAML lines at the end of demo.R into the same project _sas2r.yml, below outputs. Remove only the leading "# " from each pasted line and preserve the remaining indentation. Keep libraries and outputs; align llm at the same top level. Update an existing llm section instead of duplicating it, then save. Keep the API key in .Renviron. Script excerpts display their actual line numbers.
 
@@ -41,23 +41,26 @@ https://developers.openai.com/api/docs/guides/chatgpt-api-credits
 
 Chapters:
 00:00 From SAS to R
-00:38 Choose your LLM provider
-01:25 Create an API key
-02:22 Install & store your key
-03:15 Prepare the demo project
-04:39 Copy the model settings into _sas2r.yml
-06:13 Check the inputs and model connection
-07:30 Translate and follow the console
-08:18 Translator → reviewer → fixer
-09:12 Inspect the results
-10:14 Export your R code
-10:54 Continue with your project
+00:40 Choose your LLM provider
+01:26 Create an API key
+02:24 Install & store your key
+03:17 Prepare the demo project
+04:41 Copy the model settings into _sas2r.yml
+06:14 Check the inputs and model connection
+07:32 Translate and follow the console
+08:20 Translator → reviewer → fixer
+09:18 Inspect the results
+10:25 Export your R code
+11:05 Continue with your project
 
-This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the final pinned PR #63 build, ellmer 0.5.0, R 4.4.0, and gpt-5.6-luna. It reached migration_ready; dataset and PDF-content checks passed. Two repairs addressed a missing PDF directory and an invalid printing width. Revision three passed review, smoke execution and the complete bundle. A separate saved-run replay verified the stale runtime-evidence fix. The fix keeps the historical smoke failure without allowing stale runtime evidence to block the successful selected revision. Actual AI runs can differ.
+This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the pinned 0.6.0 beta commit, ellmer 0.5.0, R 4.4.0, and gpt-5.6-luna. It reached migration_ready after the reviewer identified a missing observation-number column in the PDF and the fixer restored it. Review, execution, dataset checks, source-derived column order, and PDF-text checks passed. Actual AI runs can differ.
 
-After exporting, use source("run-export.R") in a fresh R session from the tutorial project. It prepares this example's relative PDF folder and runs exported-r/run.R without sas2r or an AI connection. It does not change the original migration report or validation status. Exported dataset/PDF checks passed with this explicit setup.
+Saved PDF: <working-directory>/migration-output/<run_id>/outputs/tlf/table1.pdf
+There is no additional outputs/ beneath tlf/. The generated report writer uses sas_output_path() to create the directory under the run's output root. AVAL_FLAG is the first dataset column because LENGTH precedes SET in the SAS source.
+
+After exporting, use source("run-export.R") in a fresh R session from the tutorial project. It runs exported-r/run.R without sas2r loaded or an AI connection. Generated reports go to exported-r/output/tlf/. The runtime creates the directory; the companion script no longer needs a folder workaround. Exported dataset, column-order, and PDF checks passed. Manual execution does not update the original migration report or validation status.
 
 Live verification and actual generated artifacts:
 https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion/verification
 
-A successful probe checks a structured ping, not a complete migration. No independent SAS reference output is supplied, so execution and tutorial checks do not establish SAS equivalence. Inspect PDF formatting as well as content. Column order and SAS PROC PRINT formatting equivalence have not been independently established.
+A successful probe checks a structured ping, not a complete migration. No independent SAS reference output is supplied, so execution and tutorial checks do not establish SAS equivalence. Inspect PDF formatting as well as content: this example does not establish SAS PROC PRINT layout equivalence.

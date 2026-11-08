@@ -3,7 +3,7 @@
 Generated input dataset: <tutorial-project>/data/input_ds.rds
 Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned files.
 Main programs in dependency order: demo
-  Loaded versions: sas2r=0.5.8, ellmer=0.5.0, R=4.4.0
+  Loaded versions: sas2r=0.6.0, ellmer=0.5.0, R=4.4.0
 Execution root: <tutorial-project>
 Translation workers: 1 requested, 1 effective; local execution and repair: 1 at a time.
 translator: 30 tool calls per invocation
@@ -17,10 +17,10 @@ Repair limits: immediate_per_component=2, bundle_per_component=2, bundle_overall
   coordinator  demo (r1): program generated
   coordinator  demo (r1): mechanical checks passed
   reviewer  demo (r1): reviewing
-  reviewer  demo (r1): review completed: reviewed_no_material_finding, 1 tool call
-  coordinator  demo (r1): review completed -- reviewed_no_material_finding
-  smoke  demo: started [demo_e5b277f1e79]
-  smoke  demo: failed [demo_e5b277f1e79] -- cannot open file 'outputs/table1.pdf'
+  reviewer  demo (r1): review completed: repair_required, 1 tool call
+  coordinator  demo (r1): review completed -- repair_required
+  smoke  demo: started [demo_7fe4d6f659]
+  smoke  demo: passed [demo_7fe4d6f659]
   fixer  demo (r1, round 1): repairing
   fixer  demo (r1, round 1): ok
   coordinator  demo (r2): repair candidate generated
@@ -28,17 +28,8 @@ Repair limits: immediate_per_component=2, bundle_per_component=2, bundle_overall
   reviewer  demo (r2, round 1): reviewing
   reviewer  demo (r2, round 1): review completed: reviewed_no_material_finding
   coordinator  demo (r2): review completed -- reviewed_no_material_finding
-  smoke  demo: started [demo_e5b24875a0eb]
-  smoke  demo: failed [demo_e5b24875a0eb] -- invalid 'width' parameter, allowed 10...10000
-  fixer  demo (r2, round 2): repairing
-  fixer  demo (r2, round 2): ok
-  coordinator  demo (r3): repair candidate generated
-  coordinator  demo (r3): mechanical checks passed
-  reviewer  demo (r3, round 2): reviewing
-  reviewer  demo (r3, round 2): review completed: reviewed_no_material_finding, 1 tool call
-  coordinator  demo (r3): review completed -- reviewed_no_material_finding
-  smoke  demo: started [demo_e5b2b445c09]
-  smoke  demo: passed [demo_e5b2b445c09]
+  smoke  demo: started [demo_7fe7f2bb1b7]
+  smoke  demo: passed [demo_7fe7f2bb1b7]
   coordinator  all components: final component review started
   coordinator  all components: final component review completed -- 0 reviewed, 1 reused, 0 unavailable
   bundle  first pass started
@@ -51,15 +42,15 @@ Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned f
 Main programs in dependency order: demo
 Translation workers: 1 effective
 Translation: 1 of 1 components have saved code; 0 could not finish
-Component fixes: INVOKED (2 fixer invocations; see review results)
+Component fixes: INVOKED (1 fixer invocation; see review results)
 Bundle execution: EXECUTED (1 attempt; 1 ran to completion, 0 failed; 0 deferred, 0 incomplete)
 Bundle-level fixes: NOT INVOKED
 Required validation: PASSED (see reference coverage)
 Next action: Inspect output and reference coverage before use.
-Details: <tutorial-project>/migration-output/run_20261108T205513Z_acf3756e/START_HERE.html
-  bundle  Elapsed: 180.6 seconds. Provider calls: 17. Known spend: $0.0653 (billed $0.0000; estimated $0.0653; unknown cost calls: 1).  bundle  Known token totals: input 350097; output 17363 (includes reasoning 11011). Cached input 141942; cache creation 208071. Unknown input usage calls: 1; unknown output usage calls: 1.  bundle  Effective limits (soft): max_usd=2, max_calls=60, max_retries=unlimited, max_tool_calls=unlimited, max_wall_time=unlimited, max_request_bytes=unlimited, max_request_chars=unlimited, max_input_tokens=unlimited, max_output_tokens=unlimited
-Start here: <tutorial-project>/migration-output/run_20261108T205513Z_acf3756e/START_HERE.html
-Bundle: <tutorial-project>/migration-output/run_20261108T205513Z_acf3756e/bundle
-Saved outputs: <tutorial-project>/migration-output/run_20261108T205513Z_acf3756e/outputs
+Details: <tutorial-project>/migration-output/run_20261108T221151Z_f3aca9b7/START_HERE.html
+  bundle  Elapsed: 124.5 seconds. Provider calls: 12. Known spend: $0.0474 (billed $0.0000; estimated $0.0474; unknown cost calls: 1).  bundle  Known token totals: input 231786; output 12481 (includes reasoning 7970). Cached input 77142; cache creation 154575. Unknown input usage calls: 1; unknown output usage calls: 1.  bundle  Effective limits (soft): max_usd=2, max_calls=60, max_retries=unlimited, max_tool_calls=unlimited, max_wall_time=unlimited, max_request_bytes=unlimited, max_request_chars=unlimited, max_input_tokens=unlimited, max_output_tokens=unlimited
+Start here: <tutorial-project>/migration-output/run_20261108T221151Z_f3aca9b7/START_HERE.html
+Bundle: <tutorial-project>/migration-output/run_20261108T221151Z_f3aca9b7/bundle
+Saved outputs: <tutorial-project>/migration-output/run_20261108T221151Z_f3aca9b7/outputs
 PASS: 5 rows, values, missingness, flags, row order, and PDF text. These are tutorial checks, not SAS-reference equivalence.
 PASS: live OpenAI run, tutorial dataset checks, and all five PDF rows.

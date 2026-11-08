@@ -6,9 +6,10 @@ verify_demo_output <- function(result, project_dir) {
   }
   if (is.null(result$outputs_dir)) stop("No executed output directory is available.")
   dataset <- file.path(result$outputs_dir, "datasets", "adam", "final_ds.rds")
-  pdf <- file.path(result$outputs_dir, "tlf", "outputs", "table1.pdf")
+  pdf <- file.path(result$outputs_dir, "tlf", "table1.pdf")
   stopifnot(file.exists(dataset), file.exists(pdf))
   actual <- readRDS(dataset)
+  stopifnot(identical(tolower(names(actual)), c("aval_flag", "usubjid", "avisitn", "aval", "trtp", "high_flag")))
   expected <- read.csv(file.path(project_dir, "example", "expected-final.csv"),
                        colClasses = c("character", "integer", "numeric", "character", "character", "integer"),
                        na.strings = "", check.names = FALSE)
@@ -36,6 +37,6 @@ verify_demo_output <- function(result, project_dir) {
   required <- c(names(expected), "MISSING", "RECORDED", "12.5", "14.2", "9.8")
   missing <- required[!vapply(required, function(x) grepl(tolower(x), tolower(text), fixed = TRUE), logical(1))]
   if (length(missing)) stop("PDF content missing: ", paste(missing, collapse = ", "))
-  message("PASS: 5 rows, values, missingness, flags, row order, and PDF text. These are tutorial checks, not SAS-reference equivalence.")
+  message("PASS: 5 rows, values, missingness, flags, row and column order, and PDF text. These are tutorial checks, not SAS-reference equivalence.")
   invisible(actual)
 }

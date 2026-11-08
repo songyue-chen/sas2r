@@ -7,9 +7,7 @@ local({
   on.exit(setwd(previous_dir), add = TRUE)
   runtime <- new.env()
   sys.source("autoexec.R", runtime)
-  # SAS ODS path: outputs/table1.pdf, relative to the report work folder.
-  dir.create(file.path(runtime$.sas2r_output_root, "tlf", "outputs"),
-             recursive = TRUE, showWarnings = FALSE)
+  # sas_output_path() creates output/tlf/ for generated reports.
   sys.source("run.R", new.env())
   message("Export executed. Inspect ", runtime$.sas2r_output_root,
           "; manual execution does not update the original migration report.")
