@@ -648,6 +648,8 @@ agent_error_facts <- function(condition, source_code = "") {
     function_not_found = paste0("^could not find function ", quote_mark, name, quote_mark, "$"),
     column_not_found = paste0("^[Cc]olumn ", quote_mark, name, quote_mark, " (doesn't exist|not found)[.]?$"),
     missing_argument = paste0("^argument ", quote_mark, name, quote_mark, " is missing, with no default$"),
+    invalid_argument = paste0("^invalid (?:value .* for )?", quote_mark, name, quote_mark,
+      "(?: argument| / getOption.*)$"),
     unused_argument = paste0("^unused arguments? \\(", name, "\\s*=.*\\)$"))
   kind <- "unclassified_error"; found_names <- character()
   for (candidate in names(patterns)) {
@@ -656,6 +658,15 @@ agent_error_facts <- function(condition, source_code = "") {
     found <- sub(patterns[[candidate]], "\\1", matched, perl = TRUE)
     found <- unique(found[tolower(found) %in% facts$identifiers])
     if (length(found)) { kind <- candidate; found_names <- found; break }
+  }
+  # Base R printing uses unquoted parameter names. Keep its value-free
+  # diagnostic verbatim; numeric values (e.g. invalid digits) remain local.
+  printing_error <- lines[grepl("^invalid printing (width|digits)( -?[0-9]+)?$", lines)]
+  printing_message <- NULL
+  if (kind == "unclassified_error" && length(printing_error)) {
+    found_names <- sub("^invalid printing (width|digits).*$", "\\1", printing_error[1L])
+    kind <- "invalid_argument"
+    printing_message <- paste("invalid printing", found_names)
   }
   # Fixed labels carry no interpolated values: row sizes and type-error values
   # are deliberately discarded. Cover ordinary base R and dplyr failures.
@@ -695,7 +706,8 @@ agent_error_facts <- function(condition, source_code = "") {
   location <- if (length(location)) location[1L] else NA_character_
   labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
     column_not_found = "Column not found", function_not_found = "Function not found",
-    missing_argument = "Required argument missing", unused_argument = "Unused argument",
+    missing_argument = "Required argument missing", invalid_argument = "Invalid argument",
+    unused_argument = "Unused argument",
     non_numeric_operand = "Non-numeric operand in arithmetic", missing_boolean = "Missing value in an if/while condition",
     empty_argument = "Zero-length argument in a condition", subscript_out_of_bounds = "Subscript out of bounds",
     undefined_columns = "Undefined columns selected", differing_row_counts = "Incompatible row counts",
@@ -708,7 +720,8 @@ agent_error_facts <- function(condition, source_code = "") {
     unclassified_error = "Execution failed; inspect the local diagnostics")
   list(kind = kind, identifiers = found_names, condition_class = classes,
     source_location = location,
-    condition_message = paste0(labels[[kind]], if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
+    condition_message = printing_message %||% paste0(labels[[kind]],
+      if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
 }
 
 bounded_agent_diagnostics <- function(execution,

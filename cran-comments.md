@@ -1,3 +1,16 @@
+## Unsubmitted source update: 2026-11-08
+
+This candidate preserves printing and invalid-argument execution diagnostics for
+repair agents, with subprocess and prompt regressions. It has not been submitted
+to CRAN; the version and submission notes must be finalized for the next release.
+
+Complete compatible release tests, including the new regression, are pinned at
+`d0300efcb91b5d54d6eb18ff9065b8bc5909ca36` and retained by the permanent tag
+`release-tests-0.5.8-20261108`. Unrelated development features are not backported.
+
+The validation below records the previous accepted release, not this candidate.
+Current candidate validation is recorded in its pull request.
+
 ## Resubmission: sas2r 0.5.8
 
 This revision addresses the manual review about console output and writes to
