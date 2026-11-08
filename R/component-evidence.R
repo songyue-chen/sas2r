@@ -782,6 +782,37 @@ record_program_smoke <- function(history, result) {
   history
 }
 
+# A successful bundle supersedes earlier runtime failures only on the exact
+# binding it executed. Keep the smoke event and all non-runtime blockers.
+record_bundle_execution <- function(history, attempt) {
+  rev <- current_component_evidence(history)
+  if (is.null(rev)) return(history)
+  cid <- history$component_id
+  binding <- attempt$revision_manifest[[cid]]$binding_hash
+  if (!isTRUE(attempt$completed) || !isTRUE(attempt$passed) ||
+      isTRUE(attempt$deferred) || !cid %in% attempt$executed_component_ids ||
+      is.null(binding) || !identical(binding, rev$binding$binding_hash)) return(history)
+
+  rev$blockers <- rev$blockers[rev$blockers != "smoke_failed" & !startsWith(rev$blockers, "blocked_by:")]
+  rev$runtime_deferred <- NULL
+  record_path <- file.path(attempt$attempt_dir, "record.json")
+  recorded <- any(vapply(rev$events, function(e)
+    identical(e$type, "bundle_execution") && identical(e$record_path, record_path), logical(1)))
+  if (!recorded) rev$events <- c(rev$events, list(list(
+    type = "bundle_execution", status = "passed", attempt_id = attempt$attempt_id,
+    binding_hash = binding, record_path = record_path,
+    created_at = attempt$completed_at
+  )))
+  idx <- match(history$active_revision_id,
+    vapply(history$revisions, `[[`, character(1), "revision_id"))
+  history$revisions[[idx]] <- rev
+  if (identical(rev$level, "reviewed_only") && !isTRUE(rev$review_unavailable) && !length(rev$blockers)) {
+    history <- promote_component_evidence(history, "runtime_verified",
+      coverage = paste0("call:", cid), basis_id = attempt$attempt_id)
+  }
+  history
+}
+
 # Derive review status from the active revision's authoritative event history.
 component_review_record <- function(history) {
   events <- current_component_evidence(history)$events %||% list()

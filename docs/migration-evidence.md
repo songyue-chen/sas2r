@@ -39,6 +39,11 @@ review verdict. `coordinator ...: reviewed` means the coordinator recorded a
 review result, which can still contain `repair_required` findings. The report
 and component review history contain the verdict and findings.
 
+A completed successful bundle run supersedes earlier smoke failures or runtime
+deferrals only for the unchanged component bindings it actually executed.
+The earlier smoke result remains in the report and event history. Review,
+mechanical, dependency, and output/reference findings remain separate gates.
+
 Mechanical checks, reviews, smoke execution, and bundle output checks establish
 different facts. A smoke pass does not clear a mechanical failure or missing
 review. A later successful review resolves prior review-specific blockers while

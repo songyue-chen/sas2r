@@ -1,5 +1,9 @@
 # sas2r (development)
 
+- A successful bundle execution now supersedes earlier smoke failures for the
+  same executed component binding. Historical failures remain visible, while
+  outstanding review findings and output/reference checks still gate readiness.
+
 - Preserve printing and invalid-argument execution diagnostics in reviewer and
   fixer evidence, including `invalid printing width`. Argument values and raw
   logs remain local.
