@@ -836,6 +836,7 @@ run_bundle_attempt <- function(
   attempt$helper_hash <- unname(cli::hash_file_sha256(file.path(bundle_dir, "sas2r-helpers.R")))
   attempt$revision_manifest <- lapply(state$selected_revisions, function(rev) list(
     revision_id = rev$revision_id, r_hash = migration_hash(revision_code(rev)),
+    binding_hash = rev$contract$binding$binding_hash %||% rev$binding$binding_hash,
     source_hash = rev$contract$binding$source_hash %||% rev$binding$source_hash,
     affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs))
   plan <- build_bundle_execution_plan(state$graph)

@@ -773,7 +773,7 @@ assess_final_outputs <- function(
   }
 
   # Lineage evidence evaluation and component promotion
-  updated_histories <- evidence_histories
+  updated_histories <- lapply(evidence_histories, record_bundle_execution, attempt = attempt)
   lineage_summaries <- list()
   has_lineage_review_unavail <- FALSE
   has_lineage_review_only <- FALSE
