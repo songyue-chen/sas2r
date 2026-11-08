@@ -106,7 +106,7 @@ observe_source_population <- function(specs, env) {
     if (!all(vapply(data, is.data.frame, logical(1)))) return(list(status = "unverified", reason = "source_input_unavailable"))
     if (rule$route == "column_order") {
       expected <- unique(c(rule$prefix, tolower(names(data[[1L]]))))
-      actual <- head(tolower(names(df)), length(expected))
+      actual <- utils::head(tolower(names(df)), length(expected))
       return(list(status = if (identical(actual, expected)) "passed" else "failed",
         reason = "source_column_order", expected_columns = expected, actual_columns = actual,
         detail = paste("SAS column order requires LENGTH declarations before SET first:",

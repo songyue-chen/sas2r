@@ -59,7 +59,8 @@ find_attempt_candidate_file <- function(contract, attempt) {
   } else {
     # Prefer the canonical report destination. Legacy relative writers are
     # still collected by their exact logical path, never by basename alone.
-    relative <- tryCatch(sas2r_tlf_relative_path(l_name), error = function(e) NA_character_)
+    logical <- if (length(l_name) && !is.na(l_name) && nzchar(l_name)) l_name else t_key
+    relative <- tryCatch(sas2r_tlf_relative_path(logical), error = function(e) NA_character_)
     if (is.na(relative)) return(NA_character_)
     candidates <- unique(c(file.path(c(attempt_dir, outputs_dir), "tlf", relative),
       unlist(lapply(search_dirs, function(dir) file.path(dir, c(t_key, l_name, relative))))))

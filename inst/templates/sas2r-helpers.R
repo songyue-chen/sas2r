@@ -371,7 +371,7 @@ sas2r_tlf_relative_path <- function(path) {
     if (part %in% c("", ".")) next
     if (part == "..") {
       if (!length(parts)) stop("Report path escapes the logical output root", call. = FALSE)
-      parts <- head(parts, -1L)
+      parts <- utils::head(parts, -1L)
     } else parts <- c(parts, part)
   }
   path <- sub("^outputs/", "", paste(parts, collapse = "/"), ignore.case = TRUE)

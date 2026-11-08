@@ -39,3 +39,13 @@ test_that("the vendored runtime routes reports identically from an exported bund
   expect_identical(readLines(file.path(root, "output", "tlf", "table.html")), "report")
   expect_false(dir.exists(file.path(other, "outputs")))
 })
+
+
+test_that("TLF contracts with only a target key retain exact-path lookup", {
+  root <- normalizePath(withr::local_tempdir(), winslash = "/")
+  dir.create(file.path(root, "tlf"))
+  writeLines("report", file.path(root, "tlf", "table.html"))
+  contract <- list(kind = "tlf", target_key = "outputs/table.html")
+  expect_identical(find_attempt_candidate_file(contract, list(attempt_dir = root)),
+    file.path(root, "tlf", "table.html"))
+})
