@@ -180,6 +180,54 @@ sas2r_assignment_path <- function(path, env) {
   normalizePath(path.expand(path), winslash = "/", mustWork = FALSE)
 }
 
+#' Relative location of a report within the TLF directory
+#' @param path A relative logical report path.
+#' @return A relative path with one conventional leading `outputs/` removed.
+#' @keywords internal
+sas2r_tlf_relative_path <- function(path) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path))
+    stop("Report path must be a non-empty relative path", call. = FALSE)
+  path <- gsub("\\\\", "/", path)
+  path <- sub("^(\\./)+", "", path)
+  if (grepl("^(/|[A-Za-z]:|~)", path))
+    stop("Use a relative logical report path within the output root", call. = FALSE)
+  parts <- character()
+  for (part in strsplit(path, "/", fixed = TRUE)[[1L]]) {
+    if (part %in% c("", ".")) next
+    if (part == "..") {
+      if (!length(parts)) stop("Report path escapes the logical output root", call. = FALSE)
+      parts <- utils::head(parts, -1L)
+    } else parts <- c(parts, part)
+  }
+  path <- sub("^outputs/", "", paste(parts, collapse = "/"), ignore.case = TRUE)
+  if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
+  path
+}
+
+#' Resolve a report destination within the current run
+#'
+#' Use this helper for ODS/report files, not for input libraries. A logical
+#' `outputs/tables/report.pdf` maps to `<output_root>/tlf/tables/report.pdf`.
+#' One conventional leading `outputs/` is removed; meaningful subfolders remain.
+#' The parent directory is created. Absolute source paths require an explicit
+#' relative logical destination in the translated program.
+#'
+#' @param path Relative logical report path from the SAS output contract.
+#' @param env Local runtime environment containing `.sas2r_output_root`.
+#'   Defaults to the calling environment. When called interactively, pass the
+#'   environment into which the bundle's `autoexec.R` was sourced.
+#' @return Character scalar destination path. No working-directory fallback
+#'   is used when the runtime output root is absent.
+#' @export
+sas_output_path <- function(path, env = parent.frame()) {
+  root <- get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
+    stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
+  dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  dest
+}
+
 #' @rdname sas2r_libname_assign
 #' @export
 sas2r_libname_clear <- function(libref) {

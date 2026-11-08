@@ -217,3 +217,14 @@ The runtime is now an exported, versioned source of truth inside sas2r, vendored
 from that source. When usage justifies it, it becomes a separate `sas2r.runtime` package that
 organizations can validate once, with an opt-in mode that writes `library(sas2r.runtime)` into
 bundles.
+
+## Report output paths
+
+Generated report writers use `sas_output_path("outputs/table.pdf", environment())`
+inside the local runtime environment. The helper creates the parent directory
+and maps this logical target to `<output_root>/tlf/table.pdf`. A leading
+`outputs/` is removed once; meaningful subdirectories such as `tables/` remain.
+Saved run artifacts use `<run>/outputs/tlf/`; exported bundles use
+`<export>/output/tlf/`. `sas2r_assignment_path()` is for LIBNAME input paths,
+not report destinations. Absolute SAS report paths require an explicit relative
+logical mapping before translation/execution.

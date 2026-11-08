@@ -174,7 +174,7 @@ test_that("public exports include every library and TLF and run after moving", {
   adapter <- counted_review_llm(list(good_review(), good_translation(second_code), good_review(), good_review()))
   result <- sas_translate(fx$root, config = fx$config, out_dir = file.path(fx$root, "migration"), llm = adapter$llm)
   expect_identical(result$status, "migration_ready")
-  for (rel in c("datasets/adam/out.rds", "tlf/outputs/table.html")) {
+  for (rel in c("datasets/adam/out.rds", "tlf/table.html")) {
     expect_true(file.exists(file.path(result$outputs_dir, rel)), info = rel)
   }
   run_root <- dirname(result$bundle_dir)
@@ -185,13 +185,15 @@ test_that("public exports include every library and TLF and run after moving", {
   sas_write(result, export)
   moved <- file.path(fx$root, "moved")
   expect_true(file.rename(export, moved))
-  expect_true(file.exists(file.path(moved, "saved-outputs/tlf/outputs/table.html")))
+  expect_true(file.exists(file.path(moved, "saved-outputs/tlf/table.html")))
   expect_true(file.exists(file.path(moved, "README.md")))
   expect_true(file.exists(file.path(moved, "run-order.json")))
   # Delete copies to prove this execution creates fresh results in the moved folder.
   expect_false(dir.exists(file.path(moved, "output")))
   callr::r(function() source("run.R", chdir = TRUE), wd = moved)
   expect_equal(readRDS(file.path(moved, "output/datasets/adam/out.rds"))$x, c(2, 8))
+  # The historical generated code above still writes its literal relative path;
+  # saved artifacts are canonicalized without rewriting that exported code.
   expect_true(file.exists(file.path(moved, "output/tlf/outputs/table.html")))
   expect_identical(attempt_output_hashes(dirname(result$bundle_dir)), before)
   expect_equal(readRDS(file.path(fx$inputs, "src.rds"))$x, c(1, 7))

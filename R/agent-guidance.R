@@ -107,6 +107,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
   deps <- unique(c(deps, consumers, read_context$possible))
   environment <- agent_package_facts(config$allowlist)
   projections <- source_projection_context(project, component_id)
+  column_order <- source_column_order_specs(project, component_id)
   while (length(projections) && nchar(paste(render_source_projections(projections), collapse = "\n")) >
       min(6000L, floor(packet_limit / 3L))) projections <- utils::head(projections, -1L)
   macro <- contract$macro_contract %||% component_macro_contract(project, graph, component_id)
@@ -122,7 +123,7 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     match(deps, read_context$possible, nomatch = length(deps) + 1L), seq_along(deps))]
   bodies <- bodies[deps]
   scope <- migration_hash(list(component_id, macro, available_bodies, environment, projections, consumers,
-    reads = read_context, source_comparisons = source_comparisons,
+    reads = read_context, source_comparisons = source_comparisons, column_order = column_order,
     execution_order = graph$execution_order, policy = agent_guidance_policy(), body_limit = body_limit, packet_limit = packet_limit))
   facts <- list()
   add_fact <- function(kind, subject, value) {
@@ -140,6 +141,9 @@ build_agent_guidance <- function(project, component_id, contract = NULL,
     "For truncated code, use read_dependency_context(component_id, language = sas or r, offset = 1), then next_offset. Omitted code is not missing source. Related transitive dependencies and consumers are readable; execution-only predecessors are excluded.",
     if (length(additional_consumers)) paste("Additional related code IDs:", paste(utils::head(additional_consumers, 32L), collapse = ", ")),
     render_source_projections(projections),
+    vapply(column_order, function(rule) paste("Source column order for", paste(rule$outputs, collapse = ","),
+      ": first", paste(rule$prefix, collapse = ", "), "then the remaining columns of",
+      paste(rule$inputs, collapse = ","), "in input descriptor order."), character(1)),
     "Source/order summaries below are bounded excerpts; omitted facts remain unknown.",
     paste("Declared execution order:", substr(paste(graph$execution_order %||% character(), collapse = " -> "), 1L, 2000L)),
     "WORK reads use the latest preceding write. Selected writers below are static source/order facts; unknown writers and possible preceding programs do not establish runtime provenance.",

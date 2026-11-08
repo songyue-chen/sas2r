@@ -1,4 +1,16 @@
-# sas2r (development)
+# sas2r 0.6.0 beta
+
+- Normalize Gemini Interactions token usage with ellmer 0.5.1, keeping cached
+  input, visible output, and reasoning tokens distinct. Exercise both current
+  and earlier Gemini protocols in the offline provider contract checks.
+
+- Save relative report targets under `outputs/tlf/` without repeating a leading
+  source `outputs/` directory. Meaningful subdirectories are retained and report
+  lookup no longer substitutes another file with the same basename. New generated
+  programs use `sas_output_path()`; update paths when consuming saved reports.
+- Check source column order for supported literal LENGTH declarations before SET,
+  and supply a source-based repair diagnostic when generated columns are appended
+  incorrectly. Unsupported declaration forms remain unverified.
 
 - A successful bundle execution now supersedes earlier smoke failures for the
   same executed component binding. Historical failures remain visible, while
@@ -7,6 +19,16 @@
 - Preserve printing and invalid-argument execution diagnostics in reviewer and
   fixer evidence, including `invalid printing width`. Argument values and raw
   logs remain local.
+
+- Give bundle repairs the actual attempt's startup snapshot, execution scope,
+  and revision identities, distinguishing attempted code from the current
+  selection. Related caller/callee context now carries the same revision labels.
+- Retain applied and rejected repair outcomes, diagnoses, and rejection reasons
+  in local run diagnostics and reports; make bounded prior outcomes available to
+  subsequent repair attempts without treating them as established facts.
+- Expand development regression coverage for repair context, execution evidence,
+  and successful bundle reconciliation. Preserve the separate CRAN and full
+  development test profiles and clarify reference-blind repair documentation.
 
 # sas2r 0.5.8
 

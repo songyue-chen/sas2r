@@ -118,7 +118,7 @@ test_that("migration demo executes from local RDS input and produces dataset and
 
   for (result in list(res_single, res_dir)) {
     expect_true(file.exists(file.path(result$outputs_dir, "datasets", "adam", "final_ds.rds")))
-    expect_true(file.exists(file.path(result$outputs_dir, "tlf", "outputs", "table1.pdf")))
+    expect_true(file.exists(file.path(result$outputs_dir, "tlf", "table1.pdf")))
   }
 
   # Source-derived values for the synthetic input, including missingness and order.
@@ -136,7 +136,7 @@ test_that("migration demo executes from local RDS input and produces dataset and
     for (column in names(expected)) expect_equal(actual[[column]], expected[[column]])
     expect_identical(names(actual), names(expected))
     if (requireNamespace("pdftools", quietly = TRUE)) {
-      pages <- pdftools::pdf_text(file.path(result$outputs_dir, "tlf", "outputs", "table1.pdf"))
+      pages <- pdftools::pdf_text(file.path(result$outputs_dir, "tlf", "table1.pdf"))
       expect_length(pages, 1L)
       for (label in c(names(expected), "MISSING", "RECORDED", "12.5", "14.2", "9.8")) {
         expect_match(pages[[1L]], label, fixed = TRUE)

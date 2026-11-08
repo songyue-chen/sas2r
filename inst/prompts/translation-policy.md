@@ -31,3 +31,21 @@ Shared source-translation policy (translator, static reviewer, fixer):
 - lib_members("work") lists ordinary supported registry members for runtime list expansion; lib_delete("work", lib_members("work")) is valid only when source requests those members and deletion restrictions allow it. Listing does not authorize deletion of separate input files or expand views/ranges/name literals. Library contents remain outside authoring-agent access.
 
 - For dates, distinguish storage class, epoch, display format and value. A SAS format does not itself shift the stored number. A uniform numeric difference alone does not establish an epoch mismatch or authorize a conversion to match a reference.
+
+## Report destinations and descriptor order
+
+Use `sas_output_path("outputs/table.pdf", environment())` for a relative ODS/report
+file destination. It creates parent directories under the runtime output root's
+`tlf/`, removing one conventional leading `outputs/`. Keep meaningful subfolders.
+Never use `sas2r_assignment_path()` for a report: that helper resolves LIBNAME
+input paths against the source project. Do not concatenate another `outputs/`
+beneath `tlf/`. Absolute SAS report destinations need an explicit relative logical
+mapping; do not silently write outside the run.
+
+Preserve SAS descriptor/PDV column order, including in default PROC PRINT output.
+Variables first declared by LENGTH, ATTRIB, RETAIN, FORMAT or ARRAY before SET
+precede the input descriptor's remaining columns, in source first-occurrence order.
+A mutate that appends such variables is insufficient: explicitly relocate/select
+columns into their SAS order before writing. KEEP lists select columns but do not
+reorder their descriptor order. Do not sort column names or use a reference file's
+order to override executable SAS. Unsupported declarations still require review.

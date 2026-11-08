@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic OpenAI Chat Completions replay server for real-ellmer CI."""
+"""Deterministic provider protocol replay server for real-ellmer CI."""
 
 import argparse
 import json
@@ -88,16 +88,18 @@ class ReplayHandler(BaseHTTPRequestHandler):
         is_responses = self.path.endswith("/responses")
         is_anthropic_messages = self.path.endswith("/anthropic/v1/messages")
         is_gemini_generate = self.path.endswith(":generateContent")
+        is_gemini_interactions = self.path.endswith("/interactions")
         if not (
             is_chat_completions
             or is_responses
             or is_anthropic_messages
             or is_gemini_generate
+            or is_gemini_interactions
         ):
             self.send_error(
                 404,
                 "expected /chat/completions, /responses, "
-                "/anthropic/v1/messages, or :generateContent",
+                "/anthropic/v1/messages, :generateContent, or /interactions",
             )
             return
         length = int(self.headers.get("Content-Length", "0"))
@@ -156,6 +158,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
             response = self.anthropic_messages_response(body)
         elif is_gemini_generate:
             response = self.gemini_generate_content_response(body, "native-gemini" in self.path)
+        elif is_gemini_interactions:
+            response = self.gemini_interactions_response(body)
         elif is_chat_completions:
             response = self.chat_completions_response(body, response_kind)
         else:
@@ -326,6 +330,36 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "totalTokenCount": 125,
             },
             "modelVersion": "offline-gemini-model",
+        }
+
+    @staticmethod
+    def gemini_interactions_response(body):
+        """Gemini Interactions reply used by ellmer >= 0.5.1."""
+        native = "native-gemini" in body.get("model", "")
+        completed = sum(step.get("type") == "function_result"
+                        for step in body.get("input", []))
+        status = "completed"
+        if native and body.get("tools") and completed < 2:
+            batch = completed + 1
+            name = ("lookup_rulebook" if contains_pair(body["tools"], "name", "lookup_rulebook")
+                    else "lookup")
+            steps = [
+                {"type": "thought", "signature": f"c2lnbmF0dXJl{batch}",
+                 "summary": [{"type": "text", "text": f"native reasoning batch {batch}"}]},
+                {"type": "function_call", "id": f"native_{batch}",
+                 "name": name, "arguments": {"name": "round"}},
+            ]
+            status = "requires_action"
+        else:
+            text = ("gathered context" if native and body.get("tools")
+                    else json.dumps(structured_payload(body), separators=(",", ":")))
+            steps = [{"type": "model_output", "content": [{"type": "text", "text": text}]}]
+        return {
+            "id": "offline-gemini-interaction", "status": status,
+            "model": body.get("model"), "steps": steps,
+            "usage": {"total_input_tokens": 100, "total_output_tokens": 25,
+                      "total_cached_tokens": 0, "total_thought_tokens": 0,
+                      "total_tokens": 125},
         }
 
     def log_message(self, *_args):

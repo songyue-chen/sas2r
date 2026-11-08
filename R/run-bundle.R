@@ -86,7 +86,7 @@ materialize_run_outputs <- function(state) {
     relative <- if (identical(contract$kind[[1]], "dataset")) {
       parts <- split_ds(contract$logical_name[[1]])
       file.path("datasets", parts[["lib"]], paste0(parts[["member"]], ".", tools::file_ext(original)))
-    } else file.path("tlf", original)
+    } else file.path("tlf", sas2r_tlf_relative_path(contract$logical_name[[1]]))
     target <- file.path(state$paths$outputs, relative)
     dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
     if (!file.copy(candidate, target, overwrite = TRUE)) cli::cli_abort("Could not save {.file {candidate}}")

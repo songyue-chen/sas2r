@@ -57,31 +57,15 @@ find_attempt_candidate_file <- function(contract, attempt) {
     if (length(candidates) == 1L) return(normalizePath(candidates, winslash = "/", mustWork = TRUE))
     return(NA_character_)
   } else {
-    # TLF target
-    for (sdir in search_dirs) {
-      cands <- c(
-        file.path(sdir, t_key),
-        file.path(sdir, basename(t_key)),
-        file.path(sdir, l_name),
-        file.path(sdir, basename(l_name))
-      )
-      for (cand in cands) {
-        if (file.exists(cand) && !file.info(cand)$isdir) {
-          return(normalizePath(cand, winslash = "/", mustWork = FALSE))
-        }
-      }
-    }
-
-    # Recursive search within attempt directories
-    for (sdir in search_dirs) {
-      all_f <- list.files(sdir, recursive = TRUE, full.names = TRUE)
-      pattern <- paste0("(?i)(^|/)", basename(t_key), "$")
-      hits <- all_f[grepl(pattern, all_f)]
-      hits <- hits[!grepl("/bundle/|/logs/", hits)]
-      if (length(hits) > 0L) {
-        return(normalizePath(hits[1L], winslash = "/", mustWork = FALSE))
-      }
-    }
+    # Prefer the canonical report destination. Legacy relative writers are
+    # still collected by their exact logical path, never by basename alone.
+    logical <- if (length(l_name) && !is.na(l_name) && nzchar(l_name)) l_name else t_key
+    relative <- tryCatch(sas2r_tlf_relative_path(logical), error = function(e) NA_character_)
+    if (is.na(relative)) return(NA_character_)
+    candidates <- unique(c(file.path(c(attempt_dir, outputs_dir), "tlf", relative),
+      unlist(lapply(search_dirs, function(dir) file.path(dir, c(t_key, l_name, relative))))))
+    candidates <- candidates[file.exists(candidates) & !dir.exists(candidates)]
+    if (length(candidates)) return(normalizePath(candidates[1L], winslash = "/", mustWork = TRUE))
   }
 
   NA_character_
