@@ -1,0 +1,198 @@
+Versions:  sas2r=0.5.8, ellmer=0.5.0, R version 4.4.0 (2024-04-24) 
+Generated input dataset: <project>/data/input_ds.rds
+
+── sas2r preflight: ready_for_translation ──────────────────────────────────────
+1 source files; 2 output targets; 0 model calls
+Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned
+files.
+Main programs in dependency order: demo
+# A tibble: 4 × 7
+  dataset       file               line library_path status path  searched_paths
+  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>        
+1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>     
+2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>     
+3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>     
+4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>     
+# A tibble: 3 × 5
+  unit_id file                                             line unit_type reason
+    <int> <chr>                                           <int> <chr>     <chr> 
+1       1 /Users/chuckchen/Documents/sas2r-demo-video/va…     6 data_step unsup…
+2       3 /Users/chuckchen/Documents/sas2r-demo-video/va…    17 data_step unsup…
+3       5 /Users/chuckchen/Documents/sas2r-demo-video/va…    24 proc_step displ…
+Review deferred constructs; they require AI translation or manual
+implementation.
+AI diagnosis disabled; static inspection only.
+Output root:
+<project>/migration-output
+Budget: observe; max_usd=Inf; max_calls=Inf
+Concurrent translation limit: 1; local execution and repair remain serial.
+Static inspection only; inspect $libraries, $outputs, $budget for full details.
+# A tibble: 4 × 7
+  dataset       file               line library_path status path  searched_paths
+  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>        
+1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>     
+2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>     
+3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>     
+4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>     
+[1] TRUE
+ agent  type    status     tier attempt
+ probe final completed frontier       1
+Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned files.
+Main programs in dependency order: demo
+  Loaded versions: sas2r=0.5.8, ellmer=0.5.0, R=4.4.0
+Execution root: <project>
+Translation workers: 1 requested, 1 effective; local execution and repair: 1 at a time.
+translator: 30 tool calls per invocation
+reviewer: 30 tool calls per invocation
+fixer: 30 tool calls per invocation
+Repair limits: immediate_per_component=2, bundle_per_component=2, bundle_overall_cap=not_set, bundle_derived_ceiling=2
+  settings  gpt-5.6-luna: probing -- reasoning_effort=high, max_output_tokens=128000
+  settings  gpt-5.6-luna: verified -- reasoning_effort=high, max_output_tokens=128000
+  translator  demo (r1): program_translation
+  translator  demo (r1): ok, 3 tool calls
+  coordinator  demo (r1): program generated
+  coordinator  demo (r1): mechanical checks passed
+  reviewer  demo (r1): reviewing
+  reviewer  demo (r1): review completed: reviewed_no_material_finding, 1 tool call
+  coordinator  demo (r1): review completed -- reviewed_no_material_finding
+  smoke  demo: started [demo_1472d2e207960]
+  smoke  demo: passed [demo_1472d2e207960]
+  coordinator  all components: final component review started
+  coordinator  all components: final component review completed -- 0 reviewed, 1 reused, 0 unavailable
+  bundle  first pass started
+  bundle  first pass: running bundle_attempt_001
+  bundle  first pass: bundle_attempt_001 ran to completion
+  bundle  first pass: bundle_attempt_001 assessed -- migration_ready
+  bundle  first pass: bundle_attempt_001 selected
+INFO: Run migration-ready
+Preflight pipeline: complete; 1 covered, 0 intentionally excluded, 0 unplanned files.
+Main programs in dependency order: demo
+Translation workers: 1 effective
+Translation: 1 of 1 components have saved code; 0 could not finish
+Component fixes: NOT INVOKED
+Bundle execution: EXECUTED (1 attempt; 1 ran to completion, 0 failed; 0 deferred, 0 incomplete)
+Bundle-level fixes: NOT INVOKED
+Required validation: PASSED (see reference coverage)
+Next action: Inspect output and reference coverage before use.
+Details: <project>/migration-output/run_20261108T190326Z_b2e7a101/START_HERE.html
+  bundle  Elapsed: 119.7 seconds. Provider calls: 8. Known spend: $0.0295 (billed $0.0000; estimated $0.0295; unknown cost calls: 1).  bundle  Known token totals: input 124383; output 11920 (includes reasoning 9134). Cached input 53754; cache creation 70572. Unknown input usage calls: 1; unknown output usage calls: 1.  bundle  Effective limits (observe): max_usd=unlimited, max_calls=unlimited, max_retries=unlimited, max_tool_calls=unlimited, max_wall_time=unlimited, max_request_bytes=unlimited, max_request_chars=unlimited, max_input_tokens=unlimited, max_output_tokens=unlimited
+Start here: <project>/migration-output/run_20261108T190326Z_b2e7a101/START_HERE.html
+Bundle: <project>/migration-output/run_20261108T190326Z_b2e7a101/bundle
+Saved outputs: <project>/migration-output/run_20261108T190326Z_b2e7a101/outputs
+      agent    status     tier
+      probe completed frontier
+ translator completed frontier
+ translator completed frontier
+   reviewer completed frontier
+   reviewer completed frontier
+Report: <project>/migration-output/run_20261108T190326Z_b2e7a101/START_HERE.html
+# Generated by sas2r -- DETERMINISTIC TRANSLATION
+# NOT VERIFIED AGAINST SAS OUTPUTS -- THIS IS NOT PARITY.
+# Review required before any production use.
+
+# sas2r bootstrap: run from the bundle folder (autoexec.R holds the library
+# paths and loads the runtime), or source("autoexec.R", chdir = TRUE) once per session first.
+if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) source("autoexec.R", local = environment(), chdir = TRUE)
+
+input_ds <- lib_read("raw", "input_ds") |>
+  sas2r_fold_names()
+
+stg1 <- input_ds |>
+  dplyr::mutate(
+    aval_flag = sas_if_else(
+      sas_missing(aval),
+      "MISSING",
+      "RECORDED"
+    )
+  ) |>
+  dplyr::select(aval_flag, dplyr::everything())
+
+lib_write(stg1, "work", "stg1")
+
+stg_sort <- stg1 |>
+  sas_sort(by = c("trtp", "avisitn"))
+
+lib_write(stg_sort, "work", "stg_sort")
+
+final_ds <- stg_sort |>
+  dplyr::mutate(
+    high_flag = sas_if_else(
+      chr_cmp(aval_flag, "RECORDED", op = "==") &
+        chr_cmp(aval, 10, op = ">"),
+      1,
+      0
+    )
+  )
+
+lib_write(final_ds, "adam", "final_ds")
+
+dir.create("outputs", recursive = TRUE, showWarnings = FALSE)
+
+display_final <- final_ds |>
+  dplyr::mutate(dplyr::across(dplyr::everything(), sas_display))
+
+render_proc_print <- function(x) {
+  grDevices::pdf("outputs/table1.pdf")
+  on.exit(grDevices::dev.off(), add = TRUE)
+
+  graphics::par(mar = c(0.5, 0.5, 0.5, 0.5))
+  rows_per_page <- 40L
+  n_rows <- nrow(x)
+  n_cols <- ncol(x)
+  n_pages <- max(1L, ceiling(n_rows / rows_per_page))
+  x_pos <- if (n_cols == 1L) {
+    0.5
+  } else {
+    seq(0.12, 0.98, length.out = n_cols)
+  }
+
+  for (page in seq_len(n_pages)) {
+    graphics::plot.new()
+    graphics::text(0.02, 0.97, labels = "Obs", adj = 0, font = 2)
+    if (n_cols > 0L) {
+      graphics::text(
+        x_pos,
+        0.97,
+        labels = names(x),
+        adj = 0.5,
+        font = 2
+      )
+    }
+
+    first_row <- (page - 1L) * rows_per_page + 1L
+    last_row <- min(page * rows_per_page, n_rows)
+    page_rows <- if (first_row <= last_row) {
+      first_row:last_row
+    } else {
+      integer(0)
+    }
+
+    if (length(page_rows) > 0L) {
+      y_pos <- seq(0.93, 0.05, length.out = length(page_rows))
+      for (i in seq_along(page_rows)) {
+        row_id <- page_rows[i]
+        graphics::text(0.02, y_pos[i], labels = as.character(row_id), adj = 0)
+        if (n_cols > 0L) {
+          for (j in seq_len(n_cols)) {
+            graphics::text(
+              x_pos[j],
+              y_pos[i],
+              labels = as.character(x[row_id, j]),
+              adj = 0.5
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+render_proc_print(display_final)
+PASS: 5 rows, values, missingness, flags, row order, and PDF text. These are tutorial checks, not SAS-reference equivalence.
+  aval_flag usubjid avisitn aval  trtp high_flag
+1  RECORDED      01       1 12.5 TRT A         1
+5  RECORDED      05       1 14.2 TRT A         1
+3  RECORDED      03       2 15.0 TRT A         1
+2   MISSING      02       1   NA TRT B         0
+4  RECORDED      04       2  9.8 TRT B         0
+LIVE TUTORIAL PASS

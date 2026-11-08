@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-08",
+  "provider": "OpenAI",
+  "model": "gpt-5.6-luna",
+  "sas2r": "0.5.8",
+  "ellmer": "0.5.0",
+  "R": "4.4.0",
+  "run_id": "run_20261108T190326Z_b2e7a101",
+  "status": "migration_ready",
+  "status_reason": null,
+  "source": "Corrected tutorial example in companion/example; CRAN main untouched",
+  "probe": "passed",
+  "data_checks": "5 rows, values, missingness, flags, column names and row order passed",
+  "pdf_checks": "PDF text passed; all rows/columns visually present. Loose spacing and tight Obs/first heading remain; no SAS-formatting equivalence claimed.",
+  "export": "Fresh R process without OPENAI_API_KEY; dataset and PDF checks passed",
+  "sas_reference_equivalence": "Not established; no independently SAS-generated reference supplied",
+  "previous_run": "First corrected-source run executed but retained a sort review finding after one repair. It was not accepted as successful. Final script allows two component repair rounds and documents the synthetic input schema.",
+  "translation_seconds": 119.7,
+  "reported_provider_calls": 8,
+  "known_estimated_usd": 0.0295,
+  "unknown_cost_calls": 1
+}

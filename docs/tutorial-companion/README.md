@@ -1,71 +1,77 @@
-# sas2r tutorial companion scripts
+# sas2r tutorial companion
 
-Companion download v1 for the sas2r 0.5.8 tutorial.
+**[Download the corrected tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
 
-**[Download sas2r-tutorial-companion.zip](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
+Revision 2 supplies a corrected, self-contained tutorial example for CRAN sas2r
+0.5.8. Extract the ZIP, open `companion/`, and copy **all its contents**, including
+`example/`, into a **new, empty RStudio project**. Open `demo.R` and run it section
+by section. Keep earlier runs for diagnosis; use a fresh project for this revision.
 
-Extract the ZIP, open `companion/`, and copy the three `.R` scripts into a new,
-empty RStudio project. Open `demo.R` and run it section by section. The included
-`README.txt` supplies setup instructions. The OpenAI configuration block is
-also included as a commented YAML template at the end of `demo.R`.
+## What changed
+
+The original package example uses a macro-based dataset reference that 0.5.8 can
+miss during dependency discovery. It also leaves `AVAL_FLAG` at the seven-character
+length established by `'MISSING'`, truncating `'RECORDED'`. The corrected tutorial
+uses `set raw.input_ds;` and `length AVAL_FLAG $8;` explicitly. These are documented
+source changes, not changes to the installed package or a workaround that hides
+translation differences.
+
+`demo.R` now checks that `raw.input_ds` is available **before paid provider calls**,
+allows up to two component repair rounds, preserves existing YAML settings, and checks the generated dataset and PDF before
+export. The commented OpenAI YAML template remains at the end of `demo.R`.
 
 ## Which files come from where?
 
-The **CRAN package includes** `demo.sas`, `_sas2r.yml`, `make-input.R`, and
-`README.md` under `examples/migration-demo`. Find the installed example in R:
+CRAN still includes the **original** `demo.sas`, `_sas2r.yml`, `make-input.R`, and
+`README.md` under `examples/migration-demo`:
 
 ```r
-installed_demo <- system.file("examples", "migration-demo", package = "sas2r")
-cat(installed_demo, "\n")
-cat(list.files(installed_demo), sep = "\n")
+system.file("examples", "migration-demo", package = "sas2r")
 ```
 
-The **tutorial companion scripts are provided separately**:
+For this walkthrough, use the **corrected example supplied in this download**.
+Do not overwrite it with the original CRAN example.
 
-| Script | Purpose |
+| File | Purpose |
 | --- | --- |
-| [demo.R](companion/demo.R) | Follow the tutorial: copy the bundled example, generate synthetic inputs, preflight, translate, inspect, and export. |
-| [preflight-llm.R](companion/preflight-llm.R) | Test the configured model with `sas_llm_probe()` and inspect the latest probe log entry. |
-| [read-llm-log.R](companion/read-llm-log.R) | Read model activity from a returned migration run's diagnostic log. |
+| [demo.R](companion/demo.R) | Setup, configuration pause, input preflight, probe, translation, inspection, verification and export. |
+| [preflight-llm.R](companion/preflight-llm.R) | Real provider probe and latest log entry. |
+| [read-llm-log.R](companion/read-llm-log.R) | Model activity from the returned run's log. |
+| [verify-output.R](companion/verify-output.R) | Dataset and PDF-content checks after execution. |
+| [example/](companion/example) | Corrected SAS, base YAML, input generator, expected values, and provenance notes. |
+| [README.txt](companion/README.txt) | Step-by-step setup and interpretation. |
 
-These three scripts are not installed by CRAN. `sas2r-demo` is simply the project
-folder name chosen in the video. The companion ZIP contains the three scripts
-plus [README.txt](companion/README.txt); the example itself is copied from your
-installed package by `demo.R`.
+The scripts and corrected example are separate tutorial materials on this branch;
+`main` remains reserved for the CRAN package.
 
 ## Run the tutorial
 
-1. Install `sas2r` and `ellmer`. Store your OpenAI credential in your user
-   `.Renviron`, save, and restart R, as shown in the video.
-2. Extract the companion ZIP and copy its three R scripts into your project.
-3. Open `demo.R`. Run its setup section to copy the bundled example and generate
-   the five synthetic observations.
-4. At the marked pause, copy the commented OpenAI YAML block at the end of
-   `demo.R`. Remove only the leading `# ` from each line and append it below
-   `outputs` in the same `_sas2r.yml`, preserving indentation and the existing
-   library/output settings. If `llm` exists, update it instead of duplicating it.
-   Keep the template commented in R, keep credentials out of YAML, and save.
-   The selected model must be available to your account.
-5. Continue section by section: connection probe, offline source preflight,
-   translation, log inspection, output review, and export.
+1. Install `sas2r`, `ellmer`, and `pdftools`. Store your OpenAI credential in your
+   user `.Renviron`, save, and restart R. Never print or share the key.
+2. Copy **all** extracted companion contents into a new project, including `example/`.
+3. Run the setup section of `demo.R` to copy the corrected source and generate inputs.
+4. At the pause, copy the **11 commented YAML lines** at the end of `demo.R` into
+   the **same `_sas2r.yml`**, below `outputs`. Remove only the leading `# ` from
+   each pasted line. Preserve indentation; align `llm` with `libraries` and
+   `outputs`. Update an existing `llm` section instead of duplicating it. Save.
+5. Run offline preflight and confirm `raw.input_ds` is **available**.
+6. Run the model probe, then translation. These make provider requests and may
+   incur charges. Confirm model access and billing/credits. The supplied profile
+   does not impose a total spending cap.
+7. Inspect status, generated R, `START_HERE.html`, and the model log. Run the output
+   checks; inspect the PDF visually. Export after checking the results.
 
-The probe and translation make provider requests when you run the scripts and
-may incur charges. The example profile does not impose a total spending cap.
+## Verification and limits
 
-## Verification and interpretation
+See [live verification](verification/README.md) for the real OpenAI test and its
+saved evidence. The video reconstructs interfaces; it is not a screen recording.
+Its optional seeded repair example remains a separate offline demonstration.
+A successful probe alone does not verify a full migration or tool calling.
 
-The scripts were checked against an isolated CRAN sas2r 0.5.8 installation with
-deterministic offline test adapters. Probe success, FALSE, and error/log paths
-were exercised, along with translator/reviewer/fixer activity and output checks.
-The video uses reconstructed interfaces; it is not a recorded live OpenAI run.
-A successful probe checks a structured ping, not a full migration or tool call.
-No SAS reference output is included, so these checks do not establish SAS
-reference equivalence. A fixer is invoked when needed, not in every migration.
-
-## Video description
-
-Suggested link text: **Download the sas2r tutorial companion scripts**.
-Link to this README for context, or to the ZIP download above for a direct download.
+`example/expected-final.csv` contains tutorial expectations derived from the
+corrected source and synthetic input. It is **not independently generated by SAS**,
+is checked only after translation, and is not configured as a SAS reference.
+Successful execution and these checks **do not establish SAS-reference equivalence**.
 
 [CRAN package](https://CRAN.R-project.org/package=sas2r) ·
-[Provider configuration](../llm-providers.md)
+[Provider configuration](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)

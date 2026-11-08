@@ -1,6 +1,6 @@
 # Run in the prepared RStudio project after saving _sas2r.yml.
 # This script makes a real provider request (billable when applicable).
-# Its video demonstration uses an offline test adapter instead.
+# The tutorial main example is verified with a real OpenAI request.
 library(sas2r)
 project_dir <- normalizePath(".", winslash = "/")
 cfg <- sas_config(file.path(project_dir, "_sas2r.yml"))

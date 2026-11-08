@@ -1,58 +1,57 @@
-sas2r tutorial companion scripts
+sas2r tutorial companion — corrected example (revision 2)
 
-These scripts are supplied separately with the tutorial. They are NOT files
-installed by install.packages("sas2r"). The folder name sas2r-demo in the video
-is simply the name chosen for the viewer's RStudio project.
+Use a NEW, writable RStudio project for this revision. Extract the ZIP, open
+companion/, and copy ALL its contents into the project, including example/.
+Do not copy only the R scripts. Open demo.R and run it section by section.
+If you used an earlier download, keep that run for diagnosis and start fresh.
 
-Included here (inside companion/):
-  demo.R           Follow the tutorial step by step in RStudio.
-  preflight-llm.R   Probe the configured model; print the latest probe log entry.
-  read-llm-log.R    Inspect model activity after sas_translate() returns result.
+Files and provenance
+- CRAN sas2r 0.5.8 includes its original example under examples/migration-demo.
+  Locate it with system.file("examples", "migration-demo", package = "sas2r").
+- This download supplies a corrected tutorial-specific example in example/.
+  It uses SET raw.input_ds and LENGTH AVAL_FLAG $8. This avoids the original
+  macro-input discovery problem and the seven-character truncation of RECORDED.
+- demo.R copies this corrected example into your project, preserving existing
+  files and edited YAML. It stops if demo.sas differs from this revision.
+- preflight-llm.R probes the provider and reads its log.
+- read-llm-log.R prints model activity from the returned run.
+- verify-output.R checks actual outputs against example/expected-final.csv.
+  These expectations are derived from the corrected source and synthetic input.
+  They are NOT SAS-generated reference results and do not prove SAS equivalence.
 
-The example itself IS included with CRAN sas2r 0.5.8:
-  demo.sas, _sas2r.yml, make-input.R, README.md
-Find those installed files in R:
+Steps
+1. Install sas2r, ellmer, and pdftools from CRAN.
+2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.
+   Check nzchar(Sys.getenv("OPENAI_API_KEY")); never print the credential.
+3. Run demo.R's setup to copy the corrected example and generate five rows.
+4. PAUSE at configuration. Copy the 11 commented YAML lines at the end of
+   demo.R into the SAME _sas2r.yml, below outputs. Remove only the leading
+   "# " from each pasted line; preserve indentation. Keep libraries and outputs.
+   Align llm at their top level; update an existing llm block, never duplicate it.
+   Save. Leave the template commented in demo.R. Keep the key out of YAML.
+5. Run offline sas_preflight(..., diagnose = "off"). Confirm raw.input_ds is
+   available. The script stops before provider calls if it is not available.
+6. Run preflight-llm.R. A TRUE probe checks a structured ping, not the complete
+   migration. Inspect the log and fix any error before translating.
+7. Run sas_translate() with up to two component repair rounds. Probe and translation make real provider requests and
+   may incur charges. This example profile has no total spending cap. Confirm
+   account billing/credits and access to the configured model before running.
+8. Inspect status, START_HERE.html, generated R, and the model activity log.
+9. Run verify-output.R and verify_demo_output(result, project_dir). It requires
+   migration_ready, five expected rows, correct values/missingness/flags/order,
+   and PDF text content. It stops on a mismatch. Inspect the PDF visually too.
+10. After the checks pass, export into a new folder with sas_write(). Read the
+    exported README.md before running the exported R in a fresh session.
 
-  installed_demo <- system.file("examples", "migration-demo", package = "sas2r")
-  cat(installed_demo, "\n")
-  cat(list.files(installed_demo), sep = "\n")
+Important interpretation
+An input file, an expected-value check, and an independently generated SAS
+reference are different things. No SAS installation or SAS reference output
+is included. An AI run can require repair or fail; inspect every run's evidence.
+The video uses reconstructed interfaces and synthetic data. Its main workflow
+is backed by a real OpenAI test; the optional small repair fixture is offline.
+See the GitHub verification notes for the tested versions, outcome and limits.
 
-Getting started:
-1. Install sas2r and ellmer, configure OPENAI_API_KEY in your user .Renviron,
-   save and restart R as shown in the video.
-2. Create a new, empty RStudio project at a location you choose.
-3. Extract sas2r-tutorial-companion.zip and open its companion folder.
-4. Copy its three .R files into the RStudio project. Open demo.R.
-5. Run demo.R interactively, section by section. It copies the bundled example
-   into the project and creates the five synthetic input observations.
-6. At PAUSE, add the following llm block below outputs in the same _sas2r.yml.
-   It is also provided as a commented template at the end of demo.R: remove
-   only the leading "# " when copying it to YAML; keep the indentation.
-   Keep it commented in R. Preserve libraries and outputs, update an existing
-   llm section instead of duplicating it, and put no API key in YAML.
-
-llm:
-  provider: openai
-  auth_mode: api_key
-  model: gpt-5.6-luna
-  reasoning_effort: high
-  max_output_tokens: 128000
-  capabilities:
-    structured_output: native
-    tool_calling: native
-  timeout_seconds: 900
-  max_tries: 1
-
-7. Save the configuration and continue demo.R. The connection probe and
-   translation use your provider account and may incur charges. The selected
-   model must be accessible to your account; this profile is not a spending cap.
-8. Review status, diagnostics, generated code, datasets, and PDF before export.
-
-The video uses reconstructed interfaces and deterministic offline test adapters.
-No live OpenAI authentication or translation was recorded. The separate repair
-example seeds a +20 draft for SAS +10; the corrected outputs were 11 and 17.
-The probe demonstrates a structured ping, not full tool-calling or migration
-validation. No SAS reference output is supplied, so equivalence is not established.
-
-Package: https://CRAN.R-project.org/package=sas2r
-Documentation: https://github.com/songyue-chen/sas2r
+Downloads and verification
+https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
+https://CRAN.R-project.org/package=sas2r
+https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
