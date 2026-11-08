@@ -79,6 +79,10 @@
     "text": "Each included SAS file is translated once into its own staged module; this\nexecutes that module at one include site, into the calling program's own\nenvironment, exactly where the %INCLUDE stood.\n\nThe path is relative to the staged module root, and never to the working\ndirectory. The editable bundle sets this to programs/ in autoexec.R;\nflat execution snapshots use the nearest ancestor holding autoexec.R. Absolute\npaths and . or .. components are rejected, and the file the joined path\nactually resolves to is then required to lie under the root: rejecting the\ncomponents alone would still let a symlinked directory inside the bundle\nread outside it, so the confinement is checked on the resolved path, where\na hand-edited bundle cannot talk its way out.\n\nArguments:\nrelative_path: The module's path relative to the staged module root.\nenvir: The environment to run it in; the caller's by default.\n\nReturns:\nThe resolved path of the module, invisibly.\n\nExamples:\n# inside a translated program, where the SAS source had %include 'inc/prep.sas';\nsas2r_source_include(\"inc/prep.R\")",
     "dots": false
   },
+  "sas2r_tlf_relative_path": {
+    "text": "Relative location of a report within the TLF directory\n\nArguments:\npath: A relative logical report path.\n\nReturns:\nA relative path with one conventional leading outputs/ removed.",
+    "dots": false
+  },
   "sas_compress": {
     "text": "sas_compress() is COMPRESS: every character listed in chars is\nremoved literally, including ] and -. SAS modifiers are unsupported. sas_substr() is SUBSTR; a NULL\nlen reads to the end of the string. sas_length() is LENGTH: trailing\nblanks do not count, and a missing or blank value has length 1, as in SAS.\n\nArguments:\nx: A character vector (or a vector coerced to character).\nchars: Characters to remove.\npos, len: Start position and length, as in SAS.\n\nReturns:\nsas_compress() and sas_substr() return character vectors;\nsas_length() an integer vector.\n\nExamples:\nsas_compress(\"a b c\")\nsas_substr(\"abcdef\", 2, 3)\nsas_length(c(\"abc  \", \"\", NA))",
     "dots": false
@@ -113,6 +117,10 @@
   },
   "sas_missing": {
     "text": "Character missing is NA or all spaces. Numeric missing is NA (including\ntagged missing values). A missing or zero numeric condition is false.\nCharacter conditions convert to numeric; nonnumeric text is false.\n\nArguments:\nx: A vector.\n\nReturns:\nA logical vector with no missing values.\n\nExamples:\nsas_missing(c(\"\", \" \", NA, \"A\"))\nsas_true(c(NA, 0, 1, -1))",
+    "dots": false
+  },
+  "sas_output_path": {
+    "text": "Use this helper for ODS/report files, not for input libraries. A logical\noutputs/tables/report.pdf maps to <output_root>/tlf/tables/report.pdf.\nOne conventional leading outputs/ is removed; meaningful subfolders remain.\nThe parent directory is created. Absolute source paths require an explicit\nrelative logical destination in the translated program.\n\nArguments:\npath: Relative logical report path from the SAS output contract.\nenv: Local runtime environment containing .sas2r_output_root.\nDefaults to the calling environment. When called interactively, pass the\nenvironment into which the bundle's autoexec.R was sourced.\n\nReturns:\nCharacter scalar destination path. No working-directory fallback\nis used when the runtime output root is absent.",
     "dots": false
   },
   "sas_put": {

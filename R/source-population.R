@@ -52,13 +52,14 @@ source_population_specs <- function(project, component_ids) {
     repeated <- outputs[duplicated(outputs)]
     librefs <- tolower(stmts$text[stmts$first_token == "libname"])
     rebound <- length(librefs) > 0L
-    lapply(rules, function(rule) {
+    rules <- lapply(rules, function(rule) {
       if (rebound || any(rule$outputs %in% c(repeated, rule$inputs))) {
         rule$status <- "unverified"
         rule$reason <- "source_rewrite_or_rebinding"
       }
       rule
     })
+    c(rules, source_column_order_specs(project, id))
   }), component_ids)
 }
 
@@ -103,6 +104,14 @@ observe_source_population <- function(specs, env) {
       if (is.null(value) && !name %in% produced) read_member(name) else value
     })
     if (!all(vapply(data, is.data.frame, logical(1)))) return(list(status = "unverified", reason = "source_input_unavailable"))
+    if (rule$route == "column_order") {
+      expected <- unique(c(rule$prefix, tolower(names(data[[1L]]))))
+      actual <- head(tolower(names(df)), length(expected))
+      return(list(status = if (identical(actual, expected)) "passed" else "failed",
+        reason = "source_column_order", expected_columns = expected, actual_columns = actual,
+        detail = paste("SAS column order requires LENGTH declarations before SET first:",
+          paste(rule$prefix, collapse = ", "), "; followed by the remaining input columns in descriptor order")))
+    }
     if (rule$route == "datastep") {
       expected <- nrow(data[[1]])
       return(list(status = if (nrow(df) == expected) "passed" else "failed",
@@ -148,10 +157,13 @@ observe_source_population <- function(specs, env) {
           if (is.null(detail)) detail <- sprintf("expected %d rows, got %d; mismatched BY groups: %s",
             result$expected_rows, result$actual_rows,
             if (is.null(result$mismatched_by_groups)) "n/a" else result$mismatched_by_groups)
-          stop(structure(list(message = sprintf("Source population check failed for %s (%s): %s",
+          column_order <- identical(result$reason, "source_column_order")
+          stop(structure(list(message = sprintf("Source check failed for %s (%s): %s",
             name, result$reason, detail),
-            call = NULL, population_check = results[[i]]),
-            class = c("sas2r_population_mismatch", "error", "condition")))
+            call = NULL, population_check = results[[i]],
+            identifiers = if (column_order) rule$prefix else character()),
+            class = c(if (column_order) "sas2r_column_order_mismatch" else "sas2r_population_mismatch",
+              "error", "condition")))
         }
       }
     }

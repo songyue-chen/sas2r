@@ -359,6 +359,35 @@ sas2r_assignment_path <- function(path, env) {
   normalizePath(path.expand(path), winslash = "/", mustWork = FALSE)
 }
 
+sas2r_tlf_relative_path <- function(path) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path))
+    stop("Report path must be a non-empty relative path", call. = FALSE)
+  path <- gsub("\\\\", "/", path)
+  path <- sub("^(\\./)+", "", path)
+  if (grepl("^(/|[A-Za-z]:|~)", path))
+    stop("Use a relative logical report path within the output root", call. = FALSE)
+  parts <- character()
+  for (part in strsplit(path, "/", fixed = TRUE)[[1L]]) {
+    if (part %in% c("", ".")) next
+    if (part == "..") {
+      if (!length(parts)) stop("Report path escapes the logical output root", call. = FALSE)
+      parts <- head(parts, -1L)
+    } else parts <- c(parts, part)
+  }
+  path <- sub("^outputs/", "", paste(parts, collapse = "/"), ignore.case = TRUE)
+  if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
+  path
+}
+
+sas_output_path <- function(path, env = parent.frame()) {
+  root <- get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
+    stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
+  dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  dest
+}
+
 sas2r_libname_clear <- function(libref) {
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)

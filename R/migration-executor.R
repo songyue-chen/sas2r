@@ -260,7 +260,7 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   list(plan = plan, attempt_dir = dir, runtime = list(
     autoexec = file.path(dir, "autoexec.R"), helpers = helpers,
     output_dirs = c(vapply(libraries, function(entry) entry$write_path, character(1)),
-                    libraries = file.path(dir, "libraries"))))
+                    libraries = file.path(dir, "libraries"), tlf = file.path(dir, "tlf"))))
 }
 
 #' Run a program smoke test in a fresh callr subprocess
@@ -686,7 +686,8 @@ agent_error_facts <- function(condition, source_code = "") {
     kind <- "subscript_out_of_bounds"
   if (kind == "unclassified_error" && "rlang_error" %in% raw_classes &&
       any(grepl("^.* must be a logical vector, not ", lines))) kind <- "filter_not_logical"
-  helper_kinds <- c(sas2r_dataset_not_found = "dataset_not_found",
+  helper_kinds <- c(sas2r_column_order_mismatch = "source_column_order",
+    sas2r_dataset_not_found = "dataset_not_found",
     sas2r_unknown_libref = "unknown_library", sas2r_libref_member_error = "invalid_member",
     sas2r_lib_read_arguments = "lib_read_arguments", sas2r_lib_write_arguments = "lib_write_arguments",
     sas2r_library_unavailable = "library_unavailable", sas2r_write_format = "unsupported_write_format")
@@ -704,7 +705,8 @@ agent_error_facts <- function(condition, source_code = "") {
   call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
   location <- intersect(call_text, facts$calls)
   location <- if (length(location)) location[1L] else NA_character_
-  labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
+  labels <- c(source_column_order = "SAS column order mismatch: place LENGTH declarations before SET ahead of remaining input columns in descriptor order",
+    dataset_not_found = "Dataset not found", object_not_found = "Object not found",
     column_not_found = "Column not found", function_not_found = "Function not found",
     missing_argument = "Required argument missing", invalid_argument = "Invalid argument",
     unused_argument = "Unused argument",

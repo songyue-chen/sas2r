@@ -1,3 +1,6 @@
+> Development preview: **0.6.0 beta**. The CRAN release remains 0.5.8.
+> See [NEWS.md](NEWS.md) for changes since that release.
+
 # sas2r: SAS to R for clinical programming
 
 **sas2r** helps statistical programmers and biostatisticians translate SAS

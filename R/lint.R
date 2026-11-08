@@ -30,12 +30,14 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "sas2r_lib_member_path", "sas2r_lib_member_file", "sas2r_libref_stop",
                         "$.sas2r_dataset", "[[.sas2r_dataset", "$<-.sas2r_dataset", "[[<-.sas2r_dataset", "split_ds",
                         "sas_display", "sas2r_registry_env",
-                        "sas2r_resolve_registry", "sas2r_assignment_path")
+                        "sas2r_resolve_registry", "sas2r_assignment_path",
+                        "sas_output_path", "sas2r_tlf_relative_path")
 
 
 SAS2R_PROTECTED_HELPERS <- c("lib_write", "lib_read", "sas2r_lib_member_file",
   "sas2r_registry_env", "sas2r_lib_member_path", "sas2r_source_include",
-  "sas2r_libname_assign", "sas2r_assignment_path", "lib_delete")
+  "sas2r_libname_assign", "sas2r_assignment_path", "lib_delete",
+  "sas_output_path", "sas2r_tlf_relative_path")
 
 BANNED_FUNCTIONS <- c("system", "system2", "shell", "download.file", "url",
                       "unlink", "file.remove", "Sys.setenv", "source",
