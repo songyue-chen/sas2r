@@ -100,4 +100,3 @@ render_proc_print <- function(x) {
 }
 
 render_proc_print(display_final)
-

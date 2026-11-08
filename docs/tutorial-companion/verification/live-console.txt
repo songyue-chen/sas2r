@@ -1,4 +1,4 @@
-Versions:  sas2r=0.5.8, ellmer=0.5.0, R version 4.4.0 (2024-04-24) 
+Versions:  sas2r=0.5.8, ellmer=0.5.0, R version 4.4.0 (2024-04-24)
 Generated input dataset: <project>/data/input_ds.rds
 
 ── sas2r preflight: ready_for_translation ──────────────────────────────────────
@@ -8,14 +8,14 @@ files.
 Main programs in dependency order: demo
 # A tibble: 4 × 7
   dataset       file               line library_path status path  searched_paths
-  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>        
-1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>     
-2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>     
-3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>     
-4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>     
+  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>
+1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>
+2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>
+3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>
+4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>
 # A tibble: 3 × 5
   unit_id file                                             line unit_type reason
-    <int> <chr>                                           <int> <chr>     <chr> 
+    <int> <chr>                                           <int> <chr>     <chr>
 1       1 /Users/chuckchen/Documents/sas2r-demo-video/va…     6 data_step unsup…
 2       3 /Users/chuckchen/Documents/sas2r-demo-video/va…    17 data_step unsup…
 3       5 /Users/chuckchen/Documents/sas2r-demo-video/va…    24 proc_step displ…
@@ -29,11 +29,11 @@ Concurrent translation limit: 1; local execution and repair remain serial.
 Static inspection only; inspect $libraries, $outputs, $budget for full details.
 # A tibble: 4 × 7
   dataset       file               line library_path status path  searched_paths
-  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>        
-1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>     
-2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>     
-3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>     
-4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>     
+  <chr>         <chr>             <int> <chr>        <chr>  <chr> <list>
+1 raw.input_ds  /Users/chuckchen…     8 /Users/chuc… avail… /Use… <chr [3]>
+2 work.stg1     /Users/chuckchen…    13 <session wo… gener… <NA>  <chr [0]>
+3 work.stg_sort /Users/chuckchen…    18 <session wo… gener… <NA>  <chr [0]>
+4 adam.final_ds /Users/chuckchen…    24 /Users/chuc… gener… <NA>  <chr [0]>
 [1] TRUE
  agent  type    status     tier attempt
  probe final completed frontier       1
