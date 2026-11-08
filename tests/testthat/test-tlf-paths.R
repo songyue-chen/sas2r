@@ -22,7 +22,7 @@ test_that("TLF lookup respects full logical paths instead of matching a basename
   contract <- list(kind = "tlf", target_key = "outputs/tables/same.pdf",
     logical_name = "outputs/tables/same.pdf")
   expect_identical(find_attempt_candidate_file(contract, list(attempt_dir = root)),
-    normalizePath(file.path(root, "tlf", "tables", "same.pdf")))
+    normalizePath(file.path(root, "tlf", "tables", "same.pdf"), winslash = "/"))
   contract$target_key <- contract$logical_name <- "outputs/missing/same.pdf"
   expect_true(is.na(find_attempt_candidate_file(contract, list(attempt_dir = root))))
 })
