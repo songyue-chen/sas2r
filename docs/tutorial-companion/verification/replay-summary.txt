@@ -1,0 +1,9 @@
+Generated input dataset: <validation-root>/replay-final/data/input_ds.rds
+mode: final
+package: <validation-root>/final/library/sas2r
+status: migration_ready
+reason: 
+smoke passed: FALSE
+bundle passed: TRUE
+output checks passed: TRUE
+attempt: <validation-root>/replay-final/replay/run_20261108T205420Z_8595fe83/diagnostics/bundle_attempts/bundle_attempt_001

@@ -1,4 +1,4 @@
-sas2r tutorial companion — corrected example (revision 2)
+sas2r tutorial companion — tested GitHub build (revision 3)
 
 Use a NEW, writable RStudio project for this revision. Extract the ZIP, open
 companion/, and copy ALL its contents into the project, including example/.
@@ -20,7 +20,11 @@ Files and provenance
   They are NOT SAS-generated reference results and do not prove SAS equivalence.
 
 Steps
-1. Install sas2r, ellmer, and pdftools from CRAN.
+1. Install the tested build for this update (PR #63; not yet CRAN):
+   install.packages(c("remotes", "ellmer", "pdftools"))
+   remotes::install_github("songyue-chen/sas2r", ref = "e9d120613d1254ae3772f26d9eb7bac23cba5636")
+   https://github.com/songyue-chen/sas2r/pull/63
+   Restart R if sas2r was already loaded.
 2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.
    Check nzchar(Sys.getenv("OPENAI_API_KEY")); never print the credential.
 3. Run demo.R's setup to copy the corrected example and generate five rows.
@@ -41,14 +45,19 @@ Steps
    migration_ready, five expected rows, correct values/missingness/flags/order,
    and PDF text content. It stops on a mismatch. Inspect the PDF visually too.
 10. After the checks pass, export into a new folder with sas_write(). Read the
-    exported README.md before running the exported R in a fresh session.
+    exported README.md. In a fresh session in your project, run
+    source("run-export.R"). It prepares the relative PDF folder for this example
+    and runs exported-r/run.R without any provider calls. Then inspect the outputs.
+    The standalone runner does not change the original migration status.
 
 Important interpretation
 An input file, an expected-value check, and an independently generated SAS
 reference are different things. No SAS installation or SAS reference output
 is included. An AI run can require repair or fail; inspect every run's evidence.
 The video uses reconstructed interfaces and synthetic data. Its main workflow
-is backed by a real OpenAI test; the optional small repair fixture is offline.
+is backed by real OpenAI tests. The latest run repaired a missing PDF directory
+and an invalid printing width. A separate replay reproduces the stale smoke-error
+bug and its fix.
 See the GitHub verification notes for the tested versions, outcome and limits.
 
 Downloads and verification

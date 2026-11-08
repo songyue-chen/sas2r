@@ -1,6 +1,6 @@
 # sas2r tutorial: extract the entire companion folder into a writable project.
 # Run this script section by section, stopping at the configuration pause.
-# Install once: install.packages(c("sas2r", "ellmer", "pdftools"))
+# Install the tested GitHub build from README.txt (PR #63; not yet CRAN).
 # Store OPENAI_API_KEY in your user .Renviron, then restart R.
 # file.edit(path.expand("~/.Renviron"))
 # nzchar(Sys.getenv("OPENAI_API_KEY"))  # Presence only; never print the key.

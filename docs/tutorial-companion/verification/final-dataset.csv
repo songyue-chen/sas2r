@@ -1,6 +1,6 @@
-"aval_flag","usubjid","avisitn","aval","trtp","high_flag"
-"RECORDED","01",1,12.5,"TRT A",1
-"RECORDED","05",1,14.2,"TRT A",1
-"RECORDED","03",2,15,"TRT A",1
-"MISSING","02",1,,"TRT B",0
-"RECORDED","04",2,9.8,"TRT B",0
+"usubjid","avisitn","aval","trtp","aval_flag","high_flag"
+"01",1,12.5,"TRT A","RECORDED",1
+"05",1,14.2,"TRT A","RECORDED",1
+"03",2,15,"TRT A","RECORDED",1
+"02",1,NA,"TRT B","MISSING",0
+"04",2,9.8,"TRT B","RECORDED",0

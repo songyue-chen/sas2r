@@ -6,97 +6,79 @@
 # paths and loads the runtime), or source("autoexec.R", chdir = TRUE) once per session first.
 if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) source("autoexec.R", local = environment(), chdir = TRUE)
 
-input_ds <- lib_read("raw", "input_ds") |>
+raw_input <- lib_read("raw", "input_ds") |>
   sas2r_fold_names()
 
-stg1 <- input_ds |>
+stg1 <- raw_input |>
   dplyr::mutate(
     aval_flag = sas_if_else(
       sas_missing(aval),
       "MISSING",
       "RECORDED"
     )
-  ) |>
-  dplyr::select(aval_flag, dplyr::everything())
-
+  )
 lib_write(stg1, "work", "stg1")
 
-stg_sort <- stg1 |>
-  sas_sort(by = c("trtp", "avisitn"))
-
+stg_sort <- sas_sort(
+  stg1,
+  by = c("trtp", "avisitn")
+)
 lib_write(stg_sort, "work", "stg_sort")
 
 final_ds <- stg_sort |>
   dplyr::mutate(
     high_flag = sas_if_else(
-      chr_cmp(aval_flag, "RECORDED", op = "==") &
-        chr_cmp(aval, 10, op = ">"),
+      sas_true(
+        chr_cmp(aval_flag, "RECORDED", op = "==") & (aval > 10)
+      ),
       1,
       0
     )
   )
-
 lib_write(final_ds, "adam", "final_ds")
 
-dir.create("outputs", recursive = TRUE, showWarnings = FALSE)
+render_proc_print <- function(df) {
+  shown <- data.frame(
+    Obs = seq_len(nrow(df)),
+    df,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  shown <- as.data.frame(
+    lapply(shown, sas_display),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
 
-display_final <- final_ds |>
-  dplyr::mutate(dplyr::across(dplyr::everything(), sas_display))
+  old_options <- options(width = 10000L)
+  on.exit(options(old_options), add = TRUE)
+  lines <- utils::capture.output(print(shown, row.names = FALSE))
+  page_size <- 50L
+  starts <- seq.int(1L, max(1L, length(lines)), by = page_size)
 
-render_proc_print <- function(x) {
-  grDevices::pdf("outputs/table1.pdf")
-  on.exit(grDevices::dev.off(), add = TRUE)
-
-  graphics::par(mar = c(0.5, 0.5, 0.5, 0.5))
-  rows_per_page <- 40L
-  n_rows <- nrow(x)
-  n_cols <- ncol(x)
-  n_pages <- max(1L, ceiling(n_rows / rows_per_page))
-  x_pos <- if (n_cols == 1L) {
-    0.5
-  } else {
-    seq(0.12, 0.98, length.out = n_cols)
-  }
-
-  for (page in seq_len(n_pages)) {
+  for (start in starts) {
+    stop <- min(start + page_size - 1L, length(lines))
+    page_lines <- lines[start:stop]
+    graphics::par(mar = c(0, 0, 0, 0))
     graphics::plot.new()
-    graphics::text(0.02, 0.97, labels = "Obs", adj = 0, font = 2)
-    if (n_cols > 0L) {
-      graphics::text(
-        x_pos,
-        0.97,
-        labels = names(x),
-        adj = 0.5,
-        font = 2
-      )
-    }
-
-    first_row <- (page - 1L) * rows_per_page + 1L
-    last_row <- min(page * rows_per_page, n_rows)
-    page_rows <- if (first_row <= last_row) {
-      first_row:last_row
-    } else {
-      integer(0)
-    }
-
-    if (length(page_rows) > 0L) {
-      y_pos <- seq(0.93, 0.05, length.out = length(page_rows))
-      for (i in seq_along(page_rows)) {
-        row_id <- page_rows[i]
-        graphics::text(0.02, y_pos[i], labels = as.character(row_id), adj = 0)
-        if (n_cols > 0L) {
-          for (j in seq_len(n_cols)) {
-            graphics::text(
-              x_pos[j],
-              y_pos[i],
-              labels = as.character(x[row_id, j]),
-              adj = 0.5
-            )
-          }
-        }
-      }
-    }
+    graphics::plot.window(
+      xlim = c(0, 1),
+      ylim = c(0.5, length(page_lines) + 0.5)
+    )
+    graphics::text(
+      x = 0,
+      y = seq(length(page_lines), 1L),
+      labels = page_lines,
+      adj = c(0, 1),
+      family = "mono",
+      cex = 0.7
+    )
   }
 }
 
-render_proc_print(display_final)
+output_path <- "outputs/table1.pdf"
+dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+grDevices::pdf(file = output_path)
+render_proc_print(final_ds)
+grDevices::dev.off()
+
