@@ -1,3 +1,9 @@
+# sas2r (development)
+
+- Preserve printing and invalid-argument execution diagnostics in reviewer and
+  fixer evidence, including `invalid printing width`. Argument values and raw
+  logs remain local.
+
 # sas2r 0.5.8
 
 - Make progress messages suppressible while preserving execution logs, and keep runtime state out of the global workspace.
