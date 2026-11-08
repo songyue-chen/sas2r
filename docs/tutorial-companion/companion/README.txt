@@ -25,8 +25,11 @@ Getting started:
 4. Copy its three .R files into the RStudio project. Open demo.R.
 5. Run demo.R interactively, section by section. It copies the bundled example
    into the project and creates the five synthetic input observations.
-6. At PAUSE, add the following llm block to the copied _sas2r.yml. Preserve the
-   existing libraries and outputs sections. Put no API key in YAML.
+6. At PAUSE, add the following llm block below outputs in the same _sas2r.yml.
+   It is also provided as a commented template at the end of demo.R: remove
+   only the leading "# " when copying it to YAML; keep the indentation.
+   Keep it commented in R. Preserve libraries and outputs, update an existing
+   llm section instead of duplicating it, and put no API key in YAML.
 
 llm:
   provider: openai

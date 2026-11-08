@@ -24,8 +24,8 @@ sys.source(
 )
 demo_input$make_demo_input(file.path(project_dir, "data"))
 
-# PAUSE: open _sas2r.yml and add the OpenAI llm block supplied with this tutorial.
-# Save it before continuing. Do not put an API key in YAML.
+# PAUSE: copy the commented OpenAI YAML template at the end of this script
+# into the same _sas2r.yml below outputs, following the template instructions.
 
 # Copy preflight-llm.R into this project first. This probe uses the provider.
 source("preflight-llm.R")
@@ -73,3 +73,23 @@ if (!is.null(result$outputs_dir)) {
 # Use a new, empty export folder. Exporting does not change validation status.
 export_dir <- file.path(project_dir, "exported-r")
 sas_write(result, export_dir)
+
+# OpenAI YAML template for the SAME project _sas2r.yml (not R code).
+# Keep this template commented in demo.R.
+# Copy the block below and remove only the leading "# " from each line.
+# Preserve the remaining indentation. Append below outputs, with llm aligned
+# with libraries and outputs. Keep the existing sections and save the file.
+# If llm already exists, update that section instead of adding a duplicate.
+# Keep OPENAI_API_KEY in .Renviron; do not include the key in YAML.
+#
+# llm:
+#   provider: openai
+#   auth_mode: api_key
+#   model: gpt-5.6-luna
+#   reasoning_effort: high
+#   max_output_tokens: 128000
+#   capabilities:
+#     structured_output: native
+#     tool_calling: native
+#   timeout_seconds: 900
+#   max_tries: 1

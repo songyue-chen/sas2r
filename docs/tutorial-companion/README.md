@@ -6,7 +6,8 @@ Companion download v1 for the sas2r 0.5.8 tutorial.
 
 Extract the ZIP, open `companion/`, and copy the three `.R` scripts into a new,
 empty RStudio project. Open `demo.R` and run it section by section. The included
-`README.txt` supplies setup instructions and the OpenAI configuration block.
+`README.txt` supplies setup instructions. The OpenAI configuration block is
+also included as a commented YAML template at the end of `demo.R`.
 
 ## Which files come from where?
 
@@ -39,9 +40,12 @@ installed package by `demo.R`.
 2. Extract the companion ZIP and copy its three R scripts into your project.
 3. Open `demo.R`. Run its setup section to copy the bundled example and generate
    the five synthetic observations.
-4. At the marked pause, add the OpenAI `llm` block from `README.txt` to the copied
-   `_sas2r.yml`, preserving its library and output settings. Keep credentials out
-   of the YAML file. The selected model must be available to your account.
+4. At the marked pause, copy the commented OpenAI YAML block at the end of
+   `demo.R`. Remove only the leading `# ` from each line and append it below
+   `outputs` in the same `_sas2r.yml`, preserving indentation and the existing
+   library/output settings. If `llm` exists, update it instead of duplicating it.
+   Keep the template commented in R, keep credentials out of YAML, and save.
+   The selected model must be available to your account.
 5. Continue section by section: connection probe, offline source preflight,
    translation, log inspection, output review, and export.
 
