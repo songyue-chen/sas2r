@@ -19,6 +19,12 @@ verify_demo_output <- function(result, project_dir) {
   for (i in seq_along(position)) {
     x <- actual[[position[i]]]
     y <- expected[[i]]
+    # SAS character values compare equal after trailing blank padding is removed.
+    # Preserve leading/internal spaces and the actual generated output.
+    if (is.character(x) && is.character(y)) {
+      x <- sub(" +$", "", x)
+      y <- sub(" +$", "", y)
+    }
     if (!isTRUE(all.equal(as.vector(x), as.vector(y), check.attributes = FALSE))) {
       stop("Output mismatch in ", names(expected)[i], ". Inspect the generated code and report.")
     }
