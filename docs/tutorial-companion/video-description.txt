@@ -2,20 +2,14 @@ In this tutorial, we’ll set up sas2r with OpenAI and run a SAS-to-R migration 
 
 Download the companion scripts and matching example below to follow along. These are separate from the examples included in the sas2r package. The walkthrough uses synthetic data and recreated interfaces.
 
-sas2r on CRAN:
-https://CRAN.R-project.org/package=sas2r
+sas2r on CRAN: https://CRAN.R-project.org/package=sas2r
 
-Companion download (ZIP):
-https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip
+Companion download (ZIP): https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip
 
-Companion setup instructions:
-https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
+Companion setup instructions: https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
 
-LLM provider configuration:
-https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
+LLM provider configuration: https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
 
-OpenAI API keys:
-https://platform.openai.com/api-keys
+OpenAI API keys: https://platform.openai.com/api-keys
 
-OpenAI API billing and credits:
-https://platform.openai.com/settings/organization/billing/overview
+OpenAI API billing and credits: https://platform.openai.com/settings/organization/billing/overview
