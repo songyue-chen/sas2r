@@ -22,7 +22,7 @@ Files and provenance
 Steps
 1. Install the tested PR #65 build based on merged develop (0.6.0 beta; not yet CRAN):
    install.packages(c("remotes", "ellmer", "pdftools"))
-   remotes::install_github("songyue-chen/sas2r", ref = "72e0b3f4c33a13921f1529138f0d9b9acce68c6b")
+   remotes::install_github("songyue-chen/sas2r", ref = "22b34abc27f0a73b679f124f51ce9cee4fa39aef")
    https://github.com/songyue-chen/sas2r/pull/65
    Restart R if sas2r was already loaded.
 2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.

@@ -53,7 +53,7 @@ The scripts and corrected example are separate tutorial materials on this branch
 
 ```r
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "72e0b3f4c33a13921f1529138f0d9b9acce68c6b")
+remotes::install_github("songyue-chen/sas2r", ref = "22b34abc27f0a73b679f124f51ce9cee4fa39aef")
 ```
 
 Restart R after installation if sas2r was already loaded. This commit belongs to
@@ -99,3 +99,5 @@ Successful execution and these checks **do not establish SAS-reference equivalen
 
 [CRAN package](https://CRAN.R-project.org/package=sas2r) ·
 [Provider configuration](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md)
+
+The live OpenAI run used `72e0b3f4c33a13921f1529138f0d9b9acce68c6b`; final install commit `22b34abc27f0a73b679f124f51ce9cee4fa39aef` changes only a public-API test expectation. Runtime and prompts are identical.

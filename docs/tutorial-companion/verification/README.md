@@ -23,3 +23,6 @@ explicitly labeled in the video. It is not this run's execution trace.
 `selected-code.R`, `selected-demo.R` and `table1.pdf` are unchanged generated
 artifacts. Local project paths are abbreviated in console logs. Other v10,
 PR #63 and prior beta notes are historical and do not describe this run.
+
+Final install commit `22b34abc27f0a73b679f124f51ce9cee4fa39aef` adds only the public-API test expectation.
+Its runtime, prompts and documentation are identical to the OpenAI-tested commit above.
