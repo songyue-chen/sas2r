@@ -31,7 +31,7 @@ SAS2R_HELPER_NAMES <- c("%+%", "%notin%", "sas_sum", "sas_mean", "sas_round",
                         "$.sas2r_dataset", "[[.sas2r_dataset", "$<-.sas2r_dataset", "[[<-.sas2r_dataset", "split_ds",
                         "sas_display", "sas2r_registry_env",
                         "sas2r_resolve_registry", "sas2r_assignment_path",
-                        "sas_output_path", "sas2r_tlf_relative_path")
+                        "sas_output_path", "sas2r_tlf_relative_path", "sas_print_table")
 
 
 SAS2R_PROTECTED_HELPERS <- c("lib_write", "lib_read", "sas2r_lib_member_file",

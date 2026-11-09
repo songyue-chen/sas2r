@@ -62,7 +62,8 @@ concatenation where a missing operand contributes nothing rather than
 \code{"NA"}; SAS pads fixed-width operands, this does not).}
 \item{Sorting and merging}{\code{\link[=sas_sort]{sas_sort()}}, \code{\link[=sas_merge]{sas_merge()}}.}
 \item{Formats}{\code{\link[=apply_format]{apply_format()}}, \code{\link[=sas_put]{sas_put()}}.}
-\item{Report destinations}{\code{\link[=sas_output_path]{sas_output_path()}}.}
+\item{Reports}{\code{\link[=sas_output_path]{sas_output_path()}} for destinations and \code{\link[=sas_print_table]{sas_print_table()}}
+for plain PDF listings with aligned columns and repeated page headers.}
 \item{Includes}{\code{\link[=sas2r_source_include]{sas2r_source_include()}}.}
 }
 }

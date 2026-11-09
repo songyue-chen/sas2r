@@ -26,7 +26,7 @@ SAS2R_BUNDLE_FILES <- c("autoexec.R", "sas2r-helpers.R", "_sas2r_formats.R")
 # writes the file; a test fails when the committed template is stale.
 RUNTIME_SOURCE_FILES <- c(
   "runtime-values.R", "runtime-data.R", "runtime-sort-merge.R",
-  "runtime-format.R", "runtime-include.R", "runtime-compat.R"
+  "runtime-format.R", "runtime-include.R", "runtime-compat.R", "runtime-report.R"
 )
 
 runtime_template_lines <- function(source_dir) {

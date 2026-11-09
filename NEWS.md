@@ -1,5 +1,13 @@
 # sas2r 0.6.0 beta
 
+- Add `sas_print_table()` for plain PDF listings with shared column positions,
+  fixed line spacing and repeated page headers. Generated bundles carry the
+  same renderer for standalone execution. Translation and review guidance now
+  distinguishes broken header/value alignment, clipping and overlap from
+  cosmetic styling. Existing saved translations must be regenerated or edited
+  to use the helper; arbitrary PDF layout and SAS styling equivalence still
+  require review.
+
 - Normalize Gemini Interactions token usage with ellmer 0.5.1, keeping cached
   input, visible output, and reasoning tokens distinct. Exercise both current
   and earlier Gemini protocols in the offline provider contract checks.

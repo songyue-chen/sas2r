@@ -93,6 +93,9 @@ test_that("all three agents receive complete helper contracts without tool calls
     expect_match(system, "reset at the next BY group", fixed = TRUE, info = agent)
     expect_match(system, "An unknown name is an error", fixed = TRUE, info = agent)
     expect_match(system, "single .sas2r_formats catalog", fixed = TRUE, info = agent)
+    expect_match(system, "sas_print_table", fixed = TRUE, info = agent)
+    expect_match(system, "unequal string lengths shift values", fixed = TRUE, info = agent)
+    expect_match(system, "fixed line spacing and paginate overflow", fixed = TRUE, info = agent)
   }
 })
 

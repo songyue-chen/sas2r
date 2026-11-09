@@ -53,7 +53,8 @@
 #'     `"NA"`; SAS pads fixed-width operands, this does not).}
 #'   \item{Sorting and merging}{[sas_sort()], [sas_merge()].}
 #'   \item{Formats}{[apply_format()], [sas_put()].}
-#'   \item{Report destinations}{[sas_output_path()].}
+#'   \item{Reports}{[sas_output_path()] for destinations and [sas_print_table()]
+#'     for plain PDF listings with aligned columns and repeated page headers.}
 #'   \item{Includes}{[sas2r_source_include()].}
 #' }
 #'

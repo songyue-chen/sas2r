@@ -22,6 +22,8 @@ Imports:
     cli (>= 3.4),
     clue,
     filelock,
+    graphics,
+    grDevices,
     haven,
     jsonlite,
     stats,
