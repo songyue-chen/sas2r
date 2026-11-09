@@ -6,10 +6,10 @@
 # paths and loads the runtime), or source("autoexec.R", chdir = TRUE) once per session first.
 if (!exists(".sas2r_registry", envir = environment(), inherits = FALSE)) source("autoexec.R", local = environment(), chdir = TRUE)
 
-raw_input <- lib_read("raw", "input_ds") |>
+input_ds <- lib_read("raw", "input_ds") |>
   sas2r_fold_names()
 
-stg1 <- raw_input |>
+stg1 <- input_ds |>
   dplyr::mutate(
     aval_flag = sas_if_else(
       sas_missing(aval),
@@ -17,7 +17,7 @@ stg1 <- raw_input |>
       "RECORDED"
     )
   ) |>
-  dplyr::select(aval_flag, dplyr::everything())
+  dplyr::relocate(aval_flag, .before = 1)
 
 lib_write(stg1, "work", "stg1")
 
@@ -40,72 +40,8 @@ final_ds <- stg_sort |>
 
 lib_write(final_ds, "adam", "final_ds")
 
-render_proc_print <- function(df) {
-  shown <- as.data.frame(
-    lapply(df, sas_display),
-    check.names = FALSE,
-    stringsAsFactors = FALSE
-  )
-  shown <- cbind(
-    data.frame(
-      Obs = as.character(seq_len(nrow(df))),
-      stringsAsFactors = FALSE,
-      check.names = FALSE
-    ),
-    shown
-  )
-
-  n <- nrow(shown)
-  starts <- if (n == 0L) 1L else seq.int(1L, n, by = 40L)
-
-  for (start in starts) {
-    page <- if (n == 0L) {
-      shown[FALSE, , drop = FALSE]
-    } else {
-      shown[start:min(start + 39L, n), , drop = FALSE]
-    }
-
-    widths <- vapply(
-      seq_len(ncol(page)),
-      function(j) max(nchar(c(names(page)[j], page[[j]])), na.rm = TRUE),
-      integer(1)
-    )
-    xpos <- cumsum(c(0, head(widths + 3L, -1L))) + 1
-    xmax <- sum(widths + 3L) + 1
-
-    graphics::par(mar = c(1, 1, 1, 1))
-    graphics::plot.new()
-    graphics::plot.window(
-      xlim = c(0, xmax),
-      ylim = c(0, max(3L, nrow(page) + 3L)),
-      axes = FALSE,
-      xaxs = "i",
-      yaxs = "i"
-    )
-    graphics::text(
-      x = xpos,
-      y = nrow(page) + 2,
-      labels = names(page),
-      adj = 0,
-      font = 2
-    )
-
-    if (nrow(page) > 0L) {
-      y <- nrow(page) + 2 - seq_len(nrow(page))
-      for (j in seq_len(ncol(page))) {
-        graphics::text(
-          x = xpos[j],
-          y = y,
-          labels = page[[j]],
-          adj = 0
-        )
-      }
-    }
-    graphics::box()
-  }
-}
-
-grDevices::pdf(sas_output_path("outputs/table1.pdf", environment()))
-render_proc_print(final_ds)
-grDevices::dev.off()
+sas_print_table(
+  final_ds,
+  sas_output_path("outputs/table1.pdf", environment())
+)
 

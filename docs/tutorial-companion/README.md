@@ -2,8 +2,8 @@
 
 **[Download the corrected tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
 
-Revision 5 supplies a corrected, self-contained tutorial example for the tested
-[0.6.0 beta / PR #64](https://github.com/songyue-chen/sas2r/pull/64). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
+Revision 6 supplies a corrected, self-contained tutorial example for the tested
+[0.6.0 beta / PR #65](https://github.com/songyue-chen/sas2r/pull/65). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
 `example/`, into a **new, empty RStudio project**. Open `demo.R` and run it section
 by section. Keep earlier runs for diagnosis; use a fresh project for this revision.
 
@@ -16,6 +16,9 @@ uses `set raw.input_ds;` and `length AVAL_FLAG $8;` explicitly. These are docume
 source changes, not changes to the installed package or a workaround that hides
 translation differences. The 0.6.0 beta fixes report-path mapping, checks supported LENGTH-before-SET
 column order, and includes the post-0.5.8 repair-context and execution-evidence fixes.
+This revision also supplies a shared plain-PDF table renderer and checks the
+demo table's heading/value association and row spacing. The previous malformed
+PDF is rejected by the new companion checks.
 
 `demo.R` now checks that `raw.input_ds` is available **before paid provider calls**,
 allows up to two component repair rounds, preserves existing YAML settings, and checks the generated dataset and PDF before
@@ -38,7 +41,7 @@ Do not overwrite it with the original CRAN example.
 | [demo.R](companion/demo.R) | Setup, configuration pause, input preflight, probe, translation, inspection, verification and export. |
 | [preflight-llm.R](companion/preflight-llm.R) | Real provider probe and latest log entry. |
 | [read-llm-log.R](companion/read-llm-log.R) | Model activity from the returned run's log. |
-| [verify-output.R](companion/verify-output.R) | Dataset and PDF-content checks after execution. |
+| [verify-output.R](companion/verify-output.R) | Dataset, PDF-content and demo table-layout checks after execution. |
 | [run-export.R](companion/run-export.R) | Runs the standalone export in a fresh session. |
 | [example/](companion/example) | Corrected SAS, base YAML, input generator, expected values, and provenance notes. |
 | [README.txt](companion/README.txt) | Step-by-step setup and interpretation. |
@@ -50,11 +53,12 @@ The scripts and corrected example are separate tutorial materials on this branch
 
 ```r
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "17d94c00a42a4cb845a308dcf35ff68866af16fd")
+remotes::install_github("songyue-chen/sas2r", ref = "72e0b3f4c33a13921f1529138f0d9b9acce68c6b")
 ```
 
 Restart R after installation if sas2r was already loaded. This commit belongs to
-PR #64 targeting `develop`; it has not been merged or submitted to CRAN by this tutorial.
+PR #65 targeting `develop`, based on merged develop `8802bc57`. It has not been
+merged or submitted to CRAN by this tutorial. Release notes remain under 0.6.0 beta.
 
 
 1. Install the pinned PR build and supporting packages using the commands above.
@@ -81,7 +85,8 @@ PR #64 targeting `develop`; it has not been merged or submitted to CRAN by this 
 See [live verification](verification/README.md) for the real OpenAI test and its
 saved evidence. The video reconstructs interfaces; it is not a screen recording.
 The latest final-commit run passed review, smoke, bundle and tutorial output
-checks without repairs, including source-derived column order. The video shows
+checks without repairs, including source-derived column order, PDF heading/value alignment and compact
+row spacing. The generated table also passed visual inspection. The video shows
 a clearly labeled earlier beta run to demonstrate a missing-Obs-column repair.
 Reports are saved under `migration-output/<run_id>/outputs/tlf/`, with no extra
 `outputs/` beneath `tlf/`. AVAL_FLAG comes first because LENGTH precedes SET.
@@ -93,4 +98,4 @@ is checked only after translation, and is not configured as a SAS reference.
 Successful execution and these checks **do not establish SAS-reference equivalence**.
 
 [CRAN package](https://CRAN.R-project.org/package=sas2r) ·
-[Provider configuration](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)
+[Provider configuration](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md)

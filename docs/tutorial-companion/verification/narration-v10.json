@@ -1,0 +1,282 @@
+[
+  {
+    "id": "intro",
+    "title": "From SAS to R",
+    "chapter": "Your first AI-assisted migration",
+    "lines": [
+      "SAS to R helps you migrate SAS programs into R.",
+      "It combines rule-based translation with AI translation, review, and repair.",
+      "It then runs the generated R and reports what passed or needs attention.",
+      "In this walkthrough, we'll connect OpenAI and configure a small project in RStudio.",
+      "We'll follow one synthetic example through setup, translation, a real repair attempt, inspection, and export.",
+      "This update uses the tested GitHub build linked in the description. It is not yet the CRAN release. The interface screens are reconstructed."
+    ],
+    "display_lines": [
+      "sas2r helps you migrate SAS programs into R.",
+      "It combines rule-based translation with AI translation, review, and repair.",
+      "It then runs the generated R and reports what passed or needs attention.",
+      "In this walkthrough, we'll connect OpenAI and configure a small project in RStudio.",
+      "We'll follow one synthetic example through setup, translation, a real repair attempt, inspection, and export.",
+      "This update uses the tested GitHub build linked in the description. It is not yet the CRAN release. The interface screens are reconstructed."
+    ]
+  },
+  {
+    "id": "providers",
+    "title": "Choose your LLM provider",
+    "chapter": "01 / Powered by ellmer",
+    "lines": [
+      "SAS to R uses the ellmer R package to communicate with large language models.",
+      "You can choose among SAS to R's supported providers, including OpenAI, Anthropic's Claude, Google's Gemini, and DeepSeek.",
+      "For enterprise deployments, supported cloud integrations include Amazon Bedrock on AWS, Azure OpenAI on Microsoft Azure, and Vertex AI on Google Cloud.",
+      "Use the provider, model, and credentials approved for your environment. Cloud services may also require an endpoint, deployment, project, or region.",
+      "Check the SAS to R provider guide for the supported configuration. This tutorial uses OpenAI as one example."
+    ],
+    "display_lines": [
+      "sas2r uses the ellmer R package to communicate with large language models.",
+      "You can choose among sas2r's supported providers, including OpenAI, Anthropic's Claude, Google's Gemini, and DeepSeek.",
+      "For enterprise deployments, supported cloud integrations include Amazon Bedrock on AWS, Azure OpenAI on Microsoft Azure, and Vertex AI on Google Cloud.",
+      "Use the provider, model, and credentials approved for your environment. Cloud services may also require an endpoint, deployment, project, or region.",
+      "Check the sas2r provider guide for the supported configuration. This tutorial uses OpenAI as one example."
+    ]
+  },
+  {
+    "id": "apikey",
+    "title": "Create an API key",
+    "chapter": "02 / Connect OpenAI",
+    "lines": [
+      "First, open the OpenAI developer platform and sign in to your account.",
+      "Select the project you want to use, and confirm access to your chosen model.",
+      "Before using the API, check Billing. On a prepaid account, buy credits if you have no usable balance, and add payment details when prompted.",
+      "API billing is managed separately from ChatGPT. Check any credit benefits available to your account; creating a key does not add paid credits.",
+      "Open the API keys page, then choose Create new secret key.",
+      "Give the key a descriptive name, such as SAS to R demo, and create it.",
+      "Copy the key and keep it private. The key shown here is only a placeholder.",
+      "Your own key lets SAS to R connect to OpenAI through the ellmer R package.",
+      "We'll put that key in R's environment settings. Don't put it in your project configuration or share it in screenshots."
+    ],
+    "display_lines": [
+      "First, open the OpenAI developer platform and sign in to your account.",
+      "Select the project you want to use, and confirm access to your chosen model.",
+      "Before using the API, check Billing. On a prepaid account, buy credits if you have no usable balance, and add payment details when prompted.",
+      "API billing is managed separately from ChatGPT. Check any credit benefits available to your account; creating a key does not add paid credits.",
+      "Open the API keys page, then choose Create new secret key.",
+      "Give the key a descriptive name, such as sas2r demo, and create it.",
+      "Copy the key and keep it private. The key shown here is only a placeholder.",
+      "Your own key lets sas2r connect to OpenAI through the ellmer R package.",
+      "We'll put that key in R's environment settings. Don't put it in your project configuration or share it in screenshots."
+    ]
+  },
+  {
+    "id": "environment",
+    "title": "Install & store your key",
+    "chapter": "03 / Prepare RStudio",
+    "lines": [
+      "In RStudio, install remotes, ellmer, and PDF tools, then the pinned SAS to R GitHub build shown here. This includes the fixes in pull request sixty-three.",
+      "Next, open your user-level dot Renviron file with file dot edit.",
+      "Add OPENAI underscore API underscore KEY, an equals sign, and your actual key.",
+      "This is a plain text setting, not an R assignment. Preserve any settings already in the file.",
+      "Save the file, close its tab, and choose Session, then Restart R.",
+      "Now run the check shown here. It should return TRUE without printing your secret.",
+      "TRUE means R loaded a value. It does not prove authentication or model access works.",
+      "If it returns FALSE, check the spelling and restart R. A project-level dot Renviron can override the home file."
+    ],
+    "display_lines": [
+      "In RStudio, install remotes, ellmer, and pdftools, then the pinned sas2r GitHub build shown here. This includes the fixes in pull request sixty-three.",
+      "Next, open your user-level .Renviron file with file.edit().",
+      "Add OPENAI_API_KEY, an equals sign, and your actual key.",
+      "This is a plain text setting, not an R assignment. Preserve any settings already in the file.",
+      "Save the file, close its tab, and choose Session, then Restart R.",
+      "Now run the check shown here. It should return TRUE without printing your secret.",
+      "TRUE means R loaded a value. It does not prove authentication or model access works.",
+      "If it returns FALSE, check the spelling and restart R. A project-level .Renviron can override the home file."
+    ]
+  },
+  {
+    "id": "project",
+    "title": "Prepare the demo project",
+    "chapter": "04 / Use synthetic data",
+    "lines": [
+      "Create a new, empty RStudio project named SAS to R-demo. This is just our chosen project folder name.",
+      "Use the GitHub link in the video description to download the updated companion archive.",
+      "Extract it, open companion, and copy all its contents into your project, including the example folder. Open demo dot R.",
+      "The original example remains available in the CRAN package under examples slash migration demo. The command shown locates it.",
+      "For this walkthrough, use the corrected example in the GitHub download. It explicitly names the input and gives A val flag eight characters.",
+      "Run the setup section in demo dot R. It copies the corrected example into your project while preserving existing files and your YAML settings.",
+      "Generate the five synthetic observations in the data folder. The script checks that the input file exists.",
+      "Open demo dot SAS. The explicit input reference lets preflight find the data, and the length statement prevents RECORDED from being truncated.",
+      "The program flags missing values, sorts the records, derives the high-value flag, and requests a PDF table.",
+      "The download also includes expected values and an output checker. These are tutorial checks, not independent SAS reference results."
+    ],
+    "display_lines": [
+      "Create a new, empty RStudio project named sas2r-demo. This is just our chosen project folder name.",
+      "Use the GitHub link in the video description to download the updated companion archive.",
+      "Extract it, open companion, and copy all its contents into your project, including the example folder. Open demo.R.",
+      "The original example remains available in the CRAN package under examples slash migration demo. The command shown locates it.",
+      "For this walkthrough, use the corrected example in the GitHub download. It explicitly names the input and gives AVAL_FLAG eight characters.",
+      "Run the setup section in demo.R. It copies the corrected example into your project while preserving existing files and your YAML settings.",
+      "Generate the five synthetic observations in the data folder. The script checks that the input file exists.",
+      "Open demo.sas. The explicit input reference lets preflight find the data, and the length statement prevents RECORDED from being truncated.",
+      "The program flags missing values, sorts the records, derives the high-value flag, and requests a PDF table.",
+      "The download also includes expected values and an output checker. These are tutorial checks, not independent SAS reference results."
+    ]
+  },
+  {
+    "id": "config",
+    "title": "Copy the model settings into _sas2r.yml",
+    "chapter": "05 / Describe the migration",
+    "lines": [
+      "In demo dot R, stop at the configuration pause. We'll use the commented template already included in this script.",
+      "Scroll to the OpenAI YAML template at the end of demo dot R. These comments are configuration text, not R commands.",
+      "Select only the eleven template lines, from hash LLM through hash max underscore tries, and copy them. Leave the original commented in demo dot R.",
+      "Switch to the existing project configuration file. Libraries maps our data folders, and outputs declares the dataset and PDF we expect.",
+      "Scroll below outputs and paste the copied lines at the bottom of this same file. Keep the existing sections.",
+      "Remove only the leading hash and following space from each pasted line. Preserve the indentation after that prefix.",
+      "LLM must line up with libraries and outputs. If an LLM section already exists, update it instead of adding a duplicate.",
+      "This template selects OpenAI and G P T five point six Luna. Your account must have access to the selected model.",
+      "The other settings allow time and output space for requests. They do not set a total spending cap, so monitor provider usage.",
+      "Save this same YAML file. Keep your API key in dot Renviron, separate from this project configuration.",
+      "Confirm that this saved file contains libraries, outputs, and one LLM section. Next, check the inputs before calling the model."
+    ],
+    "display_lines": [
+      "In demo.R, stop at the configuration pause. We'll use the commented template already included in this script.",
+      "Scroll to the OpenAI YAML template at the end of demo.R. These comments are configuration text, not R commands.",
+      "Select only the eleven template lines, from # llm: through # max_tries: 1, and copy them. Leave the original commented in demo.R.",
+      "Switch to the existing project _sas2r.yml. Libraries maps our data folders, and outputs declares the dataset and PDF we expect.",
+      "Scroll below outputs and paste the copied lines at the bottom of this same file. Keep the existing sections.",
+      "Remove only the leading # and following space from each pasted line. Preserve the indentation after that prefix.",
+      "llm must line up with libraries and outputs. If an llm section already exists, update it instead of adding a duplicate.",
+      "This template selects OpenAI and GPT-5.6 Luna. Your account must have access to the selected model.",
+      "The other settings allow time and output space for requests. They do not set a total spending cap, so monitor provider usage.",
+      "Save this same YAML file. Keep your API key in .Renviron, separate from this project configuration.",
+      "Confirm that this saved file contains libraries, outputs, and one llm section. Next, check the inputs before calling the model."
+    ]
+  },
+  {
+    "id": "probe",
+    "title": "Check the inputs and model connection",
+    "chapter": "06 / Probe and read the log",
+    "lines": [
+      "First run the offline source preflight in demo dot R, using diagnose equals off. This makes no model requests.",
+      "Check that raw dot input D S is listed as available. The script stops before provider calls if the input is missing or unresolved.",
+      "Other constructs can still require AI translation. Input availability does not mean that the SAS program has already been translated.",
+      "Before translating, check the actual model connection. Load the saved configuration and create the LLM adapter.",
+      "Call SAS LLM probe with the frontier tier and an explicit log folder. This makes a provider request when you run it.",
+      "TRUE means the structured ping succeeded. It does not prove that a full translation or tool call will succeed.",
+      "Now read the last entry in LLM log dot JSON L into the console. Here, the probe completed on its first attempt.",
+      "If the probe returns FALSE or raises an error, inspect the log and error message before continuing. Check the key, model access, and connection.",
+      "This probe result comes from our real OpenAI test. The interface is reconstructed, and your run may return a different outcome."
+    ],
+    "display_lines": [
+      "First run the offline source preflight in demo.R, using diagnose equals off. This makes no model requests.",
+      "Check that raw.input_ds is listed as available. The script stops before provider calls if the input is missing or unresolved.",
+      "Other constructs can still require AI translation. Input availability does not mean that the SAS program has already been translated.",
+      "Before translating, check the actual model connection. Load the saved configuration and create the LLM adapter.",
+      "Call sas_llm_probe() with the frontier tier and an explicit log folder. This makes a provider request when you run it.",
+      "TRUE means the structured ping succeeded. It does not prove that a full translation or tool call will succeed.",
+      "Now read the last entry in llm_log.jsonl into the console. Here, the probe completed on its first attempt.",
+      "If the probe returns FALSE or raises an error, inspect the log and error message before continuing. Check the key, model access, and connection.",
+      "This probe result comes from our real OpenAI test. The interface is reconstructed, and your run may return a different outcome."
+    ]
+  },
+  {
+    "id": "run",
+    "title": "Translate and follow the console",
+    "chapter": "07 / Run the workflow",
+    "lines": [
+      "Now call SAS translate, reusing the unchanged preflight project. Execute TRUE runs the generated R.",
+      "Use one translation workflow at a time. This call makes paid requests to the configured OpenAI model.",
+      "Watch the console for translation, review, any permitted repairs, and execution. A completed request is not itself a passing review.",
+      "Dataset processing happens locally. Code and permitted diagnostics go to your configured provider.",
+      "After the call returns, read the saved model activity log and inspect the run status.",
+      "The main example shown here was tested with real OpenAI requests. We also checked the generated dataset, PDF, and exported R."
+    ],
+    "display_lines": [
+      "Now call sas_translate, reusing the unchanged preflight project. Execute TRUE runs the generated R.",
+      "Use one translation workflow at a time. This call makes paid requests to the configured OpenAI model.",
+      "Watch the console for translation, review, any permitted repairs, and execution. A completed request is not itself a passing review.",
+      "Dataset processing happens locally. Code and permitted diagnostics go to your configured provider.",
+      "After the call returns, read the saved model activity log and inspect the run status.",
+      "The main example shown here was tested with real OpenAI requests. We also checked the generated dataset, PDF, and exported R."
+    ]
+  },
+  {
+    "id": "workflow",
+    "title": "Translator \u2192 reviewer \u2192 fixer",
+    "chapter": "08 / Understand a real repair attempt",
+    "lines": [
+      "Let's look at the real repair sequence in our latest OpenAI test. The initial code passed review, but its smoke check could not open the relative PDF file.",
+      "The first repair created the output directory. The next smoke check exposed an invalid printing width. A second repair set a supported width.",
+      "Revision three passed review, smoke execution, and the complete bundle. The required output checks and our tutorial checks passed.",
+      "We also replayed an earlier run where smoke failed but the full bundle passed. The package now records that success for the exact selected revision, while keeping the old error in the history.",
+      "Read the model log alongside the console and final report. A completed request is not an accepted repair, and successful execution does not prove SAS equivalence."
+    ],
+    "display_lines": [
+      "Let's look at the real repair sequence in our latest OpenAI test. The initial code passed review, but its smoke check could not open the relative PDF file.",
+      "The first repair created the output directory. The next smoke check exposed an invalid printing width. A second repair set a supported width.",
+      "Revision three passed review, smoke execution, and the complete bundle. The required output checks and our tutorial checks passed.",
+      "We also replayed an earlier run where smoke failed but the full bundle passed. The package now records that success for the exact selected revision, while keeping the old error in the history.",
+      "Read the model log alongside the console and final report. A completed request is not an accepted repair, and successful execution does not prove SAS equivalence."
+    ]
+  },
+  {
+    "id": "results",
+    "title": "Inspect the results",
+    "chapter": "09 / Read the evidence",
+    "lines": [
+      "Start with the returned status and the START HERE report. They show what ran and what still needs attention.",
+      "Our real OpenAI run reached migration ready. Run the companion output checker before accepting the results.",
+      "Inspect the selected R code, then run verify output dot R and its check function. It checks values, missingness, row order, flags, and PDF text.",
+      "Subject zero two is missing a value. Subjects zero one, zero three, and zero five have the high-value flag.",
+      "Check the requested sort order, and open the PDF table from the report's output links.",
+      "Successful execution and matching a SAS reference are different checks.",
+      "This demo has no SAS reference output, so it cannot establish SAS equivalence.",
+      "For your own migration, supply appropriate references and review which outputs were actually compared.",
+      "If your run is blocked or needs review, inspect the reported issue before using the output."
+    ],
+    "display_lines": [
+      "Start with the returned status and the START HERE report. They show what ran and what still needs attention.",
+      "Our real OpenAI run reached migration ready. Run the companion output checker before accepting the results.",
+      "Inspect the selected R code, then run verify-output.R and its check function. It checks values, missingness, row order, flags, and PDF text.",
+      "Subject zero two is missing a value. Subjects zero one, zero three, and zero five have the high-value flag.",
+      "Check the requested sort order, and open the PDF table from the report's output links.",
+      "Successful execution and matching a SAS reference are different checks.",
+      "This demo has no SAS reference output, so it cannot establish SAS equivalence.",
+      "For your own migration, supply appropriate references and review which outputs were actually compared.",
+      "If your run is blocked or needs review, inspect the reported issue before using the output."
+    ]
+  },
+  {
+    "id": "export",
+    "title": "Export your R code",
+    "chapter": "10 / Continue with your project",
+    "lines": [
+      "Now export the selected R code and supporting files into a new folder.",
+      "Open the exported README. Keep the required R packages and input data available. The companion export runner creates the relative PDF folder before execution.",
+      "Run the companion export runner from your project. The exported programs use no SAS to R installation or AI connection.",
+      "Exporting preserves the available work. It does not change its validation status.",
+      "This completes the example. Keep the generated code, diagnostics, and checked outputs together for review."
+    ],
+    "display_lines": [
+      "Now export the selected R code and supporting files into a new folder.",
+      "Open the exported README. Keep the required R packages and input data available. The companion export runner creates the relative PDF folder before execution.",
+      "Run the companion export runner from your project. The exported programs use no sas2r installation or AI connection.",
+      "Exporting preserves the available work. It does not change its validation status.",
+      "This completes the example. Keep the generated code, diagnostics, and checked outputs together for review."
+    ]
+  },
+  {
+    "id": "closing",
+    "title": "Continue with your project",
+    "chapter": "11 / Your next migration",
+    "lines": [
+      "For your own project, update the library paths and expected outputs, then select your SAS source files.",
+      "Repeat the same process: preflight, translate, inspect, and compare.",
+      "The description links to the tested GitHub build, the CRAN package, and the separate companion download. Use the tested build to reproduce this update."
+    ],
+    "display_lines": [
+      "For your own project, update the library paths and expected outputs, then select your SAS source files.",
+      "Repeat the same process: preflight, translate, inspect, and compare.",
+      "The description links to the tested GitHub build, the CRAN package, and the separate companion download. Use the tested build to reproduce this update."
+    ]
+  }
+]

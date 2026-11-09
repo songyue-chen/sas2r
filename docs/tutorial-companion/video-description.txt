@@ -1,15 +1,15 @@
 Learn how to use sas2r in RStudio for an AI-assisted SAS-to-R migration. This walkthrough covers provider choice, OpenAI setup, API credits, .Renviron, _sas2r.yml, offline input preflight, connection probing, console logs, translation, a real translator–reviewer–fixer sequence, output inspection, and independent R-code export.
 
-This update uses sas2r 0.6.0 beta from GitHub PR #64, not the current CRAN release. Install the tested commit to reproduce it:
+This update uses sas2r 0.6.0 beta from GitHub PR #65, based on merged develop. It is not the current CRAN release. Install the tested commit to reproduce it:
 install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "17d94c00a42a4cb845a308dcf35ff68866af16fd")
+remotes::install_github("songyue-chen/sas2r", ref = "72e0b3f4c33a13921f1529138f0d9b9acce68c6b")
 Restart R after installation if sas2r was already loaded.
-https://github.com/songyue-chen/sas2r/pull/64
+https://github.com/songyue-chen/sas2r/pull/65
 
 sas2r uses the ellmer R package to interact with large language models. Choose among sas2r's supported providers, including OpenAI, Anthropic (Claude), Google Gemini (Gemini API), and DeepSeek. Cloud integrations for enterprise deployments include Amazon Bedrock on AWS, Azure OpenAI on Microsoft Azure, and Google Cloud through the Vertex AI API. This tutorial uses OpenAI as one example; provider-specific credentials, configuration, and model access are required.
 
 sas2r provider configuration guide:
-https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
+https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md
 
 ellmer documentation:
 https://ellmer.tidyverse.org/
@@ -22,7 +22,7 @@ https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-c
 
 The original example is included in the CRAN sas2r package. This tutorial uses the corrected example supplied separately in the GitHub download, together with demo.R, preflight-llm.R, read-llm-log.R, verify-output.R, and run-export.R. Extract the ZIP, open companion/, and copy ALL contents, including example/, into a new RStudio project. Use a fresh project if you tried an older download.
 
-The corrected SAS explicitly reads raw.input_ds and declares AVAL_FLAG as eight characters. The script checks input availability before making paid requests and checks dataset values, row and column order, and PDF text after execution. expected-final.csv contains tutorial expectations, not independently SAS-generated references.
+The corrected SAS explicitly reads raw.input_ds and declares AVAL_FLAG as eight characters. The script checks input availability before making paid requests and checks dataset values, row and column order, PDF text, and this demo's table alignment and spacing after execution. expected-final.csv contains tutorial expectations, not independently SAS-generated references.
 
 Configuration: copy the 11 commented OpenAI YAML lines at the end of demo.R into the same project _sas2r.yml, below outputs. Remove only the leading "# " from each pasted line and preserve the remaining indentation. Keep libraries and outputs; align llm at the same top level. Update an existing llm section instead of duplicating it, then save. Keep the API key in .Renviron. Script excerpts display their actual line numbers.
 
@@ -50,13 +50,13 @@ Chapters:
 07:32 Translate and follow the console
 08:20 Translator → reviewer → fixer
 09:20 Inspect the results
-10:27 Export your R code
-11:07 Continue with your project
+10:31 Export your R code
+11:11 Continue with your project
 
-This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the pinned 0.6.0 beta commit, ellmer 0.5.1, R 4.4.0, and gpt-5.6-luna. The final tested run reached migration_ready without repairs. Review, execution, dataset checks, source-derived column order, and PDF-text checks passed. The fixer segment is explicitly labeled as a separate earlier beta run, where the reviewer identified a missing Obs column and the fixer restored it. Actual AI runs can differ.
+This tutorial uses reconstructed interfaces, synthetic data, Sarah's synthetic narration, and captions. The shown live OpenAI run used the pinned 0.6.0 beta commit, ellmer 0.5.0, R 4.4.0, and gpt-5.6-luna. The final tested run reached migration_ready without repairs. Review, execution, dataset checks, source-derived column order, and PDF text and demo geometry checks passed. The actual PDF was also visually inspected for readable columns and compact row spacing. The fixer segment is explicitly labeled as a separate earlier beta run, where the reviewer identified a missing Obs column and the fixer restored it. Actual AI runs can differ.
 
 Saved PDF: <working-directory>/migration-output/<run_id>/outputs/tlf/table1.pdf
-There is no additional outputs/ beneath tlf/. The generated report writer uses sas_output_path() to create the directory under the run's output root. AVAL_FLAG is the first dataset column because LENGTH precedes SET in the SAS source.
+There is no additional outputs/ beneath tlf/. The generated report writer uses sas_output_path() to create the directory under the run's output root and sas_print_table() for aligned, paginated plain listings. AVAL_FLAG is the first dataset column because LENGTH precedes SET in the SAS source.
 
 After exporting, use source("run-export.R") in a fresh R session from the tutorial project. It runs exported-r/run.R without sas2r loaded or an AI connection. Generated reports go to exported-r/output/tlf/. The runtime creates the directory; the companion script no longer needs a folder workaround. Exported dataset, column-order, and PDF checks passed. Manual execution does not update the original migration report or validation status.
 
@@ -64,3 +64,5 @@ Live verification and actual generated artifacts:
 https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion/verification
 
 A successful probe checks a structured ping, not a complete migration. No independent SAS reference output is supplied, so execution and tutorial checks do not establish SAS equivalence. Inspect PDF formatting as well as content: this example does not establish SAS PROC PRINT layout equivalence.
+
+The helper and demo geometry checks cover plain listings. They do not validate arbitrary PDF layouts or certify SAS styling equivalence. The release notes remain under 0.6.0 beta; main is unchanged.

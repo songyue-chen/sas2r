@@ -1,5 +1,12 @@
 {
-  "columns": ["aval_flag", "usubjid", "avisitn", "aval", "trtp", "high_flag"],
+  "columns": [
+    "aval_flag",
+    "usubjid",
+    "avisitn",
+    "aval",
+    "trtp",
+    "high_flag"
+  ],
   "rows": [
     [
       "RECORDED",

@@ -1,4 +1,4 @@
-sas2r tutorial companion — 0.6.0 beta (revision 4)
+sas2r tutorial companion — 0.6.0 beta (revision 6)
 
 Use a NEW, writable RStudio project for this revision. Extract the ZIP, open
 companion/, and copy ALL its contents into the project, including example/.
@@ -20,10 +20,10 @@ Files and provenance
   They are NOT SAS-generated reference results and do not prove SAS equivalence.
 
 Steps
-1. Install the tested build for this update (0.6.0 beta; not yet CRAN):
+1. Install the tested PR #65 build based on merged develop (0.6.0 beta; not yet CRAN):
    install.packages(c("remotes", "ellmer", "pdftools"))
-   remotes::install_github("songyue-chen/sas2r", ref = "17d94c00a42a4cb845a308dcf35ff68866af16fd")
-   https://github.com/songyue-chen/sas2r/pull/64
+   remotes::install_github("songyue-chen/sas2r", ref = "72e0b3f4c33a13921f1529138f0d9b9acce68c6b")
+   https://github.com/songyue-chen/sas2r/pull/65
    Restart R if sas2r was already loaded.
 2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.
    Check nzchar(Sys.getenv("OPENAI_API_KEY")); never print the credential.
@@ -43,7 +43,8 @@ Steps
 8. Inspect status, START_HERE.html, generated R, and the model activity log.
 9. Run verify-output.R and verify_demo_output(result, project_dir). It requires
    migration_ready, five expected rows, correct values/missingness/flags/order,
-   and PDF text content. It stops on a mismatch. Inspect the PDF visually too.
+   PDF text, and this demo's one-page table alignment and row spacing. It stops
+   on a mismatch. Inspect the PDF visually too; these checks are not general PDF validation.
 10. After the checks pass, export into a new folder with sas_write(). Read the
     exported README.md. In a fresh session in your project, run
     source("run-export.R"). The runtime creates the report folder automatically
@@ -55,15 +56,16 @@ An input file, an expected-value check, and an independently generated SAS
 reference are different things. No SAS installation or SAS reference output
 is included. An AI run can require repair or fail; inspect every run's evidence.
 The video uses reconstructed interfaces and synthetic data. Its main workflow
-is backed by real OpenAI tests. The latest run repaired a missing PDF directory
-and an invalid printing width. A separate replay reproduces the stale smoke-error
-bug and its fix.
+is backed by real OpenAI tests. The latest run used the shared plain-table
+renderer and passed review and execution without repairs. Its columns and row
+spacing passed independent demo checks and visual inspection. The fixer segment
+is a separate earlier beta run, explicitly labeled in the video.
 See the GitHub verification notes for the tested versions, outcome and limits.
 
 Downloads and verification
 https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
 https://CRAN.R-project.org/package=sas2r
-https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
+https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md
 
 Output locations in this beta
 - Run: migration-output/<run_id>/outputs/tlf/table1.pdf
