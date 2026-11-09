@@ -47,9 +47,9 @@ heading or value in each column; text is not truncated or shrunk to fit.
 Newlines in cells are retained. This helper does not reproduce SAS page size,
 style or arbitrary ODS layouts. Choose another renderer when those effects
 are required. PDF validity alone does not establish output equivalence.
-This helper writes PDF only. For SAS ODS RTF output, use an RTF-capable
-renderer and retain the \code{.rtf} destination; changing the filename does not
-convert the document format.
+This helper writes PDF only. For non-PDF output (for example RTF, DOCX or
+HTML), use a format-appropriate writer and retain the source-required
+destination. Changing the filename does not convert the document format.
 }
 \examples{
 local({

@@ -92,7 +92,7 @@ test_that("PDF listings reject other destinations before creating or overwriting
   sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), runtime)
   for (render in list(sas_print_table, runtime$sas_print_table)) {
     before <- grDevices::dev.list()
-    for (name in c("table.rtf", "table.RTF", "table.html", "table", "table.pdf.rtf")) {
+    for (name in c("table.rtf", "table.RTF", "table.html", "table.docx", "table.xlsx", "table", "table.pdf.rtf")) {
       path <- file.path(root, name)
       expect_error(render(data.frame(x = 1), path), "PDF only")
       expect_false(file.exists(path), info = name)

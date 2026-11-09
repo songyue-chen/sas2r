@@ -2,12 +2,16 @@
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF
-  extensions remain accepted. For ODS RTF, translation, review and repair guidance
-  requires a real RTF writer and the source-required destination format; renaming
-  PDF content is not conversion. Update saved translations that used this PDF
-  helper for other formats. Saved bundles retain their embedded runtime;
+  extensions remain accepted. Translation, review and repair guidance preserves
+  all source-required PDF and non-PDF formats, including RTF, DOCX and HTML;
+  changing a filename is not format conversion. Update saved translations that
+  used this PDF helper for other formats. Saved bundles retain their embedded runtime;
   regenerate affected bundles before exporting to receive the new guard.
   RTF checks reject mismatched binary formats before attempting text extraction.
+- Recognize DOCX report targets in output configuration as well as ODS WORD
+  statements. Reports without built-in format validators, including DOCX, now
+  require review instead of passing on file existence alone. Their format,
+  content and layout remain unverified; this does not add a DOCX renderer.
 
 - Add `sas_print_table()` for plain PDF listings with shared column positions,
   fixed line spacing and repeated page headers. Generated bundles carry the

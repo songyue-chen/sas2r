@@ -232,3 +232,28 @@ test_that("ODS RTF targets reject disguised PDF content and accept actual RTF", 
   expect_false(valid$has_reference)
   expect_false(valid$reference_passed)
 })
+
+test_that("report formats without validators stay unverified even when files exist", {
+  root <- withr::local_tempdir()
+  runtime <- new.env(parent = baseenv())
+  runtime$.sas2r_output_root <- root
+  for (name in c("listing.docx", "listing.DOCX", "listing.custom", "listing")) {
+    key <- paste0("outputs/", name)
+    path <- sas_output_path(key, runtime)
+    # Existence cannot establish the format, contents, or layout of this output.
+    writeLines("Not a validated report", path)
+    contract <- list(target_id = name, target_key = key, kind = "tlf",
+                     required = TRUE, assertions = list(required_text = "Not"))
+    result <- assess_tlf_target(contract, list(outputs_dir = root, attempt_dir = root))
+    expect_true(result$checks$candidate_exists$passed)
+    expect_true(result$checks$file_nonempty$passed)
+    expect_false(result$passed)
+    expect_identical(result$status, "needs_review")
+    expect_identical(result$checks$format_validation$status, "unavailable")
+    expect_true(is.na(result$checks$format_validation$passed))
+    expect_null(result$checks$required_text)
+    expect_identical(derive_bundle_status(list(
+      execution = list(completed = TRUE, passed = TRUE), targets = list(result))),
+      "needs_review")
+  }
+})

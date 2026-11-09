@@ -328,7 +328,8 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list(), 
 #'
 #' Checks PDF (header/trailer/text), RTF (envelope/text), HTML (structure/tables/text),
 #' and PNG/JPEG (magic bytes/dimensions). Treats presentation/cosmetic differences as
-#' non-material, and honestly records unavailable extractors.
+#' non-material, and honestly records unavailable extractors. Other formats,
+#' including DOCX, require review because format validation is unavailable.
 #'
 #' @param contract Output contract specification list or 1-row data frame.
 #' @param attempt Migration attempt record, attempt directory, or list.
@@ -592,6 +593,16 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
         details = if (is_jpg_sig) "Valid JPEG signature" else "Invalid JPEG signature"
       )
     }
+  } else {
+    has_unavail <- TRUE
+    checks$format_validation <- list(
+      name = "format_validation",
+      status = "unavailable",
+      passed = NA,
+      details = paste0("No built-in format validator for ",
+        if (nzchar(ext)) paste0(".", ext) else "extensionless report output",
+        "; file existence does not verify format, content, or layout. Review this output.")
+    )
   }
 
   # Reference comparison

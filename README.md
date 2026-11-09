@@ -215,6 +215,13 @@ outputs, diagnostics and comparison reports, and states what ran, what was
 skipped, and why a run was blocked or failed. Saved code can be incomplete or
 unvalidated; file existence alone does not establish success.
 
+Preserve the format requested by the SAS source, including PDF and non-PDF
+outputs such as RTF, Word DOCX, HTML and images. `sas_print_table()` writes only
+PDF; other formats need an appropriate writer. DOCX is recognized as a report
+target, but has no built-in format validator. It and other unsupported report
+formats require review even if their files exist. This does not establish their
+content, layout or equivalence to SAS output.
+
 ### The four statuses
 
 | Status | Meaning |

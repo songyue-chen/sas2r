@@ -24,9 +24,9 @@
 #' Newlines in cells are retained. This helper does not reproduce SAS page size,
 #' style or arbitrary ODS layouts. Choose another renderer when those effects
 #' are required. PDF validity alone does not establish output equivalence.
-#' This helper writes PDF only. For SAS ODS RTF output, use an RTF-capable
-#' renderer and retain the `.rtf` destination; changing the filename does not
-#' convert the document format.
+#' This helper writes PDF only. For non-PDF output (for example RTF, DOCX or
+#' HTML), use a format-appropriate writer and retain the source-required
+#' destination. Changing the filename does not convert the document format.
 #' @family runtime helpers
 #' @examples
 #' local({
@@ -45,7 +45,7 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   }
   if (!endsWith(tolower(file), ".pdf")) {
     stop(paste0("sas_print_table: file must end in .pdf (case-insensitive); ",
-                "this helper writes PDF only. Use an RTF-capable renderer for RTF output."),
+                "this helper writes PDF only. Use a format-appropriate writer for non-PDF output."),
          call. = FALSE)
   }
   if (!is.character(labels) || length(labels) != ncol(data) || anyNA(labels)) {
