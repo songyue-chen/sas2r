@@ -16,7 +16,9 @@ sas_print_table(
 \arguments{
 \item{data}{A data frame in the source-required row and column order.}
 
-\item{file}{Explicit destination PDF path. Its parent directory must exist;
+\item{file}{Explicit destination path ending in \code{.pdf} (case-insensitive).
+Non-PDF paths are rejected before opening a device or writing a file.
+Its parent directory must exist;
 generated programs can obtain it from \code{\link[=sas_output_path]{sas_output_path()}}.}
 
 \item{labels}{Character column headings, one per data column.}
@@ -45,6 +47,9 @@ heading or value in each column; text is not truncated or shrunk to fit.
 Newlines in cells are retained. This helper does not reproduce SAS page size,
 style or arbitrary ODS layouts. Choose another renderer when those effects
 are required. PDF validity alone does not establish output equivalence.
+This helper writes PDF only. For SAS ODS RTF output, use an RTF-capable
+renderer and retain the \code{.rtf} destination; changing the filename does not
+convert the document format.
 }
 \examples{
 local({

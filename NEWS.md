@@ -1,5 +1,14 @@
 # sas2r 0.6.0 beta
 
+- Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
+  or writing a file, including in exported runtimes. Upper- and mixed-case PDF
+  extensions remain accepted. For ODS RTF, translation, review and repair guidance
+  requires a real RTF writer and the source-required destination format; renaming
+  PDF content is not conversion. Update saved translations that used this PDF
+  helper for other formats. Saved bundles retain their embedded runtime;
+  regenerate affected bundles before exporting to receive the new guard.
+  RTF checks reject mismatched binary formats before attempting text extraction.
+
 - Add `sas_print_table()` for plain PDF listings with shared column positions,
   fixed line spacing and repeated page headers. Generated bundles carry the
   same renderer for standalone execution. Translation and review guidance now

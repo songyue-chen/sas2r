@@ -52,6 +52,17 @@ order to override executable SAS. Unsupported declarations still require review.
 
 ## Readable report tables
 
+Preserve the source ODS destination format. ODS RTF requires a real RTF document
+at the requested `.rtf` path, not a PDF or plain text renamed to `.rtf`.
+`sas_print_table()` writes PDF only and rejects non-`.pdf` paths. For RTF, use
+an RTF-capable renderer available under the configured package policy, retaining
+source-required content, labels, titles, footnotes, ordering and report structure.
+Resolve permitted renderer dependencies explicitly; if unavailable, report the
+limitation rather than substituting PDF or claiming the RTF output is complete.
+Review and repair must check the writer's actual format as well as the filename;
+a format mismatch is an output defect, not a cosmetic styling difference.
+RTF envelope/text checks alone do not prove layout or SAS-reference equivalence.
+
 For a plain PDF listing, prefer `sas_print_table(data,
 sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
 own PDF device; do not wrap it in another `pdf()` call. It preserves supplied

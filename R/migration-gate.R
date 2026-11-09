@@ -495,8 +495,9 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   } else if (ext == "rtf") {
     rtf_lines <- readLines(cand_path, warn = FALSE)
     rtf_content <- paste(rtf_lines, collapse = "\n")
-    starts_rtf <- grepl("^\\s*\\{\\\\rtf", rtf_content)
-    chars <- strsplit(rtf_content, "")[[1L]]
+    # Reject other formats without decoding their binary content as RTF text.
+    starts_rtf <- grepl("^\\s*\\{\\\\rtf", rtf_content, useBytes = TRUE)
+    chars <- if (starts_rtf) strsplit(rtf_content, "", useBytes = TRUE)[[1L]] else character()
     open_b <- sum(chars == "{")
     close_b <- sum(chars == "}")
     envelope_ok <- starts_rtf && (open_b > 0L) && (open_b == close_b)
@@ -507,7 +508,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       details = if (envelope_ok) "Valid RTF envelope" else "Invalid RTF envelope or unbalanced braces"
     )
 
-    if (length(req_text) > 0L) {
+    if (envelope_ok && length(req_text) > 0L) {
       plain_txt <- gsub("\\\\[a-zA-Z0-9]+ ?", " ", rtf_content)
       plain_txt <- gsub("[{}]", "", plain_txt)
       missing_text <- req_text[!vapply(req_text, function(rt) grepl(tolower(rt), tolower(plain_txt), fixed = TRUE), logical(1))]

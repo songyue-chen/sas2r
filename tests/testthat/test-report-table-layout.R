@@ -85,3 +85,29 @@ test_that("exported runtime renders listings without loading sas2r", {
   expect_equal(p$x[match("long_header", p$text)], p$x[match("x", p$text)], tolerance = 1)
   expect_true("long_value" %in% p$text)
 })
+
+test_that("PDF listings reject other destinations before creating or overwriting files", {
+  root <- withr::local_tempdir()
+  runtime <- new.env(parent = baseenv())
+  sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), runtime)
+  for (render in list(sas_print_table, runtime$sas_print_table)) {
+    before <- grDevices::dev.list()
+    for (name in c("table.rtf", "table.RTF", "table.html", "table", "table.pdf.rtf")) {
+      path <- file.path(root, name)
+      expect_error(render(data.frame(x = 1), path), "PDF only")
+      expect_false(file.exists(path), info = name)
+      # A mistaken render must not truncate an existing report, either.
+      original <- charToRaw("{\\rtf1 Existing report}")
+      writeBin(original, path)
+      expect_error(render(data.frame(x = 1), path), "PDF only")
+      expect_identical(readBin(path, "raw", n = 100L), original)
+      unlink(path)
+    }
+    expect_identical(grDevices::dev.list(), before)
+    for (name in c("table.pdf", "table.PDF", "table.PdF")) {
+      path <- file.path(root, name)
+      expect_identical(render(data.frame(x = 1), path), path)
+      expect_identical(rawToChar(readBin(path, "raw", n = 5L)), "%PDF-")
+    }
+  }
+})
