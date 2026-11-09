@@ -49,3 +49,26 @@ A mutate that appends such variables is insufficient: explicitly relocate/select
 columns into their SAS order before writing. KEEP lists select columns but do not
 reorder their descriptor order. Do not sort column names or use a reference file's
 order to override executable SAS. Unsupported declarations still require review.
+
+## Readable report tables
+
+For a plain PDF listing, prefer `sas_print_table(data,
+sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
+own PDF device; do not wrap it in another `pdf()` call. It preserves supplied
+column order, adds Obs by default, aligns headers and values using shared column
+positions, uses fixed line spacing and repeats headers on subsequent pages.
+Use `obs = FALSE` for NOOBS, supply source-required labels/formatted values,
+and implement source filtering, ordering, ID/BY groups, totals and titles
+separately. It is not a complete PROC PRINT/ODS engine; its page width grows to
+fit content. Use an appropriate alternative for source-required page dimensions
+or complex layouts, preserving the same readability properties.
+
+Do not independently join headers and each row with a constant number of spaces:
+unequal string lengths shift values under the wrong headings. Use shared widths
+computed from both headings and displayed values, or shared drawing coordinates.
+Do not spread a short listing over the full page with a row-count-dependent
+`seq(top, bottom, length.out = n)`; use fixed line spacing and paginate overflow.
+Retain every cell, keep headings associated with their values, and prevent
+overlap or clipping. These are readable-content requirements, not optional
+cosmetic refinements. A file's existence, valid PDF structure, or presence of
+expected text alone does not establish these layout properties.

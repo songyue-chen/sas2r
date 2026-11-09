@@ -76,6 +76,17 @@ instructions for moving the entire bundle, copying or configuring data, and
 checking edited results. Loading a macro defines a function; it does not run the
 macro as a separate program.
 
+## Plain PDF listings
+
+For plain PDF listings, the runtime includes `sas_print_table(data, file)`.
+It aligns headings and values, uses fixed line spacing and repeats headers on
+subsequent pages. Use `sas_output_path()` to obtain a run-relative report path.
+The helper opens and closes its own PDF device and widens pages to fit content.
+Supply the source-required row/column order, formats and labels; use `obs = FALSE`
+for NOOBS. Titles, BY groups, totals and source-specific ODS layouts require
+separate implementation. These drawing properties do not establish SAS/reference
+equivalence, and general PDF output still needs visual review.
+
 ## Maintaining `autoexec.R`
 
 Open it when data moves. The LIBRARIES section defines a list like the one
