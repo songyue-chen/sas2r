@@ -162,3 +162,23 @@ test_that("empty or NULL project inputs return canonical empty contracts tibble"
     "assertions", "source_file", "line", "reason"
   ))
 })
+
+test_that("ODS WORD and configured DOCX destinations remain report targets", {
+  root <- withr::local_tempdir()
+  writeLines(c('ods word file="outputs/listing.docx";',
+               'proc print data=sashelp.class; run;', 'ods word close;'),
+             file.path(root, "listing.sas"))
+  project <- sas_project(root)
+  inferred <- infer_output_contracts(project)
+  word <- inferred[inferred$target_key == "outputs/listing.docx", ]
+  expect_equal(nrow(word), 1L)
+  expect_identical(word$kind, "tlf")
+  expect_identical(word$reason, "ods_word")
+  for (overrides in list("reports/summary.DOCX", list(tlfs = "reports/summary.DOCX"))) {
+    configured <- infer_output_contracts(project, overrides = overrides)
+    row <- configured[configured$target_key == "reports/summary.docx", ]
+    expect_equal(nrow(row), 1L)
+    expect_identical(row$kind, "tlf")
+    expect_true(row$required)
+  }
+})

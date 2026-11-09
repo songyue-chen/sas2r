@@ -909,6 +909,11 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
     stop("sas_print_table: file must be an explicit PDF destination.", call. = FALSE)
   }
+  if (!endsWith(tolower(file), ".pdf")) {
+    stop(paste0("sas_print_table: file must end in .pdf (case-insensitive); ",
+                "this helper writes PDF only. Use a format-appropriate writer for non-PDF output."),
+         call. = FALSE)
+  }
   if (!is.character(labels) || length(labels) != ncol(data) || anyNA(labels)) {
     stop("sas_print_table: labels must contain one heading per column.", call. = FALSE)
   }

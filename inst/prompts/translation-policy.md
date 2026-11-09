@@ -52,6 +52,22 @@ order to override executable SAS. Unsupported declarations still require review.
 
 ## Readable report tables
 
+Preserve every source-required output format, for both PDF and non-PDF reports.
+Examples include PDF, RTF, Microsoft Word DOCX (ODS WORD), HTML and image formats;
+this is not an exhaustive list. Use a writer that produces the actual requested
+format at the source-required destination. Renaming a file does not convert its
+format; do not substitute PDF, plain text or another format merely to create a file.
+`sas_print_table()` writes PDF only and rejects non-`.pdf` paths. For non-PDF
+outputs, select a format-appropriate writer available under the configured
+package policy. Retain source-required content, labels, titles, footnotes,
+ordering and report structure. Resolve permitted writer dependencies explicitly;
+if unavailable, report the limitation rather than claiming the output is complete.
+Review and repair must check the writer's actual format as well as the filename;
+a format mismatch is an output defect, not a cosmetic styling difference.
+File existence, signatures, container structure or extracted text alone do not
+prove layout or SAS-reference equivalence. Formats without built-in validators,
+including DOCX, remain unverified and require review; do not claim those checks passed.
+
 For a plain PDF listing, prefer `sas_print_table(data,
 sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
 own PDF device; do not wrap it in another `pdf()` call. It preserves supplied
@@ -70,5 +86,5 @@ Do not spread a short listing over the full page with a row-count-dependent
 `seq(top, bottom, length.out = n)`; use fixed line spacing and paginate overflow.
 Retain every cell, keep headings associated with their values, and prevent
 overlap or clipping. These are readable-content requirements, not optional
-cosmetic refinements. A file's existence, valid PDF structure, or presence of
+cosmetic refinements. A file's existence, valid format structure, or presence of
 expected text alone does not establish these layout properties.

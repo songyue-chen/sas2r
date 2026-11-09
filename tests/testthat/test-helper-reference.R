@@ -94,6 +94,11 @@ test_that("all three agents receive complete helper contracts without tool calls
     expect_match(system, "An unknown name is an error", fixed = TRUE, info = agent)
     expect_match(system, "single .sas2r_formats catalog", fixed = TRUE, info = agent)
     expect_match(system, "sas_print_table", fixed = TRUE, info = agent)
+    expect_match(system, "Preserve every source-required output format", fixed = TRUE, info = agent)
+    expect_match(system, "writes PDF only and rejects non-`.pdf` paths", fixed = TRUE, info = agent)
+    expect_match(system, "a format mismatch is an output defect", fixed = TRUE, info = agent)
+    expect_match(system, "Microsoft Word DOCX (ODS WORD)", fixed = TRUE, info = agent)
+    expect_match(system, "including DOCX, remain unverified", fixed = TRUE, info = agent)
     expect_match(system, "unequal string lengths shift values", fixed = TRUE, info = agent)
     expect_match(system, "fixed line spacing and paginate overflow", fixed = TRUE, info = agent)
   }

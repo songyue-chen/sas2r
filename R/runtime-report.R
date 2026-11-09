@@ -6,7 +6,9 @@
 #' formats, and implement source titles, BY groups, totals and other report logic.
 #'
 #' @param data A data frame in the source-required row and column order.
-#' @param file Explicit destination PDF path. Its parent directory must exist;
+#' @param file Explicit destination path ending in `.pdf` (case-insensitive).
+#'   Non-PDF paths are rejected before opening a device or writing a file.
+#'   Its parent directory must exist;
 #'   generated programs can obtain it from [sas_output_path()].
 #' @param labels Character column headings, one per data column.
 #' @param obs Include a leading `Obs` column with sequential observation numbers.
@@ -22,6 +24,9 @@
 #' Newlines in cells are retained. This helper does not reproduce SAS page size,
 #' style or arbitrary ODS layouts. Choose another renderer when those effects
 #' are required. PDF validity alone does not establish output equivalence.
+#' This helper writes PDF only. For non-PDF output (for example RTF, DOCX or
+#' HTML), use a format-appropriate writer and retain the source-required
+#' destination. Changing the filename does not convert the document format.
 #' @family runtime helpers
 #' @examples
 #' local({
@@ -37,6 +42,11 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   }
   if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
     stop("sas_print_table: file must be an explicit PDF destination.", call. = FALSE)
+  }
+  if (!endsWith(tolower(file), ".pdf")) {
+    stop(paste0("sas_print_table: file must end in .pdf (case-insensitive); ",
+                "this helper writes PDF only. Use a format-appropriate writer for non-PDF output."),
+         call. = FALSE)
   }
   if (!is.character(labels) || length(labels) != ncol(data) || anyNA(labels)) {
     stop("sas_print_table: labels must contain one heading per column.", call. = FALSE)
