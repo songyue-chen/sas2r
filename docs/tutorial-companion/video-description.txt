@@ -66,4 +66,3 @@ https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-c
 A successful probe checks a structured ping, not a complete migration. No independent SAS reference output is supplied, so execution and tutorial checks do not establish SAS equivalence. Inspect PDF formatting as well as content: this example does not establish SAS PROC PRINT layout equivalence.
 
 The helper and demo geometry checks cover plain listings. They do not validate arbitrary PDF layouts or certify SAS styling equivalence. The release notes remain under 0.6.0 beta; main is unchanged.
-
