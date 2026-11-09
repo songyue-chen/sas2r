@@ -1,6 +1,6 @@
-Learn how to migrate SAS programs to R with sas2r in RStudio: configure OpenAI, check the connection, translate, review outputs, and export R code.
+In this tutorial, we’ll set up sas2r with OpenAI and run a SAS-to-R migration in RStudio. Along the way, we’ll check the model connection, review the generated outputs, and export the R code to run on its own.
 
-The package includes example files. Download the separate companion scripts and matching tutorial example below. Demonstration uses synthetic data and reconstructed interfaces.
+Download the companion scripts and matching example below to follow along. These are separate from the examples included in the sas2r package. The walkthrough uses synthetic data and recreated interfaces.
 
 sas2r on CRAN:
 https://CRAN.R-project.org/package=sas2r
