@@ -1,40 +1,34 @@
 # sas2r tutorial companion
 
-**[Download the corrected tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
+**[Download the tutorial ZIP](https://raw.githubusercontent.com/songyue-chen/sas2r/tutorial-companion-v1/docs/tutorial-companion/sas2r-tutorial-companion.zip)**
 
-Revision 6 supplies a corrected, self-contained tutorial example for the tested
-[0.6.0 beta / PR #65](https://github.com/songyue-chen/sas2r/pull/65). This fix is not yet the CRAN release. Extract the ZIP, open `companion/`, and copy **all its contents**, including
-`example/`, into a **new, empty RStudio project**. Open `demo.R` and run it section
-by section. Keep earlier runs for diagnosis; use a fresh project for this revision.
+Revision 7 uses the normal CRAN installation workflow. Extract the ZIP, open
+`companion/`, and copy **all its contents**, including `example/`, into a
+**new, empty RStudio project**. Open `demo.R` and run it section by section.
 
-## What changed
+**Requirements:** sas2r 0.6.0 or later. Check `packageVersion("sas2r")` after
+installation. If CRAN supplies an older version, wait for the updated release
+before following this revision's CRAN installation step.
 
-The original package example uses a macro-based dataset reference that 0.5.8 can
-miss during dependency discovery. It also leaves `AVAL_FLAG` at the seven-character
-length established by `'MISSING'`, truncating `'RECORDED'`. The corrected tutorial
-uses `set raw.input_ds;` and `length AVAL_FLAG $8;` explicitly. These are documented
-source changes, not changes to the installed package or a workaround that hides
-translation differences. The 0.6.0 beta fixes report-path mapping, checks supported LENGTH-before-SET
-column order, and includes the post-0.5.8 repair-context and execution-evidence fixes.
-This revision also supplies a shared plain-PDF table renderer and checks the
-demo table's heading/value association and row spacing. The previous malformed
-PDF is rejected by the new companion checks.
+## Tutorial checks
 
-`demo.R` now checks that `raw.input_ds` is available **before paid provider calls**,
-allows up to two component repair rounds, preserves existing YAML settings, and checks the generated dataset and PDF before
-export. The commented OpenAI YAML template remains at the end of `demo.R`.
+The tutorial source explicitly reads `raw.input_ds` and declares
+`length AVAL_FLAG $8;`. `demo.R` checks input availability before paid provider
+calls, preserves existing YAML settings, and checks the generated dataset and
+PDF before export. The commented OpenAI YAML template is at the end of `demo.R`.
+The PDF checks cover this demo's heading/value alignment and row spacing.
 
 ## Which files come from where?
 
-CRAN still includes the **original** `demo.sas`, `_sas2r.yml`, `make-input.R`, and
+The package includes `demo.sas`, `_sas2r.yml`, `make-input.R`, and
 `README.md` under `examples/migration-demo`:
 
 ```r
 system.file("examples", "migration-demo", package = "sas2r")
 ```
 
-For this walkthrough, use the **corrected example supplied in this download**.
-Do not overwrite it with the original CRAN example.
+For this walkthrough, use the **tutorial example supplied in this download**.
+Use the matching source and checks from the same download.
 
 | File | Purpose |
 | --- | --- |
@@ -43,29 +37,24 @@ Do not overwrite it with the original CRAN example.
 | [read-llm-log.R](companion/read-llm-log.R) | Model activity from the returned run's log. |
 | [verify-output.R](companion/verify-output.R) | Dataset, PDF-content and demo table-layout checks after execution. |
 | [run-export.R](companion/run-export.R) | Runs the standalone export in a fresh session. |
-| [example/](companion/example) | Corrected SAS, base YAML, input generator, expected values, and provenance notes. |
+| [example/](companion/example) | Tutorial SAS, base YAML, input generator, expected values, and provenance notes. |
 | [README.txt](companion/README.txt) | Step-by-step setup and interpretation. |
 
-The scripts and corrected example are separate tutorial materials on this branch;
+The scripts and tutorial example are separate tutorial materials on this branch;
 `main` remains reserved for the CRAN package.
 
 ## Run the tutorial
 
 ```r
-install.packages(c("remotes", "ellmer", "pdftools"))
-remotes::install_github("songyue-chen/sas2r", ref = "22b34abc27f0a73b679f124f51ce9cee4fa39aef")
+install.packages(c("sas2r", "ellmer", "pdftools"))
 ```
 
-Restart R after installation if sas2r was already loaded. This commit belongs to
-PR #65 targeting `develop`, based on merged develop `8802bc57`. It has not been
-merged or submitted to CRAN by this tutorial. Release notes remain under 0.6.0 beta.
+Restart R after installation if sas2r was already loaded, then run `library(sas2r)`.
 
-
-1. Install the pinned PR build and supporting packages using the commands above.
-   Store your OpenAI credential in your user `.Renviron`, save, and restart R.
-   Never print or share the key.
+1. Install the packages above. Store your OpenAI credential in your user
+   `.Renviron`, save, and restart R. Never print or share the key.
 2. Copy **all** extracted companion contents into a new project, including `example/`.
-3. Run the setup section of `demo.R` to copy the corrected source and generate inputs.
+3. Run the setup section of `demo.R` to copy the tutorial source and generate inputs.
 4. At the pause, copy the **11 commented YAML lines** at the end of `demo.R` into
    the **same `_sas2r.yml`**, below `outputs`. Remove only the leading `# ` from
    each pasted line. Preserve indentation; align `llm` with `libraries` and
@@ -87,17 +76,17 @@ saved evidence. The video reconstructs interfaces; it is not a screen recording.
 The latest final-commit run passed review, smoke, bundle and tutorial output
 checks without repairs, including source-derived column order, PDF heading/value alignment and compact
 row spacing. The generated table also passed visual inspection. The video shows
-a clearly labeled earlier beta run to demonstrate a missing-Obs-column repair.
+a clearly labeled earlier run to demonstrate a missing-Obs-column repair.
 Reports are saved under `migration-output/<run_id>/outputs/tlf/`, with no extra
 `outputs/` beneath `tlf/`. AVAL_FLAG comes first because LENGTH precedes SET.
 A successful probe alone does not verify a full migration or tool calling.
 
 `example/expected-final.csv` contains tutorial expectations derived from the
-corrected source and synthetic input. It is **not independently generated by SAS**,
+tutorial source and synthetic input. It is **not independently generated by SAS**,
 is checked only after translation, and is not configured as a SAS reference.
 Successful execution and these checks **do not establish SAS-reference equivalence**.
 
 [CRAN package](https://CRAN.R-project.org/package=sas2r) ·
-[Provider configuration](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md)
+[Provider configuration](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)
 
-The live OpenAI run used `72e0b3f4c33a13921f1529138f0d9b9acce68c6b`; final install commit `22b34abc27f0a73b679f124f51ce9cee4fa39aef` changes only a public-API test expectation. Runtime and prompts are identical.
+Actual test versions and commit provenance are retained in the verification notes.

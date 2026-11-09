@@ -1,4 +1,4 @@
-sas2r tutorial companion — 0.6.0 beta (revision 6)
+sas2r tutorial companion (revision 7)
 
 Use a NEW, writable RStudio project for this revision. Extract the ZIP, open
 companion/, and copy ALL its contents into the project, including example/.
@@ -6,28 +6,26 @@ Do not copy only the R scripts. Open demo.R and run it section by section.
 If you used an earlier download, keep that run for diagnosis and start fresh.
 
 Files and provenance
-- CRAN sas2r 0.5.8 includes its original example under examples/migration-demo.
+- The sas2r package includes example files under examples/migration-demo.
   Locate it with system.file("examples", "migration-demo", package = "sas2r").
-- This download supplies a corrected tutorial-specific example in example/.
-  It uses SET raw.input_ds and LENGTH AVAL_FLAG $8. This avoids the original
-  macro-input discovery problem and the seven-character truncation of RECORDED.
-- demo.R copies this corrected example into your project, preserving existing
+- This download supplies a tutorial example in example/.
+  It uses SET raw.input_ds and LENGTH AVAL_FLAG $8. The explicit input supports
+  dependency discovery; the declared length preserves the full RECORDED value.
+- demo.R copies this tutorial example into your project, preserving existing
   files and edited YAML. It stops if demo.sas differs from this revision.
 - preflight-llm.R probes the provider and reads its log.
 - read-llm-log.R prints model activity from the returned run.
 - verify-output.R checks actual outputs against example/expected-final.csv.
-  These expectations are derived from the corrected source and synthetic input.
+  These expectations are derived from the tutorial source and synthetic input.
   They are NOT SAS-generated reference results and do not prove SAS equivalence.
 
 Steps
-1. Install the tested PR #65 build based on merged develop (0.6.0 beta; not yet CRAN):
-   install.packages(c("remotes", "ellmer", "pdftools"))
-   remotes::install_github("songyue-chen/sas2r", ref = "22b34abc27f0a73b679f124f51ce9cee4fa39aef")
-   https://github.com/songyue-chen/sas2r/pull/65
-   Restart R if sas2r was already loaded.
+1. Install the packages from CRAN:
+   install.packages(c("sas2r", "ellmer", "pdftools"))
+   Restart R if sas2r was already loaded, then run library(sas2r).
 2. Store OPENAI_API_KEY in your user .Renviron. Save and restart R.
    Check nzchar(Sys.getenv("OPENAI_API_KEY")); never print the credential.
-3. Run demo.R's setup to copy the corrected example and generate five rows.
+3. Run demo.R's setup to copy the tutorial example and generate five rows.
 4. PAUSE at configuration. Copy the 11 commented YAML lines at the end of
    demo.R into the SAME _sas2r.yml, below outputs. Remove only the leading
    "# " from each pasted line; preserve indentation. Keep libraries and outputs.
@@ -59,18 +57,22 @@ The video uses reconstructed interfaces and synthetic data. Its main workflow
 is backed by real OpenAI tests. The latest run used the shared plain-table
 renderer and passed review and execution without repairs. Its columns and row
 spacing passed independent demo checks and visual inspection. The fixer segment
-is a separate earlier beta run, explicitly labeled in the video.
+is a separate earlier run, explicitly labeled in the video.
 See the GitHub verification notes for the tested versions, outcome and limits.
 
 Downloads and verification
 https://github.com/songyue-chen/sas2r/tree/tutorial-companion-v1/docs/tutorial-companion
 https://CRAN.R-project.org/package=sas2r
-https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md
+https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md
 
-Output locations in this beta
+Output locations
 - Run: migration-output/<run_id>/outputs/tlf/table1.pdf
 - Standalone export: exported-r/output/tlf/table1.pdf
 There is no extra outputs/ beneath tlf/. The runtime creates parent directories.
 The checker also verifies column order: AVAL_FLAG comes first because LENGTH
 precedes SET in the SAS source. This is a source-derived tutorial check, not
 independent SAS output or formatting equivalence.
+
+Requirements: sas2r 0.6.0 or later. Check packageVersion("sas2r") after
+installation. If CRAN supplies an older version, wait for the updated release
+before following this revision's CRAN installation step.

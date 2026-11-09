@@ -1,6 +1,6 @@
 # sas2r tutorial: extract the entire companion folder into a writable project.
 # Run this script section by section, stopping at the configuration pause.
-# Install the tested GitHub build from README.txt (0.6.0 beta; not yet CRAN).
+# Install from CRAN: install.packages(c("sas2r", "ellmer", "pdftools"))
 # Store OPENAI_API_KEY in your user .Renviron, then restart R.
 # file.edit(path.expand("~/.Renviron"))
 # nzchar(Sys.getenv("OPENAI_API_KEY"))  # Presence only; never print the key.
@@ -10,7 +10,7 @@ project_dir <- normalizePath(".", winslash = "/", mustWork = TRUE)
 example_dir <- file.path(project_dir, "example")
 example_files <- c("demo.sas", "_sas2r.yml", "make-input.R")
 stopifnot(all(file.exists(file.path(example_dir, example_files))))
-# Copy this corrected tutorial example, not CRAN 0.5.8's original demo.
+# Copy the tutorial example supplied with this companion download.
 # Preserve existing project files and your edited YAML on repeat setup.
 for (name in example_files) {
   destination <- file.path(project_dir, name)

@@ -1,0 +1,86 @@
+{
+  "voice": "Kokoro af_sarah",
+  "rate": ".96",
+  "durationSeconds": 688.0,
+  "lessonOrder": [
+    "intro",
+    "providers",
+    "apikey",
+    "environment",
+    "project",
+    "config",
+    "probe",
+    "run",
+    "workflow",
+    "results",
+    "export",
+    "closing"
+  ],
+  "downloadMatchesVideoAndLiveTest": true,
+  "templateLines": [
+    84,
+    94
+  ],
+  "scenes": [
+    {
+      "scene": "intro",
+      "durationSeconds": 38.36666666666667,
+      "captions": 6
+    },
+    {
+      "scene": "providers",
+      "durationSeconds": 46.666666666666664,
+      "captions": 5
+    },
+    {
+      "scene": "apikey",
+      "durationSeconds": 57.56666666666667,
+      "captions": 9
+    },
+    {
+      "scene": "environment",
+      "durationSeconds": 50.06666666666667,
+      "captions": 8
+    },
+    {
+      "scene": "project",
+      "durationSeconds": 82.13333333333334,
+      "captions": 10
+    },
+    {
+      "scene": "config",
+      "durationSeconds": 93.93333333333334,
+      "captions": 11
+    },
+    {
+      "scene": "probe",
+      "durationSeconds": 77.13333333333334,
+      "captions": 9
+    },
+    {
+      "scene": "run",
+      "durationSeconds": 48.5,
+      "captions": 6
+    },
+    {
+      "scene": "workflow",
+      "durationSeconds": 58.1,
+      "captions": 5
+    },
+    {
+      "scene": "results",
+      "durationSeconds": 71.7,
+      "captions": 9
+    },
+    {
+      "scene": "export",
+      "durationSeconds": 39.7,
+      "captions": 5
+    },
+    {
+      "scene": "closing",
+      "durationSeconds": 24.133333333333333,
+      "captions": 3
+    }
+  ]
+}
