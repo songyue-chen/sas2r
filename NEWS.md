@@ -1,9 +1,10 @@
 # sas2r 0.6.0 beta
 
-- Add opt-in offline package-bug diagnosis (`migration.bug_reports: true`).
-  Supported suspicions appear in the run report. `sas_bug_report()` writes a
-  local Markdown draft with a synthetic R example when supported, or evidence
-  and steps to isolate the problem. The installed demo requires no SAS or API key.
+- Add opt-in AI triage of possible package bugs (`migration.bug_reports: true`).
+  The configured reviewer uses the run budget to explain suspected package
+  defects and propose synthetic R examples where possible. `sas_bug_report()`
+  writes the saved findings to Markdown with explicit reproduction status.
+  The installed sample demonstrates draft export without SAS or an API key.
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF

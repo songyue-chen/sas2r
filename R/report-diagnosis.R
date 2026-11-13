@@ -20,13 +20,17 @@ current_report_findings <- function(state) {
 }
 
 report_diagnosis_context <- function(state, summaries, limit = 24000L) {
-  text <- as.character(jsonlite::toJSON(list(discrepancies = summaries,
-    execution_order = state$graph$execution_order), auto_unbox = TRUE, null = "null"))
-  truncated <- nchar(text) > limit
-  text <- substr(text, 1L, limit)
   ids <- unique(unlist(lapply(names(summaries), function(key)
     state$assessment$lineage_by_target[[key]]$upstream_components %||%
       graph_output_writers(state$graph, key)), use.names = FALSE))
+  report_advice_context(state, list(discrepancies = summaries,
+    execution_order = state$graph$execution_order), ids, limit)
+}
+
+report_advice_context <- function(state, evidence, ids, limit = 24000L) {
+  text <- as.character(jsonlite::toJSON(evidence, auto_unbox = TRUE, null = "null"))
+  truncated <- nchar(text) > limit
+  text <- substr(text, 1L, limit)
   ids <- unique(c(ids, unlist(lapply(ids, function(cid)
     context_component_dependencies(state$graph, cid)), use.names = FALSE)))
   for (cid in ids) {
@@ -37,6 +41,29 @@ report_diagnosis_context <- function(state, summaries, limit = 24000L) {
     if (nchar(block) > remaining) { truncated <- TRUE; break }
   }
   list(text = paste0(text, if (truncated) "\n[Context truncated; omitted code is unknown.]"), truncated = truncated)
+}
+
+request_report_advice <- function(llm, budget, packet, prompt_name, schema_name, agent) {
+  settings <- attr(llm, "parallel_config", exact = TRUE)
+  if (!is.null(settings)) {
+    settings$max_tries <- 1L
+    settings$timeout_seconds <- min(settings$timeout_seconds %||% 120, 120)
+    llm <- sas_llm(settings)
+  }
+  schema <- jsonlite::read_json(system.file("schemas", paste0(prompt_name, "-v1.json"), package = "sas2r"))
+  prompt <- paste(readLines(system.file("prompts", paste0(prompt_name, ".md"), package = "sas2r"),
+    warn = FALSE), collapse = "\n")
+  request <- llm_request(messages = list(list(role = "system", content = prompt),
+    list(role = "user", content = llm_audit_redactor(llm)(packet$text))), output_schema = schema,
+    schema_name = schema_name, schema_version = "1",
+    schema_mode = if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback",
+    max_output_tokens = llm$model_parameters$max_output_tokens %||% 4096L,
+    reasoning_effort = llm$model_parameters$reasoning_effort,
+    temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)
+  response <- attempt_llm_request(request, llm, usage_budget = budget,
+    audit_context = list(purpose = agent, agent = agent))
+  list(response = response, valid = identical(response$status, "completed") &&
+    identical(response$action, "final") && !length(validate_schema_value(response$data, schema)))
 }
 
 migration_report_diagnosis <- function(state) {
@@ -72,36 +99,20 @@ migration_report_diagnosis <- function(state) {
   }
   redact <- llm_audit_redactor(llm)
   tryCatch({
-    settings <- attr(llm, "parallel_config", exact = TRUE)
-    if (!is.null(settings)) {
-      settings$max_tries <- 1L
-      settings$timeout_seconds <- min(settings$timeout_seconds %||% 120, 120)
-      llm <- sas_llm(settings)
-    }
     summaries <- lapply(names(targets), function(key) reviewer_discrepancy_summary(targets[[key]], key))
     names(summaries) <- names(targets)
     result$provider <- llm$provider
     result$model <- llm$model
     packet <- report_diagnosis_context(state, summaries)
-    schema <- jsonlite::read_json(system.file("schemas", "report-diagnosis-v1.json", package = "sas2r"))
-    prompt <- paste(readLines(system.file("prompts", "report-diagnosis.md", package = "sas2r"), warn = FALSE), collapse = "\n")
-    request <- llm_request(messages = list(list(role = "system", content = prompt),
-      list(role = "user", content = redact(packet$text))), output_schema = schema,
-      schema_name = "report_diagnosis_v1", schema_version = "1",
-      schema_mode = if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback",
-      max_output_tokens = llm$model_parameters$max_output_tokens %||% 4096L,
-      reasoning_effort = llm$model_parameters$reasoning_effort,
-      temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)
     cli::cli_inform('AI report diagnosis may send bounded SAS/R code and aggregate comparison patterns to {llm$provider}, subject to budget admission; no records or raw logs. Use migration.report_diagnosis: off to disable.')
-    response <- attempt_llm_request(request, llm, usage_budget = budget,
-      audit_context = list(purpose = "report_diagnosis", agent = "report_diagnosis"))
+    advice <- request_report_advice(llm, budget, packet, "report-diagnosis", "report_diagnosis_v1", "report_diagnosis")
+    response <- advice$response
     result$response_status <- response$status
     result$finish_reason <- redact(response$finish_reason)
     result$model <- response$resolved_model %||% result$model
     result$origin <- "report_diagnosis"
     result$context_truncated <- packet$truncated
-    if (identical(response$status, "completed") && identical(response$action, "final") &&
-        !length(validate_schema_value(response$data, schema))) {
+    if (advice$valid) {
       result$status <- "completed"
       result$explanations <- Filter(function(f) f$target %in% names(targets) &&
         f$component_id %in% names(state$selected_revisions), redact(response$data$explanations))

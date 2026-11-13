@@ -163,8 +163,7 @@ run_parallel_program_pipeline <- function(state, ids, execute, repair_cap) {
       # A source cycle was already classified by readiness. Unexpected graph
       # omissions are not recoverable here: do not silently discard programs.
       cli::cli_abort("Translation scheduler cannot account for pending components: {paste(pending, collapse = ', ')}",
-        class = c("sas2r_scheduler_unaccounted_components", "sas2r_pipeline_coverage_error"),
-        pending_count = length(pending))
+        class = "sas2r_pipeline_coverage_error")
     }
     if (length(active)) Sys.sleep(0.025)
   }

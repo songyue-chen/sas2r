@@ -1,49 +1,60 @@
-test_that("the opt-in report diagnoses a bundled PDF writer regression and exports a runnable example", {
+bug_triage_answer <- function(code = "stopifnot(sas2r::sas_sum(c(1, 2)) == 3)") {
+  list(findings = list(list(evidence_id = "E1",
+    explanation = "The package could be dispatching the wrong helper.",
+    expected = "The supported call should dispatch the documented operation.",
+    uncertainty = "The cause needs a test on the reported build.",
+    next_step = "Try the operation with synthetic values.",
+    repro_r = code)))
+}
+
+test_that("opt-in AI triage uses the reviewer and drafts an unrun synthetic example", {
   root <- withr::local_tempdir()
-  src <- file.path(root, "private-study.sas")
-  writeLines(c("data work.sample; value = 1; run;",
-    'ods rtf file="private-listing.rtf";', "proc print data=work.sample; run;",
-    "ods rtf close;"), src)
+  src <- file.path(root, "sample.sas")
+  writeLines("data work.sample; value = 1; run;", src)
+  run <- function(enabled) {
+    out <- tempfile(tmpdir = root)
+    suppressMessages(sas_translate(src, out_dir = out,
+      config = list(migration = list(bug_reports = enabled, report_diagnosis = "off")),
+      llm = llm, max_program_repair_rounds = 0L, max_bundle_repair_rounds = 0L))
+  }
+
+  requests <- list()
+  llm <- new_llm(function(request, audit_context = list()) {
+    is_triage <- identical(request$schema_name, "package_bug_triage_v1")
+    if (is_triage) requests[[length(requests) + 1L]] <<- request
+    response <- if (is_triage) bug_triage_answer('stop("REPRO_MUST_NOT_RUN")') else valid_program_review_response()
+    new_llm_response(status = "completed", action = "final", data = response,
+      request = request, provider = "mock", resolved_model = "diagnosis-test")
+  }, provider = "mock", model = "diagnosis-test")
 
   transpile <- sas_transpile
-  write_runtime <- write_helpers
-  testthat::local_mocked_bindings(
-    sas_transpile = function(project, out_dir, ...) {
-      result <- transpile(project, out_dir, ...)
-      staged <- unique(stats::na.omit(result$manifest$staged_file))
-      writeLines('sas_print_table(data.frame(value = 1), sas_output_path("private-listing.rtf"))',
-        file.path(out_dir, staged))
-      result
-    },
-    write_helpers = function(out_dir) {
-      path <- write_runtime(out_dir)
-      # Restore the earlier writer behavior in this synthetic bundle only.
-      lines <- readLines(path, warn = FALSE)
-      guard <- grep('if (!endsWith(tolower(file), ".pdf")) {', lines, fixed = TRUE)
-      end <- guard + match("  }", lines[seq.int(guard + 1L, length(lines))])
-      writeLines(lines[-seq.int(guard, end)], path)
-      invisible(path)
-    }
-  )
+  testthat::local_mocked_bindings(sas_transpile = function(project, out_dir, ...) {
+    result <- transpile(project, out_dir, ...)
+    staged <- unique(stats::na.omit(result$manifest$staged_file))
+    writeLines(c('private_message <- paste0("RAW_", "DIAGNOSTIC_SENTINEL")', 'stop(private_message)'),
+      file.path(out_dir, staged))
+    result
+  })
 
-  run <- function(enabled) suppressMessages(sas_translate(src, out_dir = tempfile(tmpdir = root),
-    config = list(migration = list(bug_reports = enabled, report_diagnosis = "off")),
-    usage_limits = list(max_calls = 0), max_bundle_repair_rounds = 0))
   disabled <- run(FALSE)
+  expect_length(requests, 0L)
   enabled <- run(TRUE)
-  expect_identical(enabled$status, disabled$status)
-  expect_identical(enabled$output_assessments[["private-listing.rtf"]]$status, "failed")
   report <- read_json_record(enabled$report_json_path, simplifyVector = FALSE)
-  expect_identical(report$package_bug_diagnosis$status, "completed")
+  expect_identical(report$package_bug_diagnosis$status, "completed",
+    info = paste(report$package_bug_diagnosis$reason, enabled$status_reason))
+  expect_length(requests, 1L)
+  expect_length(requests[[1L]]$tools, 0L)
+  expect_match(request_task_text(requests[[1L]]), "Bundle execution failed", fixed = TRUE)
+  expect_false(grepl("RAW_DIAGNOSTIC_SENTINEL|stderr|stdout", request_task_text(requests[[1L]])))
+  expect_identical(enabled$status, disabled$status)
   finding <- report$package_bug_diagnosis$findings[[1L]]
-  expect_identical(finding$code, "pdf_written_to_non_pdf_destination")
-  expect_identical(finding$attempt_id, report$selected_attempt_id)
-  observation <- report$bundle_execution[[finding$component_id]]$selected_attempt
-  expect_identical(finding$revision_id, observation$revision$revision_id)
-  expect_identical(finding$helper_hash, unname(cli::hash_file_sha256(
-    file.path(enabled$bundle_dir, "runtime", "sas2r-helpers.R"))))
+  expect_identical(finding$binding$attempt_id, report$selected_attempt_id)
+  expect_identical(finding$reproduction, "not_run")
+  expect_identical(report$package_bug_diagnosis$model, "diagnosis-test")
+  expect_true(any(vapply(enabled$usage$records,
+    function(x) identical(x$agent, "package_bug_triage"), logical(1))))
   html <- file.path(dirname(dirname(enabled$report_json_path)), "START_HERE.html")
-  expect_match(paste(readLines(html), collapse = "\n"), "Possible sas2r bugs (beta)", fixed = TRUE)
+  expect_match(paste(readLines(html), collapse = "\n"), "Reproduction unverified", fixed = TRUE)
 
   file <- file.path(root, "draft.md")
   expect_error(sas_bug_report(disabled, file), class = "sas2r_bug_diagnosis_disabled")
@@ -51,59 +62,82 @@ test_that("the opt-in report diagnoses a bundled PDF writer regression and expor
   expect_identical(sas_bug_report(enabled, file), file)
   lines <- readLines(file)
   draft <- paste(lines, collapse = "\n")
-  expect_match(draft, "Synthetic reproduction", fixed = TRUE)
-  expect_false(grepl("private-", draft, fixed = TRUE))
-  expect_false(grepl(root, draft, fixed = TRUE))
+  expect_match(draft, "Proposed synthetic reproduction", fixed = TRUE)
+  expect_match(draft, "draft R example not run", fixed = TRUE)
+  expect_match(draft, "REPRO_MUST_NOT_RUN", fixed = TRUE)
+  expect_false(grepl("RAW_DIAGNOSTIC_SENTINEL", draft, fixed = TRUE))
   expect_error(sas_bug_report(enabled, file), class = "sas2r_record_exists")
   expect_identical(readLines(file), lines)
-  code <- lines[seq.int(match("```r", lines) + 1L, match("```", lines) - 1L)]
-  expect_message(eval(parse(text = code)), "rejected the destination")
-  runtime <- new.env(parent = baseenv())
-  sys.source(file.path(enabled$bundle_dir, "runtime", "sas2r-helpers.R"), runtime)
-  code[grepl("render <-", code, fixed = TRUE)] <- "  render <- legacy_render"
-  expect_error(eval(parse(text = code), list(legacy_render = runtime$sas_print_table)),
-    "Reproduced: the helper wrote PDF bytes")
 })
 
-test_that("a scheduler failure preserves the error and writes an evidence-only draft", {
+test_that("triage preserves the failure and writes evidence when a reproduction is unavailable", {
   root <- withr::local_tempdir()
   writeLines("data work.sample; value = 1; run;", file.path(root, "sample.sas"))
-  # Simulate the scheduler receiving a component it cannot make ready.
-  testthat::local_mocked_bindings(translation_providers = function(graph, schedule, ids) {
-    stats::setNames(rep(list("unreachable"), length(ids)), ids)
+  testthat::local_mocked_bindings(run_program_pipeline = function(...) {
+    cli::cli_abort("Scheduler failed with SECRET_RUNTIME_DETAIL", class = "sas2r_pipeline_coverage_error")
+  })
+  requests <- list()
+  llm <- diagnosis_mock(bug_triage_answer(""), function(request) {
+    requests[[length(requests) + 1L]] <<- request
   })
   out <- withr::local_tempdir()
-  expect_error(suppressMessages(sas_translate(root, out_dir = out,
-    config = list(migration = list(bug_reports = TRUE, report_diagnosis = "off")),
-    max_parallel_translations = 2L, usage_limits = list(max_calls = 0))),
+  expect_error(suppressMessages(sas_translate(root, out_dir = out, llm = llm,
+    config = list(migration = list(bug_reports = TRUE, report_diagnosis = "off")))),
     class = "sas2r_pipeline_coverage_error")
+  expect_length(requests, 1L)
+  expect_match(request_task_text(requests[[1L]]), "sas2r_pipeline_coverage_error", fixed = TRUE)
+  expect_false(grepl("SECRET_RUNTIME_DETAIL", request_task_text(requests[[1L]]), fixed = TRUE))
   report <- list.files(out, pattern = "^report[.]json$", recursive = TRUE, full.names = TRUE)
   expect_length(report, 1L)
   data <- read_json_record(report, simplifyVector = FALSE)
   expect_identical(data$status, "blocked")
-  expect_identical(data$package_bug_diagnosis$findings[[1L]]$code, "scheduler_unaccounted_components")
+  expect_identical(data$package_bug_diagnosis$findings[[1L]]$reproduction, "no_example")
+  expect_equal(data$usage$calls, 1)
   file <- file.path(out, "draft.md")
   expect_identical(sas_bug_report(report, file), file)
   draft <- paste(readLines(file), collapse = "\n")
-  expect_match(draft, "Reproduction pending", fixed = TRUE)
-  expect_match(draft, "Pending components: `1`", fixed = TRUE)
-  expect_match(draft, "Translation workers: `2`", fixed = TRUE)
-  expect_false(grepl("sample", draft, fixed = TRUE))
-  expect_false(grepl("```r", draft, fixed = TRUE))
+  expect_match(draft, "no runnable example supplied", fixed = TRUE)
+  expect_match(draft, "Try the operation with synthetic values", fixed = TRUE)
+  expect_false(grepl("SECRET_RUNTIME_DETAIL|```r", draft))
 })
 
-test_that("ordinary run failures leave package-bug attribution unresolved", {
-  root <- withr::local_tempdir()
-  writeLines("data work.sample; set private.missing; run;", file.path(root, "sample.sas"))
-  cfg <- list(migration = list(bug_reports = TRUE, report_diagnosis = "off"))
-  result <- suppressMessages(sas_translate(root, config = cfg, out_dir = withr::local_tempdir(),
-    usage_limits = list(max_calls = 0)))
-  report <- read_json_record(result$report_json_path, simplifyVector = FALSE)
-  expect_false(result$status %in% c("migration_ready", "validated"))
-  expect_length(report$package_bug_diagnosis$findings, 0L)
-  expect_error(sas_bug_report(result, file.path(root, "draft.md")),
-    class = "sas2r_no_package_bug_finding")
+test_that("triage respects the budget and retains only findings grounded in supplied IDs", {
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  state <- fx$state
+  state$config$migration$bug_reports <- TRUE
+  state$assessment <- list(targets = list(work.result = discrepancy_fixture()))
+  request <- NULL
+  answer <- bug_triage_answer("invalid(")
+  answer$findings[[2L]] <- answer$findings[[1L]]
+  answer$findings[[2L]]$evidence_id <- "E999"
+  state$reviewer_llm <- diagnosis_mock(answer, function(req) request <<- req)
+  diagnosis <- suppressMessages(migration_package_bug_diagnosis(state))
+  expect_identical(diagnosis$status, "completed")
+  expect_length(diagnosis$findings, 1L)
+  expect_identical(diagnosis$findings[[1L]]$reproduction, "no_example")
+  expect_null(diagnosis$findings[[1L]]$repro_r)
+  expect_match(request_task_text(request), "CONSTANT_OFFSET", fixed = TRUE)
+  expect_false(grepl("RECORD_SENTINEL|REFERENCE_PATH_SENTINEL|3653", request_task_text(request)))
+
+  state$usage_budget$max_calls <- 0
+  request <- NULL
+  expect_identical(migration_package_bug_diagnosis(state)$status, "budget_unavailable")
+  expect_null(request)
+  state$reviewer_llm <- NULL
+  expect_identical(migration_package_bug_diagnosis(state)$status, "not_configured")
+  state$assessment <- NULL
+  expect_identical(migration_package_bug_diagnosis(state)$status, "not_needed")
   expect_false(normalize_migration_config(NULL)$bug_reports)
   expect_error(normalize_migration_config(list(bug_reports = "true")),
     class = "sas2r_config_error")
+})
+
+test_that("the installed sample drafts a reproduction without a reviewer", {
+  demo <- system.file("examples", "bug-report-demo", "report.json", package = "sas2r")
+  file <- withr::local_tempfile(fileext = ".md")
+  expect_identical(sas_bug_report(demo, file), file)
+  lines <- readLines(file)
+  expect_true(any(grepl("draft R example not run", lines, fixed = TRUE)))
+  code <- lines[seq.int(match("```r", lines) + 1L, match("```", lines) - 1L)]
+  expect_message(eval(parse(text = code)), "rejected the destination")
 })

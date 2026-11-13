@@ -170,12 +170,17 @@ write_run_navigation <- function(state, report) {
       '</p></section>'),
     paste0('<p>Recorded status: ', run_html_escape(report$status), '</p>'),
     '<p>Execution, independent review, and reference equivalence are separate results. Saved outputs may be partial or unvalidated. Manual edits and reruns do not change this report.</p>',
-    if (identical(report$package_bug_diagnosis$status, "unavailable"))
-      '<p>Beta package-bug diagnosis unavailable. See the machine report for details.</p>',
+    if (!is.null(report$package_bug_diagnosis) && !length(report$package_bug_diagnosis$findings)) c(
+      '<h2>AI bug triage (beta)</h2>',
+      paste0('<p>', run_html_escape(report$package_bug_diagnosis$reason), '</p>')),
     if (length(report$package_bug_diagnosis$findings)) c(
-      '<h2>Possible sas2r bugs (beta)</h2>',
+      '<h2>Possible sas2r bugs (AI beta)</h2>',
       '<ul>', vapply(report$package_bug_diagnosis$findings, function(finding) paste0(
-        '<li>', run_html_escape(package_bug_finding_summary(finding)), '</li>'), ""), '</ul>',
+        '<li>', run_html_escape(package_bug_finding_summary(finding)),
+        '<ul><li>Recorded symptom: ', run_html_escape(finding$observed),
+        '</li><li>Expected behavior: ', run_html_escape(finding$expected),
+        '</li><li>Uncertainty: ', run_html_escape(finding$uncertainty),
+        '</li><li>Next step: ', run_html_escape(finding$next_step), '</li></ul></li>'), ""), '</ul>',
       paste0("<p>To create a draft for review, pass this run's ", link("report/report.json", "machine report"),
         ' to <code>sas2r::sas_bug_report()</code> with a destination Markdown file.</p>')),
     paste0('<nav>', paste(c(link("bundle/README.md", "Bundle instructions"), link("report/translation.md", "Translation report"),

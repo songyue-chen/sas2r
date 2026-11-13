@@ -22,14 +22,15 @@ sending it to the maintainer or posting it to the public issue tracker.
 }
 \details{
 The draft includes the package-level suspicion and selected run metadata.
-For supported findings it includes synthetic R code and an expected result.
-Run that code in a fresh R session using the reported sas2r build, then
-record the result. If the run used a modified or older bundled runtime,
-use the recorded runtime hash to identify it. Other findings include
-instructions for preparing a minimal example.
+It includes the reviewer's explanation, uncertainty and suggested next step.
+When the reviewer drafts synthetic R code, review it before running it in a
+fresh R session using the reported build. Record the result in the draft.
+A reproducible failure needs an observed result from that separate test.
 
-This function works offline. It reads the recorded findings and writes a
-draft locally. It never runs the example or submits the draft.
+AI triage occurs during translation using the configured reviewer. This
+function renders its saved findings locally. It neither calls the model
+nor runs examples. Model text and code may reflect the supplied project
+evidence, so review and remove confidential details before sharing.
 }
 \seealso{
 \code{\link[=sas_translate]{sas_translate()}}, \code{\link[=sas_config]{sas_config()}}

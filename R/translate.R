@@ -354,6 +354,7 @@ sas_translate <- function(
 
   # Report advice is terminal output: it cannot influence repair or status.
   state$report_diagnosis <- migration_report_diagnosis(state)
+  state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm)
 
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()
@@ -393,6 +394,9 @@ sas_translate <- function(
     state <- error$migration_state %||% state
     if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
         "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error", "sas2r_run_locked"))) stop(error)
+    if (stage %in% c("translation", "bundle execution and repair"))
+      state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm,
+        failure = error, stage = stage)
     finalize_usage_run(budget, terminal_status = "failed")
     # Evidence writing must never hide the original failure, including an
     # unwritable output location. No additional success state is invented.
@@ -401,14 +405,13 @@ sas_translate <- function(
       state$paths <- paths
       state$status <- "blocked"
       state$status_reason <- conditionMessage(error)
-      state$resume_requested <- isTRUE(resume)
       state$diagnostics$failure <- list(stage = stage, message = conditionMessage(error))
       if (length(state$selected_revisions) && !dir.exists(paths$bundle)) {
         partial <- snapshot_selected_bundle(state, file.path(paths$diagnostics, "partial_bundle"))
         materialize_user_bundle(partial, paths$bundle, state$project)
       }
       state$bundle_dir <- if (dir.exists(paths$bundle)) paths$bundle else NULL
-      write_migration_report(state, emit_outcome = TRUE, failure = error)
+      write_migration_report(state, emit_outcome = TRUE)
       message("Blocked run: ", paths$start_here)
     }, error = function(report_error) {
       message("Could not write run report: ", conditionMessage(report_error))

@@ -1,105 +1,197 @@
-# Terminal advice. Keep this independent of repair, selection and validation.
-migration_package_bug_diagnosis <- function(state, attempts, failure = NULL) {
-  result <- list(schema_version = 1L, status = "disabled", findings = list())
-  if (!isTRUE(state$config$migration$bug_reports)) return(result)
+# Terminal advice. This path never runs generated examples or changes run status.
+migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, failure = NULL, stage = NULL) {
+  if (!isTRUE(state$config$migration$bug_reports)) return(NULL)
+  result <- list(schema_version = 2L, status = "unavailable", findings = list())
 
-  findings <- list()
-  if (inherits(failure, "sas2r_scheduler_unaccounted_components")) {
-    findings <- list(list(code = "scheduler_unaccounted_components",
-      pending_count = failure$pending_count, resume_requested = state$resume_requested,
-      order = if (is.null(state$graph$execution_order)) "inferred" else "configured"))
-  } else if (is.null(failure)) {
-    # Assessments belong to the selected attempt. A rejected or older attempt
-    # may have run different code, even when its component IDs are the same.
-    id <- state$selected_attempt$attempt_id
-    attempt <- if (!is.null(id)) attempts$completed_attempts[[id]] else NULL
-    if (isTRUE(attempt$passed) && !isTRUE(attempt$deferred) &&
-        identical(attempt$attempt_dir, state$selected_attempt$attempt_dir) &&
-        identical(attempt$run_id, state$paths$run_id)) {
-      findings <- Filter(Negate(is.null), lapply(state$assessment$targets, function(target) {
-        diagnose_pdf_destination(state, attempt, target)
-      }))
+  tryCatch({
+    evidence <- package_bug_evidence(state, failure, stage)
+    if (!length(evidence)) {
+      result$status <- "not_needed"
+      result$reason <- "No observed run failures were eligible for AI bug triage."
+      return(result)
+    }
+
+    budget <- state$usage_budget
+    if (is.null(llm)) {
+      result$status <- "not_configured"
+      result$reason <- "AI bug triage requires a configured reviewer."
+      return(result)
+    }
+    if (is.null(budget) || !usage_budget_allows_future(budget)) {
+      result$status <- "budget_unavailable"
+      result$reason <- "No request budget remains for AI bug triage."
+      return(result)
+    }
+
+    # Send only the fixed evidence projection and bounded code. Local binding
+    # metadata is retained for the draft and does not need to go to the model.
+    facts <- lapply(evidence, function(item) item$facts)
+    ids <- unique(unlist(lapply(evidence, function(item) item$code_ids), use.names = FALSE))
+    calls <- unique(unlist(lapply(state$selected_revisions[ids], function(revision) {
+      r_call_names(revision_code(revision))
+    }), use.names = FALSE))
+    helpers <- utils::head(intersect(c(calls,
+      unlist(lapply(facts, function(fact) fact$runtime_helpers))), SAS2R_HELPER_NAMES), 4L)
+    docs <- if (length(helpers)) helper_documentation() else list()
+    contracts <- lapply(docs[intersect(helpers, names(docs))], function(doc) substr(doc$text, 1L, 1800L))
+    packet <- report_advice_context(state, list(evidence = facts, helper_contracts = contracts,
+      execution_order = state$graph$execution_order %||% state$schedule$component_id), ids)
+    redact <- llm_audit_redactor(llm)
+    result$provider <- llm$provider
+    result$context_truncated <- packet$truncated
+    cli::cli_inform("AI bug triage may send bounded SAS/R code and structured run evidence to {llm$provider}, subject to the run budget. Use migration.bug_reports: false to disable it.")
+    advice <- request_report_advice(llm, budget, packet, "package-bug-triage",
+      "package_bug_triage_v1", "package_bug_triage")
+    response <- advice$response
+    result$model <- redact(response$resolved_model %||% llm$model)
+    result$response_status <- response$status
+    result$finish_reason <- redact(response$finish_reason)
+    if (!advice$valid) {
+      result$status <- if (identical(response$status, "budget_exhausted")) "budget_unavailable" else "unavailable"
+      result$reason <- "AI bug triage returned an incomplete, failed or invalid response."
+      return(result)
+    }
+
+    seen <- character()
+    for (finding in redact(response$data$findings)) {
+      id <- finding$evidence_id
+      item <- evidence[[id]]
+      if (is.null(item) || id %in% seen) next
+      seen <- c(seen, id)
+      code <- trimws(finding$repro_r)
+      parsed <- if (nzchar(code)) tryCatch(parse(text = code), error = function(e) NULL)
+      finding$repro_r <- if (length(parsed)) code else NULL
+      finding$reproduction <- if (length(parsed)) "not_run" else "no_example"
+      finding$observed <- item$observed
+      finding$binding <- item$binding
+      result$findings[[length(result$findings) + 1L]] <- finding
+    }
+    result$status <- "completed"
+    result$reason <- if (length(result$findings)) "AI identified possible sas2r bugs for review." else
+      "AI triage did not identify a grounded package-bug suspicion in the supplied evidence."
+    if (length(result$findings)) {
+      description <- file.path(getNamespaceInfo(asNamespace("sas2r"), "path"), "DESCRIPTION")
+      revision <- if (file.exists(description)) read.dcf(description, fields = "RemoteSha")[1L, 1L] else NA_character_
+      result$environment <- list(
+        sas2r = state$environment$versions$sas2r %||% as.character(getNamespaceVersion("sas2r")),
+        R = state$environment$versions$R %||% as.character(getRversion()),
+        platform = R.version$platform,
+        revision = if (!is.na(revision)) revision,
+        workers = state$environment$parallel$effective %||% state$parallel$effective)
+    }
+    result
+  }, error = function(error) {
+    result$status <- "unavailable"
+    result$findings <- list()
+    result$reason <- paste("AI bug triage unavailable:", redact_secrets(conditionMessage(error)))
+    result
+  })
+}
+
+package_bug_evidence <- function(state, failure, stage) {
+  items <- list()
+  revisions <- state$selected_revisions
+  condition_item <- function(scope, condition, cid = NULL, binding = NULL, code_ids = cid) {
+    facts <- agent_error_facts(condition, revision_code(revisions[[code_ids %||% ""]]))
+    # Package condition classes and code-confirmed helper names provide hints,
+    # while the original message, paths and call arguments stay local.
+    known_classes <- union(facts$condition_class, intersect(condition$class,
+      c("sas2r_pipeline_coverage_error", "sas2r_mechanical_check_failure")))
+    helpers <- intersect(condition$call_names, SAS2R_HELPER_NAMES)
+    list(facts = list(scope = scope, component = cid, kind = facts$kind,
+      condition_classes = known_classes, runtime_helpers = helpers,
+      identifiers = facts$identifiers),
+      observed = paste0(scope, " - ", gsub("_", " ", facts$kind, fixed = TRUE),
+        if (length(known_classes)) paste0(" (", paste(known_classes, collapse = ", "), ")")),
+      binding = binding, code_ids = code_ids)
+  }
+  if (!is.null(failure)) {
+    terminal <- condition_item(stage, list(class = class(failure), message = conditionMessage(failure)))
+    items <- list(terminal)
+  }
+
+  selected <- state$selected_attempt
+  attempt <- state$attempt
+  if (!is.null(attempt$condition) && identical(attempt$kind, "bundle") &&
+      isTRUE(attempt$completed) && !isTRUE(attempt$deferred)) {
+    cid <- attempt$condition$component_id
+    if (!is_scalar_character(cid)) cid <- NULL
+    recorded <- attempt$revision_manifest[[cid %||% ""]]
+    code_ids <- if (!is.null(cid) && !is.null(recorded$r_hash) &&
+      identical(recorded$revision_id, revisions[[cid]]$revision_id) &&
+      identical(recorded$r_hash, migration_hash(revision_code(revisions[[cid]])))) cid
+    items <- c(items, list(condition_item("Bundle execution failed", attempt$condition, cid,
+      list(attempt_id = attempt$attempt_id, revision_id = recorded$revision_id,
+        helper_hash = attempt$helper_hash), code_ids)))
+  }
+
+  component_failures <- state$diagnostics$component_failures %||% list()
+  for (cid in utils::head(names(component_failures), 4L)) {
+    item <- component_failures[[cid]]
+    items <- c(items, list(condition_item("Component processing failed",
+      list(message = item$reason), cid)))
+  }
+
+  if (length(items) < 6L) {
+    for (cid in names(revisions)) {
+      smoke <- revisions[[cid]]$smoke
+      if (is.null(smoke$condition) || !isFALSE(smoke$passed) ||
+          isTRUE(smoke$deferred) || !is.null(smoke$blocked_by) ||
+          cid %in% attempt$executed_component_ids) next
+      items <- c(items, list(condition_item("Program smoke test failed", smoke$condition, cid,
+        list(revision_id = revisions[[cid]]$revision_id))))
+      if (length(items) >= 6L) break
     }
   }
 
-  result$status <- "completed"
-  result$findings <- unname(findings)
-  if (!length(findings)) return(result)
-  description <- file.path(getNamespaceInfo(asNamespace("sas2r"), "path"), "DESCRIPTION")
-  revision <- if (file.exists(description)) read.dcf(description, fields = "RemoteSha")[1L, 1L] else NA_character_
-  result$environment <- list(
-    sas2r = state$environment$versions$sas2r %||% as.character(getNamespaceVersion("sas2r")),
-    R = state$environment$versions$R %||% as.character(getRversion()),
-    platform = R.version$platform,
-    revision = if (!is.na(revision)) revision,
-    workers = state$environment$parallel$effective %||% state$parallel$effective)
-  result
-}
-
-# A wrong-format output alone does not identify the writer. For the beta,
-# require a direct bundled helper call with a literal destination that resolves
-# to the assessed file. Indirect or dynamic writers need investigation.
-diagnose_pdf_destination <- function(state, attempt, target) {
-  if (!identical(target$kind, "tlf") || !target$status %in% c("failed", "needs_review")) return(NULL)
-  if (!is_scalar_character(target$candidate_path)) return(NULL)
-  format <- tolower(tools::file_ext(target$target_key))
-  if (!is_pdf_destination_finding_format(format)) return(NULL)
-
-  contracts <- state$assessment$contracts
-  producer <- contracts$producer_node_id[contracts$target_key == target$target_key]
-  cid <- graph_output_writers(state$graph, target$target_key, producer)
-  if (length(cid) != 1L || !cid %in% attempt$executed_component_ids ||
-      is.null(attempt$helper_hash)) return(NULL)
-  revision <- state$selected_revisions[[cid]]
-  executed_revision <- attempt$revision_manifest[[cid]]
-  if (is.null(executed_revision$revision_id) ||
-      !identical(revision$revision_id, executed_revision$revision_id) ||
-      !identical(migration_hash(revision_code(revision)), executed_revision$r_hash)) return(NULL)
-
-  # A program can call the installed sas2r namespace explicitly. Only bare
-  # calls are candidates for the bundled-runtime contract checked here.
-  calls <- Filter(function(expr) is.call(expr) && identical(expr[[1L]], quote(sas_print_table)),
-    as.list(smoke_program_expressions(revision_code(revision))))
-  for (call in calls) {
-    args <- tryCatch(match.call(sas_print_table, call), error = function(e) NULL)
-    path <- as.list(args)$file
-    if (!is.call(path) || !identical(path[[1L]], quote(sas_output_path)) || length(path) != 2L) next
-    logical_path <- as.list(tryCatch(match.call(sas_output_path, path), error = function(e) NULL))$path
-    if (!is_scalar_character(logical_path)) next
-    relative <- tryCatch(sas2r_tlf_relative_path(logical_path), error = function(e) NULL)
-    if (is.null(relative)) next
-    dest <- normalizePath(file.path(attempt$attempt_dir, "tlf", relative),
-      winslash = "/", mustWork = FALSE)
-    if (!identical(dest, target$candidate_path) ||
-        !identical(tolower(tools::file_ext(dest)), format) || !file.exists(dest)) next
-    header <- tryCatch(readBin(dest, "raw", n = 5L), error = function(e) raw())
-    if (identical(header, charToRaw("%PDF-"))) {
-      return(list(code = "pdf_written_to_non_pdf_destination",
-        format = format, component_id = cid, target_key = target$target_key,
-        attempt_id = attempt$attempt_id,
-        revision_id = executed_revision$revision_id, helper_hash = attempt$helper_hash))
-    }
+  targets <- Filter(function(target) target$status %in% c("failed", "unreadable", "missing_candidate"),
+    state$assessment$targets %||% list())
+  targets <- utils::head(targets, max(0L, 6L - length(items)))
+  selected_record <- if (length(targets) && !is.null(selected$attempt_dir)) {
+    if (identical(attempt$attempt_dir, selected$attempt_dir)) attempt else read_attempt_record(selected$attempt_dir)
   }
-  NULL
+  for (target in targets) {
+    key <- target$target_key
+    dataset <- identical(target$kind, "dataset")
+    ids <- state$assessment$lineage_by_target[[key]]$upstream_components %||%
+      graph_output_writers(state$graph, key)
+    summary <- if (dataset) reviewer_discrepancy_summary(target, key)
+    if (dataset) {
+      summary$variables <- utils::head(summary$variables, 5L)
+      summary$type_differences <- utils::head(summary$type_differences, 5L)
+    }
+    failed_checks <- names(Filter(function(check) isFALSE(check$passed), target$checks))
+    items <- c(items, list(list(facts = list(scope = "Output assessment", target = key,
+      kind = target$kind, status = target$status, discrepancy = summary,
+      failed_checks = failed_checks),
+      observed = paste0(target$kind %||% "Dataset", " output assessment - ",
+        gsub("_", " ", target$status, fixed = TRUE),
+        if (length(failed_checks)) paste0(" (", paste(failed_checks, collapse = ", "), ")")),
+      binding = list(attempt_id = selected$attempt_id, helper_hash = selected_record$helper_hash),
+      code_ids = ids)))
+  }
+  stats::setNames(items, paste0(rep("E", length(items)), seq_along(items)))
 }
 
-is_pdf_destination_finding_format <- function(format) {
-  is_scalar_character(format) && format %in% c("html", "htm", "rtf", "docx", "png", "jpg", "jpeg")
+package_bug_reproduction_label <- function(finding) {
+  if (identical(finding$reproduction, "not_run")) "Reproduction unverified (draft R example not run)" else
+    "Reproduction unverified (no runnable example supplied)"
 }
 
 package_bug_finding_summary <- function(finding) {
-  switch(finding$code,
-    pdf_written_to_non_pdf_destination = paste0("Bundled sas_print_table() call matched a .",
-      finding$format, " output containing PDF bytes (", finding$component_id, ", ",
-      finding$target_key, ", ", finding$attempt_id, ")."),
-    scheduler_unaccounted_components = "The translation scheduler stopped with components still pending.")
+  paste0("AI suspicion [", finding$evidence_id, "]: ", finding$explanation,
+    " ", package_bug_reproduction_label(finding), ".")
 }
 
 package_bug_report_lines <- function(diagnosis) {
-  if (identical(diagnosis$status, "unavailable"))
-    return(c("Beta package-bug diagnosis unavailable. See the machine report for details.", ""))
-  if (!length(diagnosis$findings)) return(character())
-  c("## Possible sas2r bugs (beta)", "",
-    vapply(diagnosis$findings, function(finding) paste("-", package_bug_finding_summary(finding)), ""),
-    "", "Create an issue draft with `sas2r::sas_bug_report()` using this run's `report.json`.", "")
+  if (is.null(diagnosis)) return(character())
+  if (!length(diagnosis$findings)) return(c("## AI bug triage (beta)", "", diagnosis$reason, ""))
+  c("## Possible sas2r bugs (AI beta)", "",
+    unlist(lapply(diagnosis$findings, function(finding) c(
+      paste("-", package_bug_finding_summary(finding)),
+      paste("  - Recorded symptom:", finding$observed),
+      paste("  - Expected behavior:", finding$expected),
+      paste("  - Uncertainty:", finding$uncertainty),
+      paste("  - Next step:", finding$next_step))), use.names = FALSE), "",
+    "Create an issue draft with `sas2r::sas_bug_report()` using this run's `report.json`.", "")
 }

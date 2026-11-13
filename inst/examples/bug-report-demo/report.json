@@ -2,7 +2,7 @@
   "schema_version": "1",
   "run_id": "run_20261112T000000Z_00000000",
   "package_bug_diagnosis": {
-    "schema_version": 1,
+    "schema_version": 2,
     "status": "completed",
     "environment": {
       "sas2r": "0.6.0",
@@ -13,12 +13,23 @@
     },
     "findings": [
       {
-        "code": "pdf_written_to_non_pdf_destination",
-        "format": "html",
-        "attempt_id": "bundle_attempt_001",
-        "revision_id": "r1",
-        "helper_hash": "8fc509190c3bb447c2b21a0becc9d92970c37637c118774320bcd666419ee5ed"
+        "evidence_id": "E1",
+        "observed": "Output assessment - failed (HTML structure check).",
+        "explanation": "The bundled sas_print_table() writer may have accepted an HTML destination and written PDF bytes. The writer should reject destinations outside its PDF contract.",
+        "expected": "The PDF-only helper raises a format error before creating the file.",
+        "uncertainty": "The file header and exact helper behavior need to be checked on the reported runtime.",
+        "next_step": "Run the proposed example using the affected package build and compare with the current build.",
+        "reproduction": "not_run",
+        "repro_r": "local({\n  path <- tempfile(fileext = \".html\")\n  on.exit(unlink(path))\n  result <- tryCatch(sas2r::sas_print_table(data.frame(value = c(1, 2)), path), error = identity)\n  if (file.exists(path) && identical(readBin(path, \"raw\", n = 5L), charToRaw(\"%PDF-\")))\n    stop(\"Reproduced: the helper wrote PDF bytes to a non-PDF destination.\")\n  stopifnot(inherits(result, \"error\"), !file.exists(path))\n  stopifnot(grepl(\"file must end in .pdf\", conditionMessage(result), fixed = TRUE))\n  message(\"The helper rejected the destination before writing a file.\")\n})",
+        "binding": {
+          "attempt_id": "bundle_attempt_001",
+          "revision_id": "r1",
+          "helper_hash": "8fc509190c3bb447c2b21a0becc9d92970c37637c118774320bcd666419ee5ed"
+        }
       }
-    ]
+    ],
+    "provider": "demo",
+    "model": "saved-example",
+    "reason": "Saved synthetic AI triage example."
   }
 }

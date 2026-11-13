@@ -746,12 +746,17 @@ migration:
 ```
 
 From R, the equivalent setting is `config = list(migration = list(bug_reports = TRUE))`.
-The check runs locally and is independent of `migration.report_diagnosis` and
-the translation's model settings. It runs after the workflow's execution and
-repair decisions. When the beta recognizes a package-level symptom,
-`START_HERE.html` and the translation report show **Possible sas2r bugs**.
-This beta covers matching PDF bytes at a non-PDF report destination to the
-bundled PDF writer, and a scheduler failure with pending components.
+After translation and repair decisions, the configured reviewer can make one
+budget-accounted triage request for recorded failures in translation, execution
+or output checks. This opt-in is independent of the dataset explanations
+controlled by `migration.report_diagnosis`. Without a reviewer or request budget,
+the run report explains why triage could not run.
+
+`START_HERE.html` and the translation report show suspected package defects,
+recorded symptoms, expected behavior, and remaining uncertainty. The model can
+propose a short synthetic R example or suggest how to isolate the failure.
+The report labels examples as unrun. Review code before running it and record
+the result on the reported build. See [model privacy](model-privacy.md).
 
 Pass the returned translation result or the path to that run's
 `report/report.json` as the first argument of `sas2r::sas_bug_report()` and a new
@@ -761,7 +766,7 @@ and R versions, and a synthetic example or steps to isolate the failure.
 Review it before sharing and record whether the example reproduced on your
 machine. Send the reviewed draft to the maintainer or post it in the
 [issue tracker](https://github.com/songyue-chen/sas2r/issues).
-Try the [offline demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
+Try the [saved triage demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
 
 ## Code style and packages
 

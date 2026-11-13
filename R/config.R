@@ -455,8 +455,9 @@ find_config <- function(start = ".") {
 #'   `path` and `recursive` in [sas_preflight()] or [sas_translate()] still select
 #'   that scope. Omitting the order retains inferred dependencies. Changing the
 #'   order on a previously scanned project requires rescanning the sources.
-#'   Set `migration.bug_reports: true` to enable offline beta findings in
-#'   translation reports. Defaults to false. See [sas_bug_report()].
+#'   Set `migration.bug_reports: true` to enable AI triage of possible sas2r
+#'   bugs under the run's reviewer usage budget. Defaults to false.
+#'   See [sas_bug_report()].
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,

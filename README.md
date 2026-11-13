@@ -87,8 +87,8 @@ Installed examples are available without a GitHub checkout. Locate them with
 `system.file("examples", package = "sas2r")`; its README explains how to copy the
 migration demo into a writable directory and prepare its synthetic input. The
 annotated YAML is a configuration reference to adapt to your own study.
-Try the [offline package-bug reporting demo](inst/examples/README.md#try-the-package-bug-reporting-beta)
-to create a draft from a synthetic run without SAS or an API key.
+Try the [package-bug reporting beta demo](inst/examples/README.md#try-the-package-bug-reporting-beta)
+to export a saved synthetic triage result without SAS or an API key.
 
 ### 2. Describe your study in `_sas2r.yml`
 
