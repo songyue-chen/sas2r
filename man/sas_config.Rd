@@ -48,6 +48,8 @@ retain their existing roles. The list orders the scanned source scope;
 \code{path} and \code{recursive} in \code{\link[=sas_preflight]{sas_preflight()}} or \code{\link[=sas_translate]{sas_translate()}} still select
 that scope. Omitting the order retains inferred dependencies. Changing the
 order on a previously scanned project requires rescanning the sources.
+Set \code{migration.bug_reports: true} to enable offline beta findings in
+translation reports. Defaults to false. See \code{\link[=sas_bug_report]{sas_bug_report()}}.
 }
 \examples{
 # Read the demo project configuration shipped with the package.

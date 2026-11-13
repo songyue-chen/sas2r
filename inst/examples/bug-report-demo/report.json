@@ -1,0 +1,24 @@
+{
+  "schema_version": "1",
+  "run_id": "run_20261112T000000Z_00000000",
+  "package_bug_diagnosis": {
+    "schema_version": 1,
+    "status": "completed",
+    "environment": {
+      "sas2r": "0.6.0",
+      "revision": "690b68fbc4a376d423cc7dc948f03116f753775e",
+      "R": "4.4.0",
+      "platform": "aarch64-apple-darwin20",
+      "workers": 1
+    },
+    "findings": [
+      {
+        "code": "pdf_written_to_non_pdf_destination",
+        "format": "html",
+        "attempt_id": "bundle_attempt_001",
+        "revision_id": "r1",
+        "helper_hash": "8fc509190c3bb447c2b21a0becc9d92970c37637c118774320bcd666419ee5ed"
+      }
+    ]
+  }
+}

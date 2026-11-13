@@ -209,6 +209,7 @@ llm:
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
 #   report_diagnosis: auto  # off disables advisory report explanations
+#   bug_reports: false     # true enables offline package-bug findings (beta)
 #   # Optional: all root programs, in one shared WORK session; paths relative here.
 #   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
 #   # List each root once; startup, called macros and includes keep their roles.

@@ -401,13 +401,14 @@ sas_translate <- function(
       state$paths <- paths
       state$status <- "blocked"
       state$status_reason <- conditionMessage(error)
+      state$resume_requested <- isTRUE(resume)
       state$diagnostics$failure <- list(stage = stage, message = conditionMessage(error))
       if (length(state$selected_revisions) && !dir.exists(paths$bundle)) {
         partial <- snapshot_selected_bundle(state, file.path(paths$diagnostics, "partial_bundle"))
         materialize_user_bundle(partial, paths$bundle, state$project)
       }
       state$bundle_dir <- if (dir.exists(paths$bundle)) paths$bundle else NULL
-      write_migration_report(state, emit_outcome = TRUE)
+      write_migration_report(state, emit_outcome = TRUE, failure = error)
       message("Blocked run: ", paths$start_here)
     }, error = function(report_error) {
       message("Could not write run report: ", conditionMessage(report_error))

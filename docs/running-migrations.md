@@ -735,6 +735,34 @@ categorical mismatch patterns without exact counts or offsets; fixers and candid
 findings without reference targets. Neither evidence policy permits record previews
 or raw runtime logs. See [model privacy](model-privacy.md).
 
+## Report a possible sas2r bug (beta)
+
+Opt in before running `sas_translate()` by adding this setting to your
+`_sas2r.yml`. Set it to `false` to disable it. It defaults to `false`.
+
+```yaml
+migration:
+  bug_reports: true
+```
+
+From R, the equivalent setting is `config = list(migration = list(bug_reports = TRUE))`.
+The check runs locally and is independent of `migration.report_diagnosis` and
+the translation's model settings. It runs after the workflow's execution and
+repair decisions. When the beta recognizes a package-level symptom,
+`START_HERE.html` and the translation report show **Possible sas2r bugs**.
+This beta covers matching PDF bytes at a non-PDF report destination to the
+bundled PDF writer, and a scheduler failure with pending components.
+
+Pass the returned translation result or the path to that run's
+`report/report.json` as the first argument of `sas2r::sas_bug_report()` and a new
+Markdown destination as `file`. Use the saved JSON path for a blocked run
+that raised an error. The draft has expected and observed behavior, package
+and R versions, and a synthetic example or steps to isolate the failure.
+Review it before sharing and record whether the example reproduced on your
+machine. Send the reviewed draft to the maintainer or post it in the
+[issue tracker](https://github.com/songyue-chen/sas2r/issues).
+Try the [offline demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
+
 ## Code style and packages
 
 Translated code is written for maintenance as well as fidelity. Two

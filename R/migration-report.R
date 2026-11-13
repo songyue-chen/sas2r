@@ -57,9 +57,10 @@ migration_md_table <- function(df) {
 #'
 #' @param state Migration state object, bundle pipeline result, or translation object.
 #' @param emit_outcome Print the saved run outcome to the console.
+#' @param failure Terminal condition, if the migration stopped with an error.
 #' @return The path to the written markdown report, invisibly.
 #' @noRd
-write_migration_report <- function(state, emit_outcome = FALSE) {
+write_migration_report <- function(state, emit_outcome = FALSE, failure = NULL) {
   if (is.null(state)) {
     cli::cli_abort("{.arg state} must be provided", class = "sas2r_invalid_argument")
   }
@@ -222,6 +223,9 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   observations <- repair_report_observations(state, paths)
   attempt_records <- resume_migration_attempts(paths)
   bundle_execution <- bundle_execution_report(state, attempt_records)
+  package_bug_diagnosis <- tryCatch(migration_package_bug_diagnosis(state, attempt_records, failure),
+    error = function(error) list(schema_version = 1L, status = "unavailable",
+      reason = redact_secrets(conditionMessage(error)), findings = list()))
 
   # 1. Construct JSON report payload
   style_observation <- migration_style_observation(state$selected_revisions %||% list())
@@ -256,6 +260,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     output_assessments = output_assessments,
     discrepancy_summaries = discrepancy_summaries,
     report_diagnosis = state$report_diagnosis,
+    package_bug_diagnosis = package_bug_diagnosis,
     repair_table = repair_table,
     component_evidence = component_evidence_list,
     bundle_execution = bundle_execution,
@@ -301,6 +306,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "",
     report_explanation_lines(state$report_diagnosis),
     "",
+    package_bug_report_lines(package_bug_diagnosis),
     "## Repair decisions",
     "",
     migration_md_table(repair_table),
