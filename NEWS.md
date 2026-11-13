@@ -5,6 +5,8 @@
   defects and propose synthetic R examples where possible. `sas_bug_report()`
   writes the saved findings to Markdown with explicit reproduction status.
   The installed sample demonstrates draft export without SAS or an API key.
+  Report diagnosis includes its response schema in the prompt for fallback
+  JSON providers. Bug triage reports schema failures in the saved run report.
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF

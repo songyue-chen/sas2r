@@ -53,17 +53,35 @@ request_report_advice <- function(llm, budget, packet, prompt_name, schema_name,
   schema <- jsonlite::read_json(system.file("schemas", paste0(prompt_name, "-v1.json"), package = "sas2r"))
   prompt <- paste(readLines(system.file("prompts", paste0(prompt_name, ".md"), package = "sas2r"),
     warn = FALSE), collapse = "\n")
+  schema_mode <- if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback"
+  if (identical(schema_mode, "fallback")) {
+    prompt <- paste(prompt, "Return a JSON object matching this exact schema. Use the required field names and types.",
+      jsonlite::toJSON(schema, auto_unbox = TRUE, pretty = TRUE), sep = "\n\n")
+  }
   request <- llm_request(messages = list(list(role = "system", content = prompt),
     list(role = "user", content = llm_audit_redactor(llm)(packet$text))), output_schema = schema,
     schema_name = schema_name, schema_version = "1",
-    schema_mode = if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback",
+    schema_mode = schema_mode,
     max_output_tokens = llm$model_parameters$max_output_tokens %||% 4096L,
     reasoning_effort = llm$model_parameters$reasoning_effort,
     temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)
   response <- attempt_llm_request(request, llm, usage_budget = budget,
     audit_context = list(purpose = agent, agent = agent))
-  list(response = response, valid = identical(response$status, "completed") &&
-    identical(response$action, "final") && !length(validate_schema_value(response$data, schema)))
+  errors <- if (identical(response$status, "completed")) {
+    if (!identical(response$action, "final")) {
+      "Expected a final answer."
+    } else if (is.list(response$data) && identical(response$data$parse_error, TRUE) &&
+        !is.null(response$data$raw)) {
+      "The answer could not be parsed as JSON."
+    } else {
+      # An unexpected key may contain copied project text. Keep the schema
+      # paths and expected fields without copying unknown keys or values.
+      errors <- validate_schema_value(response$data, schema)
+      unique(sub("^unexpected field: .*", "Unexpected field in the answer.", errors))
+    }
+  }
+  list(response = response, valid = identical(response$status, "completed") && !length(errors),
+    validation_errors = errors)
 }
 
 migration_report_diagnosis <- function(state) {

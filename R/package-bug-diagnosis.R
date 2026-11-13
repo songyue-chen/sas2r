@@ -48,7 +48,15 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
     result$finish_reason <- redact(response$finish_reason)
     if (!advice$valid) {
       result$status <- if (identical(response$status, "budget_exhausted")) "budget_unavailable" else "unavailable"
-      result$reason <- "AI bug triage returned an incomplete, failed or invalid response."
+      result$validation_errors <- advice$validation_errors
+      result$reason <- if (length(advice$validation_errors)) {
+        paste0("AI bug triage rejected the completed response: ",
+          paste(utils::head(advice$validation_errors, 3L), collapse = "; "))
+      } else if (identical(result$status, "budget_unavailable")) {
+        "The run budget did not admit the AI bug triage request."
+      } else {
+        paste0("AI bug triage did not complete (", response$status, ").")
+      }
       return(result)
     }
 

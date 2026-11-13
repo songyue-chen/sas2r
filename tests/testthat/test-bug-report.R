@@ -132,6 +132,40 @@ test_that("triage respects the budget and retains only findings grounded in supp
     class = "sas2r_config_error")
 })
 
+test_that("fallback triage gives the model the schema and explains rejected responses", {
+  state <- repair_workflow_fixture(n = 1L, failures = integer())$state
+  state$config$migration$bug_reports <- TRUE
+  state$assessment <- list(targets = list(work.result = discrepancy_fixture()))
+  llm <- new_llm(function(request) {
+    expect_identical(request$schema_mode, "fallback")
+    schema <- jsonlite::toJSON(request$output_schema, auto_unbox = TRUE, pretty = TRUE)
+    if (grepl(as.character(schema), request$messages[[1L]]$content, fixed = TRUE)) {
+      return(list(type = "final", data = bug_triage_answer()))
+    }
+    list(type = "final", data = list(findings = list(list(evidence_ids = list("E1"),
+      suspected_violation = "Package behavior may differ from its contract."))))
+  }, provider = "mock", model = "diagnosis-test",
+  capabilities = llm_capabilities(structured_output = "fallback"))
+
+  result <- suppressMessages(migration_package_bug_diagnosis(state, llm))
+  expect_identical(result$status, "completed")
+  expect_identical(result$findings[[1L]]$reproduction, "not_run")
+
+  wrong_fields <- list(findings = list(list(evidence_ids = list("E1"),
+    suspected_violation = "PRIVATE_MODEL_TEXT")))
+  result <- suppressMessages(migration_package_bug_diagnosis(state, diagnosis_mock(wrong_fields)))
+  expect_identical(result$status, "unavailable")
+  expect_true("missing field: evidence_id" %in% result$validation_errors)
+  expect_true("Unexpected field in the answer." %in% result$validation_errors)
+  expect_false(any(grepl("PRIVATE_MODEL_TEXT", c(result$reason, result$validation_errors))))
+  expect_length(result$findings, 0L)
+
+  result <- suppressMessages(migration_package_bug_diagnosis(state,
+    diagnosis_mock(list(raw = "PRIVATE_MODEL_TEXT", parse_error = TRUE))))
+  expect_identical(result$validation_errors, "The answer could not be parsed as JSON.")
+  expect_false(grepl("PRIVATE_MODEL_TEXT", result$reason, fixed = TRUE))
+})
+
 test_that("the installed sample drafts a reproduction without a reviewer", {
   demo <- system.file("examples", "bug-report-demo", "report.json", package = "sas2r")
   file <- withr::local_tempfile(fileext = ".md")
