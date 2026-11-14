@@ -72,6 +72,9 @@ def structured_payload(body):
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
+    if body.get("model", "").startswith(("offline-provider-model", "offline-local-model")):
+        if "side_effects" not in text:
+            return TRANSLATION
     if contains_key(body, "side_effects") or "schema program_translation_v1" in text:
         return PROGRAM_TRANSLATION
     return TRANSLATION
@@ -81,15 +84,23 @@ class ReplayHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
-        """Return an empty Bedrock inventory without leaving loopback."""
-        if not self.path.startswith("/bedrock-control/foundation-models"):
-            self.send_error(
-                404, "expected /bedrock-control/foundation-models"
-            )
+        """Return synthetic inventories and local server readiness."""
+        if self.path.startswith("/bedrock-control/foundation-models"):
+            result = {"modelSummaries": []}
+        elif self.path == "/api/tags":
+            result = {"models": [{"name": "offline-local-model:latest",
+                "modified_at": "2026-01-01T00:00:00Z", "size": 1}]}
+        elif self.path == "/v1/models":
+            result = {"object": "list", "data": [
+                {"id": "offline-local-model", "object": "model", "created": 0,
+                 "owned_by": "loopback", "slug": "offline-local-model"}
+            ]}
+        else:
+            self.send_error(404, "unknown inventory or readiness endpoint")
             return
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": {}}) + "\n")
-        payload = json.dumps({"modelSummaries": []}).encode("utf-8")
+        payload = json.dumps(result).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -98,6 +109,16 @@ class ReplayHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):  # noqa: N802 - stdlib handler API
+        if self.path == "/api/show":
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            payload = b'{"capabilities":["completion","tools"]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         is_chat_completions = self.path.endswith("/chat/completions")
         is_responses = self.path.endswith("/responses")
         is_anthropic_messages = self.path.endswith("/anthropic/v1/messages")
@@ -126,6 +147,10 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": body}) + "\n")
+
+        if body.get("model") == "offline-provider-model-anonymous" and self.headers.get("Authorization"):
+            self.send_error(400, "anonymous endpoint received authorization")
+            return
 
         if body.get("model") == "offline-parallel-rejection-model" and "temperature" in body:
             payload = json.dumps({"error": {"message": "Unsupported parameter: temperature"}}).encode()
@@ -238,6 +263,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "prompt_tokens": 100,
                 "completion_tokens": 25,
                 "total_tokens": 125,
+                "cost": 0.0001,
             },
         }
 

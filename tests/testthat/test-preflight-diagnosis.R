@@ -22,14 +22,18 @@ test_that("one advisory request preserves static results and offers a bug report
   offline <- sas_preflight(root, diagnose = "off")
   before <- list.files(root, recursive = TRUE, all.files = TRUE)
   requests <- list()
-  llm <- diagnosis_mock(diagnosis_answer("suspected_sas2r_bug"), function(request) {
+  llm <- new_llm(function(request) {
     requests[[length(requests) + 1L]] <<- request
-  })
+    list(type = "final", data = diagnosis_answer("suspected_sas2r_bug"))
+  }, provider = "mock", model = "diagnosis-test",
+  capabilities = llm_capabilities(structured_output = "fallback"))
   check <- sas_preflight(root, llm = llm)
   expect_identical(check$diagnosis$status, "completed")
   expect_equal(check$model_calls, 1L)
   expect_length(requests, 1L)
   expect_lte(requests[[1L]]$parameters$max_output_tokens, 4096L)
+  expect_identical(requests[[1L]]$schema_mode, "fallback")
+  expect_match(requests[[1L]]$messages[[1L]]$content, '"classification"', fixed = TRUE)
   expect_match(requests[[1L]]$messages[[2L]]$content, "main.sas")
   expect_identical(check$inputs, offline$inputs)
   expect_identical(check$findings, offline$findings)

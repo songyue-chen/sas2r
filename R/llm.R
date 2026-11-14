@@ -394,6 +394,13 @@ normalize_json_schema_arrays <- function(schema) {
   map_json_schema_children(schema, normalize_json_schema_arrays)
 }
 
+llm_prompt_with_output_schema <- function(prompt, schema) {
+  paste(prompt,
+    "Return a JSON object matching this exact schema. Use the required field names and types.",
+    jsonlite::toJSON(normalize_json_schema_arrays(schema), auto_unbox = TRUE, pretty = TRUE),
+    sep = "\n\n")
+}
+
 normalize_strict_output_objects <- function(schema) {
   if (!is.list(schema)) return(schema)
   # Strict schema dialects reject document fragment identifiers, schema refs,
@@ -1235,7 +1242,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
 #' Construct an LLM adapter backed by ellmer public APIs
 #' @noRd
 ellmer_llm <- function(cfg) {
-  if (!isTRUE(cfg$provider %in% llm_provider_ids())) {
+  if (is.null(llm_provider_spec_or_null(cfg$provider))) {
     cli::cli_abort("unknown LLM provider {.val {cfg$provider}}",
                    class = "sas2r_llm_error")
   }
@@ -1320,8 +1327,8 @@ ellmer_llm <- function(cfg) {
 #' Construct an LLM adapter from a project's `llm:` configuration
 #'
 #' The supported way to obtain the `llm` argument that [sas_translate()] accepts.
-#' The adapter is backed by public `ellmer` APIs for one of the twelve registered provider
-#' ids. Credential values may be held in memory by adapters and redactors.
+#' The adapter uses the public `ellmer` connector for the configured provider.
+#' Credential values may be held in memory by adapters and redactors.
 #' Keep adapters private; reports redact registered secret values.
 #' Constructing an adapter contacts no network -- use [sas_llm_probe()] to
 #' validate connectivity and model capabilities, and [sas_llm_models()] to see

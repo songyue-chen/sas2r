@@ -55,8 +55,7 @@ request_report_advice <- function(llm, budget, packet, prompt_name, schema_name,
     warn = FALSE), collapse = "\n")
   schema_mode <- if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback"
   if (identical(schema_mode, "fallback")) {
-    prompt <- paste(prompt, "Return a JSON object matching this exact schema. Use the required field names and types.",
-      jsonlite::toJSON(schema, auto_unbox = TRUE, pretty = TRUE), sep = "\n\n")
+    prompt <- llm_prompt_with_output_schema(prompt, schema)
   }
   request <- llm_request(messages = list(list(role = "system", content = prompt),
     list(role = "user", content = llm_audit_redactor(llm)(packet$text))), output_schema = schema,

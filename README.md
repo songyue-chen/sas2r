@@ -68,9 +68,9 @@ for review timing and how earlier passing results are protected.
 
 ### 1. Install
 
-AI translation requires **ellmer 0.4.2 or newer**. We recommend **ellmer 0.5.0**
-for new installations; both versions pass our offline compatibility tests.
-Deterministic workflows can run without ellmer.
+AI translation requires **ellmer 0.4.2 or newer** and discovers public chat
+connectors from the installed version. The minimum and current ellmer releases
+are tested offline. Deterministic workflows can run without ellmer.
 
 <!-- sas2r-example: network install -->
 ```r

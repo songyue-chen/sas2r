@@ -15,7 +15,7 @@ test_that("ellmer adapter errors informatively when ellmer is absent", {
 })
 
 test_that("provider list includes direct OpenAI and production requires an explicit model", {
-  expect_true("openai" %in% LLM_PROVIDERS)
+  expect_true("openai" %in% llm_provider_ids())
   expect_error(
     ellmer_llm(list(provider = "openai")),
     class = "sas2r_llm_model_required"
@@ -542,7 +542,7 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
   )
   expect_identical(result$deepseek_default_capabilities$tool_calling, "unknown")
   expect_setequal(
-    names(result$provider_effective_coexistence), llm_provider_ids()
+    names(result$provider_effective_coexistence), names(llm_provider_registry())
   )
   expect_true(all(
     result$provider_effective_coexistence == "unsupported"

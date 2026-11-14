@@ -1,5 +1,10 @@
 # sas2r 0.6.0 beta
 
+- Discover providers through the installed ellmer package for translation, review,
+  repair and AI diagnosis. Existing provider IDs and configuration remain valid.
+  Additional connectors use their ellmer constructor name without `chat_` as
+  the provider ID.
+
 - Add opt-in AI triage of possible package bugs (`migration.bug_reports: true`).
   The configured reviewer uses the run budget to explain suspected package
   defects and propose synthetic R examples where possible. `sas_bug_report()`
