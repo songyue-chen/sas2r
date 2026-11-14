@@ -1,11 +1,5 @@
-# The closed, validated registry of ellmer-backed LLM providers.
-#
-# ellmer is the only transport this package speaks. Every provider fact that
-# used to live in a parallel `switch()` -- constructor export, constructor
-# arguments, auth modes, model inventory, endpoint identity, diagnostics, and
-# capability defaults -- is declared here once, validated at load time, and
-# looked up at runtime. Adding a provider is a data addition to
-# `build_llm_provider_registry()`; it is never a new dispatch site.
+# Explicit overrides for ellmer providers that need sas2r-specific behavior.
+# Other providers are discovered from ellmer's public chat constructors.
 #
 # This file is collated after R/llm-auth.R and R/llm-capabilities.R (whose
 # helpers the specs call) but before R/llm.R, and it validates the registry at
@@ -47,10 +41,6 @@ LLM_MOCK_CAPABILITY_DEFAULTS <- list(
   structured_output = "native", tool_calling = "native",
   tools_with_structured_output = "supported"
 )
-
-# ellmer exports that configuration must never be able to reach, because they
-# accept an arbitrary provider endpoint rather than a known provider protocol.
-LLM_FORBIDDEN_ELLMER_EXPORTS <- c("chat_openai_compatible")
 
 new_llm_provider_spec <- function(
     id, chat_export, models_export = NULL,
@@ -151,16 +141,14 @@ validate_llm_provider_registry <- function(registry) {
       )
     }
     if (!llm_provider_scalar_string(spec$chat_export) ||
-        !grepl("^chat_[a-z0-9_]+$", spec$chat_export) ||
-        spec$chat_export %in% LLM_FORBIDDEN_ELLMER_EXPORTS) {
+        !grepl("^chat_[a-z0-9_]+$", spec$chat_export)) {
       llm_config_abort(
         "LLM provider {.val {name}} must name a fixed public ellmer chat export"
       )
     }
     if (!is.null(spec$models_export) &&
         (!llm_provider_scalar_string(spec$models_export) ||
-         !grepl("^models_[a-z0-9_]+$", spec$models_export) ||
-         spec$models_export %in% LLM_FORBIDDEN_ELLMER_EXPORTS)) {
+         !grepl("^models_[a-z0-9_]+$", spec$models_export))) {
       llm_config_abort(
         "LLM provider {.val {name}} must name a fixed public ellmer models export"
       )
@@ -751,7 +739,124 @@ llm_provider_registry <- local({
   }
 })
 
-llm_provider_ids <- function() names(llm_provider_registry())
+ellmer_provider_exports <- function() {
+  if (!requireNamespace("ellmer", quietly = TRUE)) return(character())
+  exports <- grep("^chat_[a-z][a-z0-9_]*$", getNamespaceExports("ellmer"), value = TRUE)
+  exports[vapply(exports, function(export) {
+    !is.null(ellmer_chat_formals(export, exports))
+  }, logical(1))]
+}
+
+# Same constructor contract as ellmer::chat(), limited to public exports.
+ellmer_chat_formals <- function(export, exports = getNamespaceExports("ellmer")) {
+  if (!export %in% exports) return(NULL)
+  arguments <- formals(getExportedValue("ellmer", export))
+  if (all(c("model", "system_prompt", "params") %in% names(arguments))) arguments
+}
+
+llm_canonical_provider <- function(provider) {
+  provider <- tolower(provider)
+  switch(provider, aws_bedrock = "bedrock", azure_openai = "azure",
+    google_gemini = "gemini", google_vertex = "vertex", claude = "anthropic",
+    provider)
+}
+
+llm_provider_ids <- function() {
+  registry <- llm_provider_registry()
+  covered <- c(vapply(registry, `[[`, "", "chat_export"), "chat_claude")
+  discovered <- sub("^chat_", "", setdiff(ellmer_provider_exports(), covered))
+  c(names(registry), sort(discovered))
+}
+
+ellmer_discovered_provider <- function(provider) {
+  export <- paste0("chat_", provider)
+  if (!requireNamespace("ellmer", quietly = TRUE)) return(NULL)
+  chat_formals <- ellmer_chat_formals(export)
+  if (is.null(chat_formals)) return(NULL)
+
+  # The workflow owns prompt, output, and request settings. Connection
+  # selectors follow the public signature of the installed constructor.
+  selectors <- setdiff(names(chat_formals), c(
+    "model", "system_prompt", "params", "echo", "api_args", "api_headers",
+    "name", "strict", "virtual_key", "..."
+  ))
+  model_export <- paste0("models_", provider)
+  if (!model_export %in% getNamespaceExports("ellmer")) model_export <- NULL
+  model_fields <- if (!is.null(model_export)) {
+    intersect(selectors, names(formals(getExportedValue("ellmer", model_export))))
+  } else character()
+  credential_env <- if (provider == "openai_compatible") "OPENAI_API_KEY" else {
+    paste0(toupper(provider), "_API_KEY")
+  }
+  auth <- if ("api_key" %in% selectors) "api_key" else "ambient"
+  auth_modes <- if (provider == "openai_compatible") c(auth, "none") else auth
+  new_llm_provider_spec(
+    id = provider, chat_export = export, models_export = model_export,
+    auth_modes = auth_modes, default_auth_mode = auth, config_fields = selectors,
+    ellmer_support = NULL, credential_envs = c(credential_env, if (provider == "portkey") "PORTKEY_VIRTUAL_KEY"),
+    output_schema_dialect = if (provider == "groq") "strict_all_properties" else "standard",
+    access_context = function(config) {
+      if (identical(config$auth_mode, "api_key")) llm_key_access_context(config, credential_env)
+      else paste0("model ", config$model %||% "<unknown>", ", ", config$auth_mode, " authentication")
+    },
+    build_chat_args = function(config) {
+      args <- config[intersect(selectors, names(config))]
+      args$credentials <- if (identical(config$auth_mode, "none")) {
+        function() function(req) req
+      } else tracked_llm_credentials(args$credentials)
+      args
+    },
+    build_models_args = function(config) {
+      args <- config[intersect(model_fields, names(config))]
+      args$credentials <- tracked_llm_credentials(args$credentials)
+      # ellmer's vLLM inventory adds /v1/models to the server root.
+      if (provider == "vllm" && !is.null(args$base_url)) {
+        args$base_url <- sub("/v1/?$", "", args$base_url)
+      }
+      args
+    },
+    inventory_available = function(config) {
+      (is.null(config$base_url) || "base_url" %in% model_fields) &&
+        (is.null(config$credentials) || "credentials" %in% model_fields ||
+          identical(provider, "openrouter"))
+    },
+    normalize_config = function(config) {
+      if (provider == "lmstudio" && is.null(config$base_url)) {
+        config$base_url <- Sys.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
+      }
+      for (field in intersect(selectors, LLM_SELECTOR_URL_FIELDS)) {
+        config[[field]] <- llm_scalar_url(config[[field]], field,
+          required = identical(chat_formals[[field]], quote(expr = )))
+      }
+      if (provider == "vllm" && !grepl("/v1/?$", config$base_url)) {
+        config$base_url <- paste0(sub("/+$", "", config$base_url), "/v1")
+      }
+      if (provider == "cloudflare" && !is.null(config$account)) {
+        config$account <- llm_scalar_string(config$account, "account")
+        if (!grepl("^[A-Za-z0-9][A-Za-z0-9_-]*$", config$account)) {
+          llm_config_abort("Cloudflare llm account must be one plain account identifier")
+        }
+        if (llm_installed_ellmer_version() < "0.5.1") {
+          llm_config_abort(c(
+            "Cloudflare's explicit account selector requires ellmer >= 0.5.1.",
+            "i" = "Set CLOUDFLARE_ACCOUNT_ID and omit account on older ellmer versions."
+          ))
+        }
+      }
+      if (identical(config$auth_mode, "none") && !is.null(config$credentials)) {
+        llm_config_abort("Set auth_mode to api_key to use a credentials callback")
+      }
+      config
+    },
+    endpoint_identity = function(config) {
+      if (provider == "cloudflare") {
+        account <- config$account %||% llm_ambient_account_identity("CLOUDFLARE_ACCOUNT_ID")
+        if (!is.null(account)) return(paste0("cloudflare:", account))
+      }
+      config$base_url
+    }
+  )
+}
 
 llm_installed_ellmer_version <- function() {
   if (!requireNamespace("ellmer", quietly = TRUE)) return(NULL)
@@ -795,8 +900,8 @@ llm_assert_provider_available <- function(provider) {
 }
 
 llm_provider_spec <- function(provider) {
-  provider <- tolower(llm_scalar_string(provider, "provider", TRUE))
-  spec <- llm_provider_registry()[[provider]]
+  provider <- llm_scalar_string(provider, "provider", TRUE)
+  spec <- llm_provider_spec_or_null(provider)
   if (is.null(spec)) {
     llm_config_abort("Unknown LLM provider {.val {provider}}")
   }
@@ -809,7 +914,9 @@ llm_provider_spec_or_null <- function(provider) {
   if (!is.character(provider) || length(provider) != 1L || is.na(provider)) {
     return(NULL)
   }
-  llm_provider_registry()[[tolower(provider)]]
+  provider <- llm_canonical_provider(provider)
+  if (provider == "mock" || !grepl("^[a-z][a-z0-9_]*$", provider)) return(NULL)
+  llm_provider_registry()[[provider]] %||% ellmer_discovered_provider(provider)
 }
 
 # Provider-specific auth-mode rejections, preserved verbatim from the switch
@@ -866,8 +973,6 @@ llm_config_secret_values <- function(config) {
     llm_secret_values(config), llm_provider_credential_env_values(config)
   ))
 }
-
-LLM_PROVIDERS <- llm_provider_ids()
 
 LLM_CONFIG_KEYS <- unique(c(
   LLM_SHARED_CONFIG_KEYS,

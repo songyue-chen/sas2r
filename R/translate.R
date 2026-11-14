@@ -354,6 +354,7 @@ sas_translate <- function(
 
   # Report advice is terminal output: it cannot influence repair or status.
   state$report_diagnosis <- migration_report_diagnosis(state)
+  state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm)
 
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()
@@ -393,6 +394,9 @@ sas_translate <- function(
     state <- error$migration_state %||% state
     if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
         "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error", "sas2r_run_locked"))) stop(error)
+    if (stage %in% c("translation", "bundle execution and repair"))
+      state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm,
+        failure = error, stage = stage)
     finalize_usage_run(budget, terminal_status = "failed")
     # Evidence writing must never hide the original failure, including an
     # unwritable output location. No additional success state is invented.

@@ -1,5 +1,22 @@
 # sas2r 0.6.0 beta
 
+- Reconcile late dataset reports against source-bound libraries before deferring
+  execution, including literal dataset names passed to SAS macros.
+
+- Discover providers through the installed ellmer package for translation, review,
+  repair and AI diagnosis. Existing provider IDs and configuration remain valid.
+  Additional connectors use their ellmer constructor name without `chat_` as
+  the provider ID.
+
+- Add opt-in AI triage of possible package bugs (`migration.bug_reports: true`).
+  The configured reviewer uses the run budget to explain suspected package
+  defects and propose synthetic R examples where possible. `sas_bug_report()`
+  writes the saved findings to Markdown with explicit reproduction status.
+  The installed sample demonstrates draft export without SAS or an API key.
+  Report diagnosis includes its response schema in the prompt for fallback
+  JSON providers. Bug triage reports schema failures in the saved run report
+  and includes dependency deferrals with the available member evidence.
+
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF
   extensions remain accepted. Translation, review and repair guidance preserves

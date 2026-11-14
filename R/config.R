@@ -375,6 +375,10 @@ normalize_migration_config <- function(config) {
   if (!is_scalar_character(diagnosis) || !diagnosis %in% c("auto", "off"))
     cli::cli_abort("migration.report_diagnosis must be auto or off", class = "sas2r_config_error")
   out$report_diagnosis <- diagnosis
+  bug_reports <- config[["bug_reports"]] %||% FALSE
+  if (!is.logical(bug_reports) || length(bug_reports) != 1L || is.na(bug_reports))
+    cli::cli_abort("migration.bug_reports must be true or false", class = "sas2r_config_error")
+  out$bug_reports <- bug_reports
   if (!is.null(order)) out$execution_order <- unname(order)
   out
 }
@@ -451,6 +455,9 @@ find_config <- function(start = ".") {
 #'   `path` and `recursive` in [sas_preflight()] or [sas_translate()] still select
 #'   that scope. Omitting the order retains inferred dependencies. Changing the
 #'   order on a previously scanned project requires rescanning the sources.
+#'   Set `migration.bug_reports: true` to enable AI triage of possible sas2r
+#'   bugs under the run's reviewer usage budget. Defaults to false.
+#'   See [sas_bug_report()].
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,

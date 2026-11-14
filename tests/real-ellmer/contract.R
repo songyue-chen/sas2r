@@ -210,13 +210,20 @@ for (spec in sas2r:::llm_provider_registry()) {
   }
 }
 
+# Every public ellmer chat constructor is selectable through the shared
+# adapter, accounting for the Claude alias and versioned GitHub retirement.
+public_chat_exports <- setdiff(grep("^chat_", getNamespaceExports("ellmer"), value = TRUE),
+  "chat_claude")
+provider_specs <- lapply(sas2r:::llm_provider_ids(), sas2r:::llm_provider_spec)
+stopifnot(setequal(vapply(provider_specs, `[[`, "", "chat_export"), public_chat_exports))
+
 # Every argument any registry builder can emit must be a public formal of the
 # export it is handed to, so a selector ellmer does not publish is a hard
 # contract failure rather than a runtime `unused argument` surprise.
 published_formals <- function(export) {
   names(formals(getExportedValue("ellmer", export)))
 }
-for (spec in sas2r:::llm_provider_registry()) {
+for (spec in provider_specs) {
   probe_config <- c(
     list(provider = spec$id, auth_mode = spec$default_auth_mode, model = "m"),
     stats::setNames(
@@ -1080,10 +1087,137 @@ stopifnot(any(grepl("1 lookups failed", failure_progress, fixed = TRUE)),
           length(failure_wire) == 2L,
           contains_text(failure_wire[[2]]$body, "Reference index is unavailable"))
 
+# Verify the reporter through real ellmer serialization and response parsing
+# without credentials or model calls to the public endpoints.
+triage_provider_configs <- list(
+  openai = list(base_url = base_url, api_key = api_key,
+    capabilities = list(structured_output = "native")),
+  anthropic = list(base_url = paste0(cloud_base_url, "/anthropic/v1"),
+    capabilities = list(structured_output = "fallback")),
+  gemini = list(base_url = paste0(cloud_base_url, "/gemini/v1beta/"),
+    auth_mode = "ambient", credentials = function() "offline-gemini-token",
+    capabilities = list(structured_output = "unknown")),
+  deepseek = list(base_url = base_url, api_key = api_key)
+)
+for (provider in names(triage_provider_configs)) {
+  triage_model <- paste0("offline-bug-triage-", provider)
+  config <- c(list(provider = provider, model = triage_model),
+    triage_provider_configs[[provider]])
+  state <- list(config = list(migration = list(bug_reports = TRUE)),
+    usage_budget = sas2r:::new_usage_budget(max_calls = 1L),
+    assessment = list(targets = list(list(target_key = "synthetic_bug_triage_target",
+      kind = "tlf", status = "failed"))))
+  before <- length(readLines(log_file, warn = FALSE))
+  diagnosis <- testthat::with_mocked_bindings(
+    sas2r:::migration_package_bug_diagnosis(state, llm = sas2r::sas_llm(config)),
+    anthropic_key = function() "offline-anthropic-key", .package = "ellmer")
+  if (!identical(diagnosis$status, "completed")) stop(provider, ": ", diagnosis$reason)
+  stopifnot(identical(diagnosis$provider, provider), identical(diagnosis$model, triage_model),
+    length(diagnosis$findings) == 1L, identical(diagnosis$findings[[1L]]$evidence_id, "E1"),
+    identical(diagnosis$findings[[1L]]$reproduction, "not_run"),
+    state$usage_budget$request_count == 1L)
+  wire <- readLines(log_file, warn = FALSE)
+  stopifnot(length(wire) == before + 1L)
+  request <- jsonlite::fromJSON(wire[[length(wire)]], simplifyVector = FALSE)
+  stopifnot(!length(request$body$tools))
+  if (provider == "openai") {
+    stopifnot(has_structured_format(request), contains_field(request$body, "evidence_id"))
+  } else {
+    stopifnot(contains_text(request$body, "Return a JSON object matching this exact schema"),
+      contains_text(request$body, '"evidence_id"'), !has_structured_format(request))
+  }
+}
+
+# Exercise discovery, native tool calls, and schema fallback over the actual
+# ellmer wire path for the public connectors without explicit sas2r specs.
+# For fixed hosted endpoints a public ellmer request callback redirects the
+# constructed request to loopback before it is sent.
+withr::local_envvar(c(CLOUDFLARE_ACCOUNT_ID = "offline-account",
+  PORTKEY_VIRTUAL_KEY = NA_character_, OPENAI_API_KEY = "unused-offline-key",
+  LMSTUDIO_API_KEY = NA_character_, OLLAMA_API_KEY = NA_character_))
+redirect_to_loopback <- function() function(req) httr2::req_url(req, base_url)
+new_provider_configs <- list(
+  cloudflare = list(credentials = redirect_to_loopback),
+  groq = list(base_url = base_url),
+  huggingface = list(credentials = redirect_to_loopback),
+  lmstudio = list(base_url = cloud_base_url, model = "offline-local-model"),
+  mistral = list(credentials = redirect_to_loopback),
+  openai_compatible = list(base_url = base_url, auth_mode = "none",
+    model = "offline-provider-model-anonymous"),
+  openrouter = list(credentials = redirect_to_loopback),
+  perplexity = list(base_url = base_url),
+  portkey = list(base_url = base_url),
+  vllm = list(base_url = cloud_base_url),
+  ollama = list(base_url = cloud_base_url, model = "offline-local-model")
+)
+agent_spec <- list(name = "fixture", prompt = "translator.md", tier = "frontier",
+  tool_call_limit = 2L, retry_limit = 0L, output_schema = "program_translation_v1")
+for (provider in names(new_provider_configs)) {
+  config <- utils::modifyList(list(provider = provider, model = "offline-provider-model",
+    capabilities = list(structured_output = "fallback", tool_calling = "native")),
+    new_provider_configs[[provider]])
+  if (provider %in% c("groq", "perplexity", "portkey", "vllm")) {
+    config$credentials <- function() "offline-loopback-token"
+  }
+  before <- length(readLines(log_file, warn = FALSE))
+  adapter <- sas2r::sas_llm(config)
+  migrated <- sas2r:::run_agent(agent_spec, adapter, list(lookup = lookup), "translate",
+    log_dir = tempfile("sas2r-ellmer-provider-"))
+  if (!identical(migrated$status, "ok")) {
+    stop(provider, " migration agent: ", paste(migrated$status, migrated$error$message))
+  }
+  stopifnot(identical(migrated$data$r_code, "x <- 1"), migrated$tool_calls == 1L,
+    isTRUE(migrated$fallback_json))
+  requests <- lapply(tail(readLines(log_file, warn = FALSE), -before),
+    jsonlite::fromJSON, simplifyVector = FALSE)
+  stopifnot(any(vapply(requests, function(req)
+    identical(req$path, "/v1/chat/completions") &&
+      contains_text(req$body, "gathered context"), logical(1))))
+
+  state <- list(config = list(migration = list(bug_reports = TRUE)),
+    usage_budget = sas2r:::new_usage_budget(max_calls = 1L),
+    assessment = list(targets = list(list(target_key = "synthetic_bug_triage_target",
+      kind = "tlf", status = "failed"))))
+  diagnosis <- suppressMessages(sas2r:::migration_package_bug_diagnosis(state, adapter))
+  if (!identical(diagnosis$status, "completed")) stop(provider, ": ", diagnosis$reason)
+  stopifnot(identical(diagnosis$provider, provider),
+    identical(diagnosis$findings[[1L]]$reproduction, "not_run"))
+}
+for (provider in c("groq", "lmstudio", "portkey", "vllm", "ollama")) {
+  config <- new_provider_configs[[provider]]
+  config$provider <- provider
+  config$model <- "offline-local-model"
+  if (provider %in% c("groq", "vllm")) config$credentials <- function() "offline-loopback-token"
+  if (provider == "portkey") config$api_key <- "offline-loopback-token"
+  inventory <- tryCatch(sas2r::sas_llm_models(config),
+    error = function(error) stop(provider, " inventory: ", conditionMessage(error)))
+  stopifnot(identical(inventory$status, "available"),
+    identical(sas2r:::llm_inventory_model_ids(inventory$models), config$model))
+}
+for (provider in c("mistral", "portkey")) {
+  config <- c(list(provider = provider, model = "offline-provider-model"),
+    new_provider_configs[[provider]])
+  config$credentials <- redirect_to_loopback
+  stopifnot(identical(sas2r::sas_llm_models(config)$status, "inventory_unavailable"))
+}
+cloudflare <- list(provider = "cloudflare", account = "explicit-offline-account",
+  model = "offline-provider-model")
+if (utils::compareVersion(installed_version, "0.5.1") < 0L) {
+  stopifnot(inherits(tryCatch(sas2r::sas_llm(cloudflare), error = identity),
+    "sas2r_llm_config_error"))
+} else {
+  config <- sas2r:::normalize_llm_config(cloudflare)
+  chat <- do.call(ellmer::chat_cloudflare,
+    sas2r:::ellmer_constructor_args(config, config$model))
+  stopifnot(grepl("/explicit-offline-account/", S7::prop(chat$get_provider(), "base_url"),
+    fixed = TRUE))
+}
+
 message(
   "real ellmer loopback contract passed: version=", installed_version,
   " path=", ellmer_path,
-  " requests=", length(transport_requests),
+  " discovered=", length(public_chat_exports) - length(sas2r:::llm_provider_registry()),
+  " requests=", length(readLines(log_file, warn = FALSE)),
   " native=", length(anthropic_requests) + length(gemini_requests),
   " github=", if (github_retired) "retired-refusal-verified" else "exercised"
 )

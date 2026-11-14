@@ -135,10 +135,12 @@ source_review_config <- function(config) {
   config$usage_limits <- NULL
   config$migration$max_parallel_translations <- NULL
   config$migration$report_diagnosis <- NULL
+  config$migration$bug_reports <- NULL
   if (!length(config$migration)) config$migration <- NULL
   if (is.list(config$raw)) {
     config$raw$migration$max_parallel_translations <- NULL
     config$raw$migration$report_diagnosis <- NULL
+    config$raw$migration$bug_reports <- NULL
     if (!length(config$raw$migration)) config$raw$migration <- NULL
   }
   if (is.list(config$outputs)) {

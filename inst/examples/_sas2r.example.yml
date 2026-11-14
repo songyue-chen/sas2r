@@ -87,10 +87,10 @@ environment:
 # 6. LLM Provider Configuration (Optional)
 # ------------------------------------------------------------------------------
 # Connect to an LLM provider for agent translation and code review.
-# Requires ellmer >= 0.4.2; ellmer 0.5.0 is recommended for new installations.
-# Version-specific notes use 0.4.2 as the minimum supported baseline, not a pin.
-# Twelve native ellmer providers are supported: openai, anthropic, bedrock,
-# azure, databricks, deepseek, github, gemini, vertex, ollama, posit, snowflake.
+# Requires ellmer >= 0.4.2. Parallel translation requires ellmer >= 0.5.0.
+# Use the installed public ellmer chat connector name without chat_, or an
+# existing sas2r provider ID. See the provider guide for auth and model settings.
+# https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md
 # NOTE: Secrets must NEVER be placed in this file. Provide them via environment
 # variables (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GITHUB_PAT).
 # NOTE: github (GitHub Models) was retired upstream on 2026-07-30 and needs
@@ -209,6 +209,7 @@ llm:
 # Local execution and repair stay serial. This is not a CPU or agent-role count.
 # migration:
 #   report_diagnosis: auto  # off disables advisory report explanations
+#   bug_reports: false     # true enables AI package-bug triage (beta, uses reviewer budget)
 #   # Optional: all root programs, in one shared WORK session; paths relative here.
 #   # execution_order: [programs/adsl.sas, programs/adef.sas, programs/adtte.sas]
 #   # List each root once; startup, called macros and includes keep their roles.
