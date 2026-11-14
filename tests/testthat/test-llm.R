@@ -627,9 +627,8 @@ test_that("real S7 adapter fixture runs in an isolated ellmer library", {
 
 test_that("usage falls back to public per-turn tokens when get_tokens fails", {
   skip_if_not_installed("S7")
-  # Real ellmer's public `get_tokens()` tabulates the whole conversation and
-  # errors whenever the user and assistant turn counts differ, which is every
-  # tool-call exchange. Usage metering must not silently degrade to unknown.
+  # Conversation tabulation can be unavailable. Usage metering must then
+  # preserve the public per-turn records rather than degrade to unknown.
   Turn <- S7::new_class("Turn", properties = list(tokens = S7::class_numeric))
   failing <- list(
     get_tokens = function() stop("Can't recycle input of size 2 to size 1"),
@@ -682,11 +681,9 @@ test_that("usage falls back to public per-turn tokens when get_tokens fails", {
 test_that("usage sums every complete assistant turn of a real ellmer request", {
   skip_if_not_installed("ellmer")
   skip_if_not_installed("S7")
-  # The real trigger is not a balanced tool round trip -- 2 user / 2 assistant
-  # tabulates fine. `get_tokens()` builds one row per complete assistant turn
-  # and then assigns one user-turn preview per row, so it errors on a replayed
-  # history that ends on a user or tool turn, exactly what the real-ellmer
-  # contract builds.
+  # Older ellmer versions could not tabulate a replayed history ending on a
+  # user/tool turn. Version 0.5.1 fixed this. Retain real public Turn objects,
+  # but trigger fallback explicitly so coverage does not require an upstream bug.
   chat <- ellmer::chat_openai(
     model = "offline-usage-model",
     credentials = function() "offline-usage-key", echo = "none"
@@ -702,17 +699,23 @@ test_that("usage sums every complete assistant turn of a real ellmer request", {
     ),
     ellmer::UserTurn("replayed tail")
   ))
-  expect_error(chat$get_tokens(), "recycle")
-
   # A single request can append both a tool-request turn and a final answer
   # turn. `get_tokens()` would have summed both, so the fallback must too:
   # reading only `last_turn()` reports 12/8 and drops the tool-request turn.
-  usage <- ellmer_usage(chat)
+  usage <- ellmer_usage(list(
+    get_tokens = function() stop("conversation tabulation unavailable"),
+    get_turns = chat$get_turns
+  ))
   expect_identical(usage$input_tokens, 17)
   expect_identical(usage$output_tokens, 11)
   expect_identical(
     attr(usage, "token_provenance"), "ellmer public Turn@tokens"
   )
+  # The real connector must return the same totals whether its public table
+  # succeeds (current ellmer) or requires the fallback (earlier ellmer).
+  actual_usage <- ellmer_usage(chat)
+  expect_identical(actual_usage$input_tokens, usage$input_tokens)
+  expect_identical(actual_usage$output_tokens, usage$output_tokens)
 
   # A balanced history is tabulated by ellmer itself and never reaches the
   # fallback.

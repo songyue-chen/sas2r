@@ -65,6 +65,32 @@ test_that("reasoning items before an OpenAI final message normalize correctly", 
   expect_identical(response$usage$reasoning_tokens, 10)
 })
 
+test_that("Gemini Interactions separates cached input and reasoning output", {
+  raw <- list(steps = list(), status = "completed", usage = list(
+    total_tokens = 30L, total_input_tokens = 10L, total_cached_tokens = 4L,
+    total_output_tokens = 5L, total_thought_tokens = 15L
+  ))
+  usage <- normalized_usage(raw)
+  expect_identical(usage$input_tokens, 6)
+  expect_identical(usage$cached_input_tokens, 4)
+  expect_identical(usage$total_input_tokens, 10)
+  expect_identical(usage$output_tokens, 5)
+  expect_identical(usage$reasoning_tokens, 15)
+  expect_identical(usage$total_output_tokens, 20)
+  expect_identical(usage$total_tokens, 30)
+  expect_identical(attr(usage, "input_accounting_status"), "consistent")
+  expect_identical(attr(usage, "total_accounting_status"), "consistent")
+  expect_identical(normalized_usage(list(usage = usage)), usage)
+
+  raw$usage$total_cached_tokens <- NULL
+  raw$usage$total_thought_tokens <- NULL
+  missing <- normalized_usage(raw)
+  expect_true(is.na(missing$input_tokens))
+  expect_true(is.na(missing$cached_input_tokens))
+  expect_true(is.na(missing$reasoning_tokens))
+  expect_identical(missing$total_output_tokens, 20)
+})
+
 test_that("signed native accounting deltas survive response normalization", {
   # Break caught: a provider reporting hit + miss above its prompt total yields
   # a negative diagnostic delta; treating that diagnostic as a token count
