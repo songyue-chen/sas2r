@@ -175,3 +175,29 @@ test_that("the installed sample drafts a reproduction without a reviewer", {
   code <- lines[seq.int(match("```r", lines) + 1L, match("```", lines) - 1L)]
   expect_message(eval(parse(text = code)), "rejected the destination")
 })
+
+test_that("after-run triage sees dependency deferrals and source-bound member evidence", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "input"))
+  saveRDS(data.frame(value = 1), file.path(root, "input", "member.rds"))
+  writeLines(c("%macro copy(indata);", "data work.out; set &indata; run;", "%mend;",
+    "%copy(indata=raw.member);"), file.path(root, "derive.sas"))
+  setup <- translation_setup(root, list(libraries = list(raw = "input"),
+    migration = list(bug_reports = TRUE)), outputs = NULL, recursive = FALSE)
+  state <- list(project = setup$project, graph = setup$plan$graph, schedule = setup$plan$schedule,
+    config = setup$config, usage_budget = new_usage_budget(max_calls = 1L),
+    diagnostics = list(dependency_findings = list(derive = list(
+      findings = c("raw.member", "%missing_macro"), affected = "derive",
+      reason = "source_reconciliation_required"))))
+  request <- NULL
+  llm <- diagnosis_mock(bug_triage_answer(""), function(req) request <<- req)
+  result <- suppressMessages(migration_package_bug_diagnosis(state, llm))
+  expect_identical(result$status, "completed")
+  task <- request_task_text(request)
+  expect_match(task, "Execution deferred by dependency reconciliation", fixed = TRUE)
+  expect_match(task, "raw.member", fixed = TRUE)
+  expect_match(task, "available_in_bound_library", fixed = TRUE)
+  expect_match(task, "%missing_macro", fixed = TRUE)
+  expect_false(grepl(root, task, fixed = TRUE))
+  expect_identical(result$findings[[1L]]$reproduction, "no_example")
+})

@@ -140,6 +140,23 @@ package_bug_evidence <- function(state, failure, stage) {
       list(message = item$reason), cid)))
   }
 
+  # A scheduler decision can prevent any runtime error or candidate output.
+  # Keep the reason and source/library evidence ahead of output discrepancies.
+  dependencies <- Filter(function(item) length(item$findings) > 0L,
+    state$diagnostics$dependency_findings)
+  for (cid in utils::head(names(dependencies), max(0L, 6L - length(items)))) {
+    item <- dependencies[[cid]]
+    reported <- utils::head(item$findings, 8L)
+    availability <- late_dataset_availability(state$project, cid, reported)
+    items <- c(items, list(list(
+      facts = list(scope = "Execution deferred by dependency reconciliation",
+        component = cid, reason = item$reason, dependencies = reported,
+        affected_components = utils::head(item$affected, 8L),
+        member_availability = as.list(availability)),
+      observed = "Execution deferred by dependency reconciliation",
+      binding = list(revision_id = revisions[[cid]]$revision_id), code_ids = cid)))
+  }
+
   if (length(items) < 6L) {
     for (cid in names(revisions)) {
       smoke <- revisions[[cid]]$smoke
