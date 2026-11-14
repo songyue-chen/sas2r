@@ -1,5 +1,8 @@
 # sas2r (development)
 
+- Support Gemini Interactions usage accounting with ellmer 0.5.1 and newer.
+  Verify the current and earlier Gemini protocols in the offline contract tests.
+
 - Reconcile late dataset reports against source-bound libraries before deferring
   execution, including literal dataset names passed to SAS macros.
 

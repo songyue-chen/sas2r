@@ -1,3 +1,10 @@
+## Compatible test snapshot update
+
+The release test snapshot is pinned at `87d29b0603cde7f32a826edb5642b15d33ebf974`
+and retained by `release-tests-0.5.8-20261114`. It includes the late dataset
+reconciliation regression and ellmer compatibility tests for Gemini Interactions
+and the usage fallback.
+
 ## Unsubmitted source update: 2026-11-08
 
 This candidate preserves printing and invalid-argument execution diagnostics for
