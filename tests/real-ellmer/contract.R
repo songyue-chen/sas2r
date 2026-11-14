@@ -1080,6 +1080,47 @@ stopifnot(any(grepl("1 lookups failed", failure_progress, fixed = TRUE)),
           length(failure_wire) == 2L,
           contains_text(failure_wire[[2]]$body, "Reference index is unavailable"))
 
+# Verify the reporter through real ellmer serialization and response parsing
+# without credentials or model calls to the public endpoints.
+triage_provider_configs <- list(
+  openai = list(base_url = base_url, api_key = api_key,
+    capabilities = list(structured_output = "native")),
+  anthropic = list(base_url = paste0(cloud_base_url, "/anthropic/v1"),
+    capabilities = list(structured_output = "fallback")),
+  gemini = list(base_url = paste0(cloud_base_url, "/gemini/v1beta/"),
+    auth_mode = "ambient", credentials = function() "offline-gemini-token",
+    capabilities = list(structured_output = "unknown")),
+  deepseek = list(base_url = base_url, api_key = api_key)
+)
+for (provider in names(triage_provider_configs)) {
+  triage_model <- paste0("offline-bug-triage-", provider)
+  config <- c(list(provider = provider, model = triage_model),
+    triage_provider_configs[[provider]])
+  state <- list(config = list(migration = list(bug_reports = TRUE)),
+    usage_budget = sas2r:::new_usage_budget(max_calls = 1L),
+    assessment = list(targets = list(list(target_key = "synthetic_bug_triage_target",
+      kind = "tlf", status = "failed"))))
+  before <- length(readLines(log_file, warn = FALSE))
+  diagnosis <- testthat::with_mocked_bindings(
+    sas2r:::migration_package_bug_diagnosis(state, llm = sas2r::sas_llm(config)),
+    anthropic_key = function() "offline-anthropic-key", .package = "ellmer")
+  if (!identical(diagnosis$status, "completed")) stop(provider, ": ", diagnosis$reason)
+  stopifnot(identical(diagnosis$provider, provider), identical(diagnosis$model, triage_model),
+    length(diagnosis$findings) == 1L, identical(diagnosis$findings[[1L]]$evidence_id, "E1"),
+    identical(diagnosis$findings[[1L]]$reproduction, "not_run"),
+    state$usage_budget$request_count == 1L)
+  wire <- readLines(log_file, warn = FALSE)
+  stopifnot(length(wire) == before + 1L)
+  request <- jsonlite::fromJSON(wire[[length(wire)]], simplifyVector = FALSE)
+  stopifnot(!length(request$body$tools))
+  if (provider == "openai") {
+    stopifnot(has_structured_format(request), contains_field(request$body, "evidence_id"))
+  } else {
+    stopifnot(contains_text(request$body, "Return a JSON object matching this exact schema"),
+      contains_text(request$body, '"evidence_id"'), !has_structured_format(request))
+  }
+}
+
 message(
   "real ellmer loopback contract passed: version=", installed_version,
   " path=", ellmer_path,

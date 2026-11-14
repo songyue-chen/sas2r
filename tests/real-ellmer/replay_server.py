@@ -54,11 +54,25 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
-    if contains_key(body, "static_runnability") or "schema program_review_v1" in json.dumps(body):
+    text = json.dumps(body)
+    if "synthetic_bug_triage_target" in text:
+        if "evidence_id" not in text or "repro_r" not in text:
+            # A text-only model cannot see the local schema unless the
+            # request carries it. Mirror the wrong-field regression.
+            return {"findings": [{"evidence_ids": ["E1"]}]}
+        return {"findings": [{
+            "evidence_id": "E1",
+            "explanation": "The synthetic output check reports a possible package failure.",
+            "expected": "A supported operation produces the expected output.",
+            "uncertainty": "Test this on the affected build.",
+            "next_step": "Try the synthetic example.",
+            "repro_r": "stopifnot(sas2r::sas_sum(c(1, 2)) == 3)",
+        }]}
+    if contains_key(body, "static_runnability") or "schema program_review_v1" in text:
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
-    if contains_key(body, "side_effects") or "schema program_translation_v1" in json.dumps(body):
+    if contains_key(body, "side_effects") or "schema program_translation_v1" in text:
         return PROGRAM_TRANSLATION
     return TRANSLATION
 
@@ -289,7 +303,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
             "model": body.get("model", "offline-anthropic-model"),
             "content": [{
                 "type": "text",
-                "text": json.dumps(TRANSLATION, separators=(",", ":")),
+                "text": json.dumps(structured_payload(body), separators=(",", ":")),
             }],
             "stop_reason": "end_turn",
             "stop_sequence": None,
@@ -299,7 +313,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
     @staticmethod
     def gemini_generate_content_response(body, native=False):
         """One native Gemini generateContent reply."""
-        parts = [{"text": json.dumps(TRANSLATION, separators=(",", ":"))}]
+        parts = [{"text": json.dumps(structured_payload(body), separators=(",", ":"))}]
         if native:
             completed = sum("functionResponse" in part for turn in body.get("contents", [])
                             for part in turn.get("parts", []))

@@ -752,6 +752,11 @@ or output checks. This opt-in is independent of the dataset explanations
 controlled by `migration.report_diagnosis`. Without a reviewer or request budget,
 the run report explains why triage could not run.
 
+Triage uses the same ellmer-backed reviewer as the migration. It requests native
+structured output when the model and connector are configured for it. Otherwise
+it includes the response schema in the prompt and validates the returned JSON
+locally. The same `bug_reports` setting applies across providers.
+
 `START_HERE.html` and the translation report show suspected package defects,
 recorded symptoms, expected behavior, and remaining uncertainty. The model can
 propose a short synthetic R example or suggest how to isolate the failure.
