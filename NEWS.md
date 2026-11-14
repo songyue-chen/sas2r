@@ -1,5 +1,8 @@
 # sas2r (development)
 
+- Reconcile late dataset reports against source-bound libraries before deferring
+  execution, including literal dataset names passed to SAS macros.
+
 - Preserve printing and invalid-argument execution diagnostics in reviewer and
   fixer evidence, including `invalid printing width`. Argument values and raw
   logs remain local.
