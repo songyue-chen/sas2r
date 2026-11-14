@@ -1,5 +1,8 @@
 # sas2r 0.6.0 beta
 
+- Reconcile late dataset reports against source-bound libraries before deferring
+  execution, including literal dataset names passed to SAS macros.
+
 - Discover providers through the installed ellmer package for translation, review,
   repair and AI diagnosis. Existing provider IDs and configuration remain valid.
   Additional connectors use their ellmer constructor name without `chat_` as
