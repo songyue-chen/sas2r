@@ -10,6 +10,10 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
       result$reason <- "No observed run failures were eligible for AI bug triage."
       return(result)
     }
+    variable_failures <- Filter(function(item) !is.null(item$facts$called_function), evidence)
+    if (length(variable_failures)) {
+      result$observed_failures <- unname(vapply(variable_failures, function(item) item$observed, ""))
+    }
 
     budget <- state$usage_budget
     if (is.null(llm)) {
@@ -106,11 +110,17 @@ package_bug_evidence <- function(state, failure, stage) {
     known_classes <- union(facts$condition_class, intersect(condition$class,
       c("sas2r_pipeline_coverage_error", "sas2r_mechanical_check_failure")))
     helpers <- intersect(condition$call_names, SAS2R_HELPER_NAMES)
-    list(facts = list(scope = scope, component = cid, kind = facts$kind,
+    projected <- list(scope = scope, component = cid, kind = facts$kind,
       condition_classes = known_classes, runtime_helpers = helpers,
-      identifiers = facts$identifiers),
-      observed = paste0(scope, " - ", gsub("_", " ", facts$kind, fixed = TRUE),
-        if (length(known_classes)) paste0(" (", paste(known_classes, collapse = ", "), ")")),
+      identifiers = facts$identifiers)
+    symptom <- paste0(gsub("_", " ", facts$kind, fixed = TRUE),
+      if (length(known_classes)) paste0(" (", paste(known_classes, collapse = ", "), ")"))
+    if (!is.null(facts$called_function)) {
+      projected$called_function <- facts$called_function
+      projected$condition_message <- facts$condition_message
+      symptom <- paste0(cid, " - ", facts$condition_message)
+    }
+    list(facts = projected, observed = paste0(scope, " - ", symptom),
       binding = binding, code_ids = code_ids)
   }
   if (!is.null(failure)) {
@@ -122,15 +132,28 @@ package_bug_evidence <- function(state, failure, stage) {
   attempt <- state$attempt
   if (!is.null(attempt$condition) && identical(attempt$kind, "bundle") &&
       isTRUE(attempt$completed) && !isTRUE(attempt$deferred)) {
+    matches_attempt <- function(id) {
+      recorded <- attempt$revision_manifest[[id]]
+      revision <- revisions[[id]]
+      !is.null(recorded$r_hash) && identical(recorded$revision_id, revision$revision_id) &&
+        identical(recorded$r_hash, migration_hash(revision_code(revision)))
+    }
     cid <- attempt$condition$component_id
     if (!is_scalar_character(cid)) cid <- NULL
     recorded <- attempt$revision_manifest[[cid %||% ""]]
-    code_ids <- if (!is.null(cid) && !is.null(recorded$r_hash) &&
-      identical(recorded$revision_id, revisions[[cid]]$revision_id) &&
-      identical(recorded$r_hash, migration_hash(revision_code(revisions[[cid]])))) cid
-    items <- c(items, list(condition_item("Bundle execution failed", attempt$condition, cid,
+    code_ids <- if (!is.null(cid) && matches_attempt(cid)) cid
+    item <- condition_item("Bundle execution failed", attempt$condition, cid,
       list(attempt_id = attempt$attempt_id, revision_id = recorded$revision_id,
-        helper_hash = attempt$helper_hash), code_ids)))
+        helper_hash = attempt$helper_hash), code_ids)
+    if (!is.null(item$facts$called_function)) {
+      macro_id <- paste0("macro__", tolower(item$facts$called_function))
+      if (matches_attempt(macro_id) && macro_id %in% context_component_dependencies(state$graph, cid)) {
+        # Read the recorded caller and callee before unrelated output context
+        # consumes the request's code budget.
+        item$code_ids <- c(code_ids, macro_id)
+      }
+    }
+    items <- c(items, list(item))
   }
 
   component_failures <- state$diagnostics$component_failures %||% list()
@@ -210,7 +233,8 @@ package_bug_finding_summary <- function(finding) {
 
 package_bug_report_lines <- function(diagnosis) {
   if (is.null(diagnosis)) return(character())
-  if (!length(diagnosis$findings)) return(c("## AI bug triage (beta)", "", diagnosis$reason, ""))
+  if (!length(diagnosis$findings)) return(c("## AI bug triage (beta)", "", diagnosis$reason, "",
+    if (length(diagnosis$observed_failures)) c(paste("- Recorded symptom:", diagnosis$observed_failures), "")))
   c("## Possible sas2r bugs (AI beta)", "",
     unlist(lapply(diagnosis$findings, function(finding) c(
       paste("-", package_bug_finding_summary(finding)),

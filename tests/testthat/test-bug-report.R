@@ -132,6 +132,52 @@ test_that("triage respects the budget and retains only findings grounded in supp
     class = "sas2r_config_error")
 })
 
+test_that("after-run triage records a grounded missing variable even without a finding", {
+  state <- repair_workflow_fixture(n = 1L, failures = integer())$state
+  state$config$migration$bug_reports <- TRUE
+  code <- "out <- date_parts('STARTDTC', prefix = 'START')(data)"
+  state <- stage_workflow_revision(state, "p01", code, "reviewed_no_material_finding")
+  macro <- "macro__date_parts"
+  macro_code <- "date_parts <- function(column, prefix) function(data) data"
+  state$selected_revisions[[macro]] <- list(revision_id = "macro-r1", r_code = macro_code)
+  caller <- state$graph$nodes$node_id[state$graph$nodes$component_id == "p01"][1L]
+  state$graph$nodes <- dplyr::bind_rows(state$graph$nodes,
+    tibble::tibble(node_id = macro, component_id = macro, type = "macro"))
+  state$graph$edges <- dplyr::bind_rows(state$graph$edges,
+    tibble::tibble(from = macro, to = caller, type = "macro_call"))
+  message <- "date_parts: variable STARTDTC is not in the data"
+  state$attempt <- list(kind = "bundle", completed = TRUE, attempt_id = "attempt-1",
+    condition = list(component_id = "p01", class = c("simpleError", "error", "condition"),
+      message = paste(message, "PRIVATE_RECORD", sep = "\n"), call_names = c("sys.source", "eval")),
+    revision_manifest = list(p01 = list(revision_id = state$selected_revisions$p01$revision_id,
+      r_hash = migration_hash(code)), macro__date_parts = list(revision_id = "macro-r1",
+      r_hash = migration_hash(macro_code))))
+  request <- NULL
+  llm <- diagnosis_mock(list(findings = list()), function(req) request <<- req)
+  diagnosis <- suppressMessages(migration_package_bug_diagnosis(state, llm))
+  expect_identical(diagnosis$status, "completed")
+  expect_length(diagnosis$findings, 0L)
+  task <- request_task_text(request)
+  expect_match(task, '"kind":"column_not_found"', fixed = TRUE)
+  expect_match(task, '"called_function":"date_parts"', fixed = TRUE)
+  expect_match(task, '"identifiers":"STARTDTC"', fixed = TRUE)
+  expect_match(task, message, fixed = TRUE)
+  expect_match(task, macro_code, fixed = TRUE)
+  expect_false(grepl("PRIVATE_RECORD", task, fixed = TRUE))
+  expect_identical(diagnosis$observed_failures, paste("Bundle execution failed - p01 -", message))
+  lines <- package_bug_report_lines(diagnosis)
+  expect_true(any(grepl(message, lines, fixed = TRUE)))
+
+  expect_identical(package_bug_evidence(state, NULL, NULL)$E1$code_ids, c("p01", macro))
+  state$attempt$revision_manifest[[macro]]$r_hash <- migration_hash("different macro")
+  expect_identical(package_bug_evidence(state, NULL, NULL)$E1$code_ids, "p01")
+  state$attempt$revision_manifest$p01$r_hash <- migration_hash("different code")
+  item <- package_bug_evidence(state, NULL, NULL)$E1
+  expect_identical(item$facts$kind, "unclassified_error")
+  expect_null(item$facts$called_function)
+  expect_length(item$facts$identifiers, 0L)
+})
+
 test_that("fallback triage gives the model the schema and explains rejected responses", {
   state <- repair_workflow_fixture(n = 1L, failures = integer())$state
   state$config$migration$bug_reports <- TRUE

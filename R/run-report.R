@@ -172,7 +172,10 @@ write_run_navigation <- function(state, report) {
     '<p>Execution, independent review, and reference equivalence are separate results. Saved outputs may be partial or unvalidated. Manual edits and reruns do not change this report.</p>',
     if (!is.null(report$package_bug_diagnosis) && !length(report$package_bug_diagnosis$findings)) c(
       '<h2>AI bug triage (beta)</h2>',
-      paste0('<p>', run_html_escape(report$package_bug_diagnosis$reason), '</p>')),
+      paste0('<p>', run_html_escape(report$package_bug_diagnosis$reason), '</p>'),
+      if (length(report$package_bug_diagnosis$observed_failures)) c('<ul>', paste0(
+        '<li>Recorded symptom: ', run_html_escape(report$package_bug_diagnosis$observed_failures),
+        '</li>'), '</ul>')),
     if (length(report$package_bug_diagnosis$findings)) c(
       '<h2>Possible sas2r bugs (AI beta)</h2>',
       '<ul>', vapply(report$package_bug_diagnosis$findings, function(finding) paste0(

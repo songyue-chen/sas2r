@@ -16,6 +16,9 @@
   Report diagnosis includes its response schema in the prompt for fallback
   JSON providers. Bug triage reports schema failures in the saved run report
   and includes dependency deferrals with the available member evidence.
+  Missing-variable failures in generated functions now retain code-confirmed
+  function and column names in AI evidence and saved triage reports, even
+  when the reviewer finds no grounded package-bug suspicion.
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF
