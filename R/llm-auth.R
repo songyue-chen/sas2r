@@ -149,7 +149,9 @@ normalize_llm_config <- function(config) {
   if (!is.list(config) || is.null(names(config)) || any(!nzchar(names(config)))) {
     llm_config_abort("LLM configuration must be a named mapping")
   }
-  unknown <- setdiff(names(config), LLM_CONFIG_KEYS)
+  config$provider <- llm_canonical_provider(llm_scalar_string(config$provider, "provider", TRUE))
+  spec <- llm_provider_spec(config$provider)
+  unknown <- setdiff(names(config), c(LLM_CONFIG_KEYS, spec$config_fields))
   if (length(unknown)) {
     llm_config_abort(
       "Unknown key{?s} in {.field llm}: {.field {unknown}}"
@@ -162,8 +164,6 @@ normalize_llm_config <- function(config) {
         value < 0 || (field == "max_output_tokens" && (value < 1 || value != floor(value)))))
       llm_config_abort("{field} must be a finite non-negative number (positive integer for max_output_tokens)")
   }
-  config$provider <- tolower(llm_scalar_string(config$provider, "provider", TRUE))
-  spec <- llm_provider_spec(config$provider)
   wrong_provider <- setdiff(
     names(config), c(LLM_SHARED_CONFIG_KEYS, spec$config_fields)
   )

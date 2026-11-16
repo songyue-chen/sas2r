@@ -24,6 +24,27 @@ test_that("invalid argument diagnostics retain the failing parameter without val
   expect_false(grepl("PRIVATE_RECORD", facts$condition_message, fixed = TRUE))
 })
 
+test_that("missing-variable messages require a matching source call", {
+  message <- "date_parts: variable STARTDTC is not in the data"
+  condition <- execution_condition(simpleError(message))
+  code <- "out <- date_parts('startdtc', prefix = 'START')(data)"
+  facts <- agent_error_facts(condition, code)
+  expect_identical(facts$kind, "column_not_found")
+  expect_identical(facts$identifiers, "STARTDTC")
+  expect_identical(facts$called_function, "date_parts")
+  expect_identical(facts$condition_message, message)
+
+  for (other in c("date_parts('another'); startdtc <- NULL",
+    "another('startdtc'); date_parts <- NULL", "# date_parts('startdtc')")) {
+    facts <- agent_error_facts(condition, other)
+    expect_identical(facts$kind, "unclassified_error")
+    expect_null(facts$called_function)
+  }
+  facts <- agent_error_facts(simpleError(paste(message, "PRIVATE_RECORD")), code)
+  expect_identical(facts$kind, "unclassified_error")
+  expect_false(grepl("PRIVATE_RECORD", facts$condition_message, fixed = TRUE))
+})
+
 test_that("a real printing failure reaches smoke and bundle fixer prompts", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   state <- fx$state

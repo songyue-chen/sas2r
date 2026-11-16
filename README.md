@@ -68,9 +68,9 @@ for review timing and how earlier passing results are protected.
 
 ### 1. Install
 
-AI translation requires **ellmer 0.4.2 or newer**. We recommend **ellmer 0.5.0**
-for new installations; both versions pass our offline compatibility tests.
-Deterministic workflows can run without ellmer.
+AI translation requires **ellmer 0.4.2 or newer** and discovers public chat
+connectors from the installed version. The minimum and current ellmer releases
+are tested offline. Deterministic workflows can run without ellmer.
 
 <!-- sas2r-example: network install -->
 ```r
@@ -87,6 +87,8 @@ Installed examples are available without a GitHub checkout. Locate them with
 `system.file("examples", package = "sas2r")`; its README explains how to copy the
 migration demo into a writable directory and prepare its synthetic input. The
 annotated YAML is a configuration reference to adapt to your own study.
+Try the [package-bug reporting beta demo](inst/examples/README.md#try-the-package-bug-reporting-beta)
+to export a saved synthetic triage result without SAS or an API key.
 
 ### 2. Describe your study in `_sas2r.yml`
 

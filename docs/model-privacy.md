@@ -44,6 +44,14 @@ unavailable/incomplete diagnosis without changing validation status. Set
 `migration.report_diagnosis: off` to disable these explanations. Report prose never
 feeds repair or acceptance requests.
 
+The opt-in `migration.bug_reports` beta lets the configured reviewer triage
+possible package bugs in one budget-accounted request. It can receive bounded
+SAS/R code, structured failure facts, output check names and aggregate comparison
+patterns. It receives no dataset records, raw logs or raw execution messages.
+`sas_bug_report()` exports the saved advice and any proposed synthetic R code
+to a local draft. Review the model's text and code for confidential information
+before sharing. The package leaves execution of the example to the reader.
+
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only
 `execution_before` edges do not make every earlier program a code dependency.

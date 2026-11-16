@@ -397,7 +397,7 @@ test_that("ACCEPTANCE: installed-package and no-SAS output review workflow with 
     stopifnot(nzchar(skill2), file.exists(skill2))
 
     stopifnot(identical(
-      sas2r:::llm_provider_ids(),
+      names(sas2r:::llm_provider_registry()),
       c("openai", "anthropic", "bedrock", "azure", "databricks", "deepseek",
         "github", "gemini", "vertex", "ollama", "posit", "snowflake")
     ))

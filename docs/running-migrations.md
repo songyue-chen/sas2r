@@ -735,6 +735,44 @@ categorical mismatch patterns without exact counts or offsets; fixers and candid
 findings without reference targets. Neither evidence policy permits record previews
 or raw runtime logs. See [model privacy](model-privacy.md).
 
+## Report a possible sas2r bug (beta)
+
+Opt in before running `sas_translate()` by adding this setting to your
+`_sas2r.yml`. Set it to `false` to disable it. It defaults to `false`.
+
+```yaml
+migration:
+  bug_reports: true
+```
+
+From R, the equivalent setting is `config = list(migration = list(bug_reports = TRUE))`.
+After translation and repair decisions, the configured reviewer can make one
+budget-accounted triage request for recorded failures in translation, execution
+or output checks. This opt-in is independent of the dataset explanations
+controlled by `migration.report_diagnosis`. Without a reviewer or request budget,
+the run report explains why triage could not run.
+
+Triage uses the same ellmer-backed reviewer as the migration. It requests native
+structured output when the model and connector are configured for it. Otherwise
+it includes the response schema in the prompt and validates the returned JSON
+locally. The same `bug_reports` setting applies across providers.
+
+`START_HERE.html` and the translation report show suspected package defects,
+recorded symptoms, expected behavior, and remaining uncertainty. The model can
+propose a short synthetic R example or suggest how to isolate the failure.
+The report labels examples as unrun. Review code before running it and record
+the result on the reported build. See [model privacy](model-privacy.md).
+
+Pass the returned translation result or the path to that run's
+`report/report.json` as the first argument of `sas2r::sas_bug_report()` and a new
+Markdown destination as `file`. Use the saved JSON path for a blocked run
+that raised an error. The draft has expected and observed behavior, package
+and R versions, and a synthetic example or steps to isolate the failure.
+Review it before sharing and record whether the example reproduced on your
+machine. Send the reviewed draft to the maintainer or post it in the
+[issue tracker](https://github.com/songyue-chen/sas2r/issues).
+Try the [saved triage demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
+
 ## Code style and packages
 
 Translated code is written for maintenance as well as fidelity. Two

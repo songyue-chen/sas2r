@@ -18,9 +18,7 @@ test_that("all agreed ellmer providers are selectable in stable order", {
   expect_identical(
     unname(vapply(registry, `[[`, "", "chat_export")), unname(expected)
   )
-  expect_identical(sas2r:::LLM_PROVIDERS, names(expected))
-  expect_false("openai_compatible" %in% names(registry))
-  expect_identical(sas2r:::llm_provider_ids(), names(expected))
+  expect_true(all(names(expected) %in% sas2r:::llm_provider_ids()))
   expect_true(all(vapply(registry, inherits, logical(1),
                          "sas2r_llm_provider_spec")))
 })
@@ -489,6 +487,15 @@ test_that("existing provider arguments are unchanged after registry dispatch", {
   expect_match(bargs$base_url, "bedrock-runtime.us-east-1")
 })
 
+test_that("ellmer constructor names preserve existing sas2r provider profiles", {
+  config <- sas2r:::normalize_llm_config(list(
+    provider = "google_vertex", model = "model-a",
+    project_id = "fixture", location = "us-central1"
+  ))
+  expect_identical(config$provider, "vertex")
+  expect_identical(sas2r:::llm_provider_spec("claude")$id, "anthropic")
+})
+
 test_that("configuration cannot select an arbitrary ellmer export", {
   expect_error(
     sas2r:::llm_provider_spec("chat_openai_compatible"),
@@ -496,8 +503,7 @@ test_that("configuration cannot select an arbitrary ellmer export", {
   )
   expect_error(
     sas2r:::normalize_llm_config(list(
-      provider = "openai_compatible", model = "model-a",
-      base_url = "https://gateway.example.invalid/v1"
+      provider = "nonexistent_connector", model = "model-a"
     )),
     class = "sas2r_llm_config_error"
   )
@@ -550,8 +556,8 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
       id = "openai", chat_export = "chat_openai",
       auth_modes = "device_code", default_auth_mode = "device_code"
     )),
-    forbidden_export = list(gateway = sas2r:::new_llm_provider_spec(
-      id = "gateway", chat_export = "chat_openai_compatible",
+    malformed_export = list(gateway = sas2r:::new_llm_provider_spec(
+      id = "gateway", chat_export = "ellmer::chat_openai_compatible",
       auth_modes = "api_key", default_auth_mode = "api_key"
     )),
     community_support = list(openai = sas2r:::new_llm_provider_spec(
@@ -620,7 +626,6 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
 
 test_that("the mock capability record stays outside the production registry", {
   expect_false("mock" %in% sas2r:::llm_provider_ids())
-  expect_false("mock" %in% sas2r:::LLM_PROVIDERS)
   expect_identical(
     sas2r:::adapter_capability_metadata("mock"),
     list(

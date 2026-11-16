@@ -56,7 +56,9 @@ parallel_dependency_findings <- function(state, cid) {
   defined <- project_macro_variable_definitions(state$project)
   symbol <- tolower(sub("[.]$", "", sub("^&", "", trimws(reported))))
   variable_like <- grepl("^&?[A-Za-z_][A-Za-z0-9_]*[.]?$", trimws(reported))
-  reported[!(variable_like & symbol %in% defined)]
+  reported <- reported[!(variable_like & symbol %in% defined)]
+  availability <- late_dataset_availability(state$project, cid, reported)
+  reported[!tolower(reported) %in% names(availability)[availability == "available_in_bound_library"]]
 }
 
 parallel_affected_components <- function(graph, cid, ids) {

@@ -52,6 +52,36 @@ filter_dependency_resources <- function(reported, project, component_id) {
     !tolower(sub("^%", "", trimws(reported))) %in% MACRO_BUILTINS]
 }
 
+# A late dataset report can refer to a literal passed to a macro even when the
+# scanner cannot expand the macro into a read edge. Use the library at the
+# caller's source location and the same member lookup as the runtime.
+late_dataset_availability <- function(project, component_id, datasets) {
+  datasets <- unique(tolower(datasets))
+  datasets <- datasets[grepl("^[a-z_][a-z0-9_]*[.][a-z_][a-z0-9_]*$", datasets) &
+    !startsWith(datasets, "work.")]
+  registry <- project$libref_registry
+  if (!length(datasets) || is.null(registry)) return(character())
+  statements <- component_statements(project, component_id)
+  if (is.null(statements)) return(character())
+  rows <- which(statements$type == "code")
+  tokens <- lapply(statements$text[rows], function(text) tolower(dataset_tokens(text)$lex))
+  vapply(stats::setNames(datasets, datasets), function(dataset) {
+    sites <- rows[vapply(tokens, function(token) dataset %in% token, logical(1))]
+    if (!length(sites)) return("no_literal_source_reference")
+    parts <- split_ds(dataset)
+    present <- vapply(sites, function(i) {
+      binding <- libref_binding_at(registry, parts[["lib"]],
+        statements$file[i], statements$line_start[i])
+      if (!identical(binding$status, "bound") || isTRUE(binding$context_truncated)) return(NA)
+      target <- tryCatch(sas2r_lib_member_file(list(read_path = binding$selected_path),
+        parts[["member"]]), error = function(e) NULL)
+      !is.null(target) && file.access(target$path, 4L) == 0L
+    }, logical(1))
+    if (anyNA(present)) return("library_binding_unresolved")
+    if (all(present)) "available_in_bound_library" else "member_unavailable_in_bound_library"
+  }, character(1))
+}
+
 source_macro_variable_names <- function(text) {
   unique(tolower(sub("^&", "", unlist(regmatches(text,
     gregexpr("&[A-Za-z_][A-Za-z0-9_]*", text, perl = TRUE))))))

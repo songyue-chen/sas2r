@@ -495,8 +495,14 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
   }
   repeat {
     capabilities <- llm_capabilities_for(llm, tier = tier)
+    request_messages <- messages
+    if (identical(phase, "finalization") && identical(schema_mode, "fallback")) {
+      last <- length(request_messages)
+      request_messages[[last]]$content <- llm_prompt_with_output_schema(
+        request_messages[[last]]$content, schema)
+    }
     request <- llm_request(
-      messages = messages,
+      messages = request_messages,
       tier = tier,
       tools = if (!tool_limit_finalized && (identical(phase, "gathering") || coexist))
         transport_tools else list(),
