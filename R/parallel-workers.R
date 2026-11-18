@@ -223,7 +223,7 @@ parallel_worker_main <- function(state, policy, dir, cid, kind, execute, repair_
     repair_counts = state$repair_counts,
     events = state$events[seq_along(state$events) > length(before$events)],
     diagnostics = diagnostics, review = review,
-    dependency_findings = parallel_dependency_findings(state, cid), rpc_ms = client$rpc_ms,
+    dependency_findings = parallel_dependency_findings(state, cid, include_advisory = TRUE), rpc_ms = client$rpc_ms,
     initial_review = initial_review)
 }
 

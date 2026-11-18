@@ -943,6 +943,8 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   # Split every cell before measuring so a multiline cell cannot overlap the
   # following record. Empty cells still occupy one line.
   split_cell <- function(x) {
+    x <- gsub("\r\n?", "\n", x)
+    x <- gsub("\t", " ", x, fixed = TRUE)
     lines <- strsplit(paste0(x, "\n"), "\n", fixed = TRUE)[[1L]]
     if (length(lines)) lines else ""
   }
@@ -960,9 +962,12 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   # Some iconv implementations transliterate even with sub = NA. Check the
   # round trip before opening the destination so substitutions cannot pass.
   text <- unique(enc2utf8(as.character(lines)))
+  if (any(grepl("[[:cntrl:]]", text))) {
+    stop("sas_print_table: unsupported control character in a heading or cell.", call. = FALSE)
+  }
   encoded <- iconv(text, from = "UTF-8", to = "CP1252", sub = NA)
   decoded <- iconv(encoded, from = "CP1252", to = "UTF-8", sub = NA)
-  if (anyNA(decoded) || any(decoded != text) || any(grepl("[[:cntrl:]\u00ad]", text))) {
+  if (anyNA(decoded) || any(decoded != text) || any(grepl("\u00ad", text, fixed = TRUE))) {
     stop("sas_print_table: text is outside the printable Windows-1252 PDF encoding. Use a renderer and font that support the required characters.", call. = FALSE)
   }
   header <- lines[seq_len(heights[[1L]]), , drop = FALSE]

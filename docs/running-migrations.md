@@ -79,8 +79,11 @@ an existing file alone cannot establish which version the macro should read.
 Declare the source program sequence in `migration.execution_order`. A caller
 that runs first needs a readable input. A caller that follows the writer can
 use its generated member, including when the input directory starts empty.
-If an intervening operation invalidates the write, or a library alias leaves
-the generated member's location uncertain, execution still needs reconciliation.
+With a declared writer-first sequence, a setup macro, an omitted argument
+with a literal dataset default, or a call inside a step can leave the member's
+state uncertain. The dependency appears as an advisory and the caller runs.
+An unresolved binding, an ambiguous library alias, or an explicit deletion
+after the write can still defer execution.
 
 An intermediate dataset with no producer visible to the scanner, or a possible
 statement-order issue, remains a warning and can be tested by execution. This

@@ -311,7 +311,9 @@ reference evidence.
 is disabled or no selected deliverables were produced. Unrequested scratch
 outputs stay in diagnostics. Report destinations retain their source subfolders.
 For example, `table.html` is saved as `tlf/table.html` and `outputs/table.html`
-as `tlf/outputs/table.html`. Regenerate and rerun an older development bundle
+as `tlf/outputs/table.html`. A second contract spelling the latter path as
+`./outputs/table.html` retains its own assessment and points to the same saved file.
+Regenerate and rerun an older development bundle
 if its two source destinations overwrote the same file.
 
 `sas_write(result, "delivery")` writes the selected code and runtime, saved

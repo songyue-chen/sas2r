@@ -138,3 +138,32 @@ test_that("legacy literal reports are collected once per source destination", {
   targets <- assess_final_outputs(contracts, attempt)$targets
   expect_false(any(vapply(targets, `[[`, logical(1), "passed")))
 })
+
+test_that("equivalent report paths share an assessed and saved file", {
+  root <- withr::local_tempdir()
+  reports <- c("./outputs/t.html", "outputs/t.html")
+  for (i in seq_along(reports)) writeLines(
+    sprintf("ods html file='%s'; proc print; run; ods html close;", reports[i]),
+    file.path(root, paste0(i, ".sas")))
+  contracts <- infer_output_contracts(sas_project(root))
+  contracts <- contracts[contracts$kind == "tlf", ]
+  expect_setequal(contracts$target_key, reports)
+  relative <- "tlf/outputs/t.html"
+  path <- file.path(root, relative)
+  dir.create(dirname(path), recursive = TRUE)
+  writeLines("<html><body>report</body></html>", path)
+  attempt <- list(attempt_dir = root,
+    output_hashes = stats::setNames(list(cli::hash_file_sha256(path)), relative))
+  targets <- assess_final_outputs(contracts, attempt)$targets
+  for (key in reports) {
+    expect_identical(targets[[key]]$status, "passed")
+    expect_identical(targets[[key]]$candidate_path, normalizePath(path, winslash = "/"))
+  }
+  saved <- withr::local_tempdir()
+  outputs <- materialize_run_outputs(list(selected_attempt = attempt, execute = TRUE,
+    output_contracts = contracts, paths = list(outputs = saved, work = withr::local_tempdir())))
+  expect_setequal(names(outputs), reports)
+  expect_identical(outputs[[reports[1L]]], outputs[[reports[2L]]])
+  expect_identical(outputs[[reports[1L]]]$attempt_path, relative)
+  expect_identical(list.files(saved, recursive = TRUE), relative)
+})

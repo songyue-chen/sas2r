@@ -4,7 +4,9 @@
   execution, including literal dataset names passed to SAS macros. When a
   project program writes the same bound member, an existing file alone cannot
   clear the dependency. Set `migration.execution_order` to distinguish a read
-  of the original input from a read of the regenerated member.
+  of the original input from a read of the regenerated member. After a declared
+  writer, uncertain macro effects are recorded as advisories and the caller
+  can execute. Components reuse the source scan's order information.
 
 - Discover providers through the installed ellmer package for translation, review,
   repair and AI diagnosis. Existing provider IDs and configuration remain valid.
@@ -25,7 +27,8 @@
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF
-  extensions remain accepted. Headings or cells outside the PDF renderer's
+  extensions remain accepted. In headings and cells each tab becomes one space,
+  and LF, CRLF and CR each start a new line. Text outside the PDF renderer's
   printable Windows-1252 encoding raise an error before the file is opened.
   Use a renderer and font that support the source text for these listings.
   Translation, review and repair guidance preserves
@@ -52,7 +55,9 @@
   and earlier Gemini protocols in the offline provider contract checks.
 
 - Preserve full relative SAS report paths under `outputs/tlf/`. For example,
-  `table.html` and `outputs/table.html` are saved separately. Programs that
+  `table.html` and `outputs/table.html` are saved separately. Equivalent paths
+  such as `./outputs/table.html` and `outputs/table.html` share one saved file
+  and retain their individual contract assessments. Programs that
   consume reports from an earlier 0.6.0 development build should include the
   source `outputs/` prefix in the new path. Regenerate affected bundles and
   rerun them to recover reports that previously overwrote each other.
