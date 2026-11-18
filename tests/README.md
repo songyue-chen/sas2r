@@ -1,13 +1,13 @@
 # Development tests
 
-This complete suite is maintained on `develop`. The release branch `main` ships
-a smaller suite and records the development commit used for full validation in
+The complete suite is maintained on `develop`. The CRAN submission branch
+`main` ships a representative suite and records the full-suite commit in
 `.github/development-test-ref`. See [the release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md).
 
 ## Existing test profiles
 
-CRAN checks use `NOT_CRAN=false`. They retain unit tests and representative
-public translation, review, repair, resume, export, dependency, output-validation,
+CRAN checks use `NOT_CRAN=false`. The submission archive retains unit tests and
+representative public translation, review, repair, resume, export, dependency, output-validation,
 and one/two-worker execution cases. They require no SAS installation, provider
 credentials, paid requests, or fixture-package installation.
 

@@ -1,8 +1,10 @@
 # Release and development branches
 
-`main` is the default branch and represents the stable CRAN release.
-`develop` holds ongoing work and the complete regression suite.
-Start feature branches from `develop` and target development pull requests there.
+Reserve `main`, the default branch, for CRAN submissions only. It can contain
+a reviewed candidate ahead of the version published on CRAN. Start ordinary
+code, test and documentation changes from `develop` and target them there.
+The [CRAN package page](https://CRAN.R-project.org/package=sas2r) identifies
+the published version.
 
 The release branch ships a smaller set of tests covering the public API and
 package features. Extended integration scenarios stay on `develop`; their
@@ -12,9 +14,11 @@ absence from the CRAN archive does not make them optional release checks.
 
 1. Select a `develop` commit with the intended package version and implementation.
    Make functional fixes on `develop` first. Keep its complete tests.
-2. Prepare the release changes from that commit. Retain representative tests for
-   every feature and the source-faithful repair checks. Do not change package
-   implementation merely to shorten checks.
+2. Prepare a submission pull request against `main` from the reviewed changes.
+   Preserve release-only CI and test settings. Include representative tests for
+   each feature and the source-faithful repair checks. Align DESCRIPTION, NEWS,
+   help, installation instructions and guide links with the candidate version.
+   Label the candidate and identify the version currently published on CRAN.
 3. Set `.github/development-test-ref` on the release branch to the full commit ID
    from step 1. Keep that file absent on `develop`, where CI tests its own current
    sources. The fixed ID prevents future development tests from being run against
@@ -24,21 +28,24 @@ absence from the CRAN archive does not make them optional release checks.
    `release-tests-*` tag. Record its commit ID in the pin and its tag in
    `cran-comments.md`. Keep the tag after deleting its working branch so CI
    can still fetch the commit; restore only `tests/` from that snapshot.
-4. Run `R CMD build`, then `R CMD check --as-cran` on the resulting archive. Check
-   total elapsed time as well as test time on Windows and Linux, with comfortable
-   margin below the limit CRAN gave in its review.
+4. Run `R CMD build` and check the archive with
+   `NOT_CRAN=false R CMD check --as-cran`, including CRAN incoming checks.
+   Retain Windows R-devel coverage and Linux PDF manual checks. Record test time
+   and overall package check time separately. The previous CRAN review requested
+   an overall check under ten minutes on Windows and Linux.
 5. Install that same archive and run the complete tests from the recorded
    development commit against the installed package. The `installed-tests` and
    `no-sas-tarball` CI jobs restore only `tests/` after installation, so the runtime
    under test remains the release package. They set `NOT_CRAN=true` to include
    the development suite's existing extended cases. Use a disposable checkout
    when reproducing those restore steps locally.
-6. Update `cran-comments.md` with the response to CRAN and measured results.
-   Submit the tested source archive through the CRAN submission form. Preserve
-   its checksum and check logs. GitHub's automatic source downloads are not a
-   replacement for the archive produced by `R CMD build`.
-7. After acceptance, promote the accepted release to `main`, tag its source commit
-   (for example `v0.5.8`), and update the README's release status.
+6. Resolve release-blocking findings and record the candidate's measured results
+   and relevant reviewer responses in `cran-comments.md`. Merge the reviewed
+   submission changes to `main`. Verify that the package contents match the
+   tested candidate. Submit that tested R source archive through the CRAN form
+   and retain its source commit, SHA-256 and check logs.
+7. After CRAN publishes the update, tag the accepted source commit and update
+   the release status in the documentation on both branches.
 
 Release-only test reductions and `.github/development-test-ref` must not be merged
 back into `develop`. Bring shared documentation and CI improvements across

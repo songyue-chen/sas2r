@@ -21,7 +21,7 @@ The existing sas2r provider profiles preserve these IDs and selectors.
 
 | Provider ID | ellmer Constructor | Auth Modes (`default`) | Required Selectors | Optional Selectors | Credential Environment Variables / Ambient Sources | Model Inventory (`sas_llm_models`) | Acceptance Level |
 |---|---|---|---|---|---|---|---|
-| `openai` | `ellmer::chat_openai` | `ambient`, `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key` | `OPENAI_API_KEY` (resolved by `ellmer`, never read by `sas2r`) | Available (`models_openai`) | Offline contract |
+| `openai` | `ellmer::chat_openai` | `ambient`, `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key` | `OPENAI_API_KEY` (ellmer uses the key for authentication and sas2r reads it for audit redaction) | Available (`models_openai`) | Offline contract |
 | `anthropic` | `ellmer::chat_anthropic` | `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key`, `cache` (`5m`/`1h`/`none`) | `ANTHROPIC_API_KEY` | Available (`models_anthropic`) | Offline contract |
 | `bedrock` | `ellmer::chat_aws_bedrock` | `ambient` (`ambient`) | `region` **xor** `base_url` | `profile`, `cache` (`auto`/`5m`/`1h`/`none`) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`; AWS SSO / IAM Identity Center / CLI credential chain (`aws sso login --profile <profile>`) | Available only with an explicit `region` and a non-inference-profile model; `inventory_unavailable` for inference profiles or a custom `base_url` | Offline contract + opt-in live smoke |
 | `azure` | `ellmer::chat_azure_openai` | `ambient`, `api_key` (`ambient`) | `endpoint`, `api_version`; plus `api_key` when `auth_mode: api_key` | `credentials` | `AZURE_OPENAI_API_KEY`, `AZURE_CLIENT_SECRET`; Azure CLI / Entra ID / Managed Identity (`az login`) | Unavailable (no `models_*` export; deployment-based) | Offline contract + opt-in live smoke |
@@ -87,7 +87,7 @@ Copy one complete `llm:` block; the model must be available to your account.
 ### Recommended starting settings
 
 These are suggested YAML profiles, not automatic provider-specific package
-defaults. Settings/model documentation checked **September 18, 2026**. Startup
+defaults. Published output limits checked **November 17, 2026**. Startup
 verifies explicit parameters against the installed connector and selected model.
 For full-program translation, use the documented maximum output allowance when
 the endpoint accepts it and input plus output fit the context window. This gives
@@ -184,8 +184,8 @@ provider charges; concurrent requests share that same available budget.
 Use run-level call, tool, time and dollar limits separately. An unknown monetary
 cost is not zero cost or proof that a dollar ceiling can be enforced.
 
-Sources: [Gemini model/settings](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
-[Gemini quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
+Sources: [Gemini model/settings](https://aistudio.google.com/docs/models/gemini-3.8-flash),
+[Gemini quotas](https://aistudio.google.com/docs/rate-limits),
 [DeepSeek request parameters](https://api-docs.deepseek.com/api/create-chat-completion/),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
 [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), and
@@ -205,7 +205,7 @@ the model's default is `medium`. The profile uses its **128,000-token** maximum
 output allowance to leave room for reasoning and complete code.
 The **900-second** timeout is our per-request recommendation. Verify translation
 quality on representative programs with the same review and output checks.
-Facts checked September 18, 2026 against the
+Model specifications checked November 17, 2026 against the
 [official Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
 
 ```bash
@@ -227,13 +227,13 @@ llm:
 
 ### Anthropic
 
-Use **Claude Sonnet 5** (`claude-sonnet-5`) for new direct Claude API evaluations.
-Sonnet 4.6 remains available as a legacy model. Sonnet 5 supports **128,000**
+This profile uses **Claude Sonnet 5** (`claude-sonnet-5`), which Anthropic lists
+as a legacy model. Sonnet 5 supports **128,000**
 output tokens, including thinking; adaptive thinking is on by default and
 `high` effort is supported. Keep sampling parameters unset and use adaptive
 thinking, since manual extended-thinking budgets are rejected. See the
 [model overview](https://platform.claude.com/docs/en/models/sonnet-5/overview)
-and [migration guide](https://platform.claude.com/docs/en/models/sonnet-5/migration-guide).
+and [migration guide for Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide).
 
 **Before relying on the full allowance:** sas2r uses non-streaming ellmer calls.
 Anthropic recommends streaming or batch processing for long requests, especially
@@ -624,7 +624,7 @@ also checked on installed ellmer 0.5.0 on September 18, 2026:
 
 Sources for model behavior:
 [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
-[Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
+[Gemini thinking](https://aistudio.google.com/docs/thinking?generate-content=true),
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
 Use reasoning-capable models in every active `tiers` entry: declarations are

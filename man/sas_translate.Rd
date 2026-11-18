@@ -112,7 +112,7 @@ An object of S3 class \code{"sas2r_translation"} containing \verb{$run_id}, \ver
 \verb{$output_assessments}, \verb{$diagnostics}, \verb{$repair_history}, \verb{$usage}, and \verb{$project}.
 \verb{$outputs_dir} contains selected contract deliverables with their library and
 relative-path layout (for example \code{datasets/work/out.rds},
-\code{datasets/adam/adsl.rds}, and \code{tlf/outputs/table.html}); it is NULL when
+\code{datasets/adam/adsl.rds}, and \code{tlf/table.html}); it is NULL when
 execution is disabled or no selected deliverables were produced. The JSON
 report includes separate target/reference/review coverage and effective limits.
 }
