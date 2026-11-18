@@ -197,7 +197,7 @@ test_that("a late macro input distinguishes a project writer from an external se
   dir.create("other")
   seed <- "input/member.rds"
   saveRDS(data.frame(value = 1), seed)
-  writeLines(c("%macro copy(indata);", "data work.out; set &indata; run;", "%mend;",
+  writeLines(c("%macro copy(indata=);", "data work.out; set &indata; run;", "%mend;",
     "%copy(indata=raw.member);"), "a_consumer.sas")
   writer <- "data raw.member; value=2; run;"
   writeLines(writer, "z_producer.sas")
@@ -211,7 +211,7 @@ test_that("a late macro input distinguishes a project writer from an external se
   }
   expect_identical(evaluate(), "raw.member")
   responses <- list("translator:a_consumer" = valid_program_translation_response(
-    paste("copy <- function(indata) {", "  parts <- strsplit(indata, '.', fixed = TRUE)[[1L]]",
+    paste("copy <- function(indata = '') {", "  parts <- strsplit(indata, '.', fixed = TRUE)[[1L]]",
       "  lib_write(lib_read(parts[1L], parts[2L]), 'work', 'out')", "}",
       "copy(indata = 'raw.member')", sep = "\n"), discovered_dependencies = "raw.member"),
     "translator:z_producer" = valid_program_translation_response(
@@ -221,6 +221,8 @@ test_that("a late macro input distinguishes a project writer from an external se
     outputs = list(datasets = c("work.out", "raw.member")),
     llm = parallel_test_llm(responses, delay = 0), max_program_repair_rounds = 0L,
     max_bundle_repair_rounds = 0L)
+  report <- read_json_record(result$report_json_path)
+  expect_true(report$component_evidence$a_consumer$mechanical_checks$pass)
   expect_identical(result$diagnostics$deferred_components$a_consumer, "a_consumer (raw.member)")
   expect_false(file.exists(file.path(result$outputs_dir, "datasets", "work", "out.rds")))
   expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "raw", "member.rds"))$value, 2)
