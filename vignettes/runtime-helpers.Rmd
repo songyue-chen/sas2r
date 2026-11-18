@@ -82,6 +82,9 @@ For plain PDF listings, the runtime includes `sas_print_table(data, file)`.
 It aligns headings and values, uses fixed line spacing and repeats headers on
 subsequent pages. Use `sas_output_path()` to obtain a run-relative report path.
 The helper opens and closes its own PDF device and widens pages to fit content.
+The device can warn and substitute dots for characters outside its font
+encoding, including Greek letters and Chinese text. For such listings, use a
+renderer and font that preserve the source text and check the rendered PDF.
 Supply the source-required row/column order, formats and labels; use `obs = FALSE`
 for NOOBS. Titles, BY groups, totals and source-specific ODS layouts require
 separate implementation. These drawing properties do not establish SAS/reference
@@ -196,11 +199,9 @@ key. Filling them from a preceding key changes the SAS behavior.
 
 ## Versioning and stability
 
-The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
-
-```
-# sas2r runtime helpers -- vendored by sas2r 0.5.8. Do not edit by hand.
-```
+The first line of `sas2r-helpers.R` records which sas2r version generated that
+bundle. From the exported bundle folder, inspect it with
+`readLines("runtime/sas2r-helpers.R", n = 1L)`.
 
 A bundle always loads its own copy of the runtime, so upgrading sas2r does not
 replace that copy. Results still depend on inputs, R and dependency versions;
@@ -235,6 +236,14 @@ Generated report writers use `sas_output_path("outputs/table.pdf", environment()
 inside the local runtime environment. The helper creates the parent directory
 and maps this logical target to `<output_root>/tlf/table.pdf`. A leading
 `outputs/` is removed once; meaningful subdirectories such as `tables/` remain.
+In a function or translated macro, pass the environment that loaded
+`autoexec.R` as `env`. The default checks the immediate calling environment.
+
+In the 0.6.0 preview, two SAS destinations such as `table.pdf` and
+`outputs/table.pdf` map to the same file. The second write can replace the
+first while both output checks pass. Compare the resolved paths and review each
+deliverable separately when the SAS source requires both files.
+
 Saved run artifacts use `<run>/outputs/tlf/`; exported bundles use
 `<export>/output/tlf/`. `sas2r_assignment_path()` is for LIBNAME input paths,
 not report destinations. Absolute SAS report paths require an explicit relative

@@ -1,53 +1,31 @@
-## Resubmission: sas2r 0.5.8
+# sas2r 0.6.0 development status
 
-This resubmission addresses the manual review requesting removal of examples
-for unexported functions and correction of file-writing destinations.
+The published version is [sas2r 0.5.8](https://CRAN.R-project.org/package=sas2r).
+Version 0.6.0 is under review on `develop`. The
+[0.5.8 submission record](https://github.com/songyue-chen/sas2r/blob/e28af41d73e5b577c9ed4c628539c635a3340c20/cran-comments.md)
+contains the earlier release's checks and correspondence.
 
-- Removed examples from all seven internal helper help topics, including
-  `sas2r_lib_member_file` and `split_ds`. These functions remain internal.
-- Internal audit logging now defaults to the R session temporary directory.
-  The internal lockfile writer requires an explicit destination.
-- Sourcing the installed demo input script only defines its input generator.
-  Both the generator and command-line script require an explicit destination.
-- README and vignette writing examples use temporary destinations. The runtime
-  vignette runs a temporary copy of an exported bundle and restores the caller's
-  working directory through `source(..., chdir = TRUE)`.
-- Added checks for default log destinations and the demo's explicit destination.
-  Regenerated help and the runtime helper reference together.
+## Development checks
 
-Additional fixes align format loading and startup behavior in smoke and bundle
-execution, report unsupported format definitions and widths, and keep unrelated
-execution failures from taking priority in independent repairs. Equivalent
-format definitions remain supported when their values or numeric ranges are
-declared in a different order.
+All ten [CI jobs for development commit 48aa30b8](https://github.com/songyue-chen/sas2r/actions/runs/43790121436)
+passed. The package check took 13 min 18 s on Linux release and 18 min 51 s on
+Windows release. Both exceed the ten-minute overall check time requested in the
+previous CRAN review. These timings include the tests shipped by `develop`.
 
-The smaller representative submission test suite is retained. The complete
-suite remains on the development branch and is checked against the installed
-release package using `.github/development-test-ref`. Tests use small synthetic
-fixtures, need no SAS installation or provider credentials, and use at most two
-translation workers.
+## Before submission
 
-## Validation
+The development review reproduced four issues with synthetic inputs.
 
-The corrected source archive passes local `R CMD check --as-cran --no-manual`
-on macOS with R 4.4.0:
+- Distinct SAS report destinations such as `table.html` and `outputs/table.html`
+  can overwrite one file and both pass output assessment.
+- A translated reporting function that calls `sas_output_path()` from its own
+  frame can fail even when the enclosing bundle runtime has a valid output root.
+- The plain PDF listing helper can finish with conversion warnings and replace
+  Greek letters or Chinese characters with dots in the saved document.
+- A readable library member can clear a reported macro input dependency even
+  when a project program writes the member and is scheduled after the caller.
 
-- 0 errors, 0 warnings.
-- 2 NOTEs: "New submission" and "unable to verify current time".
-- Shipped tests: 7,429 assertions passed; 0 failures and 0 test warnings.
-- Test elapsed time: 137 seconds.
-- Examples and both rebuilt vignettes passed; no temporary-directory detritus.
-
-The documentation runner executed 18 offline examples, parsed 6 network examples
-without provider calls, and validated 23 configurations. All seven local
-migration acceptance checks passed against the installed archive.
-
-An additional 1,093 focused assertions passed against the installed archive
-from the source checkout, with 0 failures, 0 warnings, and 0 skips.
-
-The release PR tracks the current platform checks, PDF manual checks, and
-complete development-suite checks in CI:
-
-Release PR: https://github.com/songyue-chen/sas2r/pull/54
-
-Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
+Resolve these findings, prepare the representative CRAN suite and pin its
+compatible full development tests. Record the exact
+submission archive and its Windows and Linux results here after checking it.
+The [release workflow](docs/releasing.md) describes those steps.

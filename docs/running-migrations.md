@@ -72,6 +72,12 @@ skipped, and skipped outputs count as not executed rather than missing. Such an
 attempt cannot be reported as migration-ready. Deferral does not trigger
 repeated attempts to repair code for absent resources. Missing configured SAS
 references prevent comparison, but do not by themselves prevent execution.
+
+In the 0.6.0 preview, a readable library member can clear a late dependency
+reported for a literal macro argument. If the project also regenerates the
+member, check that the producing program runs before the macro caller. An
+existing copy can mask a missing dependency in the execution order.
+
 An intermediate dataset with no producer visible to the scanner, or a possible
 statement-order issue, remains a warning and can be tested by execution. This
 allows translated macros to create their intermediate datasets at runtime.
