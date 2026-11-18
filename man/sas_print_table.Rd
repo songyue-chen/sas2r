@@ -44,10 +44,10 @@ formats, and implement source titles, BY groups, totals and other report logic.
 Values use \code{\link[=sas_display]{sas_display()}} unless already formatted by the caller. Columns
 are left-aligned in a monospace font. The PDF page widens to fit the longest
 heading or value in each column; text is not truncated or shrunk to fit.
-Newlines in cells are retained. The base PDF device can substitute characters
-outside its font encoding, including Greek letters and some scripts. Review
-conversion warnings and use a font and renderer that preserve the required
-characters when producing multilingual or scientific listings.
+Newlines in cells are retained. Headings and values must be representable
+in the PDF device's Windows-1252 encoding. Unsupported text raises an error
+before the destination is opened. For other scripts or scientific symbols,
+choose a renderer and font that support the required characters.
 This helper does not reproduce SAS page size,
 style or arbitrary ODS layouts. Choose another renderer when those effects
 are required. PDF validity alone does not establish output equivalence.

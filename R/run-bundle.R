@@ -75,11 +75,12 @@ materialize_run_outputs <- function(state) {
   source_files <- normalizePath(file.path(attempt$attempt_dir, names(inventory)),
                                 winslash = "/", mustWork = FALSE)
   contracts <- state$output_contracts %||% empty_output_contracts()
+  report_files <- attempt_report_files(contracts, attempt)
   outputs <- list()
   used <- character()
   for (i in seq_len(nrow(contracts))) {
     contract <- contracts[i, , drop = FALSE]
-    candidate <- find_attempt_candidate_file(contract, attempt)
+    candidate <- find_attempt_candidate_file(contract, attempt, report_files)
     index <- match(candidate, source_files)
     if (is.na(index)) next
     original <- names(inventory)[index]

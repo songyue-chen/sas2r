@@ -182,7 +182,7 @@ sas2r_assignment_path <- function(path, env) {
 
 #' Relative location of a report within the TLF directory
 #' @param path A relative logical report path.
-#' @return A relative path with one conventional leading `outputs/` removed.
+#' @return The normalized relative path, including source subdirectories.
 #' @keywords internal
 sas2r_tlf_relative_path <- function(path) {
   if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path))
@@ -199,29 +199,34 @@ sas2r_tlf_relative_path <- function(path) {
       parts <- utils::head(parts, -1L)
     } else parts <- c(parts, part)
   }
-  path <- sub("^outputs/", "", paste(parts, collapse = "/"), ignore.case = TRUE)
+  path <- paste(parts, collapse = "/")
   if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
   path
 }
 
 #' Resolve a report destination within the current run
 #'
-#' Use this helper for ODS/report files, not for input libraries. A logical
-#' `outputs/tables/report.pdf` maps to `<output_root>/tlf/tables/report.pdf`.
-#' One conventional leading `outputs/` is removed; meaningful subfolders remain.
+#' Use this helper to locate ODS and other report files.
+#' The full relative source path is retained under the run's TLF directory.
+#' For example, `outputs/table.pdf` and `table.pdf` have distinct destinations.
 #' The parent directory is created. Absolute source paths require an explicit
-#' relative logical destination in the translated program. Distinct logical
-#' names such as `table.pdf` and `outputs/table.pdf` resolve to the same file.
+#' relative logical destination in the translated program.
 #'
 #' @param path Relative logical report path from the SAS output contract.
-#' @param env Local runtime environment containing `.sas2r_output_root`.
-#'   Defaults to the immediate calling environment. Inside a function or
-#'   translated macro, pass the runtime environment that loaded `autoexec.R`.
+#' @param env Calling environment or an explicit runtime environment. Nested
+#'   functions use the output root from their enclosing bundle runtime.
 #' @return Character scalar destination path. No working-directory fallback
 #'   is used when the runtime output root is absent.
 #' @export
 sas_output_path <- function(path, env = parent.frame()) {
-  root <- get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  # Follow the translated function's lexical scope, stopping before the
+  # workspace unless the standalone helper was itself sourced there.
+  while (!identical(env, emptyenv()) && !identical(env, globalenv()) &&
+         !exists(".sas2r_output_root", envir = env, inherits = FALSE)) {
+    env <- parent.env(env)
+  }
+  root <- if (!identical(env, globalenv()) || identical(environment(sas_output_path), env))
+    get0(".sas2r_output_root", envir = env, inherits = FALSE)
   if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
     stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
   dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))

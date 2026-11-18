@@ -14,18 +14,13 @@ previous CRAN review. These timings include the tests shipped by `develop`.
 
 ## Before submission
 
-The development review reproduced four issues with synthetic inputs.
+Development regression tests cover distinct report destinations through
+assessment and export, report writers inside translated macros, PDF text
+encoding, and late macro inputs with a project writer. Unsupported PDF text
+fails before the destination is opened. Projects with an ambiguous producer
+order can declare the intended sequence in `migration.execution_order`.
 
-- Distinct SAS report destinations such as `table.html` and `outputs/table.html`
-  can overwrite one file and both pass output assessment.
-- A translated reporting function that calls `sas_output_path()` from its own
-  frame can fail even when the enclosing bundle runtime has a valid output root.
-- The plain PDF listing helper can finish with conversion warnings and replace
-  Greek letters or Chinese characters with dots in the saved document.
-- A readable library member can clear a reported macro input dependency even
-  when a project program writes the member and is scheduled after the caller.
-
-Resolve these findings, prepare the representative CRAN suite and pin its
-compatible full development tests. Record the exact
-submission archive and its Windows and Linux results here after checking it.
+Prepare the representative CRAN suite and pin its compatible full development
+tests. Record the exact submission archive and its Windows and Linux results
+here after checking it.
 The [release workflow](docs/releasing.md) describes those steps.

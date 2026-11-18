@@ -73,10 +73,14 @@ attempt cannot be reported as migration-ready. Deferral does not trigger
 repeated attempts to repair code for absent resources. Missing configured SAS
 references prevent comparison, but do not by themselves prevent execution.
 
-In the 0.6.0 preview, a readable library member can clear a late dependency
-reported for a literal macro argument. If the project also regenerates the
-member, check that the producing program runs before the macro caller. An
-existing copy can mask a missing dependency in the execution order.
+For a literal dataset passed to a macro, sas2r checks the library bound at
+the call site. If another program writes the same member in that library,
+an existing file alone cannot establish which version the macro should read.
+Declare the source program sequence in `migration.execution_order`. A caller
+that runs first needs a readable input. A caller that follows the writer can
+use its generated member, including when the input directory starts empty.
+If an intervening operation invalidates the write, or a library alias leaves
+the generated member's location uncertain, execution still needs reconciliation.
 
 An intermediate dataset with no producer visible to the scanner, or a possible
 statement-order issue, remains a warning and can be tested by execution. This

@@ -21,10 +21,10 @@
 #' Values use [sas_display()] unless already formatted by the caller. Columns
 #' are left-aligned in a monospace font. The PDF page widens to fit the longest
 #' heading or value in each column; text is not truncated or shrunk to fit.
-#' Newlines in cells are retained. The base PDF device can substitute characters
-#' outside its font encoding, including Greek letters and some scripts. Review
-#' conversion warnings and use a font and renderer that preserve the required
-#' characters when producing multilingual or scientific listings.
+#' Newlines in cells are retained. Headings and values must be representable
+#' in the PDF device's Windows-1252 encoding. Unsupported text raises an error
+#' before the destination is opened. For other scripts or scientific symbols,
+#' choose a renderer and font that support the required characters.
 #' This helper does not reproduce SAS page size,
 #' style or arbitrary ODS layouts. Choose another renderer when those effects
 #' are required. PDF validity alone does not establish output equivalence.
@@ -88,12 +88,20 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
       c(col[[i]], rep("", heights[[i]] - length(col[[i]])))
     }), use.names = FALSE)
   }))
+  # Some iconv implementations transliterate even with sub = NA. Check the
+  # round trip before opening the destination so substitutions cannot pass.
+  text <- unique(enc2utf8(as.character(lines)))
+  encoded <- iconv(text, from = "UTF-8", to = "CP1252", sub = NA)
+  decoded <- iconv(encoded, from = "CP1252", to = "UTF-8", sub = NA)
+  if (anyNA(decoded) || any(decoded != text) || any(grepl("[[:cntrl:]\u00ad]", text))) {
+    stop("sas_print_table: text is outside the printable Windows-1252 PDF encoding. Use a renderer and font that support the required characters.", call. = FALSE)
+  }
   header <- lines[seq_len(heights[[1L]]), , drop = FALSE]
   body <- lines[-seq_len(heights[[1L]]), , drop = FALSE]
 
   # Measure on a null PDF device with the same font as the destination. Never
   # implicitly open Rplots.pdf or alter the caller's graphics parameters.
-  grDevices::pdf(NULL, pointsize = pointsize, family = "mono")
+  grDevices::pdf(NULL, pointsize = pointsize, family = "mono", encoding = "WinAnsi.enc")
   device <- grDevices::dev.cur()
   on.exit(if (device %in% grDevices::dev.list()) grDevices::dev.off(device), add = TRUE)
   widths <- apply(lines, 2L, function(x) max(graphics::strwidth(x, units = "inches")))
@@ -104,7 +112,8 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   width <- max(7, 2 * margin + sum(widths) + gap * (ncol(lines) - 1L))
   height <- max(3, 2 * margin + (nrow(header) + rows_per_page) * line_height)
   x <- margin + c(0, utils::head(cumsum(widths + gap), -1L))
-  grDevices::pdf(file, width = width, height = height, pointsize = pointsize, family = "mono")
+  grDevices::pdf(file, width = width, height = height, pointsize = pointsize,
+                 family = "mono", encoding = "WinAnsi.enc")
   device <- grDevices::dev.cur()
   graphics::par(mar = c(0, 0, 0, 0), xaxs = "i", yaxs = "i")
   pages <- max(1L, ceiling(nrow(body) / rows_per_page))

@@ -9,19 +9,17 @@ sas_output_path(path, env = parent.frame())
 \arguments{
 \item{path}{Relative logical report path from the SAS output contract.}
 
-\item{env}{Local runtime environment containing \code{.sas2r_output_root}.
-Defaults to the immediate calling environment. Inside a function or
-translated macro, pass the runtime environment that loaded \code{autoexec.R}.}
+\item{env}{Calling environment or an explicit runtime environment. Nested
+functions use the output root from their enclosing bundle runtime.}
 }
 \value{
 Character scalar destination path. No working-directory fallback
 is used when the runtime output root is absent.
 }
 \description{
-Use this helper for ODS/report files, not for input libraries. A logical
-\code{outputs/tables/report.pdf} maps to \verb{<output_root>/tlf/tables/report.pdf}.
-One conventional leading \verb{outputs/} is removed; meaningful subfolders remain.
+Use this helper to locate ODS and other report files.
+The full relative source path is retained under the run's TLF directory.
+For example, \code{outputs/table.pdf} and \code{table.pdf} have distinct destinations.
 The parent directory is created. Absolute source paths require an explicit
-relative logical destination in the translated program. Distinct logical
-names such as \code{table.pdf} and \code{outputs/table.pdf} resolve to the same file.
+relative logical destination in the translated program.
 }

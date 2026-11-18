@@ -82,9 +82,10 @@ For plain PDF listings, the runtime includes `sas_print_table(data, file)`.
 It aligns headings and values, uses fixed line spacing and repeats headers on
 subsequent pages. Use `sas_output_path()` to obtain a run-relative report path.
 The helper opens and closes its own PDF device and widens pages to fit content.
-The device can warn and substitute dots for characters outside its font
-encoding, including Greek letters and Chinese text. For such listings, use a
-renderer and font that preserve the source text and check the rendered PDF.
+Headings and cells must fit the device's printable Windows-1252 encoding.
+For Greek letters, Chinese text and other unsupported characters, the helper
+raises an error before opening the file. Use a renderer and font that preserve
+the required text and check the rendered PDF.
 Supply the source-required row/column order, formats and labels; use `obs = FALSE`
 for NOOBS. Titles, BY groups, totals and source-specific ODS layouts require
 separate implementation. These drawing properties do not establish SAS/reference
@@ -234,15 +235,11 @@ bundles.
 
 Generated report writers use `sas_output_path("outputs/table.pdf", environment())`
 inside the local runtime environment. The helper creates the parent directory
-and maps this logical target to `<output_root>/tlf/table.pdf`. A leading
-`outputs/` is removed once; meaningful subdirectories such as `tables/` remain.
-In a function or translated macro, pass the environment that loaded
-`autoexec.R` as `env`. The default checks the immediate calling environment.
-
-In the 0.6.0 preview, two SAS destinations such as `table.pdf` and
-`outputs/table.pdf` map to the same file. The second write can replace the
-first while both output checks pass. Compare the resolved paths and review each
-deliverable separately when the SAS source requires both files.
+and maps this logical target to `<output_root>/tlf/outputs/table.pdf`.
+A source target of `table.pdf` goes to `<output_root>/tlf/table.pdf`.
+A nested function or translated macro can use the default `env` when its
+enclosing runtime loaded `autoexec.R`. For a separately defined writer, pass
+that runtime explicitly.
 
 Saved run artifacts use `<run>/outputs/tlf/`; exported bundles use
 `<export>/output/tlf/`. `sas2r_assignment_path()` is for LIBNAME input paths,
