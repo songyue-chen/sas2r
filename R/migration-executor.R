@@ -260,7 +260,7 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   list(plan = plan, attempt_dir = dir, runtime = list(
     autoexec = file.path(dir, "autoexec.R"), helpers = helpers,
     output_dirs = c(vapply(libraries, function(entry) entry$write_path, character(1)),
-                    libraries = file.path(dir, "libraries"))))
+                    libraries = file.path(dir, "libraries"), tlf = file.path(dir, "tlf"))))
 }
 
 #' Run a program smoke test in a fresh callr subprocess
@@ -604,6 +604,23 @@ run_program_smoke <- function(
 agent_error_facts <- function(condition, source_code = "") {
   if (!length(condition)) return(list(kind = "none", identifiers = character(),
     condition_class = character(), source_location = NA_character_, condition_message = ""))
+  # Live rlang conditions have parents; persisted records retain the formatted
+  # cause in their message. Match individual lines, never copy their contents.
+  causes <- list(condition)
+  while (inherits(condition$parent, "condition")) {
+    condition <- condition$parent
+    causes <- c(causes, list(condition))
+  }
+  raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
+  messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
+    conditionMessage(e) else e$message %||% ""), use.names = FALSE)
+  lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
+    unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
+  if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
+  name <- "([A-Za-z_][A-Za-z0-9_.]*)"
+  variable_pattern <- paste0("^", name, ": variable ", name, " is not in the data[.]?$")
+  variable_errors <- Filter(length, regmatches(lines, regexec(variable_pattern, lines, perl = TRUE)))
+
   source_code <- paste(source_code, collapse = "\n")
   facts <- new.env(parent = emptyenv())
   facts$identifiers <- unique(tolower(regmatches(source_code,
@@ -612,6 +629,22 @@ agent_error_facts <- function(condition, source_code = "") {
   walk <- function(x) {
     if (is.call(x)) {
       facts$calls <- c(facts$calls, paste(deparse(x), collapse = " "))
+      # Generated functions can stop without retaining a call in the stack.
+      # Ground both identifiers in the same call in the selected code.
+      if (length(variable_errors) && is.symbol(x[[1L]]) && is.null(facts$variable_error)) {
+        for (matched in variable_errors) {
+          if (!identical(as.character(x[[1L]]), matched[2L])) next
+          args <- as.list(x)[-1L]
+          matches_arg <- vapply(args, function(arg) {
+            !identical(arg, quote(expr = )) && (is.symbol(arg) || is.character(arg)) &&
+              identical(tolower(as.character(arg)), tolower(matched[3L]))
+          }, logical(1))
+          if (any(matches_arg)) {
+            facts$variable_error <- matched[2:3]
+            break
+          }
+        }
+      }
       # Registry calls express one dataset name as two literal arguments.
       fn <- as.character(x[[1L]])
       if (utils::tail(fn, 1L) %in% c("lib_read", "lib_exists", "lib_write")) {
@@ -628,20 +661,6 @@ agent_error_facts <- function(condition, source_code = "") {
   }
   parsed <- tryCatch(parse(text = source_code), error = function(e) expression())
   walk(parsed)
-  # Live rlang conditions have parents; persisted records retain the formatted
-  # cause in their message. Match individual lines, never copy their contents.
-  causes <- list(condition)
-  while (inherits(condition$parent, "condition")) {
-    condition <- condition$parent
-    causes <- c(causes, list(condition))
-  }
-  raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
-  messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
-    conditionMessage(e) else e$message %||% ""), use.names = FALSE)
-  lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
-    unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
-  if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
-  name <- "([A-Za-z_][A-Za-z0-9_.]*)"
   quote_mark <- paste0("['", intToUtf8(96), "\"]")
   patterns <- c(dataset_not_found = paste0("^Dataset not found: ", name, "$"),
     object_not_found = paste0("^object ", quote_mark, name, quote_mark, " not found$"),
@@ -658,6 +677,13 @@ agent_error_facts <- function(condition, source_code = "") {
     found <- sub(patterns[[candidate]], "\\1", matched, perl = TRUE)
     found <- unique(found[tolower(found) %in% facts$identifiers])
     if (length(found)) { kind <- candidate; found_names <- found; break }
+  }
+  called_function <- variable_message <- NULL
+  if (kind == "unclassified_error" && length(facts$variable_error)) {
+    kind <- "column_not_found"
+    called_function <- facts$variable_error[1L]
+    found_names <- facts$variable_error[2L]
+    variable_message <- sprintf("%s: variable %s is not in the data", called_function, found_names)
   }
   # Base R printing uses unquoted parameter names. Keep its value-free
   # diagnostic verbatim; numeric values (e.g. invalid digits) remain local.
@@ -686,13 +712,15 @@ agent_error_facts <- function(condition, source_code = "") {
     kind <- "subscript_out_of_bounds"
   if (kind == "unclassified_error" && "rlang_error" %in% raw_classes &&
       any(grepl("^.* must be a logical vector, not ", lines))) kind <- "filter_not_logical"
-  helper_kinds <- c(sas2r_dataset_not_found = "dataset_not_found",
+  helper_kinds <- c(sas2r_column_order_mismatch = "source_column_order",
+    sas2r_dataset_not_found = "dataset_not_found",
     sas2r_unknown_libref = "unknown_library", sas2r_libref_member_error = "invalid_member",
     sas2r_lib_read_arguments = "lib_read_arguments", sas2r_lib_write_arguments = "lib_write_arguments",
     sas2r_library_unavailable = "library_unavailable", sas2r_write_format = "unsupported_write_format")
   helper <- intersect(raw_classes, names(helper_kinds))
   if (length(helper)) {
     kind <- unname(helper_kinds[helper[1L]])
+    called_function <- variable_message <- NULL
     names_in_condition <- unlist(lapply(causes, function(e) e$identifiers), use.names = FALSE)
     found_names <- unique(c(found_names, names_in_condition[tolower(names_in_condition) %in% facts$identifiers]))
   }
@@ -704,7 +732,8 @@ agent_error_facts <- function(condition, source_code = "") {
   call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
   location <- intersect(call_text, facts$calls)
   location <- if (length(location)) location[1L] else NA_character_
-  labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
+  labels <- c(source_column_order = "SAS column order mismatch: place LENGTH declarations before SET ahead of remaining input columns in descriptor order",
+    dataset_not_found = "Dataset not found", object_not_found = "Object not found",
     column_not_found = "Column not found", function_not_found = "Function not found",
     missing_argument = "Required argument missing", invalid_argument = "Invalid argument",
     unused_argument = "Unused argument",
@@ -719,8 +748,8 @@ agent_error_facts <- function(condition, source_code = "") {
     unsupported_write_format = "Unsupported dataset write format",
     unclassified_error = "Execution failed; inspect the local diagnostics")
   list(kind = kind, identifiers = found_names, condition_class = classes,
-    source_location = location,
-    condition_message = printing_message %||% paste0(labels[[kind]],
+    source_location = location, called_function = called_function,
+    condition_message = variable_message %||% printing_message %||% paste0(labels[[kind]],
       if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
 }
 
@@ -836,6 +865,7 @@ run_bundle_attempt <- function(
   attempt$helper_hash <- unname(cli::hash_file_sha256(file.path(bundle_dir, "sas2r-helpers.R")))
   attempt$revision_manifest <- lapply(state$selected_revisions, function(rev) list(
     revision_id = rev$revision_id, r_hash = migration_hash(revision_code(rev)),
+    binding_hash = rev$contract$binding$binding_hash %||% rev$binding$binding_hash,
     source_hash = rev$contract$binding$source_hash %||% rev$binding$source_hash,
     affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs))
   plan <- build_bundle_execution_plan(state$graph)

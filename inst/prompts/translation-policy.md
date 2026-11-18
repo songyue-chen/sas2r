@@ -31,3 +31,61 @@ Shared source-translation policy (translator, static reviewer, fixer):
 - lib_members("work") lists ordinary supported registry members for runtime list expansion; lib_delete("work", lib_members("work")) is valid only when source requests those members and deletion restrictions allow it. Listing does not authorize deletion of separate input files or expand views/ranges/name literals. Library contents remain outside authoring-agent access.
 
 - For dates, distinguish storage class, epoch, display format and value. A SAS format does not itself shift the stored number. A uniform numeric difference alone does not establish an epoch mismatch or authorize a conversion to match a reference.
+
+## Report destinations and descriptor order
+
+Use `sas_output_path("outputs/table.pdf", environment())` for a relative ODS/report
+file destination. Pass the complete relative source path, including a leading
+`outputs/` when present. The helper creates the parent directories under the
+run's `tlf/` directory. A nested function can use its enclosing bundle runtime.
+Use `sas2r_assignment_path()` only for LIBNAME input paths. Absolute SAS report
+destinations need an explicit relative logical mapping.
+
+Preserve SAS descriptor/PDV column order, including in default PROC PRINT output.
+Variables first declared by LENGTH, ATTRIB, RETAIN, FORMAT or ARRAY before SET
+precede the input descriptor's remaining columns, in source first-occurrence order.
+A mutate that appends such variables is insufficient: explicitly relocate/select
+columns into their SAS order before writing. KEEP lists select columns but do not
+reorder their descriptor order. Do not sort column names or use a reference file's
+order to override executable SAS. Unsupported declarations still require review.
+
+## Readable report tables
+
+Preserve every source-required output format, for both PDF and non-PDF reports.
+Examples include PDF, RTF, Microsoft Word DOCX (ODS WORD), HTML and image formats;
+this is not an exhaustive list. Use a writer that produces the actual requested
+format at the source-required destination. Renaming a file does not convert its
+format; do not substitute PDF, plain text or another format merely to create a file.
+`sas_print_table()` writes PDF only and rejects non-`.pdf` paths. For non-PDF
+outputs, select a format-appropriate writer available under the configured
+package policy. Retain source-required content, labels, titles, footnotes,
+ordering and report structure. Resolve permitted writer dependencies explicitly;
+if unavailable, report the limitation rather than claiming the output is complete.
+Review and repair must check the writer's actual format as well as the filename;
+a format mismatch is an output defect, not a cosmetic styling difference.
+File existence, signatures, container structure or extracted text alone do not
+prove layout or SAS-reference equivalence. Formats without built-in validators,
+including DOCX, remain unverified and require review; do not claim those checks passed.
+
+For a plain PDF listing, prefer `sas_print_table(data,
+sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
+own PDF device; do not wrap it in another `pdf()` call. It preserves supplied
+column order, adds Obs by default, aligns headers and values using shared column
+positions, uses fixed line spacing and repeats headers on subsequent pages.
+For text outside the helper's printable Windows-1252 encoding, use a PDF
+renderer and font that preserve the original headings and values.
+Use `obs = FALSE` for NOOBS, supply source-required labels/formatted values,
+and implement source filtering, ordering, ID/BY groups, totals and titles
+separately. It is not a complete PROC PRINT/ODS engine; its page width grows to
+fit content. Use an appropriate alternative for source-required page dimensions
+or complex layouts, preserving the same readability properties.
+
+Do not independently join headers and each row with a constant number of spaces:
+unequal string lengths shift values under the wrong headings. Use shared widths
+computed from both headings and displayed values, or shared drawing coordinates.
+Do not spread a short listing over the full page with a row-count-dependent
+`seq(top, bottom, length.out = n)`; use fixed line spacing and paginate overflow.
+Retain every cell, keep headings associated with their values, and prevent
+overlap or clipping. These are readable-content requirements, not optional
+cosmetic refinements. A file's existence, valid format structure, or presence of
+expected text alone does not establish these layout properties.

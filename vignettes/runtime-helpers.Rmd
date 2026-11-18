@@ -76,6 +76,23 @@ instructions for moving the entire bundle, copying or configuring data, and
 checking edited results. Loading a macro defines a function; it does not run the
 macro as a separate program.
 
+## Plain PDF listings
+
+For plain PDF listings, the runtime includes `sas_print_table(data, file)`.
+It aligns headings and values, uses fixed line spacing and repeats headers on
+subsequent pages. Use `sas_output_path()` to obtain a run-relative report path.
+The helper opens and closes its own PDF device and widens pages to fit content.
+In headings and cells, each tab becomes one space. LF, CRLF and a lone CR each
+start a new line. Other control characters raise an error.
+Headings and cells must fit the device's printable Windows-1252 encoding.
+For Greek letters, Chinese text and other unsupported characters, the helper
+raises an error before opening the file. Use a renderer and font that preserve
+the required text and check the rendered PDF.
+Supply the source-required row/column order, formats and labels; use `obs = FALSE`
+for NOOBS. Titles, BY groups, totals and source-specific ODS layouts require
+separate implementation. These drawing properties do not establish SAS/reference
+equivalence, and general PDF output still needs visual review.
+
 ## Maintaining `autoexec.R`
 
 Open it when data moves. The LIBRARIES section defines a list like the one
@@ -185,11 +202,9 @@ key. Filling them from a preceding key changes the SAS behavior.
 
 ## Versioning and stability
 
-The first line of every vendored `sas2r-helpers.R` states which sas2r version generated it:
-
-```
-# sas2r runtime helpers -- vendored by sas2r 0.5.8. Do not edit by hand.
-```
+The first line of `sas2r-helpers.R` records which sas2r version generated that
+bundle. From the exported bundle folder, inspect it with
+`readLines("runtime/sas2r-helpers.R", n = 1L)`.
 
 A bundle always loads its own copy of the runtime, so upgrading sas2r does not
 replace that copy. Results still depend on inputs, R and dependency versions;
@@ -217,3 +232,19 @@ The runtime is now an exported, versioned source of truth inside sas2r, vendored
 from that source. When usage justifies it, it becomes a separate `sas2r.runtime` package that
 organizations can validate once, with an opt-in mode that writes `library(sas2r.runtime)` into
 bundles.
+
+## Report output paths
+
+Generated report writers use `sas_output_path("outputs/table.pdf", environment())`
+inside the local runtime environment. The helper creates the parent directory
+and maps this logical target to `<output_root>/tlf/outputs/table.pdf`.
+The spelling `./outputs/table.pdf` refers to the same saved report.
+A source target of `table.pdf` goes to `<output_root>/tlf/table.pdf`.
+A nested function or translated macro can use the default `env` when its
+enclosing runtime loaded `autoexec.R`. For a separately defined writer, pass
+that runtime explicitly.
+
+Saved run artifacts use `<run>/outputs/tlf/`; exported bundles use
+`<export>/output/tlf/`. `sas2r_assignment_path()` is for LIBNAME input paths,
+not report destinations. Absolute SAS report paths require an explicit relative
+logical mapping before translation/execution.

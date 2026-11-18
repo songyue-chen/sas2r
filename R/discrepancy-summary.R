@@ -119,6 +119,14 @@ report_repair_table <- function(state) {
   for (repair in state$diagnostics$rejected_repairs %||% list())
     add(repair$component_id, repair$revision_id, "Rejected; previous code retained", repair$errors,
       repair$reference_triggered_review)
+  for (outcome in state$diagnostics$bundle_repair$outcomes %||% list())
+    if (identical(outcome$outcome, "identical_patch"))
+      add(outcome$component_id, outcome$revision_id, "No change; previous code retained",
+        c(paste("Outcome run:", outcome$run_id %||% "Unknown"),
+          paste("Diagnosis (unverified):", outcome$diagnosis),
+          paste("Remaining uncertainty:", paste(outcome$remaining_uncertainty, collapse = "; ")),
+          paste("Evidence:", paste(outcome$evidence_ids, collapse = ", "))),
+        outcome$reference_triggered_review)
   for (cid in names(state$histories)) {
     history <- state$histories[[cid]]
     if (length(history$revisions) < 2L) next

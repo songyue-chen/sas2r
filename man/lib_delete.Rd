@@ -58,6 +58,7 @@ Other runtime helpers:
 \code{\link{sas_merge}()},
 \code{\link{sas_min}()},
 \code{\link{sas_missing}()},
+\code{\link{sas_print_table}()},
 \code{\link{sas_round}()},
 \code{\link{sas_sort}()},
 \code{\link{sas_sum}()}

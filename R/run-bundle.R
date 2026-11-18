@@ -75,21 +75,25 @@ materialize_run_outputs <- function(state) {
   source_files <- normalizePath(file.path(attempt$attempt_dir, names(inventory)),
                                 winslash = "/", mustWork = FALSE)
   contracts <- state$output_contracts %||% empty_output_contracts()
+  report_files <- attempt_report_files(contracts, attempt)
   outputs <- list()
-  used <- character()
+  used <- saved <- character()
   for (i in seq_len(nrow(contracts))) {
     contract <- contracts[i, , drop = FALSE]
-    candidate <- find_attempt_candidate_file(contract, attempt)
+    candidate <- find_attempt_candidate_file(contract, attempt, report_files)
     index <- match(candidate, source_files)
     if (is.na(index)) next
     original <- names(inventory)[index]
     relative <- if (identical(contract$kind[[1]], "dataset")) {
       parts <- split_ds(contract$logical_name[[1]])
       file.path("datasets", parts[["lib"]], paste0(parts[["member"]], ".", tools::file_ext(original)))
-    } else file.path("tlf", original)
+    } else file.path("tlf", sas2r_tlf_relative_path(contract$logical_name[[1]]))
     target <- file.path(state$paths$outputs, relative)
-    dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
-    if (!file.copy(candidate, target, overwrite = TRUE)) cli::cli_abort("Could not save {.file {candidate}}")
+    if (!relative %in% saved) {
+      dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
+      if (!file.copy(candidate, target, overwrite = TRUE)) cli::cli_abort("Could not save {.file {candidate}}")
+      saved <- c(saved, relative)
+    }
     outputs[[contract$target_key[[1]]]] <- list(path = file.path("outputs", relative),
       attempt_path = original, sha256 = inventory[[original]], kind = contract$kind[[1]])
     used <- c(used, original)

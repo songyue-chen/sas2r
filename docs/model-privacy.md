@@ -44,6 +44,14 @@ unavailable/incomplete diagnosis without changing validation status. Set
 `migration.report_diagnosis: off` to disable these explanations. Report prose never
 feeds repair or acceptance requests.
 
+The opt-in `migration.bug_reports` beta lets the configured reviewer triage
+possible package bugs in one budget-accounted request. It can receive bounded
+SAS/R code, structured failure facts, output check names and aggregate comparison
+patterns. It receives no dataset records, raw logs or raw execution messages.
+`sas_bug_report()` exports the saved advice and any proposed synthetic R code
+to a local draft. Review the model's text and code for confidential information
+before sharing. The package leaves execution of the example to the reader.
+
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only
 `execution_before` edges do not make every earlier program a code dependency.
@@ -54,6 +62,18 @@ Both list candidates nearest first and explicitly label them unconfirmed.
 Paging uses existing tool limits; repeated unavailable page requests
 stop within the invocation. Review identities include all retrievable selected code,
 so an indirect dependency change invalidates cached evidence.
+
+Bundle fixers also receive revision labels distinguishing shown code from the
+attempt snapshot, up to 12,000 characters of the executed startup script, and
+the existing source-derived dataset lineage tool. Diagnostic smoke executions
+retain their own code identity rather than borrowing a bundle revision binding.
+Startup and helper paths follow the code/path disclosure policy above; raw
+attempt records, logs, population checks, and comparison details are not sent.
+Eligible prior repair conclusions are limited to the same component and current
+run, labeled as unverified, and bounded to 12,000 characters. Reference-triggered
+or unknown-origin narratives are excluded. Acceptance review does not receive
+that history. No-change diagnoses and uncertainty remain in the local report;
+they do not count as applied repairs or change validation status.
 
 The configured `allowlist` (a comma-separated string or YAML list) is used
 consistently in prompts, package facts, helper checks and lint. An explicit list

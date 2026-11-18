@@ -35,6 +35,7 @@ fix_program_revision <- function(
   checks = NULL,
   selected_revisions = list(),
   helper_code = runtime_helper_code(),
+  prior_outcomes = list(),
   ...
 ) {
   mode <- match.arg(mode)
@@ -129,6 +130,11 @@ fix_program_revision <- function(
       paste(bundle$failing_outputs %||% character(), collapse = ", "),
       jsonlite::toJSON(bounded_agent_diagnostics(bundle, policy = config$agent_evidence %||% "code_only", source_code = r_code), auto_unbox = TRUE, pretty = TRUE)
     ))
+    evidence_sections <- c(evidence_sections,
+      paste("Repair context run:", paths$run_id %||% "unknown"),
+      repair_revision_note(bundle, component_id, prior_revision_id),
+      repair_startup_context(bundle, helper_code),
+      repair_history_context(prior_outcomes, paths$run_id, component_id))
   }
   evidence_text <- paste(evidence_sections, collapse = "\n\n")
 
@@ -185,7 +191,7 @@ fix_program_revision <- function(
       build_agent_guidance(project, component_id, contract, selected_revisions, config = config,
         priority_dependencies = if (isTRUE(bundle$attributable_execution_failure))
           bundle$failed_component_id %||% bundle$condition$component_id %||% character() else character(),
-        include_consumers = identical(mode, "bundle"))$text, sep = "\n"),
+        include_consumers = identical(mode, "bundle"), execution = bundle)$text, sep = "\n"),
     allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
     style = render_style_guidance(config)
   )
@@ -194,6 +200,7 @@ fix_program_revision <- function(
   tools <- build_tools(spec, list(
     agent_role = "fixer",
     component_id = component_id, selected_revisions = selected_revisions,
+    execution = bundle,
     project = project,
     unit_stmts = comp_stmts,
     schemas = tryCatch(infer_schemas(project), error = function(e) list()),

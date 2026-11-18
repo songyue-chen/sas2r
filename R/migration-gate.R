@@ -11,9 +11,10 @@
 #'
 #' @param contract An output contract list or row.
 #' @param attempt A migration attempt record, attempt directory, or list.
+#' @param report_files Candidate paths already resolved for the full contract set.
 #' @return Canonical file path if found, or NA_character_.
 #' @noRd
-find_attempt_candidate_file <- function(contract, attempt) {
+find_attempt_candidate_file <- function(contract, attempt, report_files = NULL) {
   if (is.null(contract) || is.null(attempt)) return(NA_character_)
   if ((contract$resolution %||% "") %in% c("dynamic", "unresolved")) return(NA_character_)
 
@@ -31,9 +32,6 @@ find_attempt_candidate_file <- function(contract, attempt) {
 
   outputs_dir <- if (is.list(attempt)) attempt$outputs_dir else NULL
   work_dir <- if (is.list(attempt)) attempt$work_dir else NULL
-
-  search_dirs <- unique(c(outputs_dir, attempt_dir, work_dir))
-  search_dirs <- search_dirs[!is.na(search_dirs) & nzchar(search_dirs) & dir.exists(search_dirs)]
 
   t_key <- if (is.data.frame(contract)) contract$target_key[1L] else contract$target_key %||% ""
   l_name <- if (is.data.frame(contract)) contract$logical_name[1L] else contract$logical_name %||% ""
@@ -57,34 +55,58 @@ find_attempt_candidate_file <- function(contract, attempt) {
     if (length(candidates) == 1L) return(normalizePath(candidates, winslash = "/", mustWork = TRUE))
     return(NA_character_)
   } else {
-    # TLF target
-    for (sdir in search_dirs) {
-      cands <- c(
-        file.path(sdir, t_key),
-        file.path(sdir, basename(t_key)),
-        file.path(sdir, l_name),
-        file.path(sdir, basename(l_name))
-      )
-      for (cand in cands) {
-        if (file.exists(cand) && !file.info(cand)$isdir) {
-          return(normalizePath(cand, winslash = "/", mustWork = FALSE))
-        }
-      }
-    }
-
-    # Recursive search within attempt directories
-    for (sdir in search_dirs) {
-      all_f <- list.files(sdir, recursive = TRUE, full.names = TRUE)
-      pattern <- paste0("(?i)(^|/)", basename(t_key), "$")
-      hits <- all_f[grepl(pattern, all_f)]
-      hits <- hits[!grepl("/bundle/|/logs/", hits)]
-      if (length(hits) > 0L) {
-        return(normalizePath(hits[1L], winslash = "/", mustWork = FALSE))
-      }
-    }
+    if (!is.null(report_files)) return(unname(report_files[t_key]))
+    logical <- if (length(l_name) && !is.na(l_name) && nzchar(l_name)) l_name else t_key
+    root <- attempt_dir %||% outputs_dir %||% work_dir
+    return(unname(resolve_report_files(stats::setNames(logical, t_key), root, legacy_flattened = FALSE)))
   }
+}
 
-  NA_character_
+# A legacy program may write a literal source path directly in the working
+# directory. When that overlaps another contract's tlf/ path, a file with only
+# one possible owner disambiguates the layout. Compare ownership between
+# distinct normalized destinations.
+resolve_report_files <- function(logical, root, legacy_flattened = TRUE) {
+  result <- stats::setNames(rep(NA_character_, length(logical)), names(logical))
+  if (!length(logical) || !length(root)) return(result)
+  by_contract <- vapply(logical, function(path)
+    tryCatch(sas2r_tlf_relative_path(path), error = function(e) NA_character_), "")
+  relative <- unique(unname(by_contract))
+  files_by_path <- rep(NA_character_, length(relative))
+  candidates <- lapply(seq_along(relative), function(i) {
+    path <- relative[[i]]
+    if (is.na(path)) return(character())
+    files <- c(file.path(root, "tlf", path), file.path(root, path))
+    # Only consider an old stripped path if no other declared report names it.
+    compact <- sub("^outputs/", "", path, ignore.case = TRUE)
+    others <- tolower(relative[-i])
+    if (legacy_flattened && compact != path &&
+        !any(tolower(c(compact, file.path("tlf", compact))) %in% others)) {
+      files <- c(files, file.path(root, "tlf", compact))
+    }
+    unique(normalizePath(files[file.exists(files) & !dir.exists(files)], winslash = "/", mustWork = TRUE))
+  })
+  pending <- which(lengths(candidates) > 0L)
+  while (length(pending)) {
+    counts <- table(unlist(candidates[pending], use.names = FALSE))
+    exclusive <- lapply(candidates[pending], intersect, names(counts)[counts == 1L])
+    resolved <- which(lengths(exclusive) > 0L)
+    if (!length(resolved)) break
+    files_by_path[pending[resolved]] <- vapply(exclusive[resolved], `[[`, "", 1L)
+    pending <- pending[-resolved]
+  }
+  stats::setNames(files_by_path[match(by_contract, relative)], names(logical))
+}
+
+attempt_report_files <- function(contracts, attempt) {
+  reports <- contracts[contracts$kind %in% c("tlf", "file"), , drop = FALSE]
+  if (!is.null(reports$resolution))
+    reports <- reports[!reports$resolution %in% c("dynamic", "unresolved"), , drop = FALSE]
+  paths <- reports$logical_name %||% reports$target_key
+  fallback <- is.na(paths) | !nzchar(paths)
+  paths[fallback] <- reports$target_key[fallback]
+  root <- attempt$attempt_dir %||% attempt$paths$bundle_attempts %||% attempt$outputs_dir %||% attempt$work_dir
+  resolve_report_files(stats::setNames(paths, reports$target_key), root)
 }
 
 #' Assess a dataset target output
@@ -344,14 +366,15 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list(), 
 #'
 #' Checks PDF (header/trailer/text), RTF (envelope/text), HTML (structure/tables/text),
 #' and PNG/JPEG (magic bytes/dimensions). Treats presentation/cosmetic differences as
-#' non-material, and honestly records unavailable extractors.
+#' non-material, and honestly records unavailable extractors. Other formats,
+#' including DOCX, require review because format validation is unavailable.
 #'
 #' @param contract Output contract specification list or 1-row data frame.
 #' @param attempt Migration attempt record, attempt directory, or list.
 #' @param comparison_rules Optional list of comparison rules and overrides.
 #' @return Named list containing explicit checks, differences, passed flag, and target status.
 #' @noRd
-assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
+assess_tlf_target <- function(contract, attempt, comparison_rules = list(), report_files = NULL) {
   unresolved <- unresolved_output_assessment(contract)
   if (!is.null(unresolved)) return(unresolved)
   t_id <- if (is.data.frame(contract)) contract$target_id[1L] else contract$target_id %||% ""
@@ -369,12 +392,12 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   diffs <- list(mismatches = list(), cosmetic = list())
   dimensions <- list(width = NA_integer_, height = NA_integer_)
 
-  cand_path <- find_attempt_candidate_file(contract, attempt)
+  cand_path <- find_attempt_candidate_file(contract, attempt, report_files)
   if (is.na(cand_path) || !file.exists(cand_path)) {
     checks$candidate_exists <- list(
       name = "candidate_exists",
       passed = FALSE,
-      details = "Candidate TLF file not found"
+      details = "No distinct candidate TLF file could be identified for this destination"
     )
     return(output_assessment(
       target_id = t_id,
@@ -511,8 +534,9 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
   } else if (ext == "rtf") {
     rtf_lines <- readLines(cand_path, warn = FALSE)
     rtf_content <- paste(rtf_lines, collapse = "\n")
-    starts_rtf <- grepl("^\\s*\\{\\\\rtf", rtf_content)
-    chars <- strsplit(rtf_content, "")[[1L]]
+    # Reject other formats without decoding their binary content as RTF text.
+    starts_rtf <- grepl("^\\s*\\{\\\\rtf", rtf_content, useBytes = TRUE)
+    chars <- if (starts_rtf) strsplit(rtf_content, "", useBytes = TRUE)[[1L]] else character()
     open_b <- sum(chars == "{")
     close_b <- sum(chars == "}")
     envelope_ok <- starts_rtf && (open_b > 0L) && (open_b == close_b)
@@ -523,7 +547,7 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
       details = if (envelope_ok) "Valid RTF envelope" else "Invalid RTF envelope or unbalanced braces"
     )
 
-    if (length(req_text) > 0L) {
+    if (envelope_ok && length(req_text) > 0L) {
       plain_txt <- gsub("\\\\[a-zA-Z0-9]+ ?", " ", rtf_content)
       plain_txt <- gsub("[{}]", "", plain_txt)
       missing_text <- req_text[!vapply(req_text, function(rt) grepl(tolower(rt), tolower(plain_txt), fixed = TRUE), logical(1))]
@@ -607,6 +631,16 @@ assess_tlf_target <- function(contract, attempt, comparison_rules = list()) {
         details = if (is_jpg_sig) "Valid JPEG signature" else "Invalid JPEG signature"
       )
     }
+  } else {
+    has_unavail <- TRUE
+    checks$format_validation <- list(
+      name = "format_validation",
+      status = "unavailable",
+      passed = NA,
+      details = paste0("No built-in format validator for ",
+        if (nzchar(ext)) paste0(".", ext) else "extensionless report output",
+        "; file existence does not verify format, content, or layout. Review this output.")
+    )
   }
 
   # Reference comparison
@@ -720,14 +754,15 @@ assess_final_outputs <- function(
   has_assertions_evaluated <- FALSE
 
   if (nrow(contract_df) > 0L) {
+    report_files <- attempt_report_files(contract_df, attempt)
     for (i in seq_len(nrow(contract_df))) {
       c_row <- contract_df[i, ]
       kind <- c_row$kind %||% "dataset"
 
       res <- target_results[[c_row$target_key]] %||% if (identical(kind, "tlf")) {
-        assess_tlf_target(c_row, attempt, comparison_rules = comparison_rules)
+        assess_tlf_target(c_row, attempt, comparison_rules, report_files)
       } else if (identical(kind, "file")) {
-        candidate <- find_attempt_candidate_file(c_row, attempt)
+        candidate <- find_attempt_candidate_file(c_row, attempt, report_files)
         exists <- !is.na(candidate) && file.exists(candidate)
         output_assessment(c_row$target_id, c_row$target_key, "file", isTRUE(c_row$required),
           FALSE, if (exists) "unassessed_file" else "missing_candidate", FALSE, FALSE, FALSE,
@@ -773,7 +808,7 @@ assess_final_outputs <- function(
   }
 
   # Lineage evidence evaluation and component promotion
-  updated_histories <- evidence_histories
+  updated_histories <- lapply(evidence_histories, record_bundle_execution, attempt = attempt)
   lineage_summaries <- list()
   has_lineage_review_unavail <- FALSE
   has_lineage_review_only <- FALSE

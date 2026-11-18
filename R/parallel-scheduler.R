@@ -25,7 +25,7 @@ parallel_save_checkpoint <- function(pool) {
     write_migration_checkpoint(pool$state, pool$state$resume_fingerprint)
 }
 
-parallel_dependency_findings <- function(state, cid) {
+parallel_dependency_findings <- function(state, cid, include_advisory = FALSE) {
   contract <- state$selected_revisions[[cid]]$contract
   reported <- unique(trimws(c(contract$suspected_dependencies, contract$discovered_dependencies)))
   # These schema fields also contain prose assumptions. Only plain identifiers,
@@ -46,17 +46,29 @@ parallel_dependency_findings <- function(state, cid) {
   # A scheduled component or a supplied project macro exists in the project
   # whether or not this component's own closure records a call to it.
   components <- unique(c(state$schedule$component_id, state$project$schedule$component_id,
-    graph$nodes$component_id))
+    graph$nodes$component_id[graph$nodes$type %in% c("source_unit", "macro", "setup")]))
   supplied <- tolower(state$project$macros$defs$name %||% character())
-  known <- unique(c(dependency_closure(graph, cid), providers, incoming$detail, components))
+  writes <- graph$edges$detail[graph$edges$from %in% owner_nodes &
+    graph$edges$type == "writes_dataset" & graph$edges$resolution == "resolved"]
+  known <- unique(c(dependency_closure(graph, cid), providers, incoming$detail, writes, components))
   macros <- unique(c(sub("^macro__", "", known[startsWith(known, "macro__")]), supplied))
   known <- tolower(c(known, macros, paste0("%", macros), paste0("macro__", macros)))
-  reported <- reported[!tolower(trimws(reported)) %in% known]
   # A macro variable assigned anywhere in the scanned source has a producer.
   defined <- project_macro_variable_definitions(state$project)
   symbol <- tolower(sub("[.]$", "", sub("^&", "", trimws(reported))))
   variable_like <- grepl("^&?[A-Za-z_][A-Za-z0-9_]*[.]?$", trimws(reported))
-  reported[!(variable_like & symbol %in% defined)]
+  reported <- reported[!(variable_like & symbol %in% defined)]
+  availability <- late_dataset_availability(state$project, cid, reported)
+  # A resolved read elsewhere in this component is not evidence for a late
+  # macro argument with a different binding or producer order.
+  unresolved <- names(availability)[availability %in% c("library_binding_unresolved",
+    "project_writer_binding_unresolved", "project_writer_order_unresolved", "member_unavailable_in_bound_library")]
+  available <- names(availability)[availability %in% c("available_in_bound_library",
+    "available_from_project_writer", "scanned_dataset_reference")]
+  name <- tolower(reported)
+  advisory <- names(availability)[availability == "project_writer_needs_execution"]
+  findings <- reported[name %in% unresolved | !name %in% c(known, available, advisory)]
+  if (include_advisory) list(findings = findings, advisory = reported[name %in% advisory]) else findings
 }
 
 parallel_affected_components <- function(graph, cid, ids) {

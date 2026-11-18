@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic OpenAI Chat Completions replay server for real-ellmer CI."""
+"""Deterministic provider protocol replay server for real-ellmer CI."""
 
 import argparse
 import json
@@ -54,11 +54,28 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
-    if contains_key(body, "static_runnability") or "schema program_review_v1" in json.dumps(body):
+    text = json.dumps(body)
+    if "synthetic_bug_triage_target" in text:
+        if "evidence_id" not in text or "repro_r" not in text:
+            # A text-only model cannot see the local schema unless the
+            # request carries it. Mirror the wrong-field regression.
+            return {"findings": [{"evidence_ids": ["E1"]}]}
+        return {"findings": [{
+            "evidence_id": "E1",
+            "explanation": "The synthetic output check reports a possible package failure.",
+            "expected": "A supported operation produces the expected output.",
+            "uncertainty": "Test this on the affected build.",
+            "next_step": "Try the synthetic example.",
+            "repro_r": "stopifnot(sas2r::sas_sum(c(1, 2)) == 3)",
+        }]}
+    if contains_key(body, "static_runnability") or "schema program_review_v1" in text:
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
-    if contains_key(body, "side_effects") or "schema program_translation_v1" in json.dumps(body):
+    if body.get("model", "").startswith(("offline-provider-model", "offline-local-model")):
+        if "side_effects" not in text:
+            return TRANSLATION
+    if contains_key(body, "side_effects") or "schema program_translation_v1" in text:
         return PROGRAM_TRANSLATION
     return TRANSLATION
 
@@ -67,15 +84,23 @@ class ReplayHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
-        """Return an empty Bedrock inventory without leaving loopback."""
-        if not self.path.startswith("/bedrock-control/foundation-models"):
-            self.send_error(
-                404, "expected /bedrock-control/foundation-models"
-            )
+        """Return synthetic inventories and local server readiness."""
+        if self.path.startswith("/bedrock-control/foundation-models"):
+            result = {"modelSummaries": []}
+        elif self.path == "/api/tags":
+            result = {"models": [{"name": "offline-local-model:latest",
+                "modified_at": "2026-01-01T00:00:00Z", "size": 1}]}
+        elif self.path == "/v1/models":
+            result = {"object": "list", "data": [
+                {"id": "offline-local-model", "object": "model", "created": 0,
+                 "owned_by": "loopback", "slug": "offline-local-model"}
+            ]}
+        else:
+            self.send_error(404, "unknown inventory or readiness endpoint")
             return
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": {}}) + "\n")
-        payload = json.dumps({"modelSummaries": []}).encode("utf-8")
+        payload = json.dumps(result).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -84,20 +109,32 @@ class ReplayHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):  # noqa: N802 - stdlib handler API
+        if self.path == "/api/show":
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            payload = b'{"capabilities":["completion","tools"]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         is_chat_completions = self.path.endswith("/chat/completions")
         is_responses = self.path.endswith("/responses")
         is_anthropic_messages = self.path.endswith("/anthropic/v1/messages")
         is_gemini_generate = self.path.endswith(":generateContent")
+        is_gemini_interactions = self.path.endswith("/interactions")
         if not (
             is_chat_completions
             or is_responses
             or is_anthropic_messages
             or is_gemini_generate
+            or is_gemini_interactions
         ):
             self.send_error(
                 404,
                 "expected /chat/completions, /responses, "
-                "/anthropic/v1/messages, or :generateContent",
+                "/anthropic/v1/messages, :generateContent, or /interactions",
             )
             return
         length = int(self.headers.get("Content-Length", "0"))
@@ -110,6 +147,10 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": body}) + "\n")
+
+        if body.get("model") == "offline-provider-model-anonymous" and self.headers.get("Authorization"):
+            self.send_error(400, "anonymous endpoint received authorization")
+            return
 
         if body.get("model") == "offline-parallel-rejection-model" and "temperature" in body:
             payload = json.dumps({"error": {"message": "Unsupported parameter: temperature"}}).encode()
@@ -156,6 +197,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
             response = self.anthropic_messages_response(body)
         elif is_gemini_generate:
             response = self.gemini_generate_content_response(body, "native-gemini" in self.path)
+        elif is_gemini_interactions:
+            response = self.gemini_interactions_response(body)
         elif is_chat_completions:
             response = self.chat_completions_response(body, response_kind)
         else:
@@ -220,6 +263,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "prompt_tokens": 100,
                 "completion_tokens": 25,
                 "total_tokens": 125,
+                "cost": 0.0001,
             },
         }
 
@@ -285,7 +329,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
             "model": body.get("model", "offline-anthropic-model"),
             "content": [{
                 "type": "text",
-                "text": json.dumps(TRANSLATION, separators=(",", ":")),
+                "text": json.dumps(structured_payload(body), separators=(",", ":")),
             }],
             "stop_reason": "end_turn",
             "stop_sequence": None,
@@ -295,7 +339,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
     @staticmethod
     def gemini_generate_content_response(body, native=False):
         """One native Gemini generateContent reply."""
-        parts = [{"text": json.dumps(TRANSLATION, separators=(",", ":"))}]
+        parts = [{"text": json.dumps(structured_payload(body), separators=(",", ":"))}]
         if native:
             completed = sum("functionResponse" in part for turn in body.get("contents", [])
                             for part in turn.get("parts", []))
@@ -326,6 +370,36 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "totalTokenCount": 125,
             },
             "modelVersion": "offline-gemini-model",
+        }
+
+    @staticmethod
+    def gemini_interactions_response(body):
+        """Gemini Interactions reply used by ellmer >= 0.5.1."""
+        native = "native-gemini" in body.get("model", "")
+        completed = sum(step.get("type") == "function_result"
+                        for step in body.get("input", []))
+        status = "completed"
+        if native and body.get("tools") and completed < 2:
+            batch = completed + 1
+            name = ("lookup_rulebook" if contains_pair(body["tools"], "name", "lookup_rulebook")
+                    else "lookup")
+            steps = [
+                {"type": "thought", "signature": f"c2lnbmF0dXJl{batch}",
+                 "summary": [{"type": "text", "text": f"native reasoning batch {batch}"}]},
+                {"type": "function_call", "id": f"native_{batch}",
+                 "name": name, "arguments": {"name": "round"}},
+            ]
+            status = "requires_action"
+        else:
+            text = ("gathered context" if native and body.get("tools")
+                    else json.dumps(structured_payload(body), separators=(",", ":")))
+            steps = [{"type": "model_output", "content": [{"type": "text", "text": text}]}]
+        return {
+            "id": "offline-gemini-interaction", "status": status,
+            "model": body.get("model"), "steps": steps,
+            "usage": {"total_input_tokens": 100, "total_output_tokens": 25,
+                      "total_cached_tokens": 0, "total_thought_tokens": 0,
+                      "total_tokens": 125},
         }
 
     def log_message(self, *_args):

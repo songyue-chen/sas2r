@@ -6,7 +6,8 @@ OUTPUT_CONTRACT_COLUMNS <- c(
   "assertions", "source_file", "line", "reason"
 )
 
-OUTPUT_TLF_EXTENSIONS <- c("pdf", "rtf", "html", "htm", "png", "jpg", "jpeg")
+# Recognized report targets; this list does not imply format-validation support.
+OUTPUT_TLF_EXTENSIONS <- c("pdf", "rtf", "docx", "html", "htm", "png", "jpg", "jpeg")
 
 #' Canonical empty output contracts tibble
 #' @return A 0-row tibble with all 13 output contract columns.

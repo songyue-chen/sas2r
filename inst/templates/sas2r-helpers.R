@@ -359,6 +359,42 @@ sas2r_assignment_path <- function(path, env) {
   normalizePath(path.expand(path), winslash = "/", mustWork = FALSE)
 }
 
+sas2r_tlf_relative_path <- function(path) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path))
+    stop("Report path must be a non-empty relative path", call. = FALSE)
+  path <- gsub("\\\\", "/", path)
+  path <- sub("^(\\./)+", "", path)
+  if (grepl("^(/|[A-Za-z]:|~)", path))
+    stop("Use a relative logical report path within the output root", call. = FALSE)
+  parts <- character()
+  for (part in strsplit(path, "/", fixed = TRUE)[[1L]]) {
+    if (part %in% c("", ".")) next
+    if (part == "..") {
+      if (!length(parts)) stop("Report path escapes the logical output root", call. = FALSE)
+      parts <- utils::head(parts, -1L)
+    } else parts <- c(parts, part)
+  }
+  path <- paste(parts, collapse = "/")
+  if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
+  path
+}
+
+sas_output_path <- function(path, env = parent.frame()) {
+  # Follow the translated function's lexical scope, stopping before the
+  # workspace unless the standalone helper was itself sourced there.
+  while (!identical(env, emptyenv()) && !identical(env, globalenv()) &&
+         !exists(".sas2r_output_root", envir = env, inherits = FALSE)) {
+    env <- parent.env(env)
+  }
+  root <- if (!identical(env, globalenv()) || identical(environment(sas_output_path), env))
+    get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
+    stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
+  dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  dest
+}
+
 sas2r_libname_clear <- function(libref) {
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)
@@ -870,5 +906,102 @@ split_ds <- function(ds, macro_vars = character()) {
   p <- strsplit(ds, ".", fixed = TRUE)[[1]]
   if (length(p) == 1L) c(lib = "work", member = p[1])
   else c(lib = p[1], member = p[2])
+}
+
+sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
+                            pointsize = 10, rows_per_page = 40L) {
+  if (!is.data.frame(data) || !ncol(data)) {
+    stop("sas_print_table: data must be a data frame with at least one column.", call. = FALSE)
+  }
+  if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
+    stop("sas_print_table: file must be an explicit PDF destination.", call. = FALSE)
+  }
+  if (!endsWith(tolower(file), ".pdf")) {
+    stop(paste0("sas_print_table: file must end in .pdf (case-insensitive); ",
+                "this helper writes PDF only. Use a format-appropriate writer for non-PDF output."),
+         call. = FALSE)
+  }
+  if (!is.character(labels) || length(labels) != ncol(data) || anyNA(labels)) {
+    stop("sas_print_table: labels must contain one heading per column.", call. = FALSE)
+  }
+  if (!is.logical(obs) || length(obs) != 1L || is.na(obs)) {
+    stop("sas_print_table: obs must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.numeric(pointsize) || length(pointsize) != 1L ||
+      !is.finite(pointsize) || pointsize <= 0) {
+    stop("sas_print_table: pointsize must be positive and finite.", call. = FALSE)
+  }
+  if (!is.numeric(rows_per_page) || length(rows_per_page) != 1L ||
+      !is.finite(rows_per_page) || rows_per_page < 1 || rows_per_page != floor(rows_per_page)) {
+    stop("sas_print_table: rows_per_page must be a positive integer.", call. = FALSE)
+  }
+  columns <- lapply(data, sas_display)
+  if (isTRUE(obs)) {
+    columns <- c(list(as.character(seq_len(nrow(data)))), columns)
+    labels <- c("Obs", labels)
+  }
+  # Split every cell before measuring so a multiline cell cannot overlap the
+  # following record. Empty cells still occupy one line.
+  split_cell <- function(x) {
+    x <- gsub("\r\n?", "\n", x)
+    x <- gsub("\t", " ", x, fixed = TRUE)
+    lines <- strsplit(paste0(x, "\n"), "\n", fixed = TRUE)[[1L]]
+    if (length(lines)) lines else ""
+  }
+  cells <- lapply(seq_along(columns), function(j) {
+    lapply(c(labels[[j]], columns[[j]]), split_cell)
+  })
+  heights <- vapply(seq_len(nrow(data) + 1L), function(i) {
+    max(vapply(cells, function(col) length(col[[i]]), integer(1)))
+  }, integer(1))
+  lines <- do.call(cbind, lapply(cells, function(col) {
+    unlist(lapply(seq_along(col), function(i) {
+      c(col[[i]], rep("", heights[[i]] - length(col[[i]])))
+    }), use.names = FALSE)
+  }))
+  # Some iconv implementations transliterate even with sub = NA. Check the
+  # round trip before opening the destination so substitutions cannot pass.
+  text <- unique(enc2utf8(as.character(lines)))
+  if (any(grepl("[[:cntrl:]]", text))) {
+    stop("sas_print_table: unsupported control character in a heading or cell.", call. = FALSE)
+  }
+  encoded <- iconv(text, from = "UTF-8", to = "CP1252", sub = NA)
+  decoded <- iconv(encoded, from = "CP1252", to = "UTF-8", sub = NA)
+  if (anyNA(decoded) || any(decoded != text) || any(grepl("\u00ad", text, fixed = TRUE))) {
+    stop("sas_print_table: text is outside the printable Windows-1252 PDF encoding. Use a renderer and font that support the required characters.", call. = FALSE)
+  }
+  header <- lines[seq_len(heights[[1L]]), , drop = FALSE]
+  body <- lines[-seq_len(heights[[1L]]), , drop = FALSE]
+
+  # Measure on a null PDF device with the same font as the destination. Never
+  # implicitly open Rplots.pdf or alter the caller's graphics parameters.
+  grDevices::pdf(NULL, pointsize = pointsize, family = "mono", encoding = "WinAnsi.enc")
+  device <- grDevices::dev.cur()
+  on.exit(if (device %in% grDevices::dev.list()) grDevices::dev.off(device), add = TRUE)
+  widths <- apply(lines, 2L, function(x) max(graphics::strwidth(x, units = "inches")))
+  gap <- graphics::strwidth("  ", units = "inches")
+  grDevices::dev.off(device)
+  margin <- 0.5
+  line_height <- pointsize * 1.4 / 72
+  width <- max(7, 2 * margin + sum(widths) + gap * (ncol(lines) - 1L))
+  height <- max(3, 2 * margin + (nrow(header) + rows_per_page) * line_height)
+  x <- margin + c(0, utils::head(cumsum(widths + gap), -1L))
+  grDevices::pdf(file, width = width, height = height, pointsize = pointsize,
+                 family = "mono", encoding = "WinAnsi.enc")
+  device <- grDevices::dev.cur()
+  graphics::par(mar = c(0, 0, 0, 0), xaxs = "i", yaxs = "i")
+  pages <- max(1L, ceiling(nrow(body) / rows_per_page))
+  for (page in seq_len(pages)) {
+    first <- (page - 1L) * rows_per_page + 1L
+    last <- min(page * rows_per_page, nrow(body))
+    content <- if (first <= last) rbind(header, body[first:last, , drop = FALSE]) else header
+    graphics::plot.new()
+    graphics::plot.window(c(0, width), c(0, height))
+    y <- height - margin - (seq_len(nrow(content)) - 0.5) * line_height
+    for (j in seq_len(ncol(content))) {
+      graphics::text(x[[j]], y, labels = content[, j], adj = c(0, 0.5))
+    }
+  }
+  invisible(file)
 }
 

@@ -248,8 +248,7 @@ test_that("configuration cannot select an arbitrary ellmer export", {
   )
   expect_error(
     sas2r:::normalize_llm_config(list(
-      provider = "openai_compatible", model = "model-a",
-      base_url = "https://gateway.example.invalid/v1"
+      provider = "nonexistent_connector", model = "model-a"
     )),
     class = "sas2r_llm_config_error"
   )
@@ -277,8 +276,8 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
       id = "openai", chat_export = "chat_openai",
       auth_modes = "device_code", default_auth_mode = "device_code"
     )),
-    forbidden_export = list(gateway = sas2r:::new_llm_provider_spec(
-      id = "gateway", chat_export = "chat_openai_compatible",
+    malformed_export = list(gateway = sas2r:::new_llm_provider_spec(
+      id = "gateway", chat_export = "ellmer::chat_openai_compatible",
       auth_modes = "api_key", default_auth_mode = "api_key"
     )),
     community_support = list(openai = sas2r:::new_llm_provider_spec(
@@ -347,7 +346,6 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
 
 test_that("the mock capability record stays outside the production registry", {
   expect_false("mock" %in% sas2r:::llm_provider_ids())
-  expect_false("mock" %in% sas2r:::LLM_PROVIDERS)
   expect_identical(
     sas2r:::adapter_capability_metadata("mock"),
     list(
@@ -486,4 +484,13 @@ test_that("a provider ellmer has retired is refused before its constructor is re
   expect_error(sas2r::sas_llm(cfg), class = "sas2r_llm_provider_retired")
   expect_error(sas2r::sas_llm_models(cfg), class = "sas2r_llm_provider_retired")
   expect_error(sas2r::sas_llm(cfg), "0.5.0")
+})
+
+test_that("ellmer constructor names preserve existing sas2r provider profiles", {
+  config <- sas2r:::normalize_llm_config(list(
+    provider = "google_vertex", model = "model-a",
+    project_id = "fixture", location = "us-central1"
+  ))
+  expect_identical(config$provider, "vertex")
+  expect_identical(sas2r:::llm_provider_spec("claude")$id, "anthropic")
 })

@@ -256,6 +256,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     output_assessments = output_assessments,
     discrepancy_summaries = discrepancy_summaries,
     report_diagnosis = state$report_diagnosis,
+    package_bug_diagnosis = state$package_bug_diagnosis,
     repair_table = repair_table,
     component_evidence = component_evidence_list,
     bundle_execution = bundle_execution,
@@ -301,6 +302,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "",
     report_explanation_lines(state$report_diagnosis),
     "",
+    package_bug_report_lines(state$package_bug_diagnosis),
     "## Repair decisions",
     "",
     migration_md_table(repair_table),
@@ -514,6 +516,15 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
       "Independent branch diagnostics are isolated smoke checks, not final-bundle validation.", "")
     for (id in names(repair_budget$deferred)) {
       md_lines <- c(md_lines, paste0("- ", id, ": ", repair_budget$deferred[[id]]))
+    }
+    for (outcome in repair_budget$outcomes %||% list()) {
+      md_lines <- c(md_lines, "", paste0("### Unapplied repair: ", outcome$component_id),
+        paste("Outcome:", outcome$outcome, "| Run:", outcome$run_id,
+          "| Attempt:", outcome$attempt_id, "| Candidate:", outcome$revision_id),
+        paste("Diagnosis (unverified):", outcome$diagnosis),
+        paste("Remaining uncertainty:", paste(outcome$remaining_uncertainty, collapse = "; ")),
+        paste("Evidence:", paste(outcome$evidence_ids, collapse = ", ")),
+        if (length(outcome$rejection_reasons)) paste("Rejection:", paste(outcome$rejection_reasons, collapse = "; ")))
     }
     md_lines <- c(md_lines, "")
   }

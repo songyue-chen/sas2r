@@ -6,6 +6,7 @@ prompt: fixer.md
 tier: frontier
 temperature: 0
 tools:
+  query_project_graph: {}
   read_unit_context:  {}
   lookup_rulebook:    {}
   find_macro:         {}

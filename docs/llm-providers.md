@@ -1,11 +1,13 @@
 # LLM Provider Configuration & Authentication Guide
 
-`sas2r` provides a closed registry of twelve native LLM providers powered by the `ellmer` package. All LLM calls route through named public `ellmer` constructor functions. `sas2r` does not implement direct provider HTTP APIs and does not support a generic `openai_compatible` provider route in this release.
+`sas2r` uses public chat constructors from the installed version of `ellmer` for
+all AI workflows. Set `llm.provider` to the constructor name without `chat_`,
+or use one of the existing sas2r aliases below. The [ellmer provider index](https://ellmer.tidyverse.org/reference/index.html#chatbots)
+describes the connectors and their authentication requirements.
 
-AI translation requires **ellmer 0.4.2 or newer**; **ellmer 0.5.0 is recommended
-for new installations and required for parallel translation**. Older ellmer
-installations visibly use one workflow. Both versions have offline compatibility
-tests; their request-counting units differ as described below.
+AI translation requires **ellmer 0.4.2 or newer**; **ellmer 0.5.0 or newer is
+required for parallel translation**. Older ellmer installations use one workflow.
+The minimum and current releases have offline compatibility tests.
 Install or update it with `install.packages("ellmer")`, then restart R.
 References to 0.4.2 below describe the minimum supported connector baseline,
 not a requirement to install that exact version. Startup verification checks
@@ -13,13 +15,13 @@ explicit settings against your installed connector and selected model.
 
 ---
 
-## 1. Closed Provider Registry
+## 1. Provider IDs and Connection Settings
 
-The twelve supported provider IDs and their dispatch contracts:
+The existing sas2r provider profiles preserve these IDs and selectors.
 
 | Provider ID | ellmer Constructor | Auth Modes (`default`) | Required Selectors | Optional Selectors | Credential Environment Variables / Ambient Sources | Model Inventory (`sas_llm_models`) | Acceptance Level |
 |---|---|---|---|---|---|---|---|
-| `openai` | `ellmer::chat_openai` | `ambient`, `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key` | `OPENAI_API_KEY` (resolved by `ellmer`, never read by `sas2r`) | Available (`models_openai`) | Offline contract |
+| `openai` | `ellmer::chat_openai` | `ambient`, `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key` | `OPENAI_API_KEY` (ellmer uses the key for authentication and sas2r reads it for audit redaction) | Available (`models_openai`) | Offline contract |
 | `anthropic` | `ellmer::chat_anthropic` | `api_key` (`api_key`) | *(none)* | `base_url`, `credentials`, `api_key`, `cache` (`5m`/`1h`/`none`) | `ANTHROPIC_API_KEY` | Available (`models_anthropic`) | Offline contract |
 | `bedrock` | `ellmer::chat_aws_bedrock` | `ambient` (`ambient`) | `region` **xor** `base_url` | `profile`, `cache` (`auto`/`5m`/`1h`/`none`) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`; AWS SSO / IAM Identity Center / CLI credential chain (`aws sso login --profile <profile>`) | Available only with an explicit `region` and a non-inference-profile model; `inventory_unavailable` for inference profiles or a custom `base_url` | Offline contract + opt-in live smoke |
 | `azure` | `ellmer::chat_azure_openai` | `ambient`, `api_key` (`ambient`) | `endpoint`, `api_version`; plus `api_key` when `auth_mode: api_key` | `credentials` | `AZURE_OPENAI_API_KEY`, `AZURE_CLIENT_SECRET`; Azure CLI / Entra ID / Managed Identity (`az login`) | Unavailable (no `models_*` export; deployment-based) | Offline contract + opt-in live smoke |
@@ -28,7 +30,7 @@ The twelve supported provider IDs and their dispatch contracts:
 | `github` | `ellmer::chat_github` | `api_key` (`api_key`) | *(none)* | `base_url`, `models_base_url`, `credentials`, `api_key` | `GITHUB_PAT` | **Retired upstream.** GitHub Models was retired on 2026-07-30 and `ellmer` >= 0.5.0 makes `chat_github()`/`models_github()` defunct; `sas_llm()` and `sas_llm_models()` refuse the provider with `sas2r_llm_provider_retired` unless `ellmer` < 0.5.0 is installed (there: available by default; a custom chat `base_url` makes it `inventory_unavailable` unless `models_base_url` is also set) | Offline contract (ellmer 0.4.2); retirement refusal verified on current ellmer |
 | `gemini` | `ellmer::chat_google_gemini` | `ambient`, `api_key` (`ambient`) | Under `auth_mode: api_key`, one of `api_key`, `credentials`, or `GOOGLE_API_KEY`/`GEMINI_API_KEY` present in the environment | `base_url`, `credentials`, `api_key` | `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or Google Application Default Credentials (`gcloud auth application-default login`) | Available (`models_google_gemini`) | Offline contract |
 | `vertex` | `ellmer::chat_google_vertex` | `ambient` (`ambient`) | `project_id`, `location` | *(none — `credentials` is declared but always rejected; Vertex uses ADC)* | `GOOGLE_APPLICATION_CREDENTIALS`; Google Application Default Credentials (`gcloud auth application-default login`) | Available (`models_google_vertex`) | Offline contract + opt-in live smoke |
-| `ollama` | `ellmer::chat_ollama` | `none` (`none`) | `base_url` | *(none)* | None consumed. `OLLAMA_API_KEY` is on the redaction allowlist only | Available (`models_ollama`) | Offline argument-shape only |
+| `ollama` | `ellmer::chat_ollama` | `none` (`none`) | `base_url` | *(none)* | `OLLAMA_API_KEY` is optional and resolved by ellmer | Available (`models_ollama`) | Offline contract |
 | `posit` | `ellmer::chat_posit` | `ambient` (`ambient`) | *(none)* | `base_url`, `credentials`, `cache` (`5m`/`1h`/`none`) | None documented. `ellmer` owns the Posit OAuth / device sign-in cache | Available (`models_posit`) | Offline contract |
 | `snowflake` | `ellmer::chat_snowflake` | `ambient` (`ambient`) | *(none)* | `account`, `credentials` | `SNOWFLAKE_TOKEN`, `SNOWFLAKE_PRIVATE_KEY`; Workbench or Connect viewer token. `SNOWFLAKE_ACCOUNT` and `SNOWFLAKE_USER` are identity selectors, not credentials | Unavailable (no `models_*` export) | Offline contract |
 
@@ -36,16 +38,38 @@ Every configuration must also name an explicit `model` or a `tiers` mapping; `sa
 
 ### What the acceptance levels mean
 
-The three levels are not interchangeable. Read them as evidence, not as endorsement.
+- **Offline contract** exercises installed ellmer constructors against loopback
+  responses or checks a constructor at its credential boundary. CI runs against
+  the minimum and current ellmer releases.
+- **Opt-in live smoke** additionally has a credentialed probe under `inst/smoke/`
+  for Bedrock, Azure or Vertex. The probes require the corresponding
+  `SAS2R_SMOKE_*` flag and provider settings.
 
-- **Offline argument-shape only** — the arguments `sas2r` builds for the provider are checked against the real `ellmer` constructor's published formals, and both exports are confirmed to be in `ellmer`'s namespace. No constructor call against real `ellmer` is made. Only `ollama` sits here; its constructor is exercised solely against the committed `ellmer` S7 test stub.
-- **Offline contract** — everything above, plus the real `ellmer` constructor is actually invoked with registry-built arguments in `tests/real-ellmer/contract.R`, against a loopback replay server on `127.0.0.1`. Credentialed paths are stopped at an explicit offline boundary before any request is built. This job runs unconditionally in CI on every push and pull request, on both the pinned and current `ellmer`, and consumes no secrets.
-- **Opt-in live smoke** — additionally has a credentialed probe script under `inst/smoke/`, gated behind `SAS2R_SMOKE_BEDROCK`, `SAS2R_SMOKE_AZURE`, or `SAS2R_SMOKE_VERTEX` set to `true` plus that provider's endpoint variables. These scripts are never run by CI; the test suite asserts only that they refuse to run without the gate. The other nine providers have no live path in this repository.
+### Other ellmer connectors
 
-No test in this package contacts a provider, starts an OAuth flow, invokes a CLI, or reads a developer credential file.
+The installed ellmer release determines which connectors and connection selectors
+are available. These connectors are available with the supported ellmer baseline.
 
-> [!IMPORTANT]
-> `provider: openai_compatible` and arbitrary constructor names are rejected. Configuration must name one of the twelve validated provider IDs listed above.
+| ellmer connector ID | Connection settings |
+|---|---|
+| `cloudflare` | `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_KEY`. An explicit `account` requires ellmer 0.5.1 or newer. |
+| `groq` | `GROQ_API_KEY`, optional `base_url`. |
+| `huggingface` | `HUGGINGFACE_API_KEY`. |
+| `lmstudio` | Optional `base_url` or `LMSTUDIO_BASE_URL`, defaulting to `http://localhost:1234`. Set `LMSTUDIO_API_KEY` if the server requires it. |
+| `mistral` | `MISTRAL_API_KEY`. |
+| `openai_compatible` | Required `base_url`, `OPENAI_API_KEY` or a key specific to the endpoint, or `auth_mode: none` for an unauthenticated server. |
+| `openrouter` | `OPENROUTER_API_KEY`. |
+| `perplexity` | `PERPLEXITY_API_KEY`, optional `base_url`. |
+| `portkey` | `PORTKEY_API_KEY`, optional `base_url`; use the model identifier configured for your gateway. |
+| `vllm` | Required `base_url` (server root or URL ending in `/v1`) and `VLLM_API_KEY`. |
+
+Ellmer resolves environment credentials. Connectors that expose `api_key` or
+`credentials` also accept those fields through an R configuration list.
+`sas_llm_models()` uses a matching public inventory function when it can query
+the configured endpoint and identity. OpenRouter's public catalog is available
+with ellmer 0.5.1 or newer. It reports `inventory_unavailable` when
+the installed ellmer version has no matching inventory or the inventory cannot
+accept the selected endpoint or credential callback.
 
 ---
 
@@ -63,7 +87,7 @@ Copy one complete `llm:` block; the model must be available to your account.
 ### Recommended starting settings
 
 These are suggested YAML profiles, not automatic provider-specific package
-defaults. Settings/model documentation checked **September 18, 2026**. Startup
+defaults. Published output limits checked **November 17, 2026**. Startup
 verifies explicit parameters against the installed connector and selected model.
 For full-program translation, use the documented maximum output allowance when
 the endpoint accepts it and input plus output fit the context window. This gives
@@ -160,8 +184,8 @@ provider charges; concurrent requests share that same available budget.
 Use run-level call, tool, time and dollar limits separately. An unknown monetary
 cost is not zero cost or proof that a dollar ceiling can be enforced.
 
-Sources: [Gemini model/settings](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
-[Gemini quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
+Sources: [Gemini model/settings](https://aistudio.google.com/docs/models/gemini-3.8-flash),
+[Gemini quotas](https://aistudio.google.com/docs/rate-limits),
 [DeepSeek request parameters](https://api-docs.deepseek.com/api/create-chat-completion/),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
 [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), and
@@ -181,7 +205,7 @@ the model's default is `medium`. The profile uses its **128,000-token** maximum
 output allowance to leave room for reasoning and complete code.
 The **900-second** timeout is our per-request recommendation. Verify translation
 quality on representative programs with the same review and output checks.
-Facts checked September 18, 2026 against the
+Model specifications checked November 17, 2026 against the
 [official Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
 
 ```bash
@@ -203,13 +227,13 @@ llm:
 
 ### Anthropic
 
-Use **Claude Sonnet 5** (`claude-sonnet-5`) for new direct Claude API evaluations.
-Sonnet 4.6 remains available as a legacy model. Sonnet 5 supports **128,000**
+This profile uses **Claude Sonnet 5** (`claude-sonnet-5`), which Anthropic lists
+as a legacy model. Sonnet 5 supports **128,000**
 output tokens, including thinking; adaptive thinking is on by default and
 `high` effort is supported. Keep sampling parameters unset and use adaptive
 thinking, since manual extended-thinking budgets are rejected. See the
 [model overview](https://platform.claude.com/docs/en/models/sonnet-5/overview)
-and [migration guide](https://platform.claude.com/docs/en/models/sonnet-5/migration-guide).
+and [migration guide for Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide).
 
 **Before relying on the full allowance:** sas2r uses non-streaming ellmer calls.
 Anthropic recommends streaming or batch processing for long requests, especially
@@ -456,6 +480,24 @@ llm:
 
 ---
 
+### Other ellmer connectors
+
+For a local OpenAI-compatible server, set its URL and a model served by that
+endpoint. Choose a model with tool calling for translation, review and repair.
+Use `fallback` for a model that can return JSON as text, or `native` if the
+connector and model both support schema-constrained responses.
+
+```yaml
+llm:
+  provider: openai_compatible
+  base_url: http://localhost:8000/v1
+  auth_mode: none
+  model: your-served-model
+  capabilities:
+    tool_calling: native
+    structured_output: fallback
+```
+
 ## 3. Pre-Flight Verification (`sas_llm_models` and `sas_llm_probe`)
 
 Validate your provider configuration and connectivity before initiating translations:
@@ -582,7 +624,7 @@ also checked on installed ellmer 0.5.0 on September 18, 2026:
 
 Sources for model behavior:
 [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
-[Gemini thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking),
+[Gemini thinking](https://aistudio.google.com/docs/thinking?generate-content=true),
 [Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost),
 [DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/).
 Use reasoning-capable models in every active `tiers` entry: declarations are

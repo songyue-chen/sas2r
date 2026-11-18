@@ -6,7 +6,35 @@ on:
 permissions:
   contents: read
 jobs:
+  source-archive:
+    name: Build submission archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: r-lib/actions/setup-r@v2
+        with: { r-version: release, use-public-rspm: true }
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: |
+            any::knitr
+            any::rmarkdown
+      - name: Build and identify the archive
+        run: |
+          R CMD build .
+          sha256sum sas2r_*.tar.gz | tee SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sas2r-source-candidate
+          path: |
+            sas2r_*.tar.gz
+            SHA256SUMS
+          if-no-files-found: error
   rcmdcheck:
+    needs: source-archive
     name: R CMD check (${{ matrix.os }}, ${{ matrix.r }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -22,8 +50,8 @@ jobs:
     env:
       NOT_CRAN: "false"
       _R_CHECK_LIMIT_CORES_: "true"
-      # Routine checks include the published release; run incoming checks when preparing a submission.
-      _R_CHECK_CRAN_INCOMING_: "false"
+      # Run incoming checks on the current Linux and Windows development builds.
+      _R_CHECK_CRAN_INCOMING_: ${{ matrix.r == 'devel' && 'true' || 'false' }}
       # Use TinyTeX directly instead of the host's texi2dvi shell driver.
       R_TEXI2DVICMD: "emulation"
       SAS2R_WORKER_FAILURE_LOG_DIR: ${{ github.workspace }}/worker-failure-logs
@@ -63,9 +91,9 @@ jobs:
             local::.
           extra-packages: |
             any::rcmdcheck
-      - name: Build source archive
-        run: R CMD build .
-        shell: bash
+            any::digest
+      - uses: actions/download-artifact@v4
+        with: { name: sas2r-source-candidate }
       - name: Check source archive
         run: |
           # Full PDF manuals are checked on Linux release and devel. The
@@ -73,9 +101,14 @@ jobs:
           args <- "--as-cran"
           if ("${{ matrix.manual }}" != "true") args <- c(args, "--no-manual")
           archive <- sprintf("sas2r_%s.tar.gz", read.dcf("DESCRIPTION")[1, "Version"])
+          expected <- strsplit(readLines("SHA256SUMS"), " +")[[1L]][1L]
+          stopifnot(identical(digest::digest(file = archive, algo = "sha256"), expected))
+          message("Checked archive SHA-256: ", expected)
+          start <- Sys.time()
           rcmdcheck::rcmdcheck(
             archive, args = args, check_dir = "check", error_on = "warning"
           )
+          cat("Archive check elapsed seconds:", as.numeric(difftime(Sys.time(), start, units = "secs")), "\n")
         shell: Rscript {0}
       - uses: actions/upload-artifact@v4
         if: always()
@@ -88,12 +121,8 @@ jobs:
           name: worker-failures-${{ matrix.os }}-${{ matrix.r }}
           path: worker-failure-logs
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
-        if: matrix.os == 'ubuntu-latest' && matrix.r == 'release'
-        with:
-          name: sas2r-source-candidate
-          path: sas2r_*.tar.gz
   installed-tests:
+    needs: source-archive
     # The plan-5 lesson: pkgload masks namespace/S3/collation bugs.
     # This job runs the suites against genuinely installed packages.
     runs-on: ubuntu-latest
@@ -110,8 +139,10 @@ jobs:
           extra-packages: |
             any::testthat
             any::dplyr
+      - uses: actions/download-artifact@v4
+        with: { name: sas2r-source-candidate }
       - name: Install sas2r
-        run: R CMD INSTALL .
+        run: R CMD INSTALL sas2r_*.tar.gz
       - name: Execute offline documentation examples
         run: Rscript tools/run-doc-examples.R --installed
       - name: Restore the release's complete development tests
@@ -127,8 +158,9 @@ jobs:
         shell: Rscript {0}
         working-directory: tests
       - name: Run migration acceptance fixture gate
-        run: Rscript tools/run-migration-acceptance.R --installed --fixture --artifacts=$RUNNER_TEMP/acceptance-fixture
+        run: Rscript tools/run-migration-acceptance.R --installed --fixture --artifacts="$RUNNER_TEMP/acceptance-fixture"
   no-sas-tarball:
+    needs: source-archive
     # Definition of Done: the package must build to a tarball, install into a
     # clean library, and pass acceptance with no SAS executable present.
     runs-on: ubuntu-latest
@@ -152,8 +184,8 @@ jobs:
             echo "a SAS executable is on PATH; this gate requires none" >&2
             exit 1
           fi
-      - name: Build tarball
-        run: R CMD build --no-manual .
+      - uses: actions/download-artifact@v4
+        with: { name: sas2r-source-candidate }
       - name: Install tarball into a clean library
         run: |
           mkdir -p "$RUNNER_TEMP/cleanlib"

@@ -84,12 +84,14 @@ preflight_diagnosis <- function(check = NULL, config = NULL, budget = NULL,
     prompt <- paste(readLines(system.file("prompts", "preflight-diagnosis.md", package = "sas2r"),
                               warn = FALSE), collapse = "\n")
     capabilities <- llm_capabilities_for(llm)
+    schema_mode <- if (identical(capabilities$structured_output, "native")) "native" else "fallback"
+    if (identical(schema_mode, "fallback")) prompt <- llm_prompt_with_output_schema(prompt, schema)
     result$max_output_tokens <- llm$model_parameters$max_output_tokens %||% 4096L
     request <- llm_request(
       messages = list(list(role = "system", content = prompt),
         list(role = "user", content = redact(packet$text))),
       output_schema = schema, schema_name = "preflight_diagnosis_v1", schema_version = "1",
-      schema_mode = if (identical(capabilities$structured_output, "native")) "native" else "fallback",
+      schema_mode = schema_mode,
       max_output_tokens = result$max_output_tokens,
       reasoning_effort = llm$model_parameters$reasoning_effort,
       temperature = llm$model_parameters$temperature, top_p = llm$model_parameters$top_p)

@@ -1,8 +1,9 @@
-# sas2r (development)
+# sas2r 0.6.0
 
-- Preserve printing and invalid-argument execution diagnostics in reviewer and
-  fixer evidence, including `invalid printing width`. Argument values and raw
-  logs remain local.
+- **Performance improvements.** Faster dependency checks for projects with many programs.
+- **Reporting improvements.** Better PDF listings and more reliable handling of report files.
+- **AI support.** Broader model support and optional bug reporting.
+- **Bug fixes.** More reliable handling of program order, translation repairs and run results.
 
 # sas2r 0.5.8
 

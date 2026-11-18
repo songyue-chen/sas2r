@@ -52,6 +52,176 @@ filter_dependency_resources <- function(reported, project, component_id) {
     !tolower(sub("^%", "", trimws(reported))) %in% MACRO_BUILTINS]
 }
 
+# A default takes effect at invocations that omit its keyword. If the
+# definition or call cannot be located unambiguously, retain the source finding.
+late_default_calls <- function(project, site, dataset) {
+  defs <- project$macros$defs
+  def <- defs[defs$unit_id == site$unit_id, ]
+  if (nrow(def) != 1L || sum(defs$name == def$name) != 1L) return(NULL)
+  params <- tryCatch(parse_macro_contract(def$name, def$params)$parameters,
+    error = function(e) NULL)
+  keywords <- tolower(params$name[tolower(params$sas_default) == dataset])
+  if (!length(keywords)) return(NULL)
+  code <- project$statements
+  direct <- code$first_token == paste0("%", def$name)
+  if (any(direct & code$unit_type == "macro_def")) return(NULL)
+  calls <- code[direct, ]
+  registered <- project$macros$calls
+  registered <- registered[registered$name == def$name, ]
+  if (any(!paste(registered$source_file, registered$line) %in% paste(calls$file, calls$line_start)))
+    return(NULL)
+  if (!nrow(calls)) return(NULL)
+  overridden <- vapply(calls$text, function(text) {
+    # Only skip a default for explicit top-level keyword arguments.
+    text <- trimws(text)
+    start <- regexpr("(", text, fixed = TRUE)
+    if (start < 0L || !endsWith(text, ")")) return(FALSE)
+    args <- substr(text, start + 1L, nchar(text) - 1L)
+    scan <- sas_scan(args)
+    ranges <- tryCatch(macro_parameter_ranges(args, scan$chars, scan$mask),
+      error = function(e) NULL)
+    if (is.null(ranges)) return(FALSE)
+    supplied <- vapply(seq_len(nrow(ranges)), function(i) {
+      first <- ranges[i, "start"]
+      equals <- macro_parameter_equals(scan$chars, scan$mask, first, ranges[i, "end"])
+      if (is.na(equals)) "" else tolower(trimws(substr(args, first, equals - 1L)))
+    }, character(1))
+    all(keywords %in% supplied)
+  }, logical(1))
+  calls[!overridden, ]
+}
+
+# Positions are shared across all sites in the declared execution sequence.
+# Seed files are checked separately at the time of the dependency report.
+late_writer_observations <- function(history, site, dataset, path, lineage, writers, advisory_ok) {
+  visits <- history[[paste("site", site$unit_id, site$stmt_id)]]
+  if (!length(visits)) return("project_writer_order_unresolved")
+  positions <- history[paste("writer", writers)]
+  writes <- unlist(positions, use.names = FALSE)
+  rows <- rep(writers, lengths(positions))
+  possible <- unlist(history[c(paste("possible", writers),
+    paste("macro", paste(dataset, path, sep = "\r")))], use.names = FALSE)
+  catalog <- c(history[[paste("catalog", path, sep = "\r")]],
+    history[[paste("catalog", path, sub("^[^.]+[.]", "", dataset), sep = "\r")]])
+  hard <- c(history[["unresolved"]], catalog)
+  vapply(visits, function(at) {
+    before <- which(writes < at)
+    if (!length(before)) {
+      if (any(possible < at) || any(catalog < at)) return("project_writer_order_unresolved")
+      return("external_seed")
+    }
+    i <- before[which.max(writes[before])]
+    if (lineage$dataset[rows[i]] != dataset) return("project_writer_binding_unresolved")
+    since <- function(events) any(events > writes[i] & events < at)
+    if (since(hard)) return("project_writer_order_unresolved")
+    if (isTRUE(site$indirect) || since(history[["unknown"]]) || since(possible)) {
+      if (advisory_ok) "project_writer_needs_execution" else "project_writer_order_unresolved"
+    } else "available_from_project_writer"
+  }, character(1))
+}
+
+# A late dataset report can refer to a literal passed to a macro even when the
+# scanner cannot expand the macro into a read edge. Use the library at the
+# caller's source location and the same member lookup as the runtime.
+late_dataset_availability <- function(project, component_id, datasets) {
+  datasets <- unique(tolower(datasets))
+  datasets <- datasets[grepl("^[a-z_][a-z0-9_]*[.][a-z_][a-z0-9_]*$", datasets) &
+    !startsWith(datasets, "work.")]
+  registry <- project$libref_registry
+  if (!length(datasets) || is.null(registry)) return(character())
+  statements <- component_statements(project, component_id)
+  if (is.null(statements)) return(character())
+  rows <- which(statements$type == "code")
+  tokens <- lapply(statements$text[rows], function(text) tolower(dataset_tokens(text)$lex))
+  lineage <- project$lineage
+  members <- sub("^[^.]+[.]", "", lineage$dataset)
+  writer_rows <- which(lineage$role == "creates" & !startsWith(lineage$dataset, "work.") &
+    members %in% sub("^[^.]+[.]", "", datasets))
+  if (length(writer_rows)) {
+    bindings <- effective_librefs(project)$bindings
+    bound <- bindings[match(lineage$binding_id, bindings$binding_id), ]
+    paths <- bound$selected_path
+    paths[!bound$status %in% "bound" | bound$context_truncated %in% TRUE] <- NA_character_
+    paths[startsWith(lineage$dataset, "work.")] <- "<session work>"
+  }
+  ordered <- project$config$migration$execution_order
+  # Older or unordered project objects can still supply a single-root walk.
+  # Build each required sequence at most once within this reconciliation.
+  histories <- new.env(parent = emptyenv())
+  writer_evidence <- function(site, dataset, path, same) {
+    roots <- if (!is.null(ordered)) configured_execution_files(project) else execution_root_files(project)
+    if (is.null(ordered) && length(roots) != 1L) {
+      if (!site$file %in% roots || any(lineage$file[same] != site$file))
+        return("project_writer_order_unresolved")
+      roots <- site$file
+    }
+    history <- project$late_order
+    if (is.null(history) || !identical(roots, project$ordered_roots)) {
+      key <- paste(roots, collapse = "\r")
+      if (!exists(key, histories, inherits = FALSE)) {
+        histories[[key]] <- ordered_dataset_producers(project, paths,
+          paste(lineage$dataset, paths, sep = "\r"), roots)$late_order
+      }
+      history <- histories[[key]]
+    }
+    late_writer_observations(history, site, dataset, path, lineage, same, !is.null(ordered))
+  }
+  vapply(stats::setNames(datasets, datasets), function(dataset) {
+    sites <- rows[vapply(tokens, function(token) dataset %in% token, logical(1))]
+    if (!length(sites)) return("no_literal_source_reference")
+    # Scanned reads and destinations already have dependency checks of their own.
+    ordinary <- vapply(sites, function(i) {
+      refs <- dataset_statement_refs(statements$text[i], statements$first_token[i],
+                                     statements$unit_type[i])
+      dataset %in% tolower(c(refs$reads, refs$creates))
+    }, logical(1))
+    sites <- sites[!ordinary]
+    if (!length(sites)) return("scanned_dataset_reference")
+    parts <- split_ds(dataset)
+    writes <- writer_rows[members[writer_rows] == parts[["member"]]]
+    check_site <- function(site) {
+      binding <- libref_binding_at(registry, parts[["lib"]], site$file, site$line_start)
+      if (!identical(binding$status, "bound") || isTRUE(binding$context_truncated))
+        return("library_binding_unresolved")
+      source <- "external_seed"
+      if (length(writes)) {
+        if (any(is.na(paths[writes]) & lineage$dataset[writes] == dataset))
+          return("project_writer_binding_unresolved")
+        same <- writes[which(paths[writes] == binding$selected_path)]
+        if (length(same)) source <- writer_evidence(site, dataset, binding$selected_path, same)
+      }
+      if ("external_seed" %in% source) {
+        target <- tryCatch(sas2r_lib_member_file(list(read_path = binding$selected_path),
+          parts[["member"]]), error = function(e) NULL)
+        source[source == "external_seed"] <- if (!is.null(target) && file.access(target$path, 4L) == 0L)
+          "available_in_bound_library" else "member_unavailable_in_bound_library"
+      }
+      source
+    }
+    status <- unlist(lapply(sites, function(i) {
+      at <- statements[i, ]
+      is_default <- at$first_token == "%macro"
+      if (is_default) {
+        calls <- late_default_calls(project, at, dataset)
+        if (!is.null(calls)) at <- calls
+      }
+      if (!nrow(at)) return("scanned_dataset_reference")
+      unlist(lapply(seq_len(nrow(at)), function(j) {
+        site <- at[j, ]
+        site$indirect <- is_default || site$stmt_id !=
+          project$statements$stmt_id[match(site$unit_id, project$statements$unit_id)]
+        check_site(site)
+      }), use.names = FALSE)
+    }), use.names = FALSE)
+    # One unusable invocation blocks the component even if another can run.
+    priority <- c("library_binding_unresolved", "project_writer_binding_unresolved",
+      "project_writer_order_unresolved", "member_unavailable_in_bound_library",
+      "project_writer_needs_execution", "available_from_project_writer",
+      "available_in_bound_library", "scanned_dataset_reference")
+    intersect(priority, status)[1L]
+  }, character(1))
+}
+
 source_macro_variable_names <- function(text) {
   unique(tolower(sub("^&", "", unlist(regmatches(text,
     gregexpr("&[A-Za-z_][A-Za-z0-9_]*", text, perl = TRUE))))))

@@ -39,6 +39,11 @@ review verdict. `coordinator ...: reviewed` means the coordinator recorded a
 review result, which can still contain `repair_required` findings. The report
 and component review history contain the verdict and findings.
 
+A completed successful bundle run supersedes earlier smoke failures or runtime
+deferrals only for the unchanged component bindings it actually executed.
+The earlier smoke result remains in the report and event history. Review,
+mechanical, dependency, and output/reference findings remain separate gates.
+
 Mechanical checks, reviews, smoke execution, and bundle output checks establish
 different facts. A smoke pass does not clear a mechanical failure or missing
 review. A later successful review resolves prior review-specific blockers while
@@ -302,9 +307,17 @@ reference evidence.
 
 `result$outputs_dir` contains selected contract deliverables under
 `datasets/<library>/` and `tlf/`: for example `datasets/work/out.rds`,
-`datasets/adam/adsl.rds`, and `tlf/outputs/table.html`. It is NULL when execution
+`datasets/adam/adsl.rds`, and `tlf/table.html`. It is NULL when execution
 is disabled or no selected deliverables were produced. Unrequested scratch
-outputs stay in diagnostics rather than being included as deliverables.
+outputs stay in diagnostics. Report destinations retain their source subfolders.
+For example, `table.html` is saved as `tlf/table.html` and `outputs/table.html`
+as `tlf/outputs/table.html`. A second contract spelling the latter path as
+`./outputs/table.html` retains its own assessment and points to the same saved file.
+Regenerate and rerun an older development bundle
+if its two source destinations overwrote the same file. Update scripts that read
+a report from the older flattened location. An exported bundle keeps its own
+runtime helpers. Regenerate the bundle to pick up the updated PDF and path
+handling. Use a writer for the requested format when creating RTF, DOCX or HTML.
 
 `sas_write(result, "delivery")` writes the selected code and runtime, saved
 deliverables under `saved-outputs/`, reports under `report/`, a dependency/input

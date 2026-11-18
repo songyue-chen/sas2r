@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1, "maxLength": 8},
+          "explanation": {"type": "string", "minLength": 1, "maxLength": 1400},
+          "expected": {"type": "string", "minLength": 1, "maxLength": 800},
+          "uncertainty": {"type": "string", "minLength": 1, "maxLength": 800},
+          "next_step": {"type": "string", "minLength": 1, "maxLength": 800},
+          "repro_r": {"type": "string", "maxLength": 6000}
+        },
+        "required": ["evidence_id", "explanation", "expected", "uncertainty", "next_step", "repro_r"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["findings"],
+  "additionalProperties": false
+}
