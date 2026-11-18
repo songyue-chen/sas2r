@@ -471,7 +471,7 @@ run_program_pipeline <- function(
     "execution_deferred")] <- NULL
   state$project$dependency_findings <- NULL
   for (cid in names(state$selected_revisions)) state <- record_dependency_finding(
-    state, cid, parallel_dependency_findings(state, cid))
+    state, cid, parallel_dependency_findings(state, cid, include_advisory = TRUE))
 
   if ((state$parallel$effective %||% 1L) > 1L) {
     return(run_parallel_program_pipeline(state, cids, execute, max_program_repair_rounds))

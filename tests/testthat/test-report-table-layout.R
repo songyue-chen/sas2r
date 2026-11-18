@@ -132,3 +132,27 @@ test_that("PDF listings preserve supported text and reject unrenderable headings
   expect_no_warning(sas_print_table(data.frame(x = "caf\u00e9"), path, labels = "co\u00fbt"))
   expect_true(all(c("caf\u00e9", "co\u00fbt") %in% table_pdf_tokens(path)[[1L]]$text))
 })
+
+test_that("headings and cells share normalized whitespace and layout", {
+  root <- withr::local_tempdir()
+  actual <- file.path(root, "actual.pdf")
+  expected <- file.path(root, "expected.pdf")
+  runtime <- new.env(parent = baseenv())
+  sys.source(system.file("templates", "sas2r-helpers.R", package = "sas2r"), runtime)
+  for (render in list(sas_print_table, runtime$sas_print_table)) {
+    listing <- function(separator, path) {
+      render(data.frame(x = paste0("first", separator, "last"), y = "end"), path,
+        labels = c(paste0("left", separator, "right"), "next"))
+    }
+    for (separator in c("\t", "\r\n", "\r")) {
+      listing(if (separator == "\t") " " else "\n", expected)
+      listing(separator, actual)
+      tokens <- table_pdf_tokens(actual)
+      expect_equal(tokens, table_pdf_tokens(expected))
+      expect_true(all(c("left", "right", "first", "last", "end") %in% tokens[[1L]]$text))
+    }
+    writeLines("original", actual)
+    expect_error(listing("\001", actual), "control character")
+    expect_identical(readLines(actual), "original")
+  }
+})

@@ -944,6 +944,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     macros = list(defs = defs, calls = calls, resolution = resolution),
     lineage = lineage, output_contracts = output_contracts, order = ord, flags = flags, config = config,
     graph = proj_graph, schedule = proj_sched,
+    late_order = producer_plan$late_order, ordered_roots = producer_plan$execution_files,
     dependency_facts = dependency_facts, source_hashes = source_hashes,
     project_dir = root
   ), class = "sas2r_project")

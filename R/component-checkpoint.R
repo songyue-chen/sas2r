@@ -99,7 +99,8 @@ promote_reviewed_smoke <- function(state, component_id) {
 }
 
 smoke_component_revision <- function(state, component_id, execute = TRUE) {
-  state <- record_dependency_finding(state, component_id, parallel_dependency_findings(state, component_id))
+  state <- record_dependency_finding(state, component_id,
+    parallel_dependency_findings(state, component_id, include_advisory = TRUE))
   rev <- state$selected_revisions[[component_id]]
   unavailable <- component_execution_reasons(state, component_id)
   plan <- if (!isTRUE(rev$checks$pass)) {

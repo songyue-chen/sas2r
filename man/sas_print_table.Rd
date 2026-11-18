@@ -44,7 +44,8 @@ formats, and implement source titles, BY groups, totals and other report logic.
 Values use \code{\link[=sas_display]{sas_display()}} unless already formatted by the caller. Columns
 are left-aligned in a monospace font. The PDF page widens to fit the longest
 heading or value in each column; text is not truncated or shrunk to fit.
-Newlines in cells are retained. Headings and values must be representable
+In headings and cells, LF, CRLF and CR start a new line and each tab becomes
+one space. Other control characters raise an error. Text must be representable
 in the PDF device's Windows-1252 encoding. Unsupported text raises an error
 before the destination is opened. For other scripts or scientific symbols,
 choose a renderer and font that support the required characters.

@@ -91,7 +91,7 @@ component_readiness_context <- function(project, component_id) {
     readiness_warning_lines(list(warnings = warnings)),
     vapply(names(blocking), function(cid) paste0(cid, ": ",
       paste(blocking[[cid]]$findings, collapse = ", ")), ""),
-    if (length(advisory)) paste0("Reported names without a scanned producer (not blocking execution; ",
+    if (length(advisory)) paste0("Dependency observations (not blocking execution; ",
       "keep any unresolved behavior visible in uncertainty): ", paste(advisory, collapse = ", ")),
     "Translate only the available source. Do not invent missing macro/include bodies, dataset schemas, values or execution order. Preserve unresolved behavior explicitly in the code and contract uncertainty. An upstream draft is not verified behavior; review the available source and keep affected downstream assumptions visible.")
 }
@@ -120,13 +120,15 @@ record_dependency_finding <- function(state, cid, finding) {
     x[macro] <- key[macro]
     x
   }
-  finding <- unique(trimws(as.character(finding %||% character())))
+  advisory <- if (is.list(finding)) finding$advisory else character()
+  if (is.list(finding)) finding <- finding$findings
+  finding <- unique(trimws(c(as.character(finding), advisory)))
   finding <- finding[nzchar(finding)]
   finding <- finding[!normalize(finding) %in% normalize(vapply(known, `[[`, "", "detail"))]
   finding <- finding[!duplicated(normalize(finding))]
   # The recorded set is what the selected revision reports now. A revision
   # that no longer reports a name retracts it; nothing accumulates.
-  blocking <- finding[dependency_finding_blocks_execution(finding)]
+  blocking <- finding[dependency_finding_blocks_execution(finding) & !finding %in% advisory]
   prior <- state$diagnostics$dependency_findings[[cid]]
   if (!length(finding) && is.null(prior)) return(state)
   affected <- parallel_affected_components(state$graph, cid, state$schedule$component_id)

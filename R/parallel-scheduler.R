@@ -25,7 +25,7 @@ parallel_save_checkpoint <- function(pool) {
     write_migration_checkpoint(pool$state, pool$state$resume_fingerprint)
 }
 
-parallel_dependency_findings <- function(state, cid) {
+parallel_dependency_findings <- function(state, cid, include_advisory = FALSE) {
   contract <- state$selected_revisions[[cid]]$contract
   reported <- unique(trimws(c(contract$suspected_dependencies, contract$discovered_dependencies)))
   # These schema fields also contain prose assumptions. Only plain identifiers,
@@ -66,7 +66,9 @@ parallel_dependency_findings <- function(state, cid) {
   available <- names(availability)[availability %in% c("available_in_bound_library",
     "available_from_project_writer", "scanned_dataset_reference")]
   name <- tolower(reported)
-  reported[name %in% unresolved | !name %in% c(known, available)]
+  advisory <- names(availability)[availability == "project_writer_needs_execution"]
+  findings <- reported[name %in% unresolved | !name %in% c(known, available, advisory)]
+  if (include_advisory) list(findings = findings, advisory = reported[name %in% advisory]) else findings
 }
 
 parallel_affected_components <- function(graph, cid, ids) {

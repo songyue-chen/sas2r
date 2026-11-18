@@ -40,7 +40,7 @@ migration_run_outcome <- function(state, report, attempts) {
     readiness_warning_lines(readiness),
     vapply(names(blocking), function(id) paste0("Dependency findings for ", id, ": ",
       paste(blocking[[id]]$findings, collapse = ", ")), ""),
-    vapply(names(advisory), function(id) paste0("Reported names without a scanned producer for ", id,
+    vapply(names(advisory), function(id) paste0("Dependency observations for ", id,
       " (not blocking execution): ", paste(advisory[[id]]$advisory, collapse = ", ")), ""),
     if (length(judgment)) paste0("Findings for human judgment (no automated repair addresses them): ",
       paste(judgment, collapse = "; ")),

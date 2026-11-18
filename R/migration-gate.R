@@ -64,12 +64,15 @@ find_attempt_candidate_file <- function(contract, attempt, report_files = NULL) 
 
 # A legacy program may write a literal source path directly in the working
 # directory. When that overlaps another contract's tlf/ path, a file with only
-# one possible owner disambiguates the layout. Never assign one artifact twice.
+# one possible owner disambiguates the layout. Compare ownership between
+# distinct normalized destinations.
 resolve_report_files <- function(logical, root, legacy_flattened = TRUE) {
   result <- stats::setNames(rep(NA_character_, length(logical)), names(logical))
   if (!length(logical) || !length(root)) return(result)
-  relative <- vapply(logical, function(path)
+  by_contract <- vapply(logical, function(path)
     tryCatch(sas2r_tlf_relative_path(path), error = function(e) NA_character_), "")
+  relative <- unique(unname(by_contract))
+  files_by_path <- rep(NA_character_, length(relative))
   candidates <- lapply(seq_along(relative), function(i) {
     path <- relative[[i]]
     if (is.na(path)) return(character())
@@ -89,10 +92,10 @@ resolve_report_files <- function(logical, root, legacy_flattened = TRUE) {
     exclusive <- lapply(candidates[pending], intersect, names(counts)[counts == 1L])
     resolved <- which(lengths(exclusive) > 0L)
     if (!length(resolved)) break
-    result[pending[resolved]] <- vapply(exclusive[resolved], `[[`, "", 1L)
+    files_by_path[pending[resolved]] <- vapply(exclusive[resolved], `[[`, "", 1L)
     pending <- pending[-resolved]
   }
-  result
+  stats::setNames(files_by_path[match(by_contract, relative)], names(logical))
 }
 
 attempt_report_files <- function(contracts, attempt) {
