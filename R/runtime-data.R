@@ -210,12 +210,13 @@ sas2r_tlf_relative_path <- function(path) {
 #' `outputs/tables/report.pdf` maps to `<output_root>/tlf/tables/report.pdf`.
 #' One conventional leading `outputs/` is removed; meaningful subfolders remain.
 #' The parent directory is created. Absolute source paths require an explicit
-#' relative logical destination in the translated program.
+#' relative logical destination in the translated program. Distinct logical
+#' names such as `table.pdf` and `outputs/table.pdf` resolve to the same file.
 #'
 #' @param path Relative logical report path from the SAS output contract.
 #' @param env Local runtime environment containing `.sas2r_output_root`.
-#'   Defaults to the calling environment. When called interactively, pass the
-#'   environment into which the bundle's `autoexec.R` was sourced.
+#'   Defaults to the immediate calling environment. Inside a function or
+#'   translated macro, pass the runtime environment that loaded `autoexec.R`.
 #' @return Character scalar destination path. No working-directory fallback
 #'   is used when the runtime output root is absent.
 #' @export

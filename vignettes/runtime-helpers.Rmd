@@ -82,6 +82,9 @@ For plain PDF listings, the runtime includes `sas_print_table(data, file)`.
 It aligns headings and values, uses fixed line spacing and repeats headers on
 subsequent pages. Use `sas_output_path()` to obtain a run-relative report path.
 The helper opens and closes its own PDF device and widens pages to fit content.
+The device can warn and substitute dots for characters outside its font
+encoding, including Greek letters and Chinese text. For such listings, use a
+renderer and font that preserve the source text and check the rendered PDF.
 Supply the source-required row/column order, formats and labels; use `obs = FALSE`
 for NOOBS. Titles, BY groups, totals and source-specific ODS layouts require
 separate implementation. These drawing properties do not establish SAS/reference

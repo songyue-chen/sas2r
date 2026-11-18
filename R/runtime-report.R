@@ -21,7 +21,11 @@
 #' Values use [sas_display()] unless already formatted by the caller. Columns
 #' are left-aligned in a monospace font. The PDF page widens to fit the longest
 #' heading or value in each column; text is not truncated or shrunk to fit.
-#' Newlines in cells are retained. This helper does not reproduce SAS page size,
+#' Newlines in cells are retained. The base PDF device can substitute characters
+#' outside its font encoding, including Greek letters and some scripts. Review
+#' conversion warnings and use a font and renderer that preserve the required
+#' characters when producing multilingual or scientific listings.
+#' This helper does not reproduce SAS page size,
 #' style or arbitrary ODS layouts. Choose another renderer when those effects
 #' are required. PDF validity alone does not establish output equivalence.
 #' This helper writes PDF only. For non-PDF output (for example RTF, DOCX or
