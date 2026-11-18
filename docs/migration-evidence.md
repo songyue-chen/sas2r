@@ -309,10 +309,10 @@ reference evidence.
 `datasets/<library>/` and `tlf/`: for example `datasets/work/out.rds`,
 `datasets/adam/adsl.rds`, and `tlf/table.html`. It is NULL when execution
 is disabled or no selected deliverables were produced. Unrequested scratch
-outputs stay in diagnostics. In the 0.6.0 preview, `table.html` and
-`outputs/table.html` can both resolve to `tlf/table.html`. The output gate can
-mark both targets as passed using one file. Check that each distinct
-source-required report has its own saved artifact.
+outputs stay in diagnostics. Report destinations retain their source subfolders.
+For example, `table.html` is saved as `tlf/table.html` and `outputs/table.html`
+as `tlf/outputs/table.html`. Regenerate and rerun an older development bundle
+if its two source destinations overwrote the same file.
 
 `sas_write(result, "delivery")` writes the selected code and runtime, saved
 deliverables under `saved-outputs/`, reports under `report/`, a dependency/input

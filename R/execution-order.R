@@ -189,8 +189,9 @@ macro_unknown_dataset_effects <- function(project) {
 # Walk existing statements and resolved include sites in execution order.
 # No macro expansion: an unmodeled effect invalidates previous producer claims.
 # Occurrences remain separate so a reused include can consume different states.
-ordered_dataset_producers <- function(project, paths, identity) {
-  roots <- configured_execution_files(project)
+ordered_dataset_producers <- function(project, paths, identity,
+                                      roots = configured_execution_files(project),
+                                      observe_unit = NULL) {
   lineage <- project$lineage
   statements <- project$statements
   sites <- project$include_graph$occurrences
@@ -251,6 +252,9 @@ ordered_dataset_producers <- function(project, paths, identity) {
     for (indices in units) {
       unit <- code[indices, ]
       uid <- unit$unit_id[1L]
+      # A literal macro input consumes the state at entry to its call. The
+      # call's own possible effects invalidate state only after that point.
+      if (!is.null(observe_unit)) observe_unit(unit, current, uncertain, seen)
       rows <- lineage_rows[[as.character(uid)]] %||% integer()
       is_data <- identical(unit$unit_type[1L], "data_step")
       # DATA-step outputs become visible only after all input reads.

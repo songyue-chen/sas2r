@@ -111,3 +111,24 @@ test_that("PDF listings reject other destinations before creating or overwriting
     }
   }
 })
+
+test_that("PDF listings preserve supported text and reject unrenderable headings or cells", {
+  root <- withr::local_tempdir()
+  path <- file.path(root, "listing.pdf")
+  before <- grDevices::dev.list()
+  for (where in c("heading", "cell")) {
+    for (text in c("\u0394", "\u60a3\u8005", "\u2265", "soft\u00adhyphen")) {
+      data <- data.frame(x = if (where == "cell") text else "value")
+      labels <- if (where == "heading") text else "heading"
+      expect_error(sas_print_table(data, path, labels), "encoding")
+      expect_false(file.exists(path))
+      writeBin(charToRaw("previous report"), path)
+      expect_error(sas_print_table(data, path, labels), "encoding")
+      expect_identical(readBin(path, "raw", 32L), charToRaw("previous report"))
+      unlink(path)
+    }
+  }
+  expect_identical(grDevices::dev.list(), before)
+  expect_no_warning(sas_print_table(data.frame(x = "caf\u00e9"), path, labels = "co\u00fbt"))
+  expect_true(all(c("caf\u00e9", "co\u00fbt") %in% table_pdf_tokens(path)[[1L]]$text))
+})

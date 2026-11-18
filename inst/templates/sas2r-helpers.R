@@ -374,13 +374,20 @@ sas2r_tlf_relative_path <- function(path) {
       parts <- utils::head(parts, -1L)
     } else parts <- c(parts, part)
   }
-  path <- sub("^outputs/", "", paste(parts, collapse = "/"), ignore.case = TRUE)
+  path <- paste(parts, collapse = "/")
   if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
   path
 }
 
 sas_output_path <- function(path, env = parent.frame()) {
-  root <- get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  # Follow the translated function's lexical scope, stopping before the
+  # workspace unless the standalone helper was itself sourced there.
+  while (!identical(env, emptyenv()) && !identical(env, globalenv()) &&
+         !exists(".sas2r_output_root", envir = env, inherits = FALSE)) {
+    env <- parent.env(env)
+  }
+  root <- if (!identical(env, globalenv()) || identical(environment(sas_output_path), env))
+    get0(".sas2r_output_root", envir = env, inherits = FALSE)
   if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
     stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
   dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))
@@ -950,12 +957,20 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
       c(col[[i]], rep("", heights[[i]] - length(col[[i]])))
     }), use.names = FALSE)
   }))
+  # Some iconv implementations transliterate even with sub = NA. Check the
+  # round trip before opening the destination so substitutions cannot pass.
+  text <- unique(enc2utf8(as.character(lines)))
+  encoded <- iconv(text, from = "UTF-8", to = "CP1252", sub = NA)
+  decoded <- iconv(encoded, from = "CP1252", to = "UTF-8", sub = NA)
+  if (anyNA(decoded) || any(decoded != text) || any(grepl("[[:cntrl:]\u00ad]", text))) {
+    stop("sas_print_table: text is outside the printable Windows-1252 PDF encoding. Use a renderer and font that support the required characters.", call. = FALSE)
+  }
   header <- lines[seq_len(heights[[1L]]), , drop = FALSE]
   body <- lines[-seq_len(heights[[1L]]), , drop = FALSE]
 
   # Measure on a null PDF device with the same font as the destination. Never
   # implicitly open Rplots.pdf or alter the caller's graphics parameters.
-  grDevices::pdf(NULL, pointsize = pointsize, family = "mono")
+  grDevices::pdf(NULL, pointsize = pointsize, family = "mono", encoding = "WinAnsi.enc")
   device <- grDevices::dev.cur()
   on.exit(if (device %in% grDevices::dev.list()) grDevices::dev.off(device), add = TRUE)
   widths <- apply(lines, 2L, function(x) max(graphics::strwidth(x, units = "inches")))
@@ -966,7 +981,8 @@ sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
   width <- max(7, 2 * margin + sum(widths) + gap * (ncol(lines) - 1L))
   height <- max(3, 2 * margin + (nrow(header) + rows_per_page) * line_height)
   x <- margin + c(0, utils::head(cumsum(widths + gap), -1L))
-  grDevices::pdf(file, width = width, height = height, pointsize = pointsize, family = "mono")
+  grDevices::pdf(file, width = width, height = height, pointsize = pointsize,
+                 family = "mono", encoding = "WinAnsi.enc")
   device <- grDevices::dev.cur()
   graphics::par(mar = c(0, 0, 0, 0), xaxs = "i", yaxs = "i")
   pages <- max(1L, ceiling(nrow(body) / rows_per_page))

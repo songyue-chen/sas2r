@@ -62,7 +62,7 @@ result$report_path
 
 Inspect the returned status and report before using any output. When execution
 succeeds, look under `result$outputs_dir` for
-`datasets/adam/final_ds.rds` and `tlf/table1.pdf`.
+`datasets/adam/final_ds.rds` and `tlf/outputs/table1.pdf`.
 `AVAL_FLAG` should mark subject 02 missing; `HIGH_FLAG` should be 1 for subjects
 01, 03 and 05, and 0 for 02 and 04. Rows should be sorted by `TRTP`, then `AVISITN`.
 The PDF should show the resulting table, not a plot.

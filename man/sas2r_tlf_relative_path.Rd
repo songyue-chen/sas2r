@@ -10,7 +10,7 @@ sas2r_tlf_relative_path(path)
 \item{path}{A relative logical report path.}
 }
 \value{
-A relative path with one conventional leading \verb{outputs/} removed.
+The normalized relative path, including source subdirectories.
 }
 \description{
 Relative location of a report within the TLF directory

@@ -189,3 +189,65 @@ test_that("late macro input reports reconcile against the source-bound library",
   unlink("input/MEMBER.XPT")
   expect_identical(evaluate(), c("raw.member", "raw.unconfirmed"))
 })
+
+test_that("a late macro input distinguishes a project writer from an external seed", {
+  root <- withr::local_tempdir()
+  withr::local_dir(root)
+  dir.create("input")
+  dir.create("other")
+  seed <- "input/member.rds"
+  saveRDS(data.frame(value = 1), seed)
+  writeLines(c("%macro copy(indata);", "data work.out; set &indata; run;", "%mend;",
+    "%copy(indata=raw.member);"), "a_consumer.sas")
+  writer <- "data raw.member; value=2; run;"
+  writeLines(writer, "z_producer.sas")
+  evaluate <- function(order = NULL) {
+    config <- list(libraries = list(raw = list(path = "input", engine = "rds")),
+      migration = list(execution_order = order))
+    setup <- translation_setup(root, config, outputs = NULL, recursive = FALSE)
+    state <- list(project = setup$project, schedule = setup$plan$schedule, graph = setup$plan$graph)
+    state$selected_revisions$a_consumer$contract$discovered_dependencies <- "raw.member"
+    parallel_dependency_findings(state, "a_consumer")
+  }
+  expect_identical(evaluate(), "raw.member")
+  responses <- list("translator:a_consumer" = valid_program_translation_response(
+    paste("copy <- function(indata) {", "  parts <- strsplit(indata, '.', fixed = TRUE)[[1L]]",
+      "  lib_write(lib_read(parts[1L], parts[2L]), 'work', 'out')", "}",
+      "copy(indata = 'raw.member')", sep = "\n"), discovered_dependencies = "raw.member"),
+    "translator:z_producer" = valid_program_translation_response(
+      "lib_write(data.frame(value=2), 'raw', 'member')"), reviewer = valid_program_review_response())
+  result <- sas_translate(root, out_dir = withr::local_tempdir(),
+    config = list(libraries = list(raw = list(path = "input", engine = "rds"))),
+    outputs = list(datasets = c("work.out", "raw.member")),
+    llm = parallel_test_llm(responses, delay = 0), max_program_repair_rounds = 0L,
+    max_bundle_repair_rounds = 0L)
+  expect_identical(result$diagnostics$deferred_components$a_consumer, "a_consumer (raw.member)")
+  expect_false(file.exists(file.path(result$outputs_dir, "datasets", "work", "out.rds")))
+  expect_equal(readRDS(file.path(result$outputs_dir, "datasets", "raw", "member.rds"))$value, 2)
+  order <- c("a_consumer.sas", "z_producer.sas")
+  expect_length(evaluate(order), 0L)
+  unlink(seed)
+  expect_identical(evaluate(order), "raw.member")
+  expect_length(evaluate(rev(order)), 0L)
+
+  saveRDS(data.frame(value = 1), seed)
+  writeLines("data work.final; set raw.member; run;", "zz_final.sas")
+  expect_identical(evaluate(), "raw.member")
+  writeLines(c("libname raw 'other';", writer), "z_producer.sas")
+  expect_length(evaluate(), 0L)
+
+  # A differently named libref can still point to the same physical member.
+  writeLines(c("libname alias 'input';", "data alias.member; value=2; run;"), "z_producer.sas")
+  expect_identical(evaluate(), "raw.member")
+  unlink("zz_final.sas")
+  dir.create("includes")
+  writeLines(writer, "includes/part.sas")
+  writeLines("%include 'includes/part.sas';", "z_producer.sas")
+  unlink(seed)
+  expect_length(evaluate(rev(order)), 0L)
+  writeLines(c(writer, "proc datasets library=raw; delete member; quit;"), "z_producer.sas")
+  expect_identical(evaluate(rev(order)), "raw.member")
+  # The selected revision may report its own ordinary DATA-step output.
+  writeLines(writer, "a_consumer.sas")
+  expect_length(evaluate(), 0L)
+})

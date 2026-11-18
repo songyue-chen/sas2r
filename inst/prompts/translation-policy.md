@@ -35,12 +35,11 @@ Shared source-translation policy (translator, static reviewer, fixer):
 ## Report destinations and descriptor order
 
 Use `sas_output_path("outputs/table.pdf", environment())` for a relative ODS/report
-file destination. It creates parent directories under the runtime output root's
-`tlf/`, removing one conventional leading `outputs/`. Keep meaningful subfolders.
-Never use `sas2r_assignment_path()` for a report: that helper resolves LIBNAME
-input paths against the source project. Do not concatenate another `outputs/`
-beneath `tlf/`. Absolute SAS report destinations need an explicit relative logical
-mapping; do not silently write outside the run.
+file destination. Pass the complete relative source path, including a leading
+`outputs/` when present. The helper creates the parent directories under the
+run's `tlf/` directory. A nested function can use its enclosing bundle runtime.
+Use `sas2r_assignment_path()` only for LIBNAME input paths. Absolute SAS report
+destinations need an explicit relative logical mapping.
 
 Preserve SAS descriptor/PDV column order, including in default PROC PRINT output.
 Variables first declared by LENGTH, ATTRIB, RETAIN, FORMAT or ARRAY before SET
@@ -73,6 +72,8 @@ sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
 own PDF device; do not wrap it in another `pdf()` call. It preserves supplied
 column order, adds Obs by default, aligns headers and values using shared column
 positions, uses fixed line spacing and repeats headers on subsequent pages.
+For text outside the helper's printable Windows-1252 encoding, use a PDF
+renderer and font that preserve the original headings and values.
 Use `obs = FALSE` for NOOBS, supply source-required labels/formatted values,
 and implement source filtering, ordering, ID/BY groups, totals and titles
 separately. It is not a complete PROC PRINT/ODS engine; its page width grows to

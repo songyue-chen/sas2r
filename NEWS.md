@@ -1,7 +1,10 @@
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring
-  execution, including literal dataset names passed to SAS macros.
+  execution, including literal dataset names passed to SAS macros. When a
+  project program writes the same bound member, an existing file alone cannot
+  clear the dependency. Set `migration.execution_order` to distinguish a read
+  of the original input from a read of the regenerated member.
 
 - Discover providers through the installed ellmer package for translation, review,
   repair and AI diagnosis. Existing provider IDs and configuration remain valid.
@@ -22,7 +25,10 @@
 
 - Reject non-`.pdf` destinations in `sas_print_table()` before opening a device
   or writing a file, including in exported runtimes. Upper- and mixed-case PDF
-  extensions remain accepted. Translation, review and repair guidance preserves
+  extensions remain accepted. Headings or cells outside the PDF renderer's
+  printable Windows-1252 encoding raise an error before the file is opened.
+  Use a renderer and font that support the source text for these listings.
+  Translation, review and repair guidance preserves
   all source-required PDF and non-PDF formats, including RTF, DOCX and HTML;
   changing a filename is not format conversion. Update saved translations that
   used this PDF helper for other formats. Saved bundles retain their embedded runtime;
@@ -45,10 +51,12 @@
   input, visible output, and reasoning tokens distinct. Exercise both current
   and earlier Gemini protocols in the offline provider contract checks.
 
-- Save relative report targets under `outputs/tlf/` without repeating a leading
-  source `outputs/` directory. Meaningful subdirectories are retained and report
-  lookup no longer substitutes another file with the same basename. New generated
-  programs use `sas_output_path()`; update paths when consuming saved reports.
+- Preserve full relative SAS report paths under `outputs/tlf/`. For example,
+  `table.html` and `outputs/table.html` are saved separately. Programs that
+  consume reports from an earlier 0.6.0 development build should include the
+  source `outputs/` prefix in the new path. Regenerate affected bundles and
+  rerun them to recover reports that previously overwrote each other.
+  Translated macros can now use `sas_output_path()` from a nested function.
 - Check source column order for supported literal LENGTH declarations before SET,
   and supply a source-based repair diagnostic when generated columns are appended
   incorrectly. Unsupported declaration forms remain unverified.
