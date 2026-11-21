@@ -664,8 +664,18 @@ generate_program_revision <- function(
     if (identical(agent_res$status, "ok") && !is.null(agent_res$data)) {
       tr_data <- agent_res$data
 
+      is_entry <- any(comp_nodes$type == "source_unit") && !any(comp_nodes$type == "setup")
       parsed_chk <- tryCatch(parse(text = tr_data$r_code), error = function(e) e)
-      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(tr_data$r_code, allowlist = config$allowlist) else NULL
+      # An entry program may carry the package's own bootstrap: staging accepts
+      # it and the revision check lints around it, so this lint does too. Any
+      # other source() call is still an error, and so is the bootstrap in a
+      # startup component, which must not load itself.
+      lint_code <- tr_data$r_code
+      if (is_entry && !inherits(parsed_chk, "error")) {
+        body <- drop_module_bootstrap(parsed_chk)
+        if (length(body) < length(parsed_chk)) lint_code <- deparse_expressions(body)
+      }
+      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(lint_code, allowlist = config$allowlist) else NULL
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
       binding_errors <- check_component_library_assignments(tr_data$r_code, project, component_id)
 
@@ -696,8 +706,12 @@ generate_program_revision <- function(
         }
       }
 
-      is_entry <- any(comp_nodes$type == "source_unit") && !any(comp_nodes$type == "setup")
-      staged_lines <- if (is_entry && !any(grepl("sas2r bootstrap", tr_data$r_code))) {
+      # Attach the bootstrap unless the program already carries it, as its
+      # comment or as the call itself.
+      final_parsed <- tryCatch(parse(text = tr_data$r_code), error = function(e) NULL)
+      carries_bootstrap <- any(grepl("sas2r bootstrap", tr_data$r_code)) ||
+        (!is.null(final_parsed) && length(drop_module_bootstrap(final_parsed)) < length(final_parsed))
+      staged_lines <- if (is_entry && !carries_bootstrap) {
         c(BANNER, "", module_bootstrap(), "", tr_data$r_code)
       } else {
         c(BANNER, "", tr_data$r_code)
