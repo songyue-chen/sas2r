@@ -81,6 +81,10 @@ sas_sort <- function(df, by, descending = character(), ...) {
 #' Many-to-many keys, and duplicate keys with shared non-key
 #' columns, are refused: those cases require SAS observation-by-observation
 #' semantics that this join-based helper does not implement.
+#' A BY variable that is numeric in one input and character in the other is
+#' refused, as SAS refuses it, and so are column names whose case makes the
+#' match ambiguous (a BY variable matching two columns of one input, or two
+#' columns of `b` that differ only by case matching one column of `a`).
 #' Do not pre-create missing columns on one input when the other input supplies
 #' them: that invents an overlap. Preserve genuine overlapping source columns;
 #' their unsupported repeated-key semantics must not be silently dropped.
@@ -138,8 +142,28 @@ sas_merge <- function(a, b, by,
   if (length(absent)) {
     stop("sas_merge: by variable not found in dataset: ", absent[1], call. = FALSE)
   }
+  # Refuse what case-insensitive matching cannot decide: a BY variable that
+  # matches two columns of one input, or two columns of b that a's spelling
+  # would merge into one. Case-only pairs nothing renames are left alone.
+  for (v in by) for (nm in list(names(a), names(b))) {
+    hits <- nm[tolower(nm) == tolower(v)]
+    if (length(hits) > 1L) {
+      stop("sas_merge: by variable ", v, " matches more than one column in a dataset: ",
+           paste(hits, collapse = ", "), call. = FALSE)
+    }
+  }
   a_pos <- match(tolower(names(b)), tolower(names(a)))
-  names(b)[!is.na(a_pos)] <- names(a)[a_pos[!is.na(a_pos)]]
+  renamed <- names(b)
+  renamed[!is.na(a_pos)] <- names(a)[a_pos[!is.na(a_pos)]]
+  for (v in unique(renamed[duplicated(renamed)])) {
+    from <- unique(names(b)[renamed == v])
+    if (length(from) > 1L) {
+      stop("sas_merge: columns ", paste(from, collapse = ", "),
+           " of the second dataset both match column ", v, " of the first",
+           call. = FALSE)
+    }
+  }
+  names(b) <- renamed
   # SAS refuses a BY variable that is character in one input and numeric in
   # the other. Dates count as numeric; factors count as character.
   is_chr <- function(x) is.character(x) || is.factor(x)
@@ -153,8 +177,12 @@ sas_merge <- function(a, b, by,
   }
   by <- names(a)[idx_a]
   # Keys are compared through sas2r_by_key(); the returned values stay as given.
-  dup_a <- anyDuplicated(sas2r_by_key(a, by)) > 0L
-  dup_b <- anyDuplicated(sas2r_by_key(b, by)) > 0L
+  # One group id per row serves both the duplicate checks and the join.
+  ids <- vctrs::vec_group_id(sas2r_by_key(rbind(a[by], b[by]), by))
+  ids_a <- ids[seq_len(nrow(a))]
+  ids_b <- ids[nrow(a) + seq_len(nrow(b))]
+  dup_a <- anyDuplicated(ids_a) > 0L
+  dup_b <- anyDuplicated(ids_b) > 0L
   if (dup_a && dup_b)
     stop("sas_merge: many-to-many merge on keys (", paste(by, collapse = ", "),
          ") -- SAS row-walking semantics cannot be reproduced by a join. ",
@@ -170,9 +198,8 @@ sas_merge <- function(a, b, by,
   a$.in_a <- rep(TRUE, nrow(a)); b$.in_b <- rep(TRUE, nrow(b))
   key_id <- ".sas2r_merge_key"
   while (key_id %in% c(names(a), names(b))) key_id <- paste0(key_id, "_")
-  ids <- vctrs::vec_group_id(sas2r_by_key(rbind(a[by], b[by]), by))
-  a[[key_id]] <- ids[seq_len(nrow(a))]
-  b[[key_id]] <- ids[nrow(a) + seq_len(nrow(b))]
+  a[[key_id]] <- ids_a
+  b[[key_id]] <- ids_b
   m <- merge(a, b, by = key_id, all = TRUE, suffixes = c(".sas2r_a", ""))
   for (v in by) {
     missing_right <- is.na(m$.in_b)

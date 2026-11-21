@@ -362,3 +362,41 @@ test_that("sas_merge refuses what SAS refuses and handles empty inputs", {
   out <- sas_merge(data.frame(k = character(), x = integer()), b, by = "k", keep = "full")
   expect_identical(nrow(out), 2L); expect_true(all(is.na(out$x)))
 })
+
+test_that("sas_merge refuses column names whose case is ambiguous", {
+  expect_error(
+    sas_merge(data.frame(id = 1:2, x = 1:2), data.frame(ID = 1:2, id = 3:4, y = 1:2), by = "id"),
+    "sas_merge: by variable id matches more than one column in a dataset: ID, id", fixed = TRUE)
+  expect_error(
+    sas_merge(data.frame(Id = 1:2, ID = 1:2), data.frame(id = 1:2, y = 1:2), by = "id"),
+    "sas_merge: by variable id matches more than one column in a dataset: Id, ID", fixed = TRUE)
+  expect_error(
+    sas_merge(data.frame(id = 1:2, val = 1:2), data.frame(id = 1:2, VAL = 1:2, Val = 3:4), by = "id"),
+    "sas_merge: columns VAL, Val of the second dataset both match column val of the first",
+    fixed = TRUE)
+  # Columns that differ only by case are fine when nothing renames them.
+  out <- sas_merge(data.frame(id = 1:2, x = 1:2),
+                   data.frame(id = 1:2, VAL = 1:2, Val = 3:4), by = "id")
+  expect_identical(names(out), c("id", "x", "VAL", "Val"))
+  expect_identical(out$Val, 3:4)
+})
+
+test_that("sas_merge refusals and key matching hold in both directions", {
+  expect_error(sas_merge(data.frame(k = "1"), data.frame(k = 1), by = "k"),
+               "sas_merge: by variable k is numeric in one dataset and character in the other", fixed = TRUE)
+  a <- data.frame(k = c("A", "B"), x = 1:2)
+  out <- sas_merge(a, data.frame(k = character(), y = numeric()), by = "k", keep = "full")
+  expect_identical(out$k, c("A", "B")); expect_identical(out$x, 1:2)
+  expect_true(all(is.na(out$y)))
+  expect_identical(nrow(sas_merge(a, data.frame(k = character(), y = numeric()), by = "k",
+                                  keep = "both")), 0L)
+  ints <- data.frame(k = c(1L, 2L, NA), x = 1:3)
+  dbls <- data.frame(k = c(2, 1, haven::tagged_na("a"), NA), y = c(20, 10, 99, 0))
+  out <- sas_merge(ints, dbls, by = "k", keep = "full")
+  expect_identical(nrow(out), 4L)
+  # The integer NA matches the plain double missing value, not .A, and rows
+  # follow SAS order (. < .A < numbers).
+  expect_identical(out$x, c(3L, NA, 1L, 2L))
+  expect_identical(out$y, c(0, 99, 10, 20))
+  expect_identical(haven::na_tag(out$k), c(NA, "a", NA, NA))
+})

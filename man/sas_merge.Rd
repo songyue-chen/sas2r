@@ -35,6 +35,10 @@ values are distinct, and variable names match without regard to case.
 Many-to-many keys, and duplicate keys with shared non-key
 columns, are refused: those cases require SAS observation-by-observation
 semantics that this join-based helper does not implement.
+A BY variable that is numeric in one input and character in the other is
+refused, as SAS refuses it, and so are column names whose case makes the
+match ambiguous (a BY variable matching two columns of one input, or two
+columns of \code{b} that differ only by case matching one column of \code{a}).
 Do not pre-create missing columns on one input when the other input supplies
 them: that invents an overlap. Preserve genuine overlapping source columns;
 their unsupported repeated-key semantics must not be silently dropped.
