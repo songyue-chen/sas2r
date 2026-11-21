@@ -25,6 +25,20 @@ test_that("review is independent and fixer is evidence grounded", {
   expect_identical(fixed$mode, "program")
 })
 
+test_that("a schema inference failure stops the fixer instead of emptying its tool context", {
+  # Returning no schemas would quietly strip the fixer's dataset context. The
+  # translator already calls the same function unguarded.
+  fx <- review_fix_fixture()
+  review <- review_program_revision(
+    fx$revision, fx$context,
+    recording_reviewer(function(request) material_review_response("R drops SAS missing-value branch")))
+  local_mocked_bindings(infer_schemas = function(project) stop("schema inference failed"))
+  expect_error(
+    fix_program_revision(fx$revision, review = review, smoke = fx$failed_smoke, mode = "program",
+                         llm = recording_fixer(function(request) valid_fix_response("fixed_program"))),
+    "schema inference failed", fixed = TRUE)
+})
+
 test_that("review_program_revision persists immutable review and records review_unavailable on exhausted failure", {
   withr::local_options(sas2r.agent_backoff_base = 0) # Keep every retry; omit the mock transport wait.
   fx <- review_fix_fixture()

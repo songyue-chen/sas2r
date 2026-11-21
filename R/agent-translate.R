@@ -644,7 +644,7 @@ generate_program_revision <- function(
       component_id = component_id, graph = graph, selected_revisions = selected_revisions,
       project = project,
       unit_stmts = unit_stmts,
-      schemas = tryCatch(infer_schemas(project), error = function(e) list()),
+      schemas = infer_schemas(project),
       config = config,
       macro_index = macro_idx
     )
