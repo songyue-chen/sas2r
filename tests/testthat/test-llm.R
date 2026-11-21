@@ -369,6 +369,36 @@ test_that("strip_fences cleanly extracts json from markdown code fences", {
   expect_identical(strip_fences(json_txt), json_txt)
 })
 
+test_that("strict_json_list parses JSON text and never reads a file or URL", {
+  answer <- '{"r_code": "x <- 1", "summary": "file content"}'
+  path <- withr::local_tempfile(fileext = ".json")
+  writeLines(answer, path)
+  expect_null(strict_json_list(path))
+  expect_null(strict_json_list(path, strip_markdown_fences = TRUE))
+
+  reached <- FALSE
+  refuse <- function(...) { reached <<- TRUE; stop("parser reached") }
+  testthat::local_mocked_bindings(
+    fromJSON = refuse, parse_json = refuse, .package = "jsonlite"
+  )
+  url <- "https://example.invalid/answer.json"
+  for (text in c(url, paste0("  \n", url, " \n"),
+                 paste0("```json\n", url, "\n```"))) {
+    expect_null(strict_json_list(text))
+    expect_null(strict_json_list(text, strip_markdown_fences = TRUE))
+  }
+  expect_false(reached)
+})
+
+test_that("strict_json_list still accepts JSON objects, fenced objects and arrays", {
+  expect_identical(strict_json_list('{"a": 1}'), list(a = 1L))
+  expect_identical(
+    strict_json_list('```json\n{"a": [1, 2]}\n```', strip_markdown_fences = TRUE),
+    list(a = list(1L, 2L))
+  )
+  expect_identical(strict_json_list(' [1, "b"] '), list(1L, "b"))
+})
+
 test_that("sas_llm_probe does not retry definitive nonanswers and writes durable audit fields", {
   log_dir <- withr::local_tempdir()
   retry_llm <- mock_llm(list(

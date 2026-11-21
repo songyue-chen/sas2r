@@ -614,6 +614,26 @@ test_that("the fixture text is a schema-valid answer", {
   expect_true(validate_output(strict_json_list(gathered_text), "program_translation_v1")$ok)
 })
 
+test_that("a gathered answer that names a file or URL is never read or fetched", {
+  path <- withr::local_tempfile(fileext = ".json")
+  writeLines(gathered_text, path)
+  expect_null(strict_json_list(path))
+  expect_null(gathered_final_answer(list(gathered = path), "program_translation_v1"))
+
+  reached <- FALSE
+  refuse <- function(...) { reached <<- TRUE; stop("parser reached") }
+  testthat::local_mocked_bindings(
+    fromJSON = refuse, parse_json = refuse, .package = "jsonlite"
+  )
+  url <- "https://example.invalid/answer.json"
+  for (text in c(url, paste0("  \n", url, " \n"),
+                 paste0("```json\n", url, "\n```"))) {
+    expect_null(strict_json_list(text))
+    expect_null(gathered_final_answer(list(gathered = text), "program_translation_v1"))
+  }
+  expect_false(reached)
+})
+
 test_that("a schema-valid gathering answer ends the invocation without a second request", {
   run <- two_phase_run(list(type = "final", data = list(gathered = gathered_text)))
   expect_identical(run$result$status, "ok")

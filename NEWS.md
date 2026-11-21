@@ -22,6 +22,9 @@
   authority and review does not see the draft. Set
   `options(sas2r.translator_baseline_reference = FALSE)` to leave it out.
 
+- Model output is parsed as JSON text only. A reply that is just a web address
+  or a file path is no longer fetched or read.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring
