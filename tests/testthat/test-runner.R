@@ -570,6 +570,98 @@ test_that("tools and structured output use a ledger-visible two-phase state mach
   expect_true("tool" %in% vapply(requests[[2]]$messages, `[[`, "", "role"))
 })
 
+two_phase_run <- function(second, option = TRUE, log_dir = NULL) {
+  withr::local_options(sas2r.accept_gathered_answer = option)
+  if (is.null(log_dir)) log_dir <- withr::local_tempdir()
+  responses <- list(
+    list(type = "tool", tool = "echo", args = list(x = 1), tool_call_id = "call_1"),
+    second,
+    good
+  )
+  requests <- list()
+  i <- 0L
+  llm <- new_llm(
+    function(request) {
+      requests[[length(requests) + 1L]] <<- request
+      i <<- i + 1L
+      normalize_provider_response(responses[[i]], request = request, provider = "mock")
+    },
+    provider = "mock",
+    capabilities = llm_capabilities(
+      structured_output = "native", tool_calling = "native",
+      tools_with_structured_output = "supported"
+    ),
+    transport_constraints = list(
+      tools_with_structured_output = "unsupported"
+    )
+  )
+  echo <- make_tool(
+    "echo", function(args) list(got = args$x), max_calls = 2L,
+    schema = list(
+      type = "object", properties = list(x = list(type = "number")),
+      required = "x", additionalProperties = FALSE
+    )
+  )
+  result <- run_agent(
+    spec_min(tool_limit = 2), llm, tools = list(echo = echo),
+    user_content = "unit", log_dir = log_dir
+  )
+  list(result = result, phases = vapply(requests, `[[`, "", "phase"))
+}
+
+gathered_text <- as.character(jsonlite::toJSON(good$data, auto_unbox = TRUE, null = "null"))
+test_that("the fixture text is a schema-valid answer", {
+  expect_true(validate_output(strict_json_list(gathered_text), "program_translation_v1")$ok)
+})
+
+test_that("a schema-valid gathering answer ends the invocation without a second request", {
+  run <- two_phase_run(list(type = "final", data = list(gathered = gathered_text)))
+  expect_identical(run$result$status, "ok")
+  expect_identical(run$phases, c("gathering", "gathering"))
+  expect_identical(run$result$data$r_code, "x <- 1")
+  expect_identical(run$result$answer_phase, "gathering")
+  expect_true(isTRUE(run$result$fallback_json))
+  fenced <- paste0("```json\n", gathered_text, "\n```")
+  expect_identical(two_phase_run(list(type = "final", data = list(gathered = fenced)))$phases,
+                   c("gathering", "gathering"))
+})
+
+test_that("anything short of a schema-valid answer still goes to finalization", {
+  three <- c("gathering", "gathering", "finalization")
+  prose <- paste("Here is the answer:", gathered_text)
+  no_code <- good$data; no_code$r_code <- NULL
+  missing <- as.character(jsonlite::toJSON(no_code, auto_unbox = TRUE, null = "null"))
+  for (text in list(prose, missing, "ready to answer")) {
+    run <- two_phase_run(list(type = "final", data = list(gathered = text)))
+    expect_identical(run$phases, three)
+    expect_identical(run$result$status, "ok")
+    expect_identical(run$result$answer_phase, "finalization")
+  }
+  expect_identical(two_phase_run(list(type = "final", data = list(notes = "done")))$phases, three)
+  expect_identical(two_phase_run(list(type = "final", data = list(gathered = gathered_text)),
+                                 option = FALSE)$phases, three)
+})
+
+test_that("the audit log records whether the gathering answer was schema valid", {
+  last_gathering_entry <- function(dir) {
+    entries <- lapply(
+      readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE),
+      jsonlite::fromJSON, simplifyVector = FALSE
+    )
+    gathering <- Filter(function(entry) identical(entry$phase, "gathering"), entries)
+    gathering[[length(gathering)]]
+  }
+  valid_dir <- withr::local_tempdir()
+  two_phase_run(list(type = "final", data = list(gathered = gathered_text)),
+                log_dir = valid_dir)
+  expect_identical(last_gathering_entry(valid_dir)$gathered_answer, "schema_valid")
+  prose_dir <- withr::local_tempdir()
+  two_phase_run(list(type = "final",
+                     data = list(gathered = paste("Here is the answer:", gathered_text))),
+                log_dir = prose_dir)
+  expect_identical(last_gathering_entry(prose_dir)$gathered_answer, "not_schema_valid")
+})
+
 test_that("fallback schema mode is explicit and audited", {
   requests <- list()
   llm <- new_llm(

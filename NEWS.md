@@ -8,6 +8,10 @@
   the role instructions are identical for every component and providers can
   cache them.
 
+- When a model finishes using tools with a complete answer that passes the
+  output schema check, use it instead of asking for the answer again. Set
+  `options(sas2r.accept_gathered_answer = FALSE)` to always ask again.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

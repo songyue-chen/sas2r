@@ -1085,6 +1085,27 @@ stopifnot(identical(round_agent$status, "ok"),
           contains_text(round_wire[[2]]$body, "Tool allowance: 2 of 3"),
           contains_text(round_wire[[3]]$body, "Tool allowance: 1 of 3"))
 
+# A model that ends the tool phase by writing a schema-valid answer as plain
+# text is not asked for the answer again: no request without tools follows.
+answer_adapter <- sas2r:::ellmer_llm(list(provider = "openai",
+  model = "offline-gathered-answer-model",
+  base_url = base_url, api_key = api_key, capabilities = capabilities))
+answer_log_start <- length(readLines(log_file, warn = FALSE))
+answer_agent <- sas2r:::run_agent(
+  list(name = "answer", prompt = "translator.md", tool_call_limit = 3L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  answer_adapter, list(lookup = quota_lookup), "answer translation",
+  log_dir = tempfile("sas2r-real-answer-"))
+answer_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - answer_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(answer_agent$status, "ok"),
+          identical(answer_agent$answer_phase, "gathering"),
+          identical(answer_agent$data$r_code, "x <- 1"),
+          length(answer_wire) == 2L,
+          all(vapply(answer_wire, function(entry)
+            length(entry$body$tools %||% list()) > 0L, logical(1))))
+
 failure_log_start <- length(readLines(log_file, warn = FALSE))
 failure_lookup <- sas2r:::make_tool("lookup", function(args) {
   stop("Reference index is unavailable")

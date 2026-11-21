@@ -223,6 +223,15 @@ class ReplayHandler(BaseHTTPRequestHandler):
         return "tool" if completed < 2 else "gathered"
 
     @staticmethod
+    def gathered_text(body):
+        # A model that ends the tool phase by writing its complete answer as
+        # plain text, so the contract can see the runner accept it without a
+        # separate structured-output request.
+        if body.get("model") == "offline-gathered-answer-model":
+            return json.dumps(PROGRAM_TRANSLATION, separators=(",", ":"))
+        return "gathered context"
+
+    @staticmethod
     def chat_completions_response(body, response_kind):
         native = "native-deepseek" in body.get("model", "")
         completed = sum(m.get("role") == "tool" for m in body.get("messages", []))
@@ -249,7 +258,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 message["tool_calls"][0]["id"] = f"real_round_{batch}"
             finish_reason = "tool_calls"
         elif response_kind == "gathered":
-            message = {"role": "assistant", "content": "gathered context"}
+            message = {"role": "assistant", "content": ReplayHandler.gathered_text(body)}
             finish_reason = "stop"
         else:
             message = {
@@ -305,7 +314,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 round_id = f"real_round_{completed + 1}"
                 output[0].update({"id": round_id, "call_id": round_id})
         else:
-            text = "gathered context" if response_kind == "gathered" else json.dumps(
+            text = ReplayHandler.gathered_text(body) if response_kind == "gathered" else json.dumps(
                 structured_payload(body), separators=(",", ":")
             )
             output = [{

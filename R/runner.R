@@ -162,6 +162,22 @@ validate_output <- function(data, schema_name) {
   list(ok = !length(errors), errors = errors)
 }
 
+#' Parse a schema-valid answer written as text during the tool phase
+#'
+#' @param data Response data from a gathering request that ended the tool
+#'   phase; the transport puts the model's text in `data$gathered`.
+#' @param schema_name Name of the schema in `OUTPUT_SCHEMAS`.
+#' @return The parsed answer when it passes `validate_output()`, else `NULL`.
+#' @noRd
+gathered_final_answer <- function(data, schema_name) {
+  text <- if (is.list(data)) data[["gathered", exact = TRUE]] else NULL
+  if (!is.character(text) || length(text) != 1L) return(NULL)
+  parsed <- strict_json_list(text, strip_markdown_fences = TRUE)
+  if (!is.list(parsed)) return(NULL)
+  if (!isTRUE(validate_output(parsed, schema_name)$ok)) return(NULL)
+  parsed
+}
+
 #' Validate agent output against a named schema
 #'
 #' @param data Extracted output data list.
@@ -567,6 +583,9 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
     tool_calls <- tool_state$count
     call_cost <- extract_response_cost(resp, tier = tier)
     usage <- transport_usage(resp)
+    gathered_answer <- if (identical(phase, "gathering") &&
+                           identical(resp$action, "final"))
+      gathered_final_answer(resp$data, spec$output_schema) else NULL
     if (is.function(on_charge)) on_charge(call_cost)
     if (identical(resp$status, "budget_exhausted")) {
       return(result_costs(list(
@@ -621,6 +640,10 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
       audit_entry$error <- llm_failure_metadata(
         llm_condition_from_failure_response(resp)
       )
+    }
+    if (identical(phase, "gathering") && identical(resp$action, "final")) {
+      audit_entry$gathered_answer <- if (is.null(gathered_answer))
+        "not_schema_valid" else "schema_valid"
     }
     llm_log(audit_entry, dir = log_dir, redactor = audit_redactor)
     assert_required_settings(request, resp)
@@ -750,6 +773,16 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
       parent_request_id <- request$request_id
     } else if (identical(phase, "gathering") &&
                identical(resp$action, "final")) {
+      # The model often writes its full answer before the tool phase ends.
+      # Accept it only through the same validate_output() gate a
+      # finalization answer must pass; anything else asks again below.
+      if (!is.null(gathered_answer) &&
+          isTRUE(getOption("sas2r.accept_gathered_answer", TRUE))) {
+        return(result_costs(list(
+          status = "ok", data = gathered_answer, tool_calls = tool_calls,
+          fallback_json = TRUE, answer_phase = "gathering"
+        )))
+      }
       if (is.list(resp$conversation) && length(resp$conversation)) {
         messages <- resp$conversation
       } else {
@@ -772,7 +805,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
       v <- validate_output(resp$data, spec$output_schema)
       if (v$ok) return(result_costs(list(
         status = "ok", data = resp$data, tool_calls = tool_calls,
-        fallback_json = identical(schema_mode, "fallback")
+        fallback_json = identical(schema_mode, "fallback"),
+        answer_phase = "finalization"
       )))
       retries <- retries + 1L
       if (retries > spec$retry_limit)
