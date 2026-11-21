@@ -17,7 +17,9 @@ jobs:
           - {os: windows-latest, r: release, manual: false}
           - {os: macos-latest, r: release, manual: false}
           - {os: ubuntu-latest, r: devel, manual: true}
-          - {os: ubuntu-latest, r: "4.1.3", manual: false}
+          # S7 1.0.0 needs R >= 4.2. ellmer accepts S7 >= 0.2.0, so the declared
+          # R floor is checked with the last S7 release that still supports it.
+          - {os: ubuntu-latest, r: "4.1.3", manual: false, pins: "S7@0.2.2"}
     env:
       NOT_CRAN: "false"
       _R_CHECK_LIMIT_CORES_: "true"
@@ -53,6 +55,7 @@ jobs:
             local::.
           extra-packages: |
             any::rcmdcheck
+            ${{ matrix.pins }}
       - name: Build source archive
         run: R CMD build .
         shell: bash
