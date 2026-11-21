@@ -12,6 +12,11 @@
   output schema check, use it instead of asking for the answer again. Set
   `options(sas2r.accept_gathered_answer = FALSE)` to always ask again.
 
+- `sas_merge()` now matches BY values as SAS compares them (trailing blanks,
+  blank versus missing, special missing values, name case) and refuses a BY
+  variable that is numeric in one input and character in the other.
+  `sas_sort()` orders special missing values as SAS does.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

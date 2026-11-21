@@ -677,6 +677,24 @@ lib_delete <- function(libref, members) {
 
 # NOTE: NODUPKEY dedups adjacent sorted keys; distinct() semantics match only after sorting -- which this pipeline guarantees.
 sas_sort <- function(df, by, descending = character(), ...) {
+  # Rank of each SAS missing value, used to order BY values: NA where x is not
+  # missing, 0 for ._, 1 for . (an untagged NA or NaN), 2-27 for .A-.Z. Special
+  # missing values are haven tagged NAs; haven reads them with lower-case tags
+  # while R code may write upper-case ones, so tags compare case-insensitively.
+  # A tag outside ._ and .A-.Z ranks as an ordinary missing value.
+  sas2r_missing_rank <- function(x) {
+    out <- rep(NA_integer_, length(x))
+    miss <- is.na(x)
+    out[miss] <- 1L
+    if (is.double(x) && any(miss)) {
+      tag <- tolower(haven::na_tag(x[miss]))
+      tag[is.na(tag)] <- "."
+      rank <- match(tag, c("_", ".", letters)) - 1L
+      rank[is.na(rank)] <- 1L
+      out[miss] <- rank
+    }
+    out
+  }
   if (nrow(df) == 0L) return(df)
   cols <- lapply(by, function(v) {
     idx <- match(tolower(v), tolower(names(df)))
@@ -684,12 +702,20 @@ sas_sort <- function(df, by, descending = character(), ...) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
     x <- df[[idx]]
+    desc <- tolower(v) %in% tolower(descending)
+    if (is.double(x)) {
+      # SAS orders ._ < . < .A < ... < .Z < every number: missing values take
+      # their rank 0-27 and numbers rank above them.
+      key <- as.double(sas2r_missing_rank(x))
+      present <- is.na(key)
+      key[present] <- 28 + rank(xtfrm(x[present]), ties.method = "min")
+      return(if (desc) -key else key)
+    }
     if (is.character(x)) {
       x <- sub(" +$", "", x)
       x[x == "" & !is.na(x)] <- NA_character_
       x <- match(x, sort(unique(x), method = "radix", na.last = NA))
     }
-    desc <- tolower(v) %in% tolower(descending)
     if (desc) {
       rank(-xtfrm(x), na.last = TRUE, ties.method = "min")
     } else {
@@ -703,9 +729,55 @@ sas_sort <- function(df, by, descending = character(), ...) {
 sas_merge <- function(a, b, by,
                       keep = c("full", "both", "left", "right", "left_only",
                                "right_only"), ...) {
+  # The BY columns of df rewritten for matching only, the way SAS compares BY
+  # values. Character (and factor) values: trailing blanks never distinguish
+  # values, and a blank value is the missing one, so trailing spaces are dropped
+  # and NA becomes "". Leading blanks still count. Double values: every missing
+  # value becomes one NA and a companion column carries its lower-case special
+  # missing tag, because .A and . are distinct BY values that vctrs would
+  # otherwise treat as equal. Other columns are unchanged.
+  sas2r_by_key <- function(df, cols) {
+    key <- as.data.frame(df[cols])
+    for (i in seq_along(cols)) {
+      x <- key[[i]]
+      if (is.character(x) || is.factor(x)) {
+        x <- sub(" +$", "", as.character(x))
+        x[is.na(x)] <- ""
+        key[[i]] <- x
+      } else if (is.double(x)) {
+        key[[paste0(".sas2r_tag_", i)]] <- tolower(haven::na_tag(x))
+        x[is.na(x)] <- NA_real_
+        key[[i]] <- x
+      }
+    }
+    key
+  }
   keep <- match.arg(keep)
-  dup_a <- anyDuplicated(a[by]) > 0L
-  dup_b <- anyDuplicated(b[by]) > 0L
+  # SAS variable names are case-insensitive: find each BY variable in both
+  # inputs, then spell every column of b the way a spells it.
+  idx_a <- match(tolower(by), tolower(names(a)))
+  idx_b <- match(tolower(by), tolower(names(b)))
+  absent <- by[is.na(idx_a) | is.na(idx_b)]
+  if (length(absent)) {
+    stop("sas_merge: by variable not found in dataset: ", absent[1], call. = FALSE)
+  }
+  a_pos <- match(tolower(names(b)), tolower(names(a)))
+  names(b)[!is.na(a_pos)] <- names(a)[a_pos[!is.na(a_pos)]]
+  # SAS refuses a BY variable that is character in one input and numeric in
+  # the other. Dates count as numeric; factors count as character.
+  is_chr <- function(x) is.character(x) || is.factor(x)
+  is_num <- function(x) is.numeric(x) || is.double(x)
+  for (i in seq_along(by)) {
+    xa <- a[[idx_a[i]]]; xb <- b[[idx_b[i]]]
+    if ((is_chr(xa) && is_num(xb)) || (is_num(xa) && is_chr(xb))) {
+      stop("sas_merge: by variable ", by[i],
+           " is numeric in one dataset and character in the other", call. = FALSE)
+    }
+  }
+  by <- names(a)[idx_a]
+  # Keys are compared through sas2r_by_key(); the returned values stay as given.
+  dup_a <- anyDuplicated(sas2r_by_key(a, by)) > 0L
+  dup_b <- anyDuplicated(sas2r_by_key(b, by)) > 0L
   if (dup_a && dup_b)
     stop("sas_merge: many-to-many merge on keys (", paste(by, collapse = ", "),
          ") -- SAS row-walking semantics cannot be reproduced by a join. ",
@@ -721,7 +793,7 @@ sas_merge <- function(a, b, by,
   a$.in_a <- rep(TRUE, nrow(a)); b$.in_b <- rep(TRUE, nrow(b))
   key_id <- ".sas2r_merge_key"
   while (key_id %in% c(names(a), names(b))) key_id <- paste0(key_id, "_")
-  ids <- vctrs::vec_group_id(rbind(a[by], b[by]))
+  ids <- vctrs::vec_group_id(sas2r_by_key(rbind(a[by], b[by]), by))
   a[[key_id]] <- ids[seq_len(nrow(a))]
   b[[key_id]] <- ids[nrow(a) + seq_len(nrow(b))]
   m <- merge(a, b, by = key_id, all = TRUE, suffixes = c(".sas2r_a", ""))

@@ -313,3 +313,52 @@ test_that("a wrong lib_write call in a bundle fails its run with the teaching me
   expect_match(r$stderr, 'lib_write(df, "lib", "member")', fixed = TRUE)
   expect_false(file.exists(file.path(bundle, "adsl.rds")))
 })
+
+test_that("sas_sort orders special missing values as SAS does", {
+  d <- data.frame(v = c(haven::tagged_na("z"), 5, NA, haven::tagged_na("a"), -1,
+                        haven::tagged_na("_")), row = 1:6)
+  expect_identical(sas_sort(d, by = "v")$row, c(6L, 3L, 4L, 1L, 5L, 2L))
+  expect_identical(sas_sort(d, by = "v", descending = "v")$row, c(2L, 5L, 1L, 4L, 3L, 6L))
+  d2 <- data.frame(v = c(haven::tagged_na("B"), haven::tagged_na("a")), row = 1:2)
+  expect_identical(sas_sort(d2, by = "v")$row, c(2L, 1L))
+})
+
+test_that("sas_merge matches character BY values as SAS compares them", {
+  out <- sas_merge(data.frame(k = c("A", "B"), x = 1:2),
+                   data.frame(k = c("A  ", "B"), y = c(10, 20)), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L)
+  expect_identical(out$x, 1:2); expect_identical(out$y, c(10, 20))
+  out <- sas_merge(data.frame(k = c("", "B"), x = 1:2),
+                   data.frame(k = c(NA, "B"), y = c(10, 20)), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L); expect_identical(out$y, c(10, 20))
+  out <- sas_merge(data.frame(k = " A", x = 1L), data.frame(k = "A", y = 2), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L)
+})
+
+test_that("sas_merge matches names without regard to case", {
+  out <- sas_merge(data.frame(ID = 1:2, Val = 1:2), data.frame(id = 1:2, VAL = c(9L, 8L), y = 3:4),
+                   by = "Id")
+  expect_identical(names(out), c("ID", "Val", "y"))
+  expect_identical(out$Val, c(9L, 8L))
+  expect_error(sas_merge(data.frame(a = 1), data.frame(a = 1), by = "zz"),
+               "sas_merge: by variable not found in dataset: zz", fixed = TRUE)
+})
+
+test_that("sas_merge keeps special missing values apart", {
+  a <- data.frame(v = c(haven::tagged_na("a"), 1), x = 1:2)
+  out <- sas_merge(a, data.frame(v = c(NA, 1), y = c(10, 20)), by = "v", keep = "full")
+  expect_identical(nrow(out), 3L)
+  expect_identical(out$x, c(NA, 1L, 2L)); expect_identical(out$y, c(10, NA, 20))
+  out <- sas_merge(a, data.frame(v = c(haven::tagged_na("A"), 1), y = c(10, 20)), by = "v", keep = "full")
+  expect_identical(nrow(out), 2L)
+})
+
+test_that("sas_merge refuses what SAS refuses and handles empty inputs", {
+  expect_error(sas_merge(data.frame(k = 1), data.frame(k = "1"), by = "k"),
+               "sas_merge: by variable k is numeric in one dataset and character in the other", fixed = TRUE)
+  expect_error(sas_merge(data.frame(k = c("A", "A "), x = 1:2), data.frame(k = c("A", "A"), y = 1:2), by = "k"),
+               "many-to-many")
+  b <- data.frame(k = c("A", "B"), y = c(10, 20))
+  out <- sas_merge(data.frame(k = character(), x = integer()), b, by = "k", keep = "full")
+  expect_identical(nrow(out), 2L); expect_true(all(is.na(out$x)))
+})
