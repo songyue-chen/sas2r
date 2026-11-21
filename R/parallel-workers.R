@@ -114,6 +114,29 @@ parallel_restore_configs <- function(x, configs) {
   x
 }
 
+# Options a worker reads at the point of use. callr children do not inherit
+# the parent's options, so these are resolved here and set in the child.
+parallel_worker_options <- function() {
+  list(
+    sas2r.accept_gathered_answer = getOption("sas2r.accept_gathered_answer", TRUE),
+    sas2r.translator_baseline_reference = getOption("sas2r.translator_baseline_reference", TRUE)
+  )
+}
+
+# Runs in the callr child: load sas2r, apply the forwarded options, then call
+# the named namespace function with the remaining arguments.
+parallel_worker_boot <- function(package_path, libpath, worker_options, entry, ...) {
+  .libPaths(libpath)
+  if (file.exists(file.path(package_path, "Meta", "package.rds"))) {
+    loadNamespace("sas2r", lib.loc = dirname(package_path))
+  } else {
+    if (!requireNamespace("pkgload", quietly = TRUE)) stop("Development workers require pkgload")
+    pkgload::load_all(package_path, quiet = TRUE)
+  }
+  options(worker_options)
+  get(entry, asNamespace("sas2r"))(...)
+}
+
 parallel_start_job <- function(pool, state, component_id, kind, execute, repair_cap) {
   pool$sequence <- pool$sequence + 1L
   id <- sprintf("job_%s_%06d", pool$id, pool$sequence)
@@ -142,17 +165,8 @@ parallel_start_job <- function(pool, state, component_id, kind, execute, repair_
   snapshot$paths$component_revisions <- file.path(dir, "components")
   # Attempt execution remains in one lane, using the established smoke layout.
   package_path <- find.package("sas2r")
-  process <- callr::r_bg(function(package_path, libpath, snapshot, policy, dir, cid, kind, execute, repair_cap) {
-    .libPaths(libpath)
-    if (file.exists(file.path(package_path, "Meta", "package.rds"))) {
-      loadNamespace("sas2r", lib.loc = dirname(package_path))
-    } else {
-      if (!requireNamespace("pkgload", quietly = TRUE)) stop("Development workers require pkgload")
-      pkgload::load_all(package_path, quiet = TRUE)
-    }
-    get("parallel_worker_main", asNamespace("sas2r"))(
-      snapshot, policy, dir, cid, kind, execute, repair_cap)
-  }, args = list(package_path, .libPaths(), snapshot,
+  process <- callr::r_bg(parallel_worker_boot, args = list(package_path, .libPaths(),
+    parallel_worker_options(), "parallel_worker_main", snapshot,
     parallel_budget_policy(state$usage_budget), dir, component_id, kind, execute, repair_cap),
     env = env, supervise = TRUE, stdout = file.path(dir, "stdout.log"),
     stderr = file.path(dir, "stderr.log"), wd = state$project$project_dir)
