@@ -235,8 +235,8 @@ include_emission_plan <- function(project, modules) {
 #' however it is also reached. The project's own entry-point list is the
 #' statement that the file is run directly -- in a directory project the glob
 #' *is* that list -- and stubbing it would throw away correct deterministic
-#' translation, take its units out of the agent queue, and print a banner
-#' claiming nothing runs the file when the user runs it themselves. Its parent
+#' translation and print a banner claiming nothing runs the file when the user
+#' runs it themselves. Its parent
 #' unit still carries `include_site_not_emitted` where the dropped site stands.
 #'
 #' Reachability is transitive, and is therefore computed to a fixed point. A
