@@ -115,11 +115,14 @@ parallel_restore_configs <- function(x, configs) {
 }
 
 # Options a worker reads at the point of use. callr children do not inherit
-# the parent's options, so these are resolved here and set in the child.
+# the parent's options, so these are resolved here and set in the child. Each
+# one is named: `sas2r.progress` belongs to the parent, which renders what
+# workers relay, so the prefix is not forwarded wholesale.
 parallel_worker_options <- function() {
   list(
     sas2r.accept_gathered_answer = getOption("sas2r.accept_gathered_answer", TRUE),
-    sas2r.translator_baseline_reference = getOption("sas2r.translator_baseline_reference", TRUE)
+    sas2r.translator_baseline_reference = getOption("sas2r.translator_baseline_reference", TRUE),
+    sas2r.agent_backoff_base = getOption("sas2r.agent_backoff_base", 2)
   )
 }
 
