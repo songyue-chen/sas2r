@@ -25,7 +25,7 @@ Imports:
     graphics,
     grDevices,
     haven,
-    jsonlite,
+    jsonlite (>= 1.6),
     stats,
     tibble,
     utils,

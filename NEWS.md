@@ -25,7 +25,8 @@
   request-size or input-token ceiling sized for 0.6.0 may need raising.
 
 - Model output is parsed as JSON text only. A reply that is just a web address
-  or a file path is no longer fetched or read.
+  or a file path is no longer fetched or read. This needs jsonlite 1.6 or
+  later, which is now the declared minimum.
 
 # sas2r 0.6.0 beta
 
