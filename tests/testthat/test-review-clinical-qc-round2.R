@@ -232,7 +232,11 @@ test_that("each emitted scanner finding has an explicit readiness policy", {
   raised <- unique(c(raised, "macro_definition_missing",
     "macro_library_initialization_unsupported", "macro_include_requires_expansion",
     "macro_nested_definition_unsupported"))
-  expect_setequal(raised, c(preflight_blocking_findings(), preflight_advisory_findings()))
+  # Findings that are reported but never block readiness.
+  advisory <- c("autoexec_autodiscovered", "macro_shadowing",
+    "autoexec_bindings_deferred", "autoexec_library_shadows_config",
+    "sasautos_from_environment", "sasautos_from_program", "macro_expansion_unverified")
+  expect_setequal(raised, c(preflight_blocking_findings(), advisory))
   root <- withr::local_tempdir()
   check <- sas_preflight(review_source(root, "libname remote xml 'remote'; data remote.out; x=1; run;"))
   expect_true("libref_engine_unsupported" %in% check$findings$kind)

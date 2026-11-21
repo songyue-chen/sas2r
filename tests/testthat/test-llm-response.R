@@ -161,11 +161,9 @@ test_that("refusal and incomplete responses remain terminal non-schema outcomes"
   expect_identical(refusal$status, "refused")
   expect_identical(refusal$action, "none")
   expect_s3_class(refusal, "sas2r_llm_refused")
-  expect_false(is_schema_retryable_response(refusal))
   expect_identical(incomplete$status, "incomplete")
   expect_identical(incomplete$finish_reason, "max_output_tokens")
   expect_s3_class(incomplete, "sas2r_llm_incomplete")
-  expect_false(is_schema_retryable_response(incomplete))
 })
 
 test_that("terminal finish reasons override completed final payloads", {
@@ -178,7 +176,6 @@ test_that("terminal finish reasons override completed final payloads", {
     expect_identical(response$action, "none")
     expect_null(response$data)
     expect_s3_class(response, "sas2r_llm_incomplete")
-    expect_false(is_schema_retryable_response(response))
   }
 
   filtered <- normalize_provider_response(list(
@@ -188,7 +185,6 @@ test_that("terminal finish reasons override completed final payloads", {
   expect_identical(filtered$action, "none")
   expect_null(filtered$data)
   expect_s3_class(filtered, "sas2r_llm_refused")
-  expect_false(is_schema_retryable_response(filtered))
 })
 
 test_that("terminal finish reasons survive normalized response wrappers", {
@@ -257,7 +253,6 @@ test_that("Bedrock context-window exhaustion discards parseable provider data", 
     expect_null(response$tool_name)
     expect_null(response$tool_arguments)
     expect_s3_class(response, "sas2r_llm_incomplete")
-    expect_false(is_schema_retryable_response(response))
   }
 })
 
@@ -305,7 +300,6 @@ test_that("Vertex escalation discards parseable candidate data and tools", {
     expect_null(response$tool_name)
     expect_null(response$tool_arguments)
     expect_s3_class(response, "sas2r_llm_refused")
-    expect_false(is_schema_retryable_response(response))
   }
 })
 

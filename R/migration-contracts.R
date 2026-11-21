@@ -20,13 +20,6 @@ BUNDLE_STATUSES <- c(
   "validated"
 )
 
-#' Allowed agent evidence policies
-#' @noRd
-AGENT_EVIDENCE_POLICIES <- c(
-  "code_only",
-  "bounded"
-)
-
 #' Recursively canonicalize values for deterministic migration hashing
 #'
 #' Sorts named-list keys alphabetically while preserving vector element order.

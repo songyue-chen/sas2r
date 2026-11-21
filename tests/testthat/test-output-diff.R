@@ -147,7 +147,7 @@ test_that("bounded report caps every model-visible field and flags truncation", 
 
   # Thirty declared identifiers push the evaluated candidate-key list past its
   # own cap without touching any other field.
-  ctx <- sas2r:::alignment_context(
+  ctx <- alignment_context(
     by = "usubjid",
     known_identifiers = c("usubjid", sprintf("v%04d", 1:30))
   )

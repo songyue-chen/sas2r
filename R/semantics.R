@@ -282,64 +282,6 @@ semantic_rule <- function(id, registry = load_semantic_registry()) {
   registry$rules[[id]]
 }
 
-semantic_coverage <- function(rulebook, registry = load_semantic_registry()) {
-  registry <- validate_semantic_registry(registry, enforce_surface = FALSE)
-  proc_names <- names(Filter(
-    function(x) x$status %in% c("supported", "partial"),
-    rulebook$procs
-  ))
-  required <- c(
-    names(SEMANTIC_MANUAL_ADAPTERS),
-    paste0("functions.", names(rulebook$functions)),
-    paste0("operators.", names(rulebook$operators)),
-    paste0("procs.", proc_names)
-  )
-  required <- unique(required)
-  targets <- c(
-    SEMANTIC_MANUAL_ADAPTERS,
-    stats::setNames(
-      unname(rulebook$functions), paste0("functions.", names(rulebook$functions))
-    ),
-    stats::setNames(
-      unname(rulebook$operators), paste0("operators.", names(rulebook$operators))
-    ),
-    stats::setNames(
-      vapply(rulebook$procs[proc_names], `[[`, "", "emitter"),
-      paste0("procs.", proc_names)
-    )
-  )
-  targets[c("operators.and", "operators.or", "operators.not")] <- "sas_true"
-  present <- intersect(required, names(registry$rules))
-  strategy_mismatches <- present[vapply(
-    present,
-    function(id) !identical(registry$rules[[id]]$strategy, targets[[id]]),
-    logical(1)
-  )]
-  invalid_dispositions <- present[vapply(
-    present,
-    function(id) {
-      entry <- registry$rules[[id]]
-      identical(entry$classification, "unsupported") ||
-        identical(entry$implementation_status, "deferred")
-    },
-    logical(1)
-  )]
-  missing <- setdiff(required, names(registry$rules))
-  unexpected <- setdiff(names(registry$rules), required)
-  ok <- !length(c(
-    missing, unexpected, strategy_mismatches, invalid_dispositions
-  ))
-  list(
-    required = required,
-    covered = present,
-    missing = missing,
-    unexpected = unexpected,
-    strategy_mismatches = strategy_mismatches,
-    invalid_dispositions = invalid_dispositions,
-    ok = ok
-  )
-}
-
 semantic_data_step_expressions <- function(project) {
   ids <- unique(project$statements$unit_id[
     project$statements$unit_type == "data_step"

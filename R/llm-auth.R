@@ -328,11 +328,6 @@ register_llm_secret_values <- function(value) {
 
 llm_registered_secret_values <- function() .llm_secret_state$values
 
-clear_llm_registered_secrets <- function() {
-  .llm_secret_state$values <- character()
-  invisible(NULL)
-}
-
 tracked_llm_credentials <- function(callback) {
   if (is.null(callback)) return(NULL)
   force(callback)

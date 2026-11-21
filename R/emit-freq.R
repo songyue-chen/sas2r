@@ -56,27 +56,3 @@ emit_proc_freq <- function(us) {
   list(code = code, stmt_map = as.integer(code_rows$stmt_id), flags = character(),
        parse = list(var = v, missing = inc_missing))
 }
-
-#' Base-R oracle for PROC FREQ
-#'
-#' @param input Input data frame / tibble.
-#' @param var Column name for one-way frequency table.
-#' @param missing Logical indicating whether NA values should be included in counts and percent base.
-#' @return A tibble with columns `var`, `count`, `percent`.
-#' @noRd
-freq_oracle <- function(input, var, missing) {
-  x <- input[[var]]
-  if (!missing) {
-    valid <- !is.na(x) & (!is.character(x) | trimws(x) != "")
-    x <- x[valid]
-  }
-  tab <- table(x, useNA = if (missing) "ifany" else "no")
-  levels_vec <- names(tab)
-  if (is.numeric(input[[var]])) {
-    levels_vec <- as.numeric(levels_vec)
-  }
-  out <- tibble::tibble(level = levels_vec, count = as.integer(tab),
-                        percent = 100 * as.integer(tab) / sum(tab))
-  names(out)[1] <- var
-  out
-}

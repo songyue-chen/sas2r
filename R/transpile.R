@@ -649,9 +649,9 @@ transpile_source_file <- function(project, file, staged_file, out_dir, rulebook,
     # that a statement went with it. A mixed *emitting* unit already keeps its
     # dropped sites as marked comments among its calls; a non-emitting parent
     # keeps none of those calls, so its markers are placed here instead.
-    # They sit immediately after the unit anchor, which is inside the block
-    # locate_unit_block() spans for a t1 unit and for a stub alike, so a later
-    # splice replaces them with the unit rather than stranding them beside it.
+    # They sit immediately after the unit anchor, inside the unit's own block
+    # for a t1 unit and for a stub alike, so replacing the block replaces them
+    # with the unit rather than stranding them beside it.
     extra_flags <- character()
     site_markers <- character()
     if (!(uid %in% emit_units) && !is.null(include_plan[[as.character(uid)]])) {

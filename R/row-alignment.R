@@ -1,32 +1,3 @@
-#' Context constructor for row alignment
-#'
-#' @param by Character vector of BY variables.
-#' @param sort List of sort variables/directions or character vector.
-#' @param merge List of merge keys or character vector.
-#' @param lineage Upstream lineage metadata or candidate keys.
-#' @param known_identifiers Character vector of known identifier column names.
-#' @param order_contract Explicit ordering contract if established by source.
-#' @param collation Character collation sequence (e.g. "standard", "unknown").
-#' @return A list representing alignment context.
-#' @noRd
-alignment_context <- function(by = character(),
-                              sort = list(vars = by, descending = rep(FALSE, length(by))),
-                              merge = list(),
-                              lineage = list(),
-                              known_identifiers = by,
-                              order_contract = NULL,
-                              collation = NULL) {
-  list(
-    by = as.character(by),
-    sort = sort,
-    merge = merge,
-    lineage = lineage,
-    known_identifiers = as.character(known_identifiers),
-    order_contract = order_contract,
-    collation = collation
-  )
-}
-
 #' Empty alignment context
 #'
 #' @return An empty alignment context list.

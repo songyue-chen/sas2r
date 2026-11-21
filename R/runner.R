@@ -178,24 +178,6 @@ gathered_final_answer <- function(data, schema_name) {
   parsed
 }
 
-#' Validate agent output against a named schema
-#'
-#' @param data Extracted output data list.
-#' @param schema_name Name of the schema in `OUTPUT_SCHEMAS`.
-#' @return The validated `data` invisibly, or aborts with class `sas2r_schema_error`.
-#' @noRd
-validate_agent_output <- function(data, schema_name) {
-  v <- validate_output(data, schema_name)
-  if (!isTRUE(v$ok)) {
-    cli::cli_abort(
-      c("Output failed validation against schema {.val {schema_name}}:",
-        v$errors),
-      class = "sas2r_schema_error"
-    )
-  }
-  invisible(data)
-}
-
 #' Render prompt markdown with placeholder substitutions
 #'
 #' @param file Basename of prompt markdown file.

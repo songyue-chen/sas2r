@@ -43,43 +43,6 @@ new_usage_run_id <- function() {
   )
 }
 
-# `usage_provenance` names the public token source the caller actually read;
-# the adapter can fall back from the conversation tabulation to the per-turn
-# records, so the audit string must never be hard-coded to one of them.
-usage_from_ellmer <- function(cost, input = NA_real_, output = NA_real_,
-                              ellmer_version = NULL,
-                              usage_provenance =
-                                ELLMER_TABULATED_TOKEN_PROVENANCE) {
-  amount <- nonnegative_number_or_na(cost)
-  provenance <- c(
-    usage_provenance, if (is.na(amount)) NULL else ELLMER_COST_PROVENANCE
-  )
-  list(
-    input_tokens = nonnegative_number_or_na(input),
-    output_tokens = nonnegative_number_or_na(output),
-    total_input_tokens = nonnegative_number_or_na(input),
-    total_output_tokens = nonnegative_number_or_na(output),
-    total_tokens = if (is.na(nonnegative_number_or_na(input)) ||
-                       is.na(nonnegative_number_or_na(output))) {
-      NA_real_
-    } else {
-      nonnegative_number_or_na(input) + nonnegative_number_or_na(output)
-    },
-    cost_status = if (is.na(amount)) "unknown" else "catalog_estimate",
-    amount_usd = amount,
-    currency = if (is.na(amount)) NULL else "USD",
-    rate_source = if (is.na(amount)) NULL else "ellmer / LiteLLM catalog",
-    source_version = if (is.na(amount)) NULL else ellmer_version,
-    effective_date = NULL,
-    rate_dimensions = NULL,
-    raw_usage_provenance = if (!length(provenance)) {
-      NULL
-    } else {
-      paste(provenance, collapse = " / ")
-    }
-  )
-}
-
 usage_limit <- function(value, name, integer = FALSE) {
   if (is.null(value) || identical(value, Inf)) return(Inf)
   value <- suppressWarnings(as.numeric(value))
@@ -193,16 +156,6 @@ new_usage_budget <- function(mode = c("observe", "soft", "strict"),
   budget
 }
 
-load_usage_budget <- function(path, mode = "observe", max_usd = Inf,
-                              rates = NULL, pricing_source = "adapter",
-                              run_id = NULL, ...) {
-  new_usage_budget(
-    mode = mode, max_usd = max_usd, rates = rates,
-    pricing_source = pricing_source, ledger_path = path,
-    run_id = run_id, resume = TRUE, ...
-  )
-}
-
 assert_usage_budget <- function(budget) {
   if (!inherits(budget, "sas2r_usage_budget")) {
     cli::cli_abort("expected a sas2r usage budget",
@@ -234,39 +187,6 @@ read_usage_records <- function(path) {
       )
     )
   })
-}
-
-usage_scalar_column <- function(values) {
-  scalar <- vapply(values, function(value) {
-    is.null(value) || (is.atomic(value) && length(value) <= 1L)
-  }, logical(1))
-  if (!all(scalar)) return(I(values))
-  present <- Filter(function(value) !is.null(value) && length(value), values)
-  if (!length(present)) return(rep(NA, length(values)))
-  if (any(vapply(present, is.character, logical(1)))) {
-    return(vapply(values, function(value) {
-      if (is.null(value) || !length(value)) NA_character_ else as.character(value)[1]
-    }, character(1)))
-  }
-  if (any(vapply(present, is.numeric, logical(1)))) {
-    return(vapply(values, function(value) {
-      if (is.null(value) || !length(value)) NA_real_ else as.numeric(value)[1]
-    }, numeric(1)))
-  }
-  vapply(values, function(value) {
-    if (is.null(value) || !length(value)) NA else as.logical(value)[1]
-  }, logical(1))
-}
-
-read_usage_ledger <- function(path) {
-  records <- read_usage_records(path)
-  if (!length(records)) return(data.frame())
-  fields <- unique(unlist(lapply(records, names), use.names = FALSE))
-  columns <- lapply(fields, function(field) {
-    usage_scalar_column(lapply(records, function(record) record[[field]]))
-  })
-  names(columns) <- fields
-  as.data.frame(columns, stringsAsFactors = FALSE, optional = TRUE)
 }
 
 sanitize_usage_metadata_strings <- function(value) {
@@ -676,10 +596,6 @@ usage_reservation_quote <- function(budget, request, audit_context = list()) {
     input_bound = input_bound, input_provenance = input_provenance,
     output_bound = output_bound, metrics = metrics
   )
-}
-
-can_reserve_request <- function(budget, request, audit_context = list()) {
-  isTRUE(usage_reservation_quote(budget, request, audit_context)$ok)
 }
 
 usage_audit_identity <- function(budget, request, audit_context = list(),

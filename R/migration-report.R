@@ -557,21 +557,3 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   }
   invisible(paths$report_md)
 }
-
-#' Read a migration report JSON record from disk
-#'
-#' @param path Path to `report.json` or migration directory.
-#' @return Named list representing the parsed migration report.
-#' @noRd
-read_migration_report <- function(path) {
-  json_file <- if (dir.exists(path)) {
-    candidates <- file.path(path, c("report/report.json", ".sas2r/report.json", "report.json"))
-    candidates[file.exists(candidates)][1L]
-  } else {
-    path
-  }
-  if (is.na(json_file) || !file.exists(json_file)) {
-    cli::cli_abort("Migration report file not found: {.file {path}}", class = "sas2r_file_not_found")
-  }
-  jsonlite::fromJSON(json_file, simplifyVector = TRUE, simplifyDataFrame = FALSE)
-}

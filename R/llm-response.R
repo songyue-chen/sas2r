@@ -860,9 +860,3 @@ normalize_provider_response <- function(raw, request = NULL, provider = NULL) {
     request, provider
   )
 }
-
-is_schema_retryable_response <- function(response) {
-  inherits(response, "sas2r_llm_response") &&
-    identical(response$status, "completed") &&
-    identical(response$action, "final")
-}
