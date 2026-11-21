@@ -1106,6 +1106,29 @@ stopifnot(identical(answer_agent$status, "ok"),
           all(vapply(answer_wire, function(entry)
             length(entry$body$tools %||% list()) > 0L, logical(1))))
 
+# The same answer asked for again as structured output: its parameters and
+# uncertainty must reach `data` in the shape the accepted text answer has.
+asked_log_start <- length(readLines(log_file, warn = FALSE))
+asked_agent <- withr::with_options(list(sas2r.accept_gathered_answer = FALSE),
+  sas2r:::run_agent(
+    list(name = "answer", prompt = "translator.md", tool_call_limit = 3L,
+         retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+    answer_adapter, list(lookup = quota_lookup), "answer translation",
+    log_dir = tempfile("sas2r-real-asked-")))
+asked_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - asked_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(asked_agent$status, "ok"),
+          identical(asked_agent$answer_phase, "finalization"),
+          length(asked_wire) == 3L,
+          length(asked_wire[[3]]$body$tools %||% list()) == 0L,
+          length(answer_agent$data$parameters) == 1L,
+          length(answer_agent$data$uncertainty) == 1L,
+          identical(answer_agent$data$parameters[[1]]$name, "cutoff"),
+          identical(answer_agent$data$uncertainty[[1]]$severity, "low"),
+          identical(answer_agent$data$parameters, asked_agent$data$parameters),
+          identical(answer_agent$data$uncertainty, asked_agent$data$uncertainty))
+
 failure_log_start <- length(readLines(log_file, warn = FALSE))
 failure_lookup <- sas2r:::make_tool("lookup", function(args) {
   stop("Reference index is unavailable")

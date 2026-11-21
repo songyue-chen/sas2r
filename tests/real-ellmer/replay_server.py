@@ -32,6 +32,20 @@ PROGRAM_TRANSLATION = {
     "uncertainty": [],
 }
 
+# The answer the gathered-answer model writes, as text at the end of the tool
+# phase or as structured output when asked again. Populated arrays let the
+# contract compare the two paths' data shapes.
+ANSWER_TRANSLATION = {
+    **PROGRAM_TRANSLATION,
+    "parameters": [
+        {"name": "cutoff", "type": "numeric", "required": False, "default": 10},
+    ],
+    "uncertainty": [
+        {"severity": "low", "claim": "Rounding follows R.",
+         "evidence": "data step", "affected_outputs": ["work.out"]},
+    ],
+}
+
 
 def contains_pair(value, key, expected):
     if isinstance(value, dict):
@@ -72,6 +86,8 @@ def structured_payload(body):
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
+    if body.get("model") == "offline-gathered-answer-model":
+        return ANSWER_TRANSLATION
     if body.get("model", "").startswith(("offline-provider-model", "offline-local-model")):
         if "side_effects" not in text:
             return TRANSLATION
@@ -228,7 +244,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
         # plain text, so the contract can see the runner accept it without a
         # separate structured-output request.
         if body.get("model") == "offline-gathered-answer-model":
-            return json.dumps(PROGRAM_TRANSLATION, separators=(",", ":"))
+            return json.dumps(ANSWER_TRANSLATION, separators=(",", ":"))
         return "gathered context"
 
     @staticmethod

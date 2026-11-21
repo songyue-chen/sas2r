@@ -680,6 +680,16 @@ test_that("the audit log records whether the gathering answer was schema valid",
                      data = list(gathered = paste("Here is the answer:", gathered_text))),
                 log_dir = prose_dir)
   expect_identical(last_gathering_entry(prose_dir)$gathered_answer, "not_schema_valid")
+  off_dir <- withr::local_tempdir()
+  off <- two_phase_run(list(type = "final", data = list(gathered = gathered_text)),
+                       option = FALSE, log_dir = off_dir)
+  expect_identical(off$phases, c("gathering", "gathering", "finalization"))
+  expect_identical(last_gathering_entry(off_dir)$gathered_answer, "schema_valid_not_accepted")
+  closed_dir <- withr::local_tempdir()
+  closed <- two_phase_run(list(type = "final", data = list(gathered = AGENT_TOOL_LIMIT_MESSAGE)),
+                          log_dir = closed_dir)
+  expect_identical(closed$phases, c("gathering", "gathering", "finalization"))
+  expect_identical(last_gathering_entry(closed_dir)$gathered_answer, "tools_closed")
 })
 
 test_that("fallback schema mode is explicit and audited", {
