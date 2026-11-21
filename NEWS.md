@@ -14,6 +14,10 @@
 
 - Parse model output more strictly. This raises the minimum jsonlite version.
 
+- Remove settings and internal code that had no effect. A configuration file
+  that sets `verification` is now rejected, with a message saying what to use
+  instead.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

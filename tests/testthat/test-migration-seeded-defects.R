@@ -42,11 +42,12 @@ test_that("seeded defect 1: wrong SAS missing-value branch does not receive migr
   writeLines(c(
     "libraries:",
     paste0("  adam: ", normalizePath(in_dir, winslash = "/", mustWork = FALSE)),
-    "verification:",
-    "  output_review:",
-    "    enabled: true",
-    "    r_libraries:",
-    paste0("      adam: ", normalizePath(ref_dir, winslash = "/", mustWork = FALSE))
+    "outputs:",
+    "  datasets:",
+    "    - adam.out",
+    "  references:",
+    paste0("    adam.out: ",
+           normalizePath(file.path(ref_dir, "out.rds"), winslash = "/", mustWork = FALSE))
   ), cfg_file)
 
   res <- sas_translate(sas_file, config = cfg_file, out_dir = file.path(tmp, "out"), execute = TRUE)
@@ -86,11 +87,12 @@ test_that("seeded defect 2: reversed sort/order semantics does not receive migra
   writeLines(c(
     "libraries:",
     paste0("  adam: ", normalizePath(in_dir, winslash = "/", mustWork = FALSE)),
-    "verification:",
-    "  output_review:",
-    "    enabled: true",
-    "    r_libraries:",
-    paste0("      adam: ", normalizePath(ref_dir, winslash = "/", mustWork = FALSE))
+    "outputs:",
+    "  datasets:",
+    "    - adam.sorted",
+    "  references:",
+    paste0("    adam.sorted: ",
+           normalizePath(file.path(ref_dir, "sorted.rds"), winslash = "/", mustWork = FALSE))
   ), cfg_file)
 
   res <- sas_translate(sas_file, config = cfg_file, out_dir = file.path(tmp, "out"), execute = TRUE)

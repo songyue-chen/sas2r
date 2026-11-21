@@ -1,40 +1,5 @@
 # Bounded Performance, Capacity Limits, and Algorithmic Guardrails
 
-test_that("inventory breadth stops strictly at maximum files cap", {
-  dir <- withr::local_tempdir()
-  ref_dir <- file.path(dir, "ref")
-  dir.create(ref_dir, recursive = TRUE)
-
-  # Create 550 dummy RDS files
-  for (i in 1:550) {
-    saveRDS(data.frame(x = i), file.path(ref_dir, sprintf("ds_%04d.rds", i)))
-  }
-
-  cfg <- structure(list(
-    libraries = list(adam = list(path = ref_dir, engine = "rds", write = "rds")),
-    output_review = list(
-      enabled = TRUE,
-      r_libraries = list(adam = ref_dir)
-    )
-  ), class = "sas2r_config")
-
-  limits <- output_evidence_limits(max_files_per_root = 500L)
-  inv <- sas2r:::build_output_inventory(NULL, cfg, limits = limits)
-
-  # Available inventoried candidates must not exceed max_files_per_root
-  expect_equal(sum(inv$inventory$status == "available"), 500L)
-
-  # The cap is a cap: the 50 files past it produce one truncation marker
-  # between them, not 50 inventory rows and 50 resolver bindings. Both roots
-  # point at the same directory, so each contributes one marker.
-  markers <- inv$inventory$reason == "max_files_per_root_exceeded"
-  expect_equal(sum(markers, na.rm = TRUE), length(unique(inv$inventory$root_id)))
-  expect_equal(nrow(inv$inventory), 500L + sum(markers, na.rm = TRUE))
-
-  resolver <- attr(inv, "resolver", exact = TRUE)
-  expect_equal(length(ls(resolver)), nrow(inv$inventory))
-})
-
 test_that("residual Hungarian LSAP assignment respects group cap and avoids solve_LSAP above cap", {
   ref_df <- data.frame(k = "dup_key", val = paste0("ref_", 1:55), stringsAsFactors = FALSE)
   cand_df <- data.frame(k = "dup_key", val = paste0("cand_", 1:55), stringsAsFactors = FALSE)

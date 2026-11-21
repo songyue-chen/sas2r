@@ -13,7 +13,7 @@ sas_config(path = NULL, start = ".")
 }
 \value{
 A \code{sas2r_config} object containing \code{libraries}, \code{macro_search_path},
-\code{include_roots}, \code{migration}, optional normalized \code{llm}, \code{output_review}, \code{outputs}, \code{source}, and \code{raw}.
+\code{include_roots}, \code{migration}, optional normalized \code{llm}, \code{outputs}, \code{source}, and \code{raw}.
 }
 \description{
 Looks for \verb{_sas2r.yml} upward from \code{start}; the \code{SAS2R_CONFIG}
