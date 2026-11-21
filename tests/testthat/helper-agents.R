@@ -293,16 +293,6 @@ review_fix_fixture <- function() {
   )
 }
 
-reviewer_fixture <- function(sas_code) {
-  dir <- withr::local_tempdir(.local_envir = parent.frame())
-  writeLines(sas_code, file.path(dir, "prog.sas"))
-  p <- sas_project(dir)
-  out_dir <- withr::local_tempdir(.local_envir = parent.frame())
-  tr <- sas_transpile(p, out_dir)
-  unit_id <- p$statements$unit_id[1]
-  list(unit_id = unit_id, project = p, transpilation = tr, out_dir = out_dir)
-}
-
 review_repair_fixture <- function(two_units = TRUE) {
   dir <- withr::local_tempdir(.local_envir = parent.frame())
   code <- if (two_units) {

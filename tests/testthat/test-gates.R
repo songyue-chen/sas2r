@@ -1,23 +1,21 @@
-test_that("parse gate passes clean code and fails banned code", {
-  g <- gate_parse('x <- lib_read("w", "a") |> dplyr::filter((!is.na(k) & k == 1))')
-  expect_true(g$pass)
-  g2 <- gate_parse("system('ls')")
-  expect_false(g2$pass)
-  expect_identical(g2$lint$kind[1], "banned_function")
+test_that("lint reports no error for clean code and an error for banned code", {
+  clean <- lint_r_code('x <- lib_read("w", "a") |> dplyr::filter((!is.na(k) & k == 1))')
+  expect_false(any(clean$level == "error"))
+  banned <- lint_r_code("system('ls')")
+  expect_true(any(banned$level == "error"))
+  expect_identical(banned$kind[1], "banned_function")
 })
 
-test_that("parse gate fails on syntax errors", {
-  g <- gate_parse("x <- + % invalid syntax")
-  expect_false(g$pass)
-  expect_true(any(g$lint$level == "error"))
-  expect_true(any(g$lint$kind == "parse_failure"))
+test_that("lint reports a syntax error as a parse failure", {
+  lint <- lint_r_code("x <- + % invalid syntax")
+  expect_true(any(lint$level == "error"))
+  expect_true(any(lint$kind == "parse_failure"))
 })
 
-test_that("parse gate passes code with warnings only", {
-  # unwrapped comparison generates warning, not error
-  g <- gate_parse("x <- a > 10")
-  expect_true(g$pass)
-  expect_true(any(g$lint$level == "warn"))
+test_that("lint reports an unwrapped comparison as a warning, not an error", {
+  lint <- lint_r_code("x <- a > 10")
+  expect_false(any(lint$level == "error"))
+  expect_true(any(lint$level == "warn"))
 })
 
 test_that("check_program_revision validates clean R program file", {

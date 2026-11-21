@@ -1,15 +1,3 @@
-#' Parse gate for R code
-#'
-#' Evaluates whether the generated R code passes linting without errors.
-#'
-#' @param code Character string of R code.
-#' @return A list with `pass` (logical) and `lint` (tibble of lint results).
-#' @noRd
-gate_parse <- function(code) {
-  lint <- lint_r_code(code)
-  list(pass = !any(lint$level == "error"), lint = lint)
-}
-
 #' Check a generated program revision for mechanical validity
 #'
 #' Evaluates parse validity, package lint, allowed helper names, declared

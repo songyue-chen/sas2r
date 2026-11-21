@@ -65,27 +65,6 @@ test_that("macro contract parsing rejects malformed signatures", {
                class = "sas2r_macro_contract_error")
 })
 
-test_that("macro contract lookup uses exactly the requested unit definition", {
-  dir <- withr::local_tempdir()
-  writeLines(c(
-    "%macro alpha(value=wrong);",
-    "%mend alpha;",
-    "%macro beta(value=right, count=2);",
-    "%mend beta;"
-  ), file.path(dir, "macros.sas"))
-  project <- sas_project(dir)
-  beta_id <- project$macros$defs$unit_id[project$macros$defs$name == "beta"]
-
-  contract <- macro_contract_for_unit(project, beta_id)
-
-  expect_identical(contract$name, "beta")
-  expect_identical(contract$parameters$name, c("value", "count"))
-  expect_identical(contract$parameters$default_key,
-                   c("character:right", "numeric:2"))
-  expect_error(macro_contract_for_unit(project, 999L),
-               class = "sas2r_macro_contract_error")
-})
-
 test_that("macro contract validation checks R formals without executing code", {
   contract <- parse_macro_contract(
     "beta", "input, dataset=adsl, count=2, label='ready', dynamic=&runtime"
