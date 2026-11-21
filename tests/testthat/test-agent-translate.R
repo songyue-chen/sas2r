@@ -41,23 +41,6 @@ test_that("lint-failing output retries with feedback then fails visibly", {
   expect_identical(r$status, "llm_lint_failed")
 })
 
-test_that("splice replaces the stub block and is idempotent", {
-  p <- retain_project()
-  out <- withr::local_tempdir()
-  tr <- sas_transpile(p, out)
-  stub_id <- tr$manifest$unit_id[tr$manifest$tier == "stub"][1]
-  staged <- file.path(out, "a.R")
-  splice_unit_code(staged, stub_id, "w1 <- 1  # v1")
-  txt <- paste(readLines(staged), collapse = "\n")
-  expect_match(txt, "sas2r:llm_authored")
-  expect_match(txt, "# v1")
-  expect_false(grepl("sas2r:untranslated", txt))
-  splice_unit_code(staged, stub_id, "w1 <- 2  # v2")
-  txt2 <- paste(readLines(staged), collapse = "\n")
-  expect_match(txt2, "# v2")
-  expect_false(grepl("# v1", txt2, fixed = TRUE))
-})
-
 macro_project <- function() {
   dir <- withr::local_tempdir(.local_envir = parent.frame())
   writeLines("%macro derive_flag(ds=, var=);\ndata &ds; set &ds; &var = 'Y'; run;\n%mend;",

@@ -30,13 +30,6 @@ empty_output_contracts <- function() {
   )
 }
 
-#' Strip quotes from a character string
-#' @noRd
-strip_quotes <- function(x) {
-  if (is.null(x) || !length(x)) return("")
-  gsub("^['\"]|['\"]$", "", trimws(as.character(x)))
-}
-
 #' Classify output target key as TLF or dataset by file extension
 #' @noRd
 classify_target_kind <- function(key) {

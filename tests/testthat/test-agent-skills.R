@@ -579,24 +579,6 @@ test_that("skill flags derive from SAS source order semantics", {
   expect_identical(skill_flags_from_sas("x = 1;"), character(0))
 })
 
-test_that("comparison reasons derive from repair difference evidence", {
-  outputs <- list(list(
-    target_key = "adam.adsl", kind = "dataset", status = "failed",
-    differences = list(
-      digest = list(pattern_hints = data.frame(
-        var = c("aval", NA), hint = c("NA_PATTERN_DIFF", "DUPLICATE_KEYS"),
-        stringsAsFactors = FALSE)),
-      structure = list(alignment_method = "keyless_multiset", dup_fanout = FALSE)
-    )
-  ))
-  expect_setequal(
-    comparison_reasons_from_outputs(outputs),
-    c("missing_order_difference", "duplicate_key_order", "keyless_reorder")
-  )
-  expect_identical(comparison_reasons_from_outputs(list()), character(0))
-  expect_identical(comparison_reasons_from_outputs(NULL), character(0))
-})
-
 test_that("ordering skills route for translator components with retain or by-group logic", {
   dir <- withr::local_tempdir()
   writeLines("data adam.out; set adam.adsl; retain c 0; run;",

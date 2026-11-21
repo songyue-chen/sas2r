@@ -1717,23 +1717,6 @@ finalize_usage_run <- function(budget, terminal_status = "completed") {
   invisible(record)
 }
 
-run_with_budget <- function(llm, mode = "observe", max_usd = Inf,
-                            request = NULL, ...) {
-  budget <- new_usage_budget(mode = mode, max_usd = max_usd, ...)
-  on.exit(finalize_usage_run(budget, "failed"), add = TRUE)
-  request <- request %||% llm_request(
-    messages = list(list(role = "user", content = "ping")),
-    max_output_tokens = 1L
-  )
-  response <- attempt_llm_request(
-    request, llm, budget, list(purpose = "budget_check")
-  )
-  error <- attr(response, "budget_error", exact = TRUE)
-  if (inherits(error, "condition")) stop(error)
-  finalize_usage_run(budget, response$status %||% "completed")
-  response
-}
-
 # Call once at migration startup, and for direct requests outside that pipeline.
 validate_ellmer_budget <- function(llm, budget) {
   limits <- c("max_calls", "max_request_bytes", "max_request_chars", "max_input_tokens", "max_output_tokens")

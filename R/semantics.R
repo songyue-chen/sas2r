@@ -427,24 +427,3 @@ semantic_exercised_rules <- function(project, procs, rulebook = load_rulebook())
   ))
   ids[ids %in% names(rulebook$semantics$rules)]
 }
-
-semantic_usage_table <- function(ids, registry = load_semantic_registry()) {
-  if (!length(ids)) {
-    return(tibble::tibble(
-      rule_id = character(), classification = character(),
-      implementation_status = character(), strategy = character(),
-      risk = character()
-    ))
-  }
-  tibble::tibble(
-    rule_id = ids,
-    classification = vapply(ids, function(id) registry$rules[[id]]$classification,
-                            character(1)),
-    implementation_status = vapply(
-      ids, function(id) registry$rules[[id]]$implementation_status, character(1)
-    ),
-    strategy = vapply(ids, function(id) registry$rules[[id]]$strategy,
-                      character(1)),
-    risk = vapply(ids, function(id) registry$rules[[id]]$risk, character(1))
-  )
-}

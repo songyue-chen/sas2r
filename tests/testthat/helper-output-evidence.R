@@ -241,8 +241,7 @@ output_agent_fixture <- function(contributing = 7L, frozen = integer()) {
   # path here would hide a resolver that ignores out_dir.
   staged_rel <- "adsl.R"
   staged_file <- file.path(dir, staged_rel)
-  # Marker-delimited, as every staged file transpile writes actually is --
-  # a marker-less file would make splice_unit_code() abort.
+  # Marker-delimited, as every staged file transpile writes actually is.
   writeLines(c(
     sprintf("# --- sas2r:unit %d ---", as.integer(contributing)[1]),
     "adam_adsl <- sdtm_dm",

@@ -538,37 +538,6 @@ skill_flags_from_sas <- function(sas_text) {
   unique(flags)
 }
 
-#' Skill-trigger comparison reasons derived from repair difference evidence
-#'
-#' Maps the redacted digest's pattern hints and the gate's alignment
-#' provenance onto the `comparison_reasons` trigger vocabulary, so the
-#' alignment and ordering skills route to the fixer exactly when the failed
-#' comparison shows their failure modes.
-#'
-#' @param outputs The per-target difference evidence list handed to the fixer.
-#' @return A character vector drawn from the comparison-reason vocabulary.
-#' @noRd
-comparison_reasons_from_outputs <- function(outputs) {
-  if (!is.list(outputs) || !length(outputs)) return(character())
-  reasons <- character()
-  for (t in outputs) {
-    d <- t$differences
-    if (!is.list(d)) next
-    hints <- tryCatch(as.character(d$digest$pattern_hints$hint),
-                      error = function(e) character())
-    if (any(hints == "DUPLICATE_KEYS")) reasons <- c(reasons, "duplicate_key_order")
-    if (any(hints == "NA_PATTERN_DIFF")) reasons <- c(reasons, "missing_order_difference")
-    st <- d$structure
-    if (is.list(st)) {
-      if (isTRUE(st$dup_fanout)) reasons <- c(reasons, "duplicate_key_order")
-      if (identical(st$alignment_method, "keyless_multiset")) {
-        reasons <- c(reasons, "keyless_reorder")
-      }
-    }
-  }
-  unique(reasons)
-}
-
 #' Statements belonging to one component, by source file identity
 #'
 #' The reviewer and fixer receive a component id and the project; this is the

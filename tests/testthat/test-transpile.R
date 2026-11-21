@@ -737,9 +737,10 @@ test_that("a non-emitting parent shows its dropped include site in the code", {
   expect_false(any(grepl("^sas2r_source_include\\(", driver)))
   expect_false(any(grepl("^s <- sas_sort\\(", driver)))
 
-  # The marker sits inside the unit's own block, so a later splice replaces it
-  # with the unit rather than stranding it beside one.
-  blk <- extract_unit_block(file.path(out, "driver.R"), 1L)
+  # The marker sits inside the unit's own block, so replacing the block
+  # replaces the marker with it rather than stranding it beside one.
+  loc <- locate_unit_block(driver, 1L)
+  blk <- driver[loc[["start"]]:loc[["end"]]]
   expect_true(any(grepl("^# sas2r:untranslated include line=1", blk)))
 })
 
@@ -755,7 +756,8 @@ test_that("a stubbed non-emitting parent carries the same dropped-site marker", 
   expect_true(any(grepl(
     "^# sas2r:untranslated include line=2 reason=include_site_not_emitted$",
     driver)))
-  blk <- extract_unit_block(file.path(out, "driver.R"), 1L)
+  loc <- locate_unit_block(driver, 1L)
+  blk <- driver[loc[["start"]]:loc[["end"]]]
   expect_true(any(grepl("^# sas2r:untranslated include line=2", blk)))
 })
 
