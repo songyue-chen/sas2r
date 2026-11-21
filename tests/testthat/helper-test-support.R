@@ -226,18 +226,8 @@ clear_llm_registered_secrets <- function() {
   invisible(NULL)
 }
 
-# Signal one unit of agent progress
-#
-# The agent loop runs for minutes to hours against a metered API, and until
-# now it printed nothing between start and finish -- a working run and a wedged
-# one looked identical from the console. Emission uses the condition system
-# rather than a callback threaded through the call stack, because the loops
-# sit several frames below the public entry points and a condition costs
-# nothing when nobody is listening.
-#
-# Consumers subscribe with `withCallingHandlers(expr, sas2r_progress = ...)`;
-# the console renderer in [with_sas2r_progress()] is one such subscriber, and a
-# Shiny front end can be another without the package knowing about it.
+# Signal one progress condition of class `sas2r_progress`, so a test can drive
+# the console renderer in with_sas2r_progress() without running an agent.
 signal_sas2r_progress <- function(phase, index, total, unit_id = NA_integer_,
                                   status = NA_character_) {
   condition <- structure(
