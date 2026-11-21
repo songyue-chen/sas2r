@@ -1,32 +1,18 @@
 # sas2r 0.6.2
 
-- Keep tool definitions unchanged while an agent uses tools, and report the
-  remaining tool allowance in each tool result, so providers can reuse their
-  prompt cache between tool calls.
+- Reduce repeated model requests during translation, review and repair, and
+  keep request content stable between calls so providers can reuse cached
+  prompts.
 
-- Send routed skills with the task instead of inside the role instructions, so
-  the role instructions are identical for every component and providers can
-  cache them.
+- Give the translator more context for programs that are only partly
+  translated by rule. Requests for these programs can be larger, so existing
+  request-size or token ceilings may need raising.
 
-- When a model finishes using tools with a complete answer that passes the
-  output schema check, use it instead of asking for the answer again. Set
-  `options(sas2r.accept_gathered_answer = FALSE)` to always ask again.
+- Bring `sas_merge()` and `sas_sort()` closer to how SAS compares and orders BY
+  values, including blank and missing values. `sas_merge()` now stops on
+  inputs it cannot match reliably instead of guessing.
 
-- `sas_merge()` now matches BY values as SAS compares them (trailing blanks,
-  blank versus missing, special missing values, name case) and refuses a BY
-  variable that is numeric in one input and character in the other.
-  `sas_sort()` orders special missing values as SAS does.
-
-- When part of a component is translated by rule and part needs the model, show
-  the model the rule-based output as a reference draft. The SAS source stays the
-  authority and review does not see the draft. Set
-  `options(sas2r.translator_baseline_reference = FALSE)` to leave it out.
-  Translator requests for such components grow by at most 40,000 bytes; a
-  request-size or input-token ceiling sized for 0.6.0 may need raising.
-
-- Model output is parsed as JSON text only. A reply that is just a web address
-  or a file path is no longer fetched or read. This needs jsonlite 1.6 or
-  later, which is now the declared minimum.
+- Parse model output more strictly. This raises the minimum jsonlite version.
 
 # sas2r 0.6.0 beta
 
