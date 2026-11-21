@@ -9,8 +9,8 @@
   request-size or token ceilings may need raising.
 
 - Bring `sas_merge()` and `sas_sort()` closer to how SAS compares and orders BY
-  values, including blank and missing values. `sas_merge()` now stops on
-  inputs it cannot match reliably instead of guessing.
+  values, including blank and missing values. Both now stop on inputs they
+  cannot handle reliably instead of guessing.
 
 - Parse model output more strictly. This raises the minimum jsonlite version.
 

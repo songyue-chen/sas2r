@@ -6,7 +6,9 @@
 #' Stable, with missing values lowest under SAS collation; `by` is matched to
 #' column names case-insensitively, and variables named in `descending` are
 #' sorted in reverse. Special missing values sort as SAS orders them: `._`,
-#' `.`, then `.A` to `.Z`, all below any number.
+#' `.`, then `.A` to `.Z`, all below any number. A factor BY column is ordered
+#' by its values as character, and a BY name that matches more than one column
+#' is refused.
 #'
 #' @param df A data frame.
 #' @param by Character vector of BY variables.
@@ -40,11 +42,20 @@ sas_sort <- function(df, by, descending = character(), ...) {
   }
   if (nrow(df) == 0L) return(df)
   cols <- lapply(by, function(v) {
-    idx <- match(tolower(v), tolower(names(df)))
-    if (is.na(idx)) {
+    idx <- which(tolower(names(df)) == tolower(v))
+    if (!length(idx)) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
+    # SAS names are case-insensitive, so two columns that differ only by case
+    # leave the BY variable undefined: refuse, as sas_merge() does.
+    if (length(idx) > 1L) {
+      stop("sas_sort: by variable ", v, " matches more than one column in the dataset: ",
+           paste(names(df)[idx], collapse = ", "), call. = FALSE)
+    }
     x <- df[[idx]]
+    # SAS has no factors: order a factor by its values, not its level codes,
+    # so the order agrees with how sas_merge() matches the same key.
+    if (is.factor(x)) x <- as.character(x)
     desc <- tolower(v) %in% tolower(descending)
     if (is.double(x)) {
       # SAS orders ._ < . < .A < ... < .Z < every number: missing values take

@@ -400,3 +400,24 @@ test_that("sas_merge refusals and key matching hold in both directions", {
   expect_identical(out$y, c(0, 99, 10, 20))
   expect_identical(haven::na_tag(out$k), c(NA, "a", NA, NA))
 })
+
+test_that("sas_sort compares factor BY values as character", {
+  df <- data.frame(k = factor(c("b", "a", "", "c"), levels = c("c", "b", "a", "")), v = 1:4)
+  out <- sas_sort(df, by = "k")
+  expect_identical(out$v, c(3L, 2L, 1L, 4L))
+  expect_identical(levels(out$k), levels(df$k))
+  expect_identical(sas_sort(df, by = "k", descending = "k")$v, c(4L, 1L, 2L, 3L))
+  # sas_merge matches factor keys as character, so its BY order must agree.
+  a <- data.frame(k = factor(c("b", "a", "c")), x = 1:3)
+  b <- data.frame(k = factor(c("a", "b", "c"), levels = c("c", "b", "a")), y = c(10, 20, 30))
+  expect_identical(as.character(sas_merge(a, b, by = "k")$k), c("a", "b", "c"))
+})
+
+test_that("sas_sort refuses a BY name whose case is ambiguous", {
+  amb <- data.frame(id = c(2, 1), ID = c(10, 20))
+  expect_error(sas_sort(amb, by = "id"),
+               "sas_sort: by variable id matches more than one column in the dataset: id, ID",
+               fixed = TRUE)
+  expect_error(sas_sort(amb, by = "ID"), "matches more than one column", fixed = TRUE)
+  expect_identical(sas_sort(data.frame(k = 2:1, x = 1:2, X = 3:4), by = "k")$k, 1:2)
+})

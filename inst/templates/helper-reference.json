@@ -136,7 +136,7 @@
     "dots": false
   },
   "sas_sort": {
-    "text": "Stable, with missing values lowest under SAS collation; by is matched to\ncolumn names case-insensitively, and variables named in descending are\nsorted in reverse. Special missing values sort as SAS orders them: ._,\n., then .A to .Z, all below any number.\n\nArguments:\ndf: A data frame.\nby: Character vector of BY variables.\ndescending: Character vector of those BY variables to sort descending.\n...: Ignored.\n\nReturns:\ndf reordered.\n\nExamples:\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\")\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\", descending = \"id\")",
+    "text": "Stable, with missing values lowest under SAS collation; by is matched to\ncolumn names case-insensitively, and variables named in descending are\nsorted in reverse. Special missing values sort as SAS orders them: ._,\n., then .A to .Z, all below any number. A factor BY column is ordered\nby its values as character, and a BY name that matches more than one column\nis refused.\n\nArguments:\ndf: A data frame.\nby: Character vector of BY variables.\ndescending: Character vector of those BY variables to sort descending.\n...: Ignored.\n\nReturns:\ndf reordered.\n\nExamples:\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\")\nsas_sort(data.frame(id = c(2, NA, 1)), by = \"id\", descending = \"id\")",
     "dots": false
   },
   "sas_substr": {
