@@ -20,12 +20,12 @@ skill_allowed_tools <- function() {
 }
 
 valid_semantic_rule_ids <- function() {
-  registry <- tryCatch(load_semantic_registry(), error = function(e) NULL)
-  if (is.null(registry)) return(character(0))
+  # Both lists ship with the package. One that cannot load is an error here:
+  # an empty list would report every skill trigger as nonexistent instead.
+  registry <- load_semantic_registry()
   rules <- names(registry$rules %||% list())
   domains <- paste0("known_domains.", names(registry$known_domains %||% list()))
-  exec_ids <- tryCatch(semantic_executable_rule_ids(), error = function(e) character(0))
-  unique(c(rules, domains, exec_ids))
+  unique(c(rules, domains, semantic_executable_rule_ids()))
 }
 
 check_duplicate_yaml_keys <- function(lines) {

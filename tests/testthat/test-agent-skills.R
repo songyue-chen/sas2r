@@ -33,6 +33,14 @@ test_that("skill loader fails closed on malformed package assets", {
                class = "sas2r_skill_schema_error")
 })
 
+test_that("a semantic registry that cannot load is reported, not read as empty", {
+  # An empty id list would blame the skill for a "nonexistent" trigger.
+  local_mocked_bindings(
+    load_semantic_registry = function(...) stop("registry unavailable")
+  )
+  expect_error(valid_semantic_rule_ids(), "registry unavailable")
+})
+
 test_that("production skill catalogue never searches a project directory", {
   project <- withr::local_tempdir()
   dir.create(file.path(project, ".sas2r", "skills", "project-skill"),
