@@ -325,6 +325,27 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
 #' @param config Project configuration list.
 #' @return Named list containing context for the translator agent.
 #' @noRd
+# Largest deterministic baseline (bytes) shown to the translator as reference.
+TRANSLATOR_BASELINE_LIMIT <- 40000L
+
+# Packet lines presenting the rule-based output for a component as reference
+# context, or NULL when there is nothing to show.
+render_translator_baseline <- function(baseline_code, limit = TRANSLATOR_BASELINE_LIMIT) {
+  if (is.null(baseline_code) || !length(baseline_code)) return(NULL)
+  size <- nchar(paste(baseline_code, collapse = "\n"), type = "bytes")
+  if (size > limit) {
+    return(sprintf(
+      "Deterministic baseline omitted: %d bytes exceeds the %d-byte reference limit.",
+      size, as.integer(limit)
+    ))
+  }
+  c(
+    "Deterministic baseline (reference only): sas2r's rule-based output for this component.",
+    "Units under `# sas2r:untranslated` have no baseline.",
+    baseline_code
+  )
+}
+
 build_translator_context <- function(
   component_id,
   project,
@@ -335,7 +356,8 @@ build_translator_context <- function(
   resolved_contracts = list(),
   config = list(),
   macro_contract = component_macro_contract(project, graph, component_id),
-  selected_revisions = list()
+  selected_revisions = list(),
+  baseline_code = NULL
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   src_files <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
@@ -444,7 +466,8 @@ build_translator_context <- function(
       "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
       "known call sites:", call_txt,
       build_agent_guidance(project, component_id, list(macro_contract = macro_contract),
-        selected_revisions, graph, config = config)$text
+        selected_revisions, graph, config = config)$text,
+      render_translator_baseline(baseline_code)
     ),
     collapse = "\n"
   )
@@ -777,7 +800,9 @@ generate_program_revision <- function(
       resolved_contracts = resolved_contracts,
       config = config,
       macro_contract = macro_contract,
-      selected_revisions = selected_revisions
+      selected_revisions = selected_revisions,
+      baseline_code = if (isTRUE(getOption("sas2r.translator_baseline_reference", TRUE)) &&
+        !is.null(comp_units) && any(comp_units$tier == "t1")) staged_lines
     )
     prompt_skill_h <- ctx$prompt_skill_hash
 

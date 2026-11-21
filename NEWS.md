@@ -17,6 +17,11 @@
   variable that is numeric in one input and character in the other.
   `sas_sort()` orders special missing values as SAS does.
 
+- When part of a component is translated by rule and part needs the model, show
+  the model the rule-based output as a reference draft. The SAS source stays the
+  authority and review does not see the draft. Set
+  `options(sas2r.translator_baseline_reference = FALSE)` to leave it out.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

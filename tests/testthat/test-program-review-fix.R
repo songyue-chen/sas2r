@@ -16,6 +16,10 @@ test_that("review is independent and fixer is evidence grounded", {
     mode = "program", llm = fixer
   )
   expect_false("translator_reasoning" %in% names(seen$review))
+  baseline_free <- function(request) !any(vapply(request$messages, function(m)
+    grepl("Deterministic baseline", m$content %||% "", fixed = TRUE), logical(1)))
+  expect_true(baseline_free(seen$review))
+  expect_true(baseline_free(seen$fix))
   expect_setequal(seen$fix$evidence_ids,
                   c(review$review_id, fx$failed_smoke$execution_id))
   expect_identical(fixed$mode, "program")
