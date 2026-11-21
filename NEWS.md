@@ -4,6 +4,10 @@
   remaining tool allowance in each tool result, so providers can reuse their
   prompt cache between tool calls.
 
+- Send routed skills with the task instead of inside the role instructions, so
+  the role instructions are identical for every component and providers can
+  cache them.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

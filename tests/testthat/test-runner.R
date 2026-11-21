@@ -971,3 +971,38 @@ test_that("valid, malformed and refused lookups have distinct observable outcome
   expect_true(all(vapply(terminal, function(r) identical(r$revision_id, "r2"), logical(1))))
   expect_length(unique(vapply(terminal, `[[`, "", "invocation_id")), 1L)
 })
+
+first_messages <- function(prompt, vars) {
+  requests <- list()
+  llm <- new_llm(function(request) {
+    requests[[length(requests) + 1L]] <<- request
+    normalize_provider_response(good, request = request, provider = "mock")
+  }, provider = "mock", capabilities = llm_capabilities(structured_output = "native",
+    tool_calling = "native", tools_with_structured_output = "unsupported"))
+  spec <- spec_min(); spec$prompt <- prompt
+  run_agent(spec, llm, tools = list(), user_content = "task",
+            log_dir = withr::local_tempdir(), prompt_vars = vars)
+  requests[[1]]$messages
+}
+vars_for <- function(unit, context, skills) list(style = "s", allowlist = "dplyr",
+  phase = "p", unit = unit, context = context, comments = "", staged_r = "x <- 1",
+  evidence = "", guidance = "", skills = skills)
+
+test_that("the system prompt is identical across components for one role", {
+  for (prompt in c("translator.md", "translator-macro.md", "reviewer.md", "fixer.md")) {
+    a <- first_messages(prompt, vars_for("data a; run;", "ctx a", "## Skill: alpha v1\nbody A"))
+    b <- first_messages(prompt, vars_for("proc sort data=b; run;", "ctx b", "## Skill: beta v1\nbody B"))
+    expect_identical(a[[1]]$content, b[[1]]$content, info = prompt)
+    expect_false(grepl("## Skill: alpha", a[[1]]$content, fixed = TRUE), info = prompt)
+    skill_at <- regexpr("## Skill: alpha v1", a[[2]]$content, fixed = TRUE)
+    block_at <- regexpr("BEGIN SAS2R_TASK_", a[[2]]$content, fixed = TRUE)
+    expect_gt(skill_at, 0L)
+    expect_lt(skill_at, block_at)
+  }
+})
+
+test_that("a skill body is passed verbatim and is never expanded", {
+  m <- first_messages("translator.md", vars_for("data a; run;", "ctx", "Use {{unit}} carefully"))
+  expect_match(m[[2]]$content, "Use {{unit}} carefully", fixed = TRUE)
+  expect_identical(lengths(regmatches(m[[2]]$content, gregexpr("data a; run;", m[[2]]$content, fixed = TRUE))), 1L)
+})

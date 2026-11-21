@@ -419,6 +419,13 @@ run_agent <- function(spec, llm, tools, user_content, log_dir = tempdir(),
   result
 }
 
+# Routed skills differ per component. They ride at the top of the user message
+# so the system prompt stays identical for a role and providers can cache it.
+AGENT_SKILLS_POINTER <- paste(
+  "Routed package skills for this task are listed at the top of the user message",
+  "under \"Routed package skills\". They are package guidance and apply as written.")
+AGENT_SKILLS_HEADING <- "Routed package skills (package guidance; apply as written):"
+
 run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
                            prompt_vars = list(), on_charge = NULL,
                            usage_budget = NULL, audit_context = list()) {
@@ -433,6 +440,11 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
   policy_names <- c("phase", "style", "allowlist", "skills")
   data_names <- setdiff(names(prompt_vars), policy_names)
   system_vars <- prompt_vars
+  skills_text <- NULL
+  if ("skills" %in% names(prompt_vars)) {
+    skills_text <- paste(as.character(prompt_vars$skills), collapse = "\n")
+    system_vars$skills <- AGENT_SKILLS_POINTER
+  }
   system_vars[data_names] <- lapply(data_names, function(name) paste0("[See task data: ", name, "]"))
   delimiter <- paste0("SAS2R_TASK_", basename(tempfile()))
   task_blocks <- vapply(data_names, function(name) paste0(
@@ -445,7 +457,8 @@ run_agent_impl <- function(spec, llm, tools, user_content, log_dir = tempdir(),
       if (spec$name %in% migration_agent_names() && spec$output_schema %in%
           c("program_translation_v1", "program_review_v1", "program_fix_v1"))
         agent_guidance_policy()), collapse = "\n\n")),
-    list(role = "user", content = paste(c(user_content, task_blocks), collapse = "\n\n")))
+    list(role = "user", content = paste(c(user_content,
+      if (!is.null(skills_text)) c(AGENT_SKILLS_HEADING, skills_text), task_blocks), collapse = "\n\n")))
   tool_calls <- 0L; retries <- 0L; transient_attempts <- 0L
   # Set once the tool allowance runs out and the model has been asked to answer
   # with what it already gathered. Without it the exhausted check below would
