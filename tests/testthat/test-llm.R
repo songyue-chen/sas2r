@@ -112,68 +112,6 @@ test_that("unknown providers are rejected regardless of ellmer", {
                class = "sas2r_llm_error")
 })
 
-test_that("lockfile pins provider, models, and prompt hashes", {
-  dir <- withr::local_tempdir()
-  pdir <- file.path(dir, "prompts"); dir.create(pdir)
-  writeLines("translate {{unit}}", file.path(pdir, "translator.md"))
-  lock <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(list(provider = "bedrock",
-                      tiers = list(frontier = "m1", cheap = "m2")), pdir, lock)
-  j <- jsonlite::read_json(lock)
-  expect_identical(j$provider, "bedrock")
-  expect_identical(j$tiers$frontier, "m1")
-  expect_true(nzchar(j$prompts[["translator.md"]]))
-})
-
-test_that("lockfile separates requested and effective optional parameters", {
-  dir <- withr::local_tempdir()
-  pdir <- file.path(dir, "prompts")
-  dir.create(pdir)
-  writeLines("translate", file.path(pdir, "translator.md"))
-  lock <- file.path(dir, "_sas2r.lock")
-
-  write_llm_lock(
-    list(provider = "openai", model = "m", temperature = 0),
-    pdir, lock,
-    requested_parameters = list(temperature = 0),
-    effective_parameters = list(temperature = NULL)
-  )
-  json <- jsonlite::read_json(lock)
-  text <- paste(readLines(lock, warn = FALSE), collapse = "\n")
-
-  expect_equal(json$requested_parameters$temperature, 0)
-  expect_null(json$effective_parameters$temperature)
-  expect_match(text, '"effective_parameters"')
-  expect_match(text, '"temperature": null')
-})
-
-test_that("lockfile capability identity matches the provider constructor", {
-  dir <- withr::local_tempdir()
-  model <- paste0("identity-", basename(tempfile()))
-  cfg <- list(
-    provider = "openai", model = model,
-    endpoint = "https://ignored.example.invalid",
-    base_url = "https://used.example.invalid/v1",
-    api_version = "ignored-for-openai",
-    capabilities = list(temperature = "supported"),
-    temperature = 0
-  )
-  lock <- file.path(dir, "_sas2r.lock")
-
-  write_llm_lock(cfg, dir, lock)
-
-  written <- jsonlite::read_json(lock)
-  expected <- resolve_model_capabilities(
-    "openai", cfg$base_url, model, NULL, overrides = cfg$capabilities
-  )
-  mismatched <- resolve_model_capabilities(
-    "openai", cfg$endpoint, model, cfg$api_version,
-    overrides = cfg$capabilities
-  )
-  expect_identical(written$capability_record_hash, expected$record_hash)
-  expect_false(identical(written$capability_record_hash, mismatched$record_hash))
-})
-
 test_that("llm_log appends jsonl locally", {
   dir <- withr::local_tempdir()
   llm_log(list(agent = "translator", tokens = 10), dir = dir)
@@ -1139,48 +1077,6 @@ test_that("render_prompt rejects slash-relative paths from cwd", {
   expect_error(render_prompt("./translator.md"), class = "sas2r_prompt_error")
   expect_error(render_prompt("../translator.md"), class = "sas2r_prompt_error")
   expect_error(render_prompt("\\translator.md"), class = "sas2r_prompt_error")
-})
-
-test_that("write_llm_lock hashes custom prompt files from specs and includes macro prompt", {
-  dir <- withr::local_tempdir()
-  withr::local_dir(dir)
-  # Plant a fake translator.md in cwd to verify it is NOT hashed for bare names
-  cwd_fake <- file.path(dir, "translator.md")
-  writeLines("CWD FAKE PROMPT", cwd_fake)
-
-  custom_prompt <- file.path(dir, "custom_fixer.md")
-  writeLines("CUSTOM FIXER CONTENT", custom_prompt)
-  specs <- list(
-    translator = list(prompt = "translator.md"),
-    fixer = list(prompt = custom_prompt)
-  )
-  lock_file <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(list(provider = "bedrock", tiers = list(frontier = "m")),
-                 prompts_dir = dir, path = lock_file, specs = specs)
-  j <- jsonlite::read_json(lock_file)
-  expect_true("translator.md" %in% names(j$prompts))
-  # Must match the packaged prompt hash, NOT the stray cwd file hash
-  pkg_prompt <- system.file("prompts", "translator.md", package = "sas2r")
-  expect_identical(j$prompts[["translator.md"]], unname(tools::md5sum(pkg_prompt)))
-  # Must include custom prompt
-  expect_true("custom_fixer.md" %in% names(j$prompts))
-  expect_identical(j$prompts[["custom_fixer.md"]], unname(tools::md5sum(custom_prompt)))
-  # Must include translator-macro.md
-  expect_true("translator-macro.md" %in% names(j$prompts))
-})
-
-test_that("write_llm_lock warns and falls back on unresolvable prompt paths", {
-  dir <- withr::local_tempdir()
-  missing_prompt <- file.path(dir, "does_not_exist_translator.md")
-  specs <- list(
-    translator = list(prompt = missing_prompt)
-  )
-  lock_file <- file.path(dir, "_sas2r.lock")
-  expect_warning(
-    write_llm_lock(list(provider = "bedrock", tiers = list(frontier = "m")),
-                   prompts_dir = dir, path = lock_file, specs = specs),
-    "could not be resolved"
-  )
 })
 
 test_that("a zero-argument tool is callable", {

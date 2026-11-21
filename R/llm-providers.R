@@ -956,7 +956,7 @@ llm_auth_mode_abort <- function(spec, auth_mode) {
 
 # Current values of the selected provider's allowlisted credential variables.
 # Read on demand for redaction only: the values never enter the registry, a
-# normalized config, the lockfile, or the usage ledger.
+# normalized config or the usage ledger.
 llm_provider_credential_env_values <- function(config) {
   if (!is.list(config)) return(character())
   spec <- llm_provider_spec_or_null(config$provider)

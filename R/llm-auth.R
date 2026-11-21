@@ -105,7 +105,7 @@ llm_ambient_url_identity <- function(variable) {
   if (!grepl("^https?://", value)) value <- paste0("https://", value)
   if (!grepl("^https?://[^/?#[:space:]]+", value)) return(NULL)
   # User info, query, and fragment data can carry a token, so they are dropped
-  # before the value can reach a capability key, lockfile, or audit row.
+  # before the value can reach a capability key or audit row.
   value <- sub("[?#].*$", "", value)
   value <- sub("^([^:]+://)[^/@]+@", "\\1", value)
   value
