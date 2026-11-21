@@ -21,6 +21,8 @@
   the model the rule-based output as a reference draft. The SAS source stays the
   authority and review does not see the draft. Set
   `options(sas2r.translator_baseline_reference = FALSE)` to leave it out.
+  Translator requests for such components grow by at most 40,000 bytes; a
+  request-size or input-token ceiling sized for 0.6.0 may need raising.
 
 - Model output is parsed as JSON text only. A reply that is just a web address
   or a file path is no longer fetched or read.

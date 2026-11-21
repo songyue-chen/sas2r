@@ -313,25 +313,39 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
   invisible(list(dir = fn_dir, is_fallback = is_fallback, macro_name = safe_name))
 }
 
-#' Build translator context for a program component
-#'
-#' @param component_id Component identifier.
-#' @param project `sas2r_project` object.
-#' @param baseline `sas2r_transpilation` baseline.
-#' @param graph Dependency graph.
-#' @param schedule Dependency schedule.
-#' @param outputs Inferred or explicit output contracts.
-#' @param resolved_contracts Named list of upstream behavioral contracts.
-#' @param config Project configuration list.
-#' @return Named list containing context for the translator agent.
-#' @noRd
 # Largest deterministic baseline (bytes) shown to the translator as reference.
 TRANSLATOR_BASELINE_LIMIT <- 40000L
+
+# The unit blocks of a staged module, which is all the translator is shown:
+# the file scaffold (banner, bootstrap, module header comments) before the
+# first unit marker goes, and a stub keeps its unit marker and its
+# `# sas2r:untranslated` header but not the commented SAS source that
+# stub_block() writes under it (the model has that source already).
+translator_baseline_units <- function(lines) {
+  scaffold <- c(BANNER, module_bootstrap())
+  markers <- grep("^# --- sas2r:unit [0-9]+ ---$", lines)
+  lines <- if (length(markers)) lines[markers[[1L]]:length(lines)]
+           else lines[!lines %in% scaffold]
+  drop <- logical(length(lines))
+  for (i in grep("^# sas2r:untranslated (unit=[0-9]+ )?reason=", lines)) {
+    if (!identical(lines[i + 1L], "# --- original SAS ---")) next
+    # stub_block() prefixes every SAS line with "# " and closes the block
+    # with a rule; the block ends before the next line it did not write.
+    run <- i + 1L
+    while (run < length(lines) && startsWith(lines[run + 1L], "# ") &&
+           !grepl("^# --- sas2r:unit [0-9]+ ---$", lines[run + 1L])) run <- run + 1L
+    closes <- which(lines[(i + 1L):run] == "# --------------------")
+    if (length(closes)) drop[(i + 1L):(i + max(closes))] <- TRUE
+  }
+  lines[!drop]
+}
 
 # Packet lines presenting the rule-based output for a component as reference
 # context, or NULL when there is nothing to show.
 render_translator_baseline <- function(baseline_code, limit = TRANSLATOR_BASELINE_LIMIT) {
   if (is.null(baseline_code) || !length(baseline_code)) return(NULL)
+  baseline_code <- translator_baseline_units(baseline_code)
+  if (!length(baseline_code)) return(NULL)
   size <- nchar(paste(baseline_code, collapse = "\n"), type = "bytes")
   if (size > limit) {
     return(sprintf(
@@ -346,6 +360,20 @@ render_translator_baseline <- function(baseline_code, limit = TRANSLATOR_BASELIN
   )
 }
 
+#' Build translator context for a program component
+#'
+#' @param component_id Component identifier.
+#' @param project `sas2r_project` object.
+#' @param baseline `sas2r_transpilation` baseline.
+#' @param graph Dependency graph.
+#' @param schedule Dependency schedule.
+#' @param outputs Inferred or explicit output contracts.
+#' @param resolved_contracts Named list of upstream behavioral contracts.
+#' @param config Project configuration list.
+#' @param baseline_code Lines of the component's staged rule-based module, shown
+#'   to the translator as reference; `NULL` leaves the baseline out.
+#' @return Named list containing context for the translator agent.
+#' @noRd
 build_translator_context <- function(
   component_id,
   project,

@@ -187,6 +187,15 @@ baseline_request_text <- function(sas_lines) {
   )
 }
 
+# The baseline section of a translator request: from its header to the end of
+# the task block that carries it.
+baseline_section <- function(text) {
+  at <- regexpr("Deterministic baseline (reference only)", text, fixed = TRUE)
+  expect_gt(at, 0L)
+  rest <- substring(text, at)
+  sub("\nEND SAS2R_TASK_.*$", "", rest)
+}
+
 test_that("a mixed component shows the translator its deterministic baseline", {
   mixed <- baseline_request_text(c(
     "proc sort data=work.a out=work.b; by x; run;",
@@ -194,8 +203,17 @@ test_that("a mixed component shows the translator its deterministic baseline", {
   ))
   expect_true(all(c("t1", "stub") %in% mixed$tiers))
   expect_match(mixed$text, "Deterministic baseline (reference only)", fixed = TRUE)
-  expect_match(mixed$text, "sas_sort(", fixed = TRUE)
-  expect_match(mixed$text, "# sas2r:untranslated", fixed = TRUE)
+  section <- baseline_section(mixed$text)
+  expect_match(section, "sas_sort(", fixed = TRUE)
+  expect_match(section, "# sas2r:untranslated unit=", fixed = TRUE)
+  expect_match(section, "# --- sas2r:unit 2 ---", fixed = TRUE)
+  expect_false(grepl("sas2r bootstrap", section, fixed = TRUE))
+  expect_false(grepl("source(", section, fixed = TRUE))
+  expect_false(grepl(BANNER[[1]], section, fixed = TRUE))
+  # The stub unit's SAS source reaches the model once, as source, not again
+  # as comments in the baseline.
+  expect_false(grepl("out=work.c", section, fixed = TRUE))
+  expect_match(mixed$text, "out=work.c", fixed = TRUE)
 })
 
 test_that("the baseline is left out when it cannot help or would not fit", {
