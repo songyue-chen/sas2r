@@ -1334,6 +1334,19 @@ test_that("the allowance note never corrupts a non-object tool result", {
   expect_identical(ellmer_tool_allowance(list(a = 1), NULL), list(a = 1))
 })
 
+test_that("data-frame and encoded JSON tool results pass through unchanged", {
+  state <- new_agent_tool_state(3L)
+  note <- agent_tool_allowance_message(state)
+  empty_rows <- data.frame(id = integer(), name = character())
+  two_rows <- data.frame(id = 1:2, name = c("a", "b"))
+  expect_identical(ellmer_tool_allowance(empty_rows, state), empty_rows)
+  expect_identical(ellmer_tool_allowance(two_rows, state), two_rows)
+  expect_identical(ellmer_tool_allowance(list(), state), list(tool_allowance = note))
+  encoded <- jsonlite::toJSON(list(a = 1), auto_unbox = TRUE)
+  expect_s3_class(encoded, "json")
+  expect_identical(ellmer_tool_allowance(encoded, state), encoded)
+})
+
 test_that("the native tool loop does not re-register tools while calls remain", {
   state <- new_agent_tool_state(3L)
   tools <- bind_transport_tool_limits(list(lookup = make_tool("lookup",

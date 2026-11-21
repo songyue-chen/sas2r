@@ -492,10 +492,11 @@ ellmer_tool_result <- function(value) {
 # Tool definitions stay fixed for the invocation so providers can reuse their
 # prompt cache; the remaining allowance travels in each bound tool's result.
 # Only object-shaped and plain-text results gain the note, so encoded JSON,
-# Content and unnamed list results keep their exact shape.
+# Content, data-frame and unnamed list results keep their exact shape.
 ellmer_tool_allowance <- function(value, state) {
   if (!is.environment(state)) return(value)
-  if (inherits(value, "json") || inherits(value, "ellmer::Content")) return(value)
+  if (inherits(value, "json") || inherits(value, "ellmer::Content") ||
+      is.data.frame(value)) return(value)
   if (is.list(value) && length(value) > 0L &&
       all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
     return(value)
