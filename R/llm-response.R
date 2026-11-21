@@ -2,8 +2,11 @@ strict_json_list <- function(value, strip_markdown_fences = FALSE) {
   if (is.list(value)) return(value)
   if (!is.character(value) || length(value) != 1L || is.na(value)) return(NULL)
   text <- if (strip_markdown_fences) strip_fences(value) else trimws(value)
+  # Model text is parsed as JSON text only: fromJSON() would fetch a URL or
+  # read a file named by a short non-JSON string.
+  if (!substr(text, 1L, 1L) %in% c("{", "[")) return(NULL)
   parsed <- tryCatch(
-    jsonlite::fromJSON(text, simplifyVector = FALSE),
+    jsonlite::parse_json(text, simplifyVector = FALSE),
     error = function(error) NULL
   )
   if (is.list(parsed)) parsed else NULL

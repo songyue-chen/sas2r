@@ -489,6 +489,29 @@ ellmer_tool_result <- function(value) {
   jsonlite::toJSON(value, auto_unbox = TRUE)
 }
 
+# Tool definitions stay fixed for the invocation so providers can reuse their
+# prompt cache; the remaining allowance travels in each bound tool's result.
+# Only object-shaped and plain-text results gain the note, so encoded JSON,
+# Content, data-frame and unnamed list results keep their exact shape.
+ellmer_tool_allowance <- function(value, state) {
+  if (!is.environment(state)) return(value)
+  if (inherits(value, "json") || inherits(value, "ellmer::Content") ||
+      is.data.frame(value)) return(value)
+  if (is.list(value) && length(value) > 0L &&
+      all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
+    return(value)
+  }
+  note <- agent_tool_allowance_message(state)
+  if (is.list(value) && (length(value) == 0L || !is.null(names(value)))) {
+    value$tool_allowance <- note
+    return(value)
+  }
+  if (is.character(value) && length(value) == 1L) {
+    return(paste(value, note, sep = "\n\n"))
+  }
+  value
+}
+
 ellmer_tool_function <- function(tool) {
   # `names(list())` is NULL, and mget(NULL) aborts with "invalid first
   # argument", so an argument-less tool must normalise to character(0).
@@ -508,7 +531,7 @@ ellmer_tool_function <- function(tool) {
   body(fn) <- quote({
     args <- mget(.argument_names, envir = environment(), inherits = FALSE)
     args <- args[!vapply(args, is.null, logical(1))]
-    ellmer_tool_result(.tool$call(args))
+    ellmer_tool_result(ellmer_tool_allowance(.tool$call(args), .tool$budget_state))
   })
   fn
 }
@@ -1084,12 +1107,6 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
       stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
-    # ellmer owns the native tool loop. Request callbacks meter each HTTP
-    # transfer without flattening provider state or inserting a user prompt.
-    chat$set_tools(lapply(tools, function(tool) {
-      tool$description <- paste(tool$description, agent_tool_allowance_message(state))
-      ellmer_tool_contract(tool)
-    }))
   })
   tryCatch(chat$chat(prompt), sas2r_tools_closed = function(error) {
     messages <- ellmer_conversation_messages(chat)

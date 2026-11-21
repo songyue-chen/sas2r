@@ -21,7 +21,10 @@ sas_sort(df, by, descending = character(), ...)
 \description{
 Stable, with missing values lowest under SAS collation; \code{by} is matched to
 column names case-insensitively, and variables named in \code{descending} are
-sorted in reverse.
+sorted in reverse. Special missing values sort as SAS orders them: \code{._},
+\code{.}, then \code{.A} to \code{.Z}, all below any number. A factor BY column is ordered
+by its values as character, and a BY name that matches more than one column
+is refused.
 }
 \examples{
 sas_sort(data.frame(id = c(2, NA, 1)), by = "id")

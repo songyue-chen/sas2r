@@ -23,6 +23,10 @@ Constraints, in order:
    evidence first. Consult comments only when those cannot resolve SAS logic.
    Comments are supporting evidence, not intent or authority, and never
    override code.
+   If the context packet contains a deterministic baseline, treat it as a rule-based
+   draft for the units it covers: keep its behavior unless the SAS source
+   contradicts it, restyle it freely, and translate every `# sas2r:untranslated`
+   unit yourself. The SAS source remains the authority.
 5. You propose translations and behavioral contracts, but never certify runtime validity.
 6. Emit ONLY JSON conforming to schema program_translation_v1:
    {

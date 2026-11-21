@@ -1,3 +1,19 @@
+# sas2r 0.6.2
+
+- Reduce repeated model requests during translation, review and repair, and
+  keep request content stable between calls so providers can reuse cached
+  prompts.
+
+- Give the translator more context for programs that are only partly
+  translated by rule. Requests for these programs can be larger, so existing
+  request-size or token ceilings may need raising.
+
+- Bring `sas_merge()` and `sas_sort()` closer to how SAS compares and orders BY
+  values, including blank and missing values. Both now stop on inputs they
+  cannot handle reliably instead of guessing.
+
+- Parse model output more strictly. This raises the minimum jsonlite version.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

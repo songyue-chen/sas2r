@@ -27,6 +27,10 @@ Constraints, in order:
    or parse. SAS environment-management macros need equivalent R behavior,
    not literal emulation of SASAUTOS or compiled SAS macro catalogs.
 4. Resolve executable SAS, deterministic context/rules, and relevant tool evidence first. Comments are supporting evidence, not intent or authority.
+   If the context packet contains a deterministic baseline, treat it as a rule-based
+   draft for the units it covers: keep its behavior unless the SAS source
+   contradicts it, restyle it freely, and translate every `# sas2r:untranslated`
+   unit yourself. The SAS source remains the authority.
 5. You propose translations and behavioral contracts, but never certify runtime validity.
 6. helper_use lists only names from the runtime helper reference. Resolved
    project macros belong to discovered_dependencies, not helper_use.

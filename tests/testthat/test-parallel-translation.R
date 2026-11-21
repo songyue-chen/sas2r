@@ -399,3 +399,24 @@ test_that("a worker receives equivalent review messages, settings and tool contr
     "data work.out1; set raw.input; value = value + 1; run;", fixed = TRUE)
   expect_identical(component_review_verdict(direct$state$histories$p01), component_review_verdict(parallel$histories$p01))
 })
+
+test_that("parallel workers receive the agent options set in the parent", {
+  withr::local_options(sas2r.accept_gathered_answer = NULL,
+                       sas2r.translator_baseline_reference = NULL)
+  expect_identical(parallel_worker_options(), list(
+    sas2r.accept_gathered_answer = TRUE,
+    sas2r.translator_baseline_reference = TRUE
+  ))
+  withr::local_options(sas2r.accept_gathered_answer = FALSE,
+                       sas2r.translator_baseline_reference = FALSE)
+  forwarded <- parallel_worker_options()
+  expect_identical(forwarded, list(
+    sas2r.accept_gathered_answer = FALSE,
+    sas2r.translator_baseline_reference = FALSE
+  ))
+  # The child runs the same bootstrap as a worker and reports what it sees.
+  seen <- callr::r(parallel_worker_boot, args = list(
+    find.package("sas2r"), .libPaths(), forwarded, "parallel_worker_options"
+  ))
+  expect_identical(seen, forwarded)
+})

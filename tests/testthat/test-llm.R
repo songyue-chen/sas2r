@@ -369,6 +369,36 @@ test_that("strip_fences cleanly extracts json from markdown code fences", {
   expect_identical(strip_fences(json_txt), json_txt)
 })
 
+test_that("strict_json_list parses JSON text and never reads a file or URL", {
+  answer <- '{"r_code": "x <- 1", "summary": "file content"}'
+  path <- withr::local_tempfile(fileext = ".json")
+  writeLines(answer, path)
+  expect_null(strict_json_list(path))
+  expect_null(strict_json_list(path, strip_markdown_fences = TRUE))
+
+  reached <- FALSE
+  refuse <- function(...) { reached <<- TRUE; stop("parser reached") }
+  testthat::local_mocked_bindings(
+    fromJSON = refuse, parse_json = refuse, .package = "jsonlite"
+  )
+  url <- "https://example.invalid/answer.json"
+  for (text in c(url, paste0("  \n", url, " \n"),
+                 paste0("```json\n", url, "\n```"))) {
+    expect_null(strict_json_list(text))
+    expect_null(strict_json_list(text, strip_markdown_fences = TRUE))
+  }
+  expect_false(reached)
+})
+
+test_that("strict_json_list still accepts JSON objects, fenced objects and arrays", {
+  expect_identical(strict_json_list('{"a": 1}'), list(a = 1L))
+  expect_identical(
+    strict_json_list('```json\n{"a": [1, 2]}\n```', strip_markdown_fences = TRUE),
+    list(a = list(1L, 2L))
+  )
+  expect_identical(strict_json_list(' [1, "b"] '), list(1L, "b"))
+})
+
 test_that("sas_llm_probe does not retry definitive nonanswers and writes durable audit fields", {
   log_dir <- withr::local_tempdir()
   retry_llm <- mock_llm(list(
@@ -1279,6 +1309,61 @@ test_that("tool budget refusal round-trips through ellmer wrapper as JSON", {
   expect_s3_class(res2, "json")
   parsed2 <- jsonlite::fromJSON(as.character(res2))
   expect_identical(parsed2, list(error = "budget_exhausted"))
+})
+
+test_that("bound tool results carry the remaining allowance; unbound results are unchanged", {
+  state <- new_agent_tool_state(3L)
+  tool <- make_tool("lookup", function(args) list(name = args$name), 20L,
+    schema = closed_tool_schema(list(name = list(type = "string")), required = "name"))
+  bound <- bind_transport_tool_limits(list(lookup = tool), state)$lookup
+  out <- jsonlite::fromJSON(ellmer_tool_function(bound)(name = "round"))
+  expect_identical(out$name, "round")
+  expect_identical(out$tool_allowance, paste0(
+    "Tool allowance: 2 of 3 calls remaining for this agent invocation. ",
+    "Reuse retained evidence. When no calls remain, return the final answer."))
+  expect_identical(as.character(ellmer_tool_function(tool)(name = "round")), '{"name":"round"}')
+})
+
+test_that("the allowance note never corrupts a non-object tool result", {
+  state <- new_agent_tool_state(3L)
+  note <- agent_tool_allowance_message(state)
+  expect_identical(ellmer_tool_allowance("plain text", state), paste("plain text", note, sep = "\n\n"))
+  expect_identical(ellmer_tool_allowance(list("a", "b"), state), list("a", "b"))
+  content <- ellmer::ContentText("x")
+  expect_identical(ellmer_tool_allowance(content, state), content)
+  expect_identical(ellmer_tool_allowance(list(a = 1), NULL), list(a = 1))
+})
+
+test_that("data-frame and encoded JSON tool results pass through unchanged", {
+  state <- new_agent_tool_state(3L)
+  note <- agent_tool_allowance_message(state)
+  empty_rows <- data.frame(id = integer(), name = character())
+  two_rows <- data.frame(id = 1:2, name = c("a", "b"))
+  expect_identical(ellmer_tool_allowance(empty_rows, state), empty_rows)
+  expect_identical(ellmer_tool_allowance(two_rows, state), two_rows)
+  expect_identical(ellmer_tool_allowance(list(), state), list(tool_allowance = note))
+  encoded <- jsonlite::toJSON(list(a = 1), auto_unbox = TRUE)
+  expect_s3_class(encoded, "json")
+  expect_identical(ellmer_tool_allowance(encoded, state), encoded)
+})
+
+test_that("the native tool loop does not re-register tools while calls remain", {
+  state <- new_agent_tool_state(3L)
+  tools <- bind_transport_tool_limits(list(lookup = make_tool("lookup",
+    function(args) list(ok = TRUE), 20L,
+    schema = closed_tool_schema(list(name = list(type = "string")), required = "name"))), state)
+  set_calls <- list(); on_result <- NULL
+  chat <- list(
+    on_tool_result = function(fn) on_result <<- fn,
+    set_tools = function(tools) set_calls[[length(set_calls) + 1L]] <<- tools,
+    chat = function(prompt) {
+      state$count <- 1L
+      on_result(ellmer::ContentToolResult(value = "x",
+        request = ellmer::ContentToolRequest(id = "c1", name = "lookup", arguments = list())))
+      "done"
+    })
+  expect_identical(ellmer_gather_tools(chat, "prompt", tools), "done")
+  expect_length(set_calls, 0L)
 })
 
 test_that("parallel tool calls are paired with their results, not batched", {
