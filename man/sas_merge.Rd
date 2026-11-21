@@ -39,6 +39,8 @@ A BY variable that is numeric in one input and character in the other is
 refused, as SAS refuses it, and so are column names whose case makes the
 match ambiguous (a BY variable matching two columns of one input, or two
 columns of \code{b} that differ only by case matching one column of \code{a}).
+Where both inputs supply a column, a factor is combined as character unless
+both carry it as a factor with the same levels.
 Do not pre-create missing columns on one input when the other input supplies
 them: that invents an overlap. Preserve genuine overlapping source columns;
 their unsupported repeated-key semantics must not be silently dropped.

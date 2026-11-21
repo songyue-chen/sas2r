@@ -24,7 +24,8 @@ column names case-insensitively, and variables named in \code{descending} are
 sorted in reverse. Special missing values sort as SAS orders them: \code{._},
 \code{.}, then \code{.A} to \code{.Z}, all below any number. A factor BY column is ordered
 by its values as character, and a BY name that matches more than one column
-is refused.
+is refused. A BY name that matches no column is an error even when there are
+no rows to sort.
 }
 \examples{
 sas_sort(data.frame(id = c(2, NA, 1)), by = "id")

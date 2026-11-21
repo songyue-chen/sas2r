@@ -695,19 +695,25 @@ sas_sort <- function(df, by, descending = character(), ...) {
     }
     out
   }
-  if (nrow(df) == 0L) return(df)
-  cols <- lapply(by, function(v) {
-    idx <- which(tolower(names(df)) == tolower(v))
-    if (!length(idx)) {
+  # Every BY variable is resolved before the empty-data return: PROC SORT
+  # refuses a missing BY variable whether or not there are rows to sort.
+  idx <- vapply(by, function(v) {
+    hit <- which(tolower(names(df)) == tolower(v))
+    if (!length(hit)) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
     # SAS names are case-insensitive, so two columns that differ only by case
     # leave the BY variable undefined: refuse, as sas_merge() does.
-    if (length(idx) > 1L) {
+    if (length(hit) > 1L) {
       stop("sas_sort: by variable ", v, " matches more than one column in the dataset: ",
-           paste(names(df)[idx], collapse = ", "), call. = FALSE)
+           paste(names(df)[hit], collapse = ", "), call. = FALSE)
     }
-    x <- df[[idx]]
+    hit
+  }, integer(1))
+  if (nrow(df) == 0L) return(df)
+  cols <- lapply(seq_along(by), function(i) {
+    v <- by[[i]]
+    x <- df[[idx[[i]]]]
     # SAS has no factors: order a factor by its values, not its level codes,
     # so the order agrees with how sas_merge() matches the same key.
     if (is.factor(x)) x <- as.character(x)
@@ -804,6 +810,17 @@ sas_merge <- function(a, b, by,
     }
   }
   by <- names(a)[idx_a]
+  # SAS has no factors. Where both inputs supply a column, a factor on either
+  # side is combined as character: assigning between a factor and a character
+  # vector, or between factors with different levels, writes level codes or NA.
+  # Factors that share their levels combine correctly and are left alone.
+  for (v in intersect(names(a), names(b))) {
+    fa <- is.factor(a[[v]]); fb <- is.factor(b[[v]])
+    if ((fa || fb) && !(fa && fb && setequal(levels(a[[v]]), levels(b[[v]])))) {
+      if (fa) a[[v]] <- as.character(a[[v]])
+      if (fb) b[[v]] <- as.character(b[[v]])
+    }
+  }
   # Keys are compared through sas2r_by_key(); the returned values stay as given.
   # One group id per row serves both the duplicate checks and the join.
   ids <- vctrs::vec_group_id(sas2r_by_key(rbind(a[by], b[by]), by))

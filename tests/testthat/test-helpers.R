@@ -421,3 +421,51 @@ test_that("sas_sort refuses a BY name whose case is ambiguous", {
   expect_error(sas_sort(amb, by = "ID"), "matches more than one column", fixed = TRUE)
   expect_identical(sas_sort(data.frame(k = 2:1, x = 1:2, X = 3:4), by = "k")$k, 1:2)
 })
+
+test_that("sas_sort checks its BY variables on an empty data frame", {
+  # PROC SORT refuses a missing BY variable whether or not there are rows, and
+  # sas_merge() already checks empty inputs.
+  empty <- data.frame(id = numeric(), ID = numeric())
+  expect_error(sas_sort(empty, by = "nope"),
+               "sas_sort: by variable not found in dataset: nope", fixed = TRUE)
+  expect_error(sas_sort(empty, by = "id"), "matches more than one column", fixed = TRUE)
+  one <- empty[, "id", drop = FALSE]
+  expect_identical(sas_sort(one, by = "ID"), one)
+})
+
+test_that("sas_merge combines a factor with a character column by value", {
+  # Base assignment between a factor and a character vector writes level codes
+  # or NA. SAS has no factors, so the values are combined as character.
+  key_in_a <- sas_merge(data.frame(k = factor(c("b", "a")), va = 1:2),
+                        data.frame(k = c("a ", "c"), vb = 10:11), by = "k")
+  expect_identical(key_in_a$k, c("a ", "b", "c"))
+  expect_identical(key_in_a$va, c(2L, 1L, NA))
+  expect_identical(key_in_a$vb, c(10L, NA, 11L))
+
+  key_in_b <- expect_no_warning(
+    sas_merge(data.frame(k = c("c", "a"), va = 1:2),
+              data.frame(k = factor(c("a", "b")), vb = 10:11), by = "k"))
+  expect_identical(key_in_b$k, c("a", "b", "c"))
+  expect_identical(key_in_b$va, c(2L, NA, 1L))
+
+  shared <- sas_merge(data.frame(id = c(1, 2), label = factor(c("hi", "lo"))),
+                      data.frame(id = c(2, 3), label = c("low", "mid")), by = "id")
+  expect_identical(shared$label, c("hi", "low", "mid"))
+})
+
+test_that("sas_merge combines factors with different levels by value", {
+  different <- expect_no_warning(
+    sas_merge(data.frame(k = factor(c("b", "a"), levels = c("b", "a")), va = 1:2),
+              data.frame(k = factor(c("a", "c"), levels = c("a", "c")), vb = 10:11), by = "k"))
+  expect_identical(different$k, c("a", "b", "c"))
+  expect_identical(different$va, c(2L, 1L, NA))
+
+  # Factors that already share their levels were combined correctly and stay
+  # factors, so a level order chosen for display survives the merge.
+  lv <- c("c", "b", "a")
+  same <- sas_merge(data.frame(k = factor(c("b", "a"), levels = lv), va = 1:2),
+                    data.frame(k = factor(c("a", "c"), levels = lv), vb = 10:11), by = "k")
+  expect_s3_class(same$k, "factor")
+  expect_identical(levels(same$k), lv)
+  expect_identical(as.character(same$k), c("a", "b", "c"))
+})
