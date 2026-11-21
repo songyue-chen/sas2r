@@ -1,5 +1,9 @@
 # sas2r 0.6.2
 
+- Keep tool definitions unchanged while an agent uses tools, and report the
+  remaining tool allowance in each tool result, so providers can reuse their
+  prompt cache between tool calls.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

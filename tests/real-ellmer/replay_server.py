@@ -215,9 +215,19 @@ class ReplayHandler(BaseHTTPRequestHandler):
             pass
 
     @staticmethod
+    def two_round_kind(body, response_kind, completed):
+        # One tool call per round until two results are back, so the contract
+        # can compare the tool definitions sent across consecutive rounds.
+        if body.get("model") != "offline-tworound-model" or response_kind == "structured":
+            return response_kind
+        return "tool" if completed < 2 else "gathered"
+
+    @staticmethod
     def chat_completions_response(body, response_kind):
         native = "native-deepseek" in body.get("model", "")
-        batch = 1 + sum(m.get("role") == "tool" for m in body.get("messages", []))
+        completed = sum(m.get("role") == "tool" for m in body.get("messages", []))
+        batch = 1 + completed
+        response_kind = ReplayHandler.two_round_kind(body, response_kind, completed)
         if response_kind == "tool":
             message = {
                 "role": "assistant",
@@ -235,6 +245,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 message["tool_calls"].append({
                     **message["tool_calls"][0], "id": "real_auto_2"
                 })
+            if body.get("model") == "offline-tworound-model":
+                message["tool_calls"][0]["id"] = f"real_round_{batch}"
             finish_reason = "tool_calls"
         elif response_kind == "gathered":
             message = {"role": "assistant", "content": "gathered context"}
@@ -269,6 +281,12 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def responses_response(body, response_kind):
+        input_items = body.get("input") if isinstance(body.get("input"), list) else []
+        completed = sum(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in input_items
+        )
+        response_kind = ReplayHandler.two_round_kind(body, response_kind, completed)
         if response_kind == "tool":
             # `id` and `call_id` carry the same identifier so the paired
             # request/result assertion does not depend on which of the two
@@ -283,6 +301,9 @@ class ReplayHandler(BaseHTTPRequestHandler):
             }]
             if body.get("model") == "offline-batch-model":
                 output.append({**output[0], "id": "real_auto_2", "call_id": "real_auto_2"})
+            if body.get("model") == "offline-tworound-model":
+                round_id = f"real_round_{completed + 1}"
+                output[0].update({"id": round_id, "call_id": round_id})
         else:
             text = "gathered context" if response_kind == "gathered" else json.dumps(
                 structured_payload(body), separators=(",", ":")

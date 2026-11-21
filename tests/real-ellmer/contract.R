@@ -1065,6 +1065,26 @@ stopifnot(length(batch_wire) == 2L,
           count_value(batch_wire[[2]]$body, "real_auto_2") >= 2L,
           contains_text(batch_wire[[2]]$body, "agent_tool_limit"))
 
+# Tool definitions stay byte-identical across rounds of the native loop, so the
+# provider's prompt-cache prefix survives; the allowance rides in each result.
+round_adapter <- sas2r:::ellmer_llm(list(provider = "openai", model = "offline-tworound-model",
+  base_url = base_url, api_key = api_key, capabilities = capabilities))
+round_log_start <- length(readLines(log_file, warn = FALSE))
+round_agent <- sas2r:::run_agent(
+  list(name = "round", prompt = "translator.md", tool_call_limit = 3L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  round_adapter, list(lookup = quota_lookup), "round translation",
+  log_dir = tempfile("sas2r-real-round-"))
+round_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - round_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(round_agent$status, "ok"),
+          identical(round_wire[[1]]$body$tools, round_wire[[2]]$body$tools),
+          identical(round_wire[[2]]$body$tools, round_wire[[3]]$body$tools),
+          !contains_text(round_wire[[2]]$body$tools, "Tool allowance"),
+          contains_text(round_wire[[2]]$body, "Tool allowance: 2 of 3"),
+          contains_text(round_wire[[3]]$body, "Tool allowance: 1 of 3"))
+
 failure_log_start <- length(readLines(log_file, warn = FALSE))
 failure_lookup <- sas2r:::make_tool("lookup", function(args) {
   stop("Reference index is unavailable")
