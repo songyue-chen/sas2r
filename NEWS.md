@@ -1,3 +1,5 @@
+# sas2r 0.6.2
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring
