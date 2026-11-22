@@ -313,3 +313,159 @@ test_that("a wrong lib_write call in a bundle fails its run with the teaching me
   expect_match(r$stderr, 'lib_write(df, "lib", "member")', fixed = TRUE)
   expect_false(file.exists(file.path(bundle, "adsl.rds")))
 })
+
+test_that("sas_sort orders special missing values as SAS does", {
+  d <- data.frame(v = c(haven::tagged_na("z"), 5, NA, haven::tagged_na("a"), -1,
+                        haven::tagged_na("_")), row = 1:6)
+  expect_identical(sas_sort(d, by = "v")$row, c(6L, 3L, 4L, 1L, 5L, 2L))
+  expect_identical(sas_sort(d, by = "v", descending = "v")$row, c(2L, 5L, 1L, 4L, 3L, 6L))
+  d2 <- data.frame(v = c(haven::tagged_na("B"), haven::tagged_na("a")), row = 1:2)
+  expect_identical(sas_sort(d2, by = "v")$row, c(2L, 1L))
+})
+
+test_that("sas_merge matches character BY values as SAS compares them", {
+  out <- sas_merge(data.frame(k = c("A", "B"), x = 1:2),
+                   data.frame(k = c("A  ", "B"), y = c(10, 20)), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L)
+  expect_identical(out$x, 1:2); expect_identical(out$y, c(10, 20))
+  out <- sas_merge(data.frame(k = c("", "B"), x = 1:2),
+                   data.frame(k = c(NA, "B"), y = c(10, 20)), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L); expect_identical(out$y, c(10, 20))
+  out <- sas_merge(data.frame(k = " A", x = 1L), data.frame(k = "A", y = 2), by = "k", keep = "full")
+  expect_identical(nrow(out), 2L)
+})
+
+test_that("sas_merge matches names without regard to case", {
+  out <- sas_merge(data.frame(ID = 1:2, Val = 1:2), data.frame(id = 1:2, VAL = c(9L, 8L), y = 3:4),
+                   by = "Id")
+  expect_identical(names(out), c("ID", "Val", "y"))
+  expect_identical(out$Val, c(9L, 8L))
+  expect_error(sas_merge(data.frame(a = 1), data.frame(a = 1), by = "zz"),
+               "sas_merge: by variable not found in dataset: zz", fixed = TRUE)
+})
+
+test_that("sas_merge keeps special missing values apart", {
+  a <- data.frame(v = c(haven::tagged_na("a"), 1), x = 1:2)
+  out <- sas_merge(a, data.frame(v = c(NA, 1), y = c(10, 20)), by = "v", keep = "full")
+  expect_identical(nrow(out), 3L)
+  expect_identical(out$x, c(NA, 1L, 2L)); expect_identical(out$y, c(10, NA, 20))
+  out <- sas_merge(a, data.frame(v = c(haven::tagged_na("A"), 1), y = c(10, 20)), by = "v", keep = "full")
+  expect_identical(nrow(out), 2L)
+})
+
+test_that("sas_merge refuses what SAS refuses and handles empty inputs", {
+  expect_error(sas_merge(data.frame(k = 1), data.frame(k = "1"), by = "k"),
+               "sas_merge: by variable k is numeric in one dataset and character in the other", fixed = TRUE)
+  expect_error(sas_merge(data.frame(k = c("A", "A "), x = 1:2), data.frame(k = c("A", "A"), y = 1:2), by = "k"),
+               "many-to-many")
+  b <- data.frame(k = c("A", "B"), y = c(10, 20))
+  out <- sas_merge(data.frame(k = character(), x = integer()), b, by = "k", keep = "full")
+  expect_identical(nrow(out), 2L); expect_true(all(is.na(out$x)))
+})
+
+test_that("sas_merge refuses column names whose case is ambiguous", {
+  expect_error(
+    sas_merge(data.frame(id = 1:2, x = 1:2), data.frame(ID = 1:2, id = 3:4, y = 1:2), by = "id"),
+    "sas_merge: by variable id matches more than one column in a dataset: ID, id", fixed = TRUE)
+  expect_error(
+    sas_merge(data.frame(Id = 1:2, ID = 1:2), data.frame(id = 1:2, y = 1:2), by = "id"),
+    "sas_merge: by variable id matches more than one column in a dataset: Id, ID", fixed = TRUE)
+  expect_error(
+    sas_merge(data.frame(id = 1:2, val = 1:2), data.frame(id = 1:2, VAL = 1:2, Val = 3:4), by = "id"),
+    "sas_merge: columns VAL, Val of the second dataset both match column val of the first",
+    fixed = TRUE)
+  # Columns that differ only by case are fine when nothing renames them.
+  out <- sas_merge(data.frame(id = 1:2, x = 1:2),
+                   data.frame(id = 1:2, VAL = 1:2, Val = 3:4), by = "id")
+  expect_identical(names(out), c("id", "x", "VAL", "Val"))
+  expect_identical(out$Val, 3:4)
+})
+
+test_that("sas_merge refusals and key matching hold in both directions", {
+  expect_error(sas_merge(data.frame(k = "1"), data.frame(k = 1), by = "k"),
+               "sas_merge: by variable k is numeric in one dataset and character in the other", fixed = TRUE)
+  a <- data.frame(k = c("A", "B"), x = 1:2)
+  out <- sas_merge(a, data.frame(k = character(), y = numeric()), by = "k", keep = "full")
+  expect_identical(out$k, c("A", "B")); expect_identical(out$x, 1:2)
+  expect_true(all(is.na(out$y)))
+  expect_identical(nrow(sas_merge(a, data.frame(k = character(), y = numeric()), by = "k",
+                                  keep = "both")), 0L)
+  ints <- data.frame(k = c(1L, 2L, NA), x = 1:3)
+  dbls <- data.frame(k = c(2, 1, haven::tagged_na("a"), NA), y = c(20, 10, 99, 0))
+  out <- sas_merge(ints, dbls, by = "k", keep = "full")
+  expect_identical(nrow(out), 4L)
+  # The integer NA matches the plain double missing value, not .A, and rows
+  # follow SAS order (. < .A < numbers).
+  expect_identical(out$x, c(3L, NA, 1L, 2L))
+  expect_identical(out$y, c(0, 99, 10, 20))
+  expect_identical(haven::na_tag(out$k), c(NA, "a", NA, NA))
+})
+
+test_that("sas_sort compares factor BY values as character", {
+  df <- data.frame(k = factor(c("b", "a", "", "c"), levels = c("c", "b", "a", "")), v = 1:4)
+  out <- sas_sort(df, by = "k")
+  expect_identical(out$v, c(3L, 2L, 1L, 4L))
+  expect_identical(levels(out$k), levels(df$k))
+  expect_identical(sas_sort(df, by = "k", descending = "k")$v, c(4L, 1L, 2L, 3L))
+  # sas_merge matches factor keys as character, so its BY order must agree.
+  a <- data.frame(k = factor(c("b", "a", "c")), x = 1:3)
+  b <- data.frame(k = factor(c("a", "b", "c"), levels = c("c", "b", "a")), y = c(10, 20, 30))
+  expect_identical(as.character(sas_merge(a, b, by = "k")$k), c("a", "b", "c"))
+})
+
+test_that("sas_sort refuses a BY name whose case is ambiguous", {
+  amb <- data.frame(id = c(2, 1), ID = c(10, 20))
+  expect_error(sas_sort(amb, by = "id"),
+               "sas_sort: by variable id matches more than one column in the dataset: id, ID",
+               fixed = TRUE)
+  expect_error(sas_sort(amb, by = "ID"), "matches more than one column", fixed = TRUE)
+  expect_identical(sas_sort(data.frame(k = 2:1, x = 1:2, X = 3:4), by = "k")$k, 1:2)
+})
+
+test_that("sas_sort checks its BY variables on an empty data frame", {
+  # PROC SORT refuses a missing BY variable whether or not there are rows, and
+  # sas_merge() already checks empty inputs.
+  empty <- data.frame(id = numeric(), ID = numeric())
+  expect_error(sas_sort(empty, by = "nope"),
+               "sas_sort: by variable not found in dataset: nope", fixed = TRUE)
+  expect_error(sas_sort(empty, by = "id"), "matches more than one column", fixed = TRUE)
+  one <- empty[, "id", drop = FALSE]
+  expect_identical(sas_sort(one, by = "ID"), one)
+})
+
+test_that("sas_merge combines a factor with a character column by value", {
+  # Base assignment between a factor and a character vector writes level codes
+  # or NA. SAS has no factors, so the values are combined as character.
+  key_in_a <- sas_merge(data.frame(k = factor(c("b", "a")), va = 1:2),
+                        data.frame(k = c("a ", "c"), vb = 10:11), by = "k")
+  expect_identical(key_in_a$k, c("a ", "b", "c"))
+  expect_identical(key_in_a$va, c(2L, 1L, NA))
+  expect_identical(key_in_a$vb, c(10L, NA, 11L))
+
+  key_in_b <- expect_no_warning(
+    sas_merge(data.frame(k = c("c", "a"), va = 1:2),
+              data.frame(k = factor(c("a", "b")), vb = 10:11), by = "k"))
+  expect_identical(key_in_b$k, c("a", "b", "c"))
+  expect_identical(key_in_b$va, c(2L, NA, 1L))
+
+  shared <- sas_merge(data.frame(id = c(1, 2), label = factor(c("hi", "lo"))),
+                      data.frame(id = c(2, 3), label = c("low", "mid")), by = "id")
+  expect_identical(shared$label, c("hi", "low", "mid"))
+})
+
+test_that("sas_merge combines factors with different levels by value", {
+  different <- expect_no_warning(
+    sas_merge(data.frame(k = factor(c("b", "a"), levels = c("b", "a")), va = 1:2),
+              data.frame(k = factor(c("a", "c"), levels = c("a", "c")), vb = 10:11), by = "k"))
+  expect_identical(different$k, c("a", "b", "c"))
+  expect_identical(different$va, c(2L, 1L, NA))
+
+  # Factors that already share their levels were combined correctly and stay
+  # factors, so a level order chosen for display survives the merge.
+  lv <- c("c", "b", "a")
+  same <- sas_merge(data.frame(k = factor(c("b", "a"), levels = lv), va = 1:2),
+                    data.frame(k = factor(c("a", "c"), levels = lv), vb = 10:11), by = "k")
+  expect_s3_class(same$k, "factor")
+  expect_identical(levels(same$k), lv)
+  expect_identical(as.character(same$k), c("a", "b", "c"))
+})

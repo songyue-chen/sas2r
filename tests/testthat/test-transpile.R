@@ -337,19 +337,6 @@ test_that("an include inside a non-global unit stubs the module and flags the pa
   }
 })
 
-test_that("an unreachable include module is never queued for agent translation", {
-  root <- withr::local_tempdir()
-  writeLines("data work.prepped; set work.input; run;", file.path(root, "prep.sas"))
-  writeLines("proc sort data=work.input out=work.s; by x; %include 'prep.sas'; run;",
-             file.path(root, "driver.sas"))
-  out <- withr::local_tempdir()
-  tr <- sas_transpile(sas_project(file.path(root, "driver.sas")), out)
-  orphan_units <- tr$manifest$unit_id[tr$manifest$reason %in%
-                                        "include_site_not_emitted"]
-  expect_true(length(orphan_units) > 0L)
-  expect_false(any(agent_stub_queue(tr$manifest) %in% orphan_units))
-})
-
 test_that("every site of a unit is decided on its own, and resolved calls survive", {
   # M5: a unit holding [resolved, cycle] must keep the resolved call rather
   # than discard everything accumulated before the first unemittable site.
@@ -580,8 +567,6 @@ test_that("unreachability is transitive through an orphaned module's own sites",
   # a.R is stubbed whole, so the call that would have reached b.R is not there.
   expect_false(any(grepl("^sas2r_source_include\\(",
                          readLines(file.path(out, "a.R"), warn = FALSE))))
-  expect_false(any(agent_stub_queue(tr$manifest) %in% tr$manifest$unit_id[
-    basename(tr$manifest$file) %in% c("a.sas", "b.sas")]))
 })
 
 test_that("a three-level include chain marks the deepest module too", {
@@ -645,12 +630,11 @@ test_that("a program the project lists as an entry point keeps its translation",
   expect_identical(ds$tier, "t1")
   expect_match(ds$code, 'prepped <- lib_read\\("work", "input"\\)')
 
-  # And the unit that is not T1-eligible keeps its own reason and stays in the
-  # agent queue instead of being filtered out as unreachable.
+  # And the unit that is not T1-eligible keeps its own reason instead of being
+  # marked unreachable.
   mn <- prep[prep$unit_type == "proc_step", ]
   expect_identical(mn$tier, "stub")
   expect_identical(mn$reason, "means_not_t1")
-  expect_true(mn$unit_id %in% agent_stub_queue(tr$manifest))
 
   staged <- readLines(file.path(out, "prep.R"), warn = FALSE)
   expect_false(any(grepl("UNREACHABLE MODULE", staged)))
@@ -737,9 +721,10 @@ test_that("a non-emitting parent shows its dropped include site in the code", {
   expect_false(any(grepl("^sas2r_source_include\\(", driver)))
   expect_false(any(grepl("^s <- sas_sort\\(", driver)))
 
-  # The marker sits inside the unit's own block, so a later splice replaces it
-  # with the unit rather than stranding it beside one.
-  blk <- extract_unit_block(file.path(out, "driver.R"), 1L)
+  # The marker sits inside the unit's own block, so replacing the block
+  # replaces the marker with it rather than stranding it beside one.
+  loc <- locate_unit_block(driver, 1L)
+  blk <- driver[loc[["start"]]:loc[["end"]]]
   expect_true(any(grepl("^# sas2r:untranslated include line=1", blk)))
 })
 
@@ -755,7 +740,8 @@ test_that("a stubbed non-emitting parent carries the same dropped-site marker", 
   expect_true(any(grepl(
     "^# sas2r:untranslated include line=2 reason=include_site_not_emitted$",
     driver)))
-  blk <- extract_unit_block(file.path(out, "driver.R"), 1L)
+  loc <- locate_unit_block(driver, 1L)
+  blk <- driver[loc[["start"]]:loc[["end"]]]
   expect_true(any(grepl("^# sas2r:untranslated include line=2", blk)))
 })
 

@@ -47,10 +47,6 @@ test_that("standalone audit logging does not write into the working directory", 
   expect_true(file.exists(log))
   expect_identical(jsonlite::fromJSON(tail(readLines(log), 1L))$event, entry$event)
   expect_length(list.files(working, all.files = TRUE, no.. = TRUE), 0L)
-
-  prompts <- withr::local_tempdir()
-  expect_error(write_llm_lock(list(), prompts), "argument.*path.*missing")
-  expect_false(file.exists(file.path(working, "_sas2r.lock")))
 })
 
 test_that("runtime library changes stay in the local registry", {

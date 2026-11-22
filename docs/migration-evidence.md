@@ -234,7 +234,9 @@ The accepted names are documented in `?sas_translate`; misspellings fail.
 For shipped adapters on ellmer 0.5.0+, `max_calls` counts each admitted request:
 initial gathering, every tool-result continuation, and structured or JSON
 finalization. For example, two tool batches followed by a gathered answer and
-finalization use four calls within one agent invocation. This applies with one
+finalization use four calls within one agent invocation; when the gathered
+answer already passes the output schema check it is used as the answer and
+finalization is skipped, so the same invocation uses three. This applies with one
 or several workflows. ellmer 0.4.2 uses the native serial tool loop with legacy
 phase-level admission, so that example uses two admissions; parallel execution
 falls back to one workflow. Review ceilings configured for the older counting

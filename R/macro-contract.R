@@ -201,23 +201,6 @@ parse_macro_contract <- function(name, params) {
   list(name = name, parameters = do.call(rbind, rows))
 }
 
-#' Build the parsed macro contract for exactly one current project unit
-#' @noRd
-macro_contract_for_unit <- function(project, unit_id) {
-  defs <- project$macros$defs
-  if (is.null(defs) || !all(c("name", "params", "unit_id") %in% names(defs))) {
-    abort_macro_contract("project has no usable macro definitions")
-  }
-  matches <- defs[defs$unit_id == unit_id, , drop = FALSE]
-  if (nrow(matches) != 1L) {
-    abort_macro_contract(
-      paste0("unit ", unit_id,
-             " must contain exactly one macro definition to build a contract")
-    )
-  }
-  parse_macro_contract(matches$name[[1L]], matches$params[[1L]])
-}
-
 #' The source-owned interface used by generation and the behavioral contract
 #' @noRd
 component_macro_contract <- function(project, graph, component_id) {

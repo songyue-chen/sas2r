@@ -1,4 +1,3 @@
-
 new_llm_audit_redactor <- function(redaction_secrets = character()) {
   known_secrets <- llm_credential_secret_values(redaction_secrets)
   local({
@@ -489,6 +488,29 @@ ellmer_tool_result <- function(value) {
   jsonlite::toJSON(value, auto_unbox = TRUE)
 }
 
+# Tool definitions stay fixed for the invocation so providers can reuse their
+# prompt cache; the remaining allowance travels in each bound tool's result.
+# Only object-shaped and plain-text results gain the note, so encoded JSON,
+# Content, data-frame and unnamed list results keep their exact shape.
+ellmer_tool_allowance <- function(value, state) {
+  if (!is.environment(state)) return(value)
+  if (inherits(value, "json") || inherits(value, "ellmer::Content") ||
+      is.data.frame(value)) return(value)
+  if (is.list(value) && length(value) > 0L &&
+      all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
+    return(value)
+  }
+  note <- agent_tool_allowance_message(state)
+  if (is.list(value) && (length(value) == 0L || !is.null(names(value)))) {
+    value$tool_allowance <- note
+    return(value)
+  }
+  if (is.character(value) && length(value) == 1L) {
+    return(paste(value, note, sep = "\n\n"))
+  }
+  value
+}
+
 ellmer_tool_function <- function(tool) {
   # `names(list())` is NULL, and mget(NULL) aborts with "invalid first
   # argument", so an argument-less tool must normalise to character(0).
@@ -508,7 +530,7 @@ ellmer_tool_function <- function(tool) {
   body(fn) <- quote({
     args <- mget(.argument_names, envir = environment(), inherits = FALSE)
     args <- args[!vapply(args, is.null, logical(1))]
-    ellmer_tool_result(.tool$call(args))
+    ellmer_tool_result(ellmer_tool_allowance(.tool$call(args), .tool$budget_state))
   })
   fn
 }
@@ -1084,12 +1106,6 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
       stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
-    # ellmer owns the native tool loop. Request callbacks meter each HTTP
-    # transfer without flattening provider state or inserting a user prompt.
-    chat$set_tools(lapply(tools, function(tool) {
-      tool$description <- paste(tool$description, agent_tool_allowance_message(state))
-      ellmer_tool_contract(tool)
-    }))
   })
   tryCatch(chat$chat(prompt), sas2r_tools_closed = function(error) {
     messages <- ellmer_conversation_messages(chat)
@@ -1880,79 +1896,6 @@ sas_llm_probe <- function(llm, max_retries = 2L, log_dir = tempdir(),
       stop(error)
     }
   )
-}
-
-#' Write pinned LLM configuration and prompt hashes to lockfile
-#' @noRd
-write_llm_lock <- function(cfg, prompts_dir, path, specs = NULL,
-                           requested_parameters = NULL,
-                           effective_parameters = NULL,
-                           capability_record = NULL) {
-  prompts <- if (!is.null(specs)) {
-    prompt_files <- c(
-      vapply(specs, function(spec) spec$prompt, character(1)),
-      specs$translator$prompt_macro %||% "translator-macro.md"
-    )
-    prompt_files <- unique(prompt_files[nzchar(prompt_files)])
-    resolved <- vapply(prompt_files, function(prompt) {
-      if (grepl("[/\\]", prompt) && file.exists(prompt)) {
-        prompt
-      } else if (!grepl("[/\\]", prompt)) {
-        packaged <- system.file("prompts", prompt, package = "sas2r")
-        if (nzchar(packaged) && file.exists(packaged)) packaged else ""
-      } else {
-        cli::cli_warn("prompt {.val {prompt}} could not be resolved for lockfile pinning")
-        ""
-      }
-    }, character(1))
-    resolved[nzchar(resolved) & file.exists(resolved)]
-  } else if (is.character(prompts_dir) && length(prompts_dir) == 1L &&
-             dir.exists(prompts_dir)) {
-    list.files(prompts_dir, pattern = "\\.md$", full.names = TRUE)
-  } else if (is.character(prompts_dir)) {
-    prompts_dir[file.exists(prompts_dir)]
-  } else character()
-
-  hashes <- as.list(tools::md5sum(prompts))
-  names(hashes) <- basename(prompts)
-  hashes <- hashes[nzchar(names(hashes))]
-  if (is.null(requested_parameters)) {
-    requested_parameters <- lapply(LLM_OPTIONAL_PARAMETERS, function(name) cfg[[name]])
-    names(requested_parameters) <- LLM_OPTIONAL_PARAMETERS
-  }
-  if (is.null(effective_parameters)) {
-    effective_parameters <- stats::setNames(
-      rep(list(NULL), length(LLM_OPTIONAL_PARAMETERS)), LLM_OPTIONAL_PARAMETERS
-    )
-    lock_model <- cfg$model %||% unlist(cfg$tiers, use.names = FALSE)[1]
-    if (!is.null(lock_model) && length(lock_model) == 1L && !is.na(lock_model) &&
-        nzchar(lock_model) && isTRUE(cfg$provider %in% llm_provider_ids())) {
-      capability_record <- capability_record %||% resolve_model_capabilities(
-        cfg$provider, ellmer_endpoint_identity(cfg), lock_model,
-        ellmer_api_version_identity(cfg), overrides = cfg$capabilities
-      )
-      lock_request <- do.call(llm_request, c(
-        list(messages = list(list(role = "user", content = "lockfile"))),
-        requested_parameters
-      ))
-      supported <- effective_model_params(lock_request, capability_record)
-      for (name in names(supported)) effective_parameters[[name]] <- supported[[name]]
-    }
-  }
-  payload <- list(
-    provider = cfg$provider, model = cfg$model, tiers = cfg$tiers,
-    identity = llm_selector_identity(cfg),
-    requested_parameters = requested_parameters,
-    effective_parameters = effective_parameters,
-    capability_record_hash = capability_record$record_hash %||% NULL,
-    prompts = hashes
-  )
-  jsonlite::write_json(redact_llm_secrets(
-    payload, secret_values = unique(c(
-      llm_config_secret_values(cfg), llm_registered_secret_values()
-    ))
-  ), path, auto_unbox = TRUE, null = "null", na = "null", pretty = TRUE)
-  invisible(path)
 }
 
 #' Append LLM request/response entry to local JSONL log

@@ -10,9 +10,9 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
       result$reason <- "No observed run failures were eligible for AI bug triage."
       return(result)
     }
-    variable_failures <- Filter(function(item) !is.null(item$facts$called_function), evidence)
-    if (length(variable_failures)) {
-      result$observed_failures <- unname(vapply(variable_failures, function(item) item$observed, ""))
+    recognized <- Filter(function(item) isTRUE(item$recognized), evidence)
+    if (length(recognized)) {
+      result$observed_failures <- unname(vapply(recognized, function(item) item$observed, ""))
     }
 
     budget <- state$usage_budget
@@ -118,10 +118,15 @@ package_bug_evidence <- function(state, failure, stage) {
     if (!is.null(facts$called_function)) {
       projected$called_function <- facts$called_function
       projected$condition_message <- facts$condition_message
-      symptom <- paste0(cid, " - ", facts$condition_message)
     }
+    # A recognized failure is recorded with its program and its fixed label,
+    # which carries only code-confirmed names. The request is unchanged: it
+    # already has the kind and the names.
+    recognized <- !is.null(facts$called_function) ||
+      !facts$kind %in% c("none", "unclassified_error")
+    if (recognized) symptom <- paste0(if (!is.null(cid)) paste0(cid, " - "), facts$condition_message)
     list(facts = projected, observed = paste0(scope, " - ", symptom),
-      binding = binding, code_ids = code_ids)
+      recognized = recognized, binding = binding, code_ids = code_ids)
   }
   if (!is.null(failure)) {
     terminal <- condition_item(stage, list(class = class(failure), message = conditionMessage(failure)))

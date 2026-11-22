@@ -29,9 +29,18 @@ The merged data frame.
 (\verb{in_a and in_b}), \code{"left"} (\code{in_a}), \code{"right"} (\code{in_b}), \code{"left_only"},
 \code{"right_only"}, \code{"full"}. Where both datasets carry a non-key column the
 later dataset's value wins, columns follow statement order, and rows follow
-SAS BY ordering. Many-to-many keys, and duplicate keys with shared non-key
+SAS BY ordering. BY values match as SAS compares them: trailing blanks are
+ignored, a blank character value equals a missing one, special missing
+values are distinct, and variable names match without regard to case.
+Many-to-many keys, and duplicate keys with shared non-key
 columns, are refused: those cases require SAS observation-by-observation
 semantics that this join-based helper does not implement.
+A BY variable that is numeric in one input and character in the other is
+refused, as SAS refuses it, and so are column names whose case makes the
+match ambiguous (a BY variable matching two columns of one input, or two
+columns of \code{b} that differ only by case matching one column of \code{a}).
+Where both inputs supply a column, a factor is combined as character unless
+both carry it as a factor with the same levels.
 Do not pre-create missing columns on one input when the other input supplies
 them: that invents an overlap. Preserve genuine overlapping source columns;
 their unsupported repeated-key semantics must not be silently dropped.

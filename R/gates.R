@@ -1,13 +1,21 @@
-#' Parse gate for R code
+#' Top-level expressions of parsed code that are not the package bootstrap
 #'
-#' Evaluates whether the generated R code passes linting without errors.
+#' The bootstrap is the one `source()` call a generated program may carry. Only
+#' the identical expression is dropped, wherever it stands, so any other
+#' `source()` call stays for the linter to reject.
 #'
-#' @param code Character string of R code.
-#' @return A list with `pass` (logical) and `lint` (tibble of lint results).
+#' @param parsed Result of `parse()` for a generated program.
+#' @return A list of the remaining top-level expressions.
 #' @noRd
-gate_parse <- function(code) {
-  lint <- lint_r_code(code)
-  list(pass = !any(lint$level == "error"), lint = lint)
+drop_module_bootstrap <- function(parsed) {
+  bootstrap <- as.list(parse(text = module_bootstrap(), keep.source = FALSE))
+  Filter(function(expr) !any(vapply(bootstrap, identical, logical(1), y = expr)), as.list(parsed))
+}
+
+#' R source for a list of expressions, one blank line between them
+#' @noRd
+deparse_expressions <- function(exprs) {
+  paste(vapply(exprs, function(e) paste(deparse(e), collapse = "\n"), character(1)), collapse = "\n\n")
 }
 
 #' Check a generated program revision for mechanical validity
@@ -55,9 +63,7 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
   # 2. Package lint check (excluding the sas2r bootstrap block)
   code_for_lint <- code_text
   if (!inherits(parsed, "error")) {
-    bootstrap <- as.list(parse(text = module_bootstrap(), keep.source = FALSE))
-    non_boot <- Filter(function(expr) !any(vapply(bootstrap, identical, logical(1), y = expr)), as.list(parsed))
-    code_for_lint <- paste(vapply(non_boot, function(e) paste(deparse(e), collapse = "\n"), character(1)), collapse = "\n\n")
+    code_for_lint <- deparse_expressions(drop_module_bootstrap(parsed))
   }
 
   lint_res <- lint_r_code(code_for_lint, allowlist = allowlist)

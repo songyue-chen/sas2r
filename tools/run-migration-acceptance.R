@@ -126,11 +126,9 @@ run_fixture_acceptance <- function(artifacts_dir) {
     "    - adam.adsl_out",
     "  tlfs:",
     "    - outputs/vs_summary_table.pdf",
-    "verification:",
-    "  output_review:",
-    "    enabled: true",
-    "    r_libraries:",
-    paste0("      adam: ", normalizePath(ref_adam, winslash = "/", mustWork = FALSE))
+    "  references:",
+    paste0("    adam.adsl_out: ",
+           normalizePath(file.path(ref_adam, "adsl_out.rds"), winslash = "/", mustWork = FALSE))
   ), cfg_file)
 
   # Initial input hash

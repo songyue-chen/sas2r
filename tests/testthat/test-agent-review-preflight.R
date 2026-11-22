@@ -5,7 +5,7 @@ test_that("Tasks 15A-C prerequisites expose one normalized agent contract", {
     "new_llm", "llm_request", "llm_capabilities", "effective_model_params",
     "resolve_model_capabilities",
     "normalize_provider_response", "attempt_llm_request",
-    "new_usage_budget", "read_usage_ledger", "sas_llm_models",
+    "new_usage_budget", "sas_llm_models",
     "sas_llm_probe"
   )
   expect_true(all(vapply(required, exists, logical(1),

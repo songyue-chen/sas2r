@@ -203,7 +203,7 @@ fix_program_revision <- function(
     execution = bundle,
     project = project,
     unit_stmts = comp_stmts,
-    schemas = tryCatch(infer_schemas(project), error = function(e) list()),
+    schemas = infer_schemas(project),
     config = config,
     macro_index = project_macro_index(project, config)
   ))

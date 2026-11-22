@@ -331,6 +331,40 @@ test_that("public mechanical retry receives failed code and package-loading guid
   expect_identical(report$component_evidence[[1L]]$smoke_status, "passed")
 })
 
+test_that("a translation that carries the package bootstrap needs no mechanical retry", {
+  # Staging accepts the package's own bootstrap and the revision check lints
+  # around it. The first lint has to agree, or a model that copies the line the
+  # package would have written itself pays for a whole retry.
+  bootstrap_calls <- function(result) {
+    sum(grepl('^if \\(!exists\\("\\.sas2r_registry"',
+              unlist(strsplit(paste(sas_code(result), collapse = "\n"), "\n", fixed = TRUE))))
+  }
+  executable <- grep("^#", module_bootstrap(), value = TRUE, invert = TRUE)
+  for (carried in list(module_bootstrap(), executable)) {
+    fx <- review_public_fixture()
+    code <- paste(c(carried, review_public_code), collapse = "\n")
+    adapter <- counted_review_llm(list(good_translation(code), good_review()))
+    result <- sas_translate(fx$source, config = fx$config, llm = adapter$llm)
+    expect_identical(adapter$calls$n, 2L)
+    expect_identical(result$status, "migration_ready")
+    expect_identical(bootstrap_calls(result), 1L)
+    expect_equal(readRDS(file.path(result$outputs_dir, "datasets/work/out.rds"))$x, 11)
+  }
+})
+
+test_that("any other source() call still gets a mechanical retry", {
+  fx <- review_public_fixture()
+  bad_code <- paste('source("autoexec.R")', review_public_code, sep = "\n")
+  adapter <- counted_review_llm(list(good_translation(bad_code),
+                                    good_translation(review_public_code), good_review()))
+  result <- sas_translate(fx$source, config = fx$config, llm = adapter$llm)
+  expect_identical(adapter$calls$n, 3L)
+  retry_text <- paste(vapply(adapter$calls$requests[[2L]]$messages,
+                             function(m) m$content %||% "", character(1)), collapse = "\n")
+  expect_match(retry_text, "banned_function: source", fixed = TRUE)
+  expect_identical(result$status, "migration_ready")
+})
+
 test_that("failed mechanical checks prevent execution and skip semantic review", {
   fx <- review_public_fixture()
   bad_code <- paste("library(dplyr)", review_public_code, sep = "\n")

@@ -109,17 +109,6 @@ test_that("worker admission omits native history without weakening size or spend
   }
 })
 
-test_that("ellmer cost is catalog_estimate, never provider-reported", {
-  row <- usage_from_ellmer(
-    cost = 0.05, input = 100, output = 20,
-    ellmer_version = "0.4.2"
-  )
-
-  expect_identical(row$cost_status, "catalog_estimate")
-  expect_match(row$rate_source, "ellmer|LiteLLM")
-  expect_identical(row$source_version, "0.4.2")
-})
-
 test_that("strict mode fails closed before an unpriced call", {
   calls <- 0L
   llm <- new_llm(function(request) {

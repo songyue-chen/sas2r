@@ -16,9 +16,27 @@ test_that("review is independent and fixer is evidence grounded", {
     mode = "program", llm = fixer
   )
   expect_false("translator_reasoning" %in% names(seen$review))
+  baseline_free <- function(request) !any(vapply(request$messages, function(m)
+    grepl("Deterministic baseline", m$content %||% "", fixed = TRUE), logical(1)))
+  expect_true(baseline_free(seen$review))
+  expect_true(baseline_free(seen$fix))
   expect_setequal(seen$fix$evidence_ids,
                   c(review$review_id, fx$failed_smoke$execution_id))
   expect_identical(fixed$mode, "program")
+})
+
+test_that("a schema inference failure stops the fixer instead of emptying its tool context", {
+  # Returning no schemas would quietly strip the fixer's dataset context. The
+  # translator already calls the same function unguarded.
+  fx <- review_fix_fixture()
+  review <- review_program_revision(
+    fx$revision, fx$context,
+    recording_reviewer(function(request) material_review_response("R drops SAS missing-value branch")))
+  local_mocked_bindings(infer_schemas = function(project) stop("schema inference failed"))
+  expect_error(
+    fix_program_revision(fx$revision, review = review, smoke = fx$failed_smoke, mode = "program",
+                         llm = recording_fixer(function(request) valid_fix_response("fixed_program"))),
+    "schema inference failed", fixed = TRUE)
 })
 
 test_that("review_program_revision persists immutable review and records review_unavailable on exhausted failure", {

@@ -163,6 +163,76 @@ test_that("generate_program_revision produces single component revision", {
   expect_true(isTRUE(rev$checks$pass))
 })
 
+baseline_request_text <- function(sas_lines) {
+  dir <- withr::local_tempdir(.local_envir = parent.frame())
+  writeLines(sas_lines, file.path(dir, "prog.sas"))
+  project <- sas_project(dir)
+  paths <- init_migration_paths(withr::local_tempdir(.local_envir = parent.frame()))
+  baseline <- sas_transpile(project, paths$root)
+  outputs <- infer_output_contracts(project)
+  graph <- build_dependency_graph(project, output_contracts = outputs)
+  schedule <- stable_dependency_schedule(graph)
+  llm <- recording_translation_llm(function(component_id, request) {
+    valid_program_translation_response(code = "prog_fn <- function() { 1 }", summary = "t")
+  })
+  generate_program_revision(
+    component_id = "prog", project = project, baseline = baseline, graph = graph,
+    schedule = schedule, outputs = outputs, llm = llm, paths = paths, revision_id = "r1"
+  )
+  req <- llm$requests()[[1L]]
+  users <- Filter(function(m) identical(m$role, "user"), req$messages)
+  list(
+    text = paste(vapply(users, function(m) m$content %||% "", ""), collapse = "\n"),
+    tiers = baseline$manifest$tier
+  )
+}
+
+# The baseline section of a translator request: from its header to the end of
+# the task block that carries it.
+baseline_section <- function(text) {
+  at <- regexpr("Deterministic baseline (reference only)", text, fixed = TRUE)
+  expect_gt(at, 0L)
+  rest <- substring(text, at)
+  sub("\nEND SAS2R_TASK_.*$", "", rest)
+}
+
+test_that("a mixed component shows the translator its deterministic baseline", {
+  mixed <- baseline_request_text(c(
+    "proc sort data=work.a out=work.b; by x; run;",
+    "proc transpose data=work.b out=work.c; by x; var y; run;"
+  ))
+  expect_true(all(c("t1", "stub") %in% mixed$tiers))
+  expect_match(mixed$text, "Deterministic baseline (reference only)", fixed = TRUE)
+  section <- baseline_section(mixed$text)
+  expect_match(section, "sas_sort(", fixed = TRUE)
+  expect_match(section, "# sas2r:untranslated unit=", fixed = TRUE)
+  expect_match(section, "# --- sas2r:unit 2 ---", fixed = TRUE)
+  expect_false(grepl("sas2r bootstrap", section, fixed = TRUE))
+  expect_false(grepl("source(", section, fixed = TRUE))
+  expect_false(grepl(BANNER[[1]], section, fixed = TRUE))
+  # The stub unit's SAS source reaches the model once, as source, not again
+  # as comments in the baseline.
+  expect_false(grepl("out=work.c", section, fixed = TRUE))
+  expect_match(mixed$text, "out=work.c", fixed = TRUE)
+})
+
+test_that("the baseline is left out when it cannot help or would not fit", {
+  expect_null(render_translator_baseline(NULL))
+  big <- rep(strrep("x", 100), 500)
+  expect_identical(render_translator_baseline(big),
+    "Deterministic baseline omitted: 50499 bytes exceeds the 40000-byte reference limit.")
+  stub_only <- c("proc transpose data=work.b out=work.c; by x; var y; run;")
+  all_stub <- baseline_request_text(stub_only)
+  expect_false(any(all_stub$tiers == "t1"))
+  expect_false(grepl("Deterministic baseline", all_stub$text, fixed = TRUE))
+  withr::local_options(sas2r.translator_baseline_reference = FALSE)
+  off <- baseline_request_text(c(
+    "proc sort data=work.a out=work.b; by x; run;",
+    "proc transpose data=work.b out=work.c; by x; var y; run;"
+  ))
+  expect_false(grepl("Deterministic baseline", off$text, fixed = TRUE))
+})
+
 test_that("check_program_revision verifies parse, lint, helpers, and interfaces", {
   temp_dir <- withr::local_tempdir()
 

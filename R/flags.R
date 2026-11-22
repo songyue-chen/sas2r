@@ -16,44 +16,6 @@ add_flag <- function(flags, new) {
   }, character(1), USE.NAMES = FALSE)
 }
 
-#' Test whether a comma-separated flag string carries a flag
-#'
-#' The read side of [add_flag()]. Manifest `flags` is one comma-separated
-#' string per row, so a flag cannot be tested with `==` -- a row that gained a
-#' second flag would stop matching.
-#'
-#' @param flags Character vector of comma-separated flag strings.
-#' @param flag One flag name.
-#' @return A logical vector as long as `flags`.
-#' @noRd
-has_flag <- function(flags, flag) {
-  vapply(flags, function(f) {
-    if (length(f) != 1L || is.na(f) || !nzchar(trimws(f))) return(FALSE)
-    flag %in% trimws(strsplit(f, ",", fixed = TRUE)[[1]])
-  }, logical(1), USE.NAMES = FALSE)
-}
-
-#' Test whether one manifest row carries a flag
-#'
-#' Manifest-shaped wrapper over [has_flag()], defaulting to `FALSE` for a
-#' caller that supplied no manifest so a missing manifest can never be read as
-#' a positive claim about a unit.
-#'
-#' @param manifest A translation manifest, or `NULL`.
-#' @param unit_id One unit id.
-#' @param flag One flag name.
-#' @return `TRUE` when a row for `unit_id` carries `flag`.
-#' @noRd
-unit_carries_flag <- function(manifest, unit_id, flag) {
-  if (is.null(manifest) || !is.data.frame(manifest) ||
-      !all(c("unit_id", "flags") %in% names(manifest))) {
-    return(FALSE)
-  }
-  hit <- !is.na(manifest$unit_id) & manifest$unit_id == unit_id
-  if (!any(hit)) return(FALSE)
-  any(has_flag(as.character(manifest$flags[hit]), flag))
-}
-
 #' @noRd
 is_scalar_character <- function(x, allow_empty = FALSE) {
   is.character(x) && length(x) == 1L && !is.na(x) && (allow_empty || nzchar(x))
@@ -74,6 +36,3 @@ path_is_absolute_or_escaping <- function(path) {
   !length(components) || any(!nzchar(components)) ||
     any(components %in% c(".", ".."))
 }
-
-
-

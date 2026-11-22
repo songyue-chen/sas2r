@@ -17,14 +17,14 @@
 - **Observable Outputs**: Repaired R code units, audit summaries, and usage ledger logs (`<out_dir>/.sas2r/usage.jsonl`).
 
 ### Use Case 3: Saved Final Outputs
-- **Inputs**: SAS source, configured library directories containing authentic SAS outputs (`.sas7bdat` / `.xpt`), and candidate R output datasets (`.rds` / `.xpt`).
-- **Internal Work**: The output-review inventory discovers dataset targets from AST lineage and pairs accessible files. Standalone comparison functions instead take data frames directly. Migration reference checks use the configured `outputs.references` paths and optional assertions for keys and tolerances.
-- **Observable Outputs**: Structured target plans and bounded comparison reports under `<out_dir>/.sas2r/output-review/<run_id>/`. The separate migration summary is saved in the run folder as `report/report.json` and `report/translation.md`; `.sas2r/report.json` also tracks the latest run.
+- **Inputs**: SAS source, authentic SAS outputs (`.sas7bdat` / `.xpt`) that you name as references, and candidate R output datasets (`.rds` / `.xpt`).
+- **Internal Work**: References are not discovered by scanning folders. Standalone comparison functions take data frames that you read yourself. Migration reference checks use the configured `outputs.references` paths and optional assertions for keys and tolerances.
+- **Observable Outputs**: Bounded comparison reports, written by `write_comparison_report()` to the file you name, or under `<dir>/output-review/<run_id>/` when you pass `run_id` and `dir`. The separate migration summary is saved in the run folder as `report/report.json` and `report/translation.md`; `.sas2r/report.json` also tracks the latest run.
 
 ### Use Case 4: TLF (Table, Listing, Figure) Preparation Data
 - **Inputs**: SAS programs producing intermediate datasets that feed report procedures (`PROC REPORT`, `PROC TABULATE`, `PROC PRINT`, `PROC SGPLOT`, `PROC SGPANEL`, `PROC SGRENDER`).
-- **Internal Work**: AST lineage identifies intermediate preparation datasets consumed by reporting PROCs. This dataset-review path compares structured preparation data; rendered artifact checks belong to the separate migration output gate.
-- **Observable Outputs**: Comparison reports and target plans designating role `tlf_preparation_data`.
+- **Internal Work**: A preparation dataset that the program saves is compared like any other saved dataset, with the comparison functions below. Rendered artifact checks belong to the separate migration output gate.
+- **Observable Outputs**: Comparison reports for the preparation data. Rendered tables, listings, and figures are assessed in the migration report.
 
 ### Use Case 5: Equal Content with SAS-Missing-First vs. R-NA-Last Ordering
 - **Inputs**: Saved datasets with identical row sets but differing sort orders due to SAS placing missing values first while R sorts `NA` last.
@@ -38,8 +38,8 @@
 
 ### Use Case 7: Evidence Missing, Ambiguous, or Resource-Limited
 - **Inputs**: Partial output folders, missing candidate files, or datasets exceeding fixed evidence limits.
-- **Internal Work**: Fails closed safely per target. A target with no candidate output stays `missing_candidate` and one with no reference stays `missing_reference`; unresolvable ambiguous candidates stay `ambiguous`.
-- **Observable Outputs**: Translation results remain intact; output review reports explicit diagnostic statuses without halting or corrupting code generation.
+- **Internal Work**: Fails closed per target. In a migration, a target with no candidate output is reported as `missing_candidate`, and a configured reference that cannot be found fails its `reference_exists` check; neither counts as verified. In a comparison, ambiguous row pairing or a resource limit is recorded in the report instead of being resolved by guessing.
+- **Observable Outputs**: Translation results remain intact; the migration report and comparison reports carry explicit diagnostic statuses without halting or corrupting code generation.
 
 ---
 
@@ -144,7 +144,7 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 1. **Point-of-Use Source Authority**: An accessible `LIBNAME` statement in SAS source code is authoritative for its scope.
 2. **Configured Fallback**: `libraries:` definitions in `_sas2r.yml` supply bindings only when a source libref is absent or unresolvable.
 3. **No Member Fall-Through**: A missing dataset member under an accessible source root does not fall through to a configured fallback directory.
-4. **Inventory Roots**: Configured library paths serve as search roots for automatic output review. The migration gate separately accepts explicit reference paths and per-target key/tolerance assertions in `_sas2r.yml`.
+4. **Explicit References**: Reference outputs are not found by scanning library folders. The migration gate compares only against the reference paths listed in `_sas2r.yml`, with optional per-target key/tolerance assertions.
 
 ---
 

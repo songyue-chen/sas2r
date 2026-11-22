@@ -1065,6 +1065,70 @@ stopifnot(length(batch_wire) == 2L,
           count_value(batch_wire[[2]]$body, "real_auto_2") >= 2L,
           contains_text(batch_wire[[2]]$body, "agent_tool_limit"))
 
+# Tool definitions stay byte-identical across rounds of the native loop, so the
+# provider's prompt-cache prefix survives; the allowance rides in each result.
+round_adapter <- sas2r:::ellmer_llm(list(provider = "openai", model = "offline-tworound-model",
+  base_url = base_url, api_key = api_key, capabilities = capabilities))
+round_log_start <- length(readLines(log_file, warn = FALSE))
+round_agent <- sas2r:::run_agent(
+  list(name = "round", prompt = "translator.md", tool_call_limit = 3L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  round_adapter, list(lookup = quota_lookup), "round translation",
+  log_dir = tempfile("sas2r-real-round-"))
+round_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - round_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(round_agent$status, "ok"),
+          identical(round_wire[[1]]$body$tools, round_wire[[2]]$body$tools),
+          identical(round_wire[[2]]$body$tools, round_wire[[3]]$body$tools),
+          !contains_text(round_wire[[2]]$body$tools, "Tool allowance"),
+          contains_text(round_wire[[2]]$body, "Tool allowance: 2 of 3"),
+          contains_text(round_wire[[3]]$body, "Tool allowance: 1 of 3"))
+
+# A model that ends the tool phase by writing a schema-valid answer as plain
+# text is not asked for the answer again: no request without tools follows.
+answer_adapter <- sas2r:::ellmer_llm(list(provider = "openai",
+  model = "offline-gathered-answer-model",
+  base_url = base_url, api_key = api_key, capabilities = capabilities))
+answer_log_start <- length(readLines(log_file, warn = FALSE))
+answer_agent <- sas2r:::run_agent(
+  list(name = "answer", prompt = "translator.md", tool_call_limit = 3L,
+       retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+  answer_adapter, list(lookup = quota_lookup), "answer translation",
+  log_dir = tempfile("sas2r-real-answer-"))
+answer_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - answer_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(answer_agent$status, "ok"),
+          identical(answer_agent$answer_phase, "gathering"),
+          identical(answer_agent$data$r_code, "x <- 1"),
+          length(answer_wire) == 2L,
+          all(vapply(answer_wire, function(entry)
+            length(entry$body$tools %||% list()) > 0L, logical(1))))
+
+# The same answer asked for again as structured output: its parameters and
+# uncertainty must reach `data` in the shape the accepted text answer has.
+asked_log_start <- length(readLines(log_file, warn = FALSE))
+asked_agent <- withr::with_options(list(sas2r.accept_gathered_answer = FALSE),
+  sas2r:::run_agent(
+    list(name = "answer", prompt = "translator.md", tool_call_limit = 3L,
+         retry_limit = 0L, temperature = NULL, output_schema = "program_translation_v1"),
+    answer_adapter, list(lookup = quota_lookup), "answer translation",
+    log_dir = tempfile("sas2r-real-asked-")))
+asked_wire <- lapply(tail(readLines(log_file, warn = FALSE),
+  length(readLines(log_file, warn = FALSE)) - asked_log_start),
+  jsonlite::fromJSON, simplifyVector = FALSE)
+stopifnot(identical(asked_agent$status, "ok"),
+          identical(asked_agent$answer_phase, "finalization"),
+          length(asked_wire) == 3L,
+          length(asked_wire[[3]]$body$tools %||% list()) == 0L,
+          length(answer_agent$data$parameters) == 1L,
+          length(answer_agent$data$uncertainty) == 1L,
+          identical(answer_agent$data$parameters[[1]]$name, "cutoff"),
+          identical(answer_agent$data$uncertainty[[1]]$severity, "low"),
+          identical(answer_agent$data$parameters, asked_agent$data$parameters),
+          identical(answer_agent$data$uncertainty, asked_agent$data$uncertainty))
+
 failure_log_start <- length(readLines(log_file, warn = FALSE))
 failure_lookup <- sas2r:::make_tool("lookup", function(args) {
   stop("Reference index is unavailable")

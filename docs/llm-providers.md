@@ -718,7 +718,7 @@ both can multiply attempts and spending.
 ### Other behaviour
 
 - If a provider rejects structured JSON output natively, `sas2r` seamlessly falls back to schema-guided repair prompts.
-- All credential values, tokens, and authorization headers are redacted from console output, logs, and `_sas2r.lock`.
+- All credential values, tokens, and authorization headers are redacted from console output, logs, and the usage ledger.
 
 ---
 

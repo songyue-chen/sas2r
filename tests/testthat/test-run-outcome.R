@@ -188,3 +188,18 @@ test_that("configured targets are counted before any bundle attempt assesses the
   expect_match(paste(readLines(fx$state$paths$report_md), collapse = "\n"),
     "0 produced / 2 targets", fixed = TRUE)
 })
+
+test_that("a styled message in an older saved record is shown as plain text", {
+  # Records saved before the child process stopped styling its output can
+  # still carry terminal codes; the run outcome must not print them.
+  attempts <- list(incomplete_attempt_ids = character(), completed_attempts = list(list(
+    kind = "bundle", passed = FALSE, attempt_id = "bundle_attempt_001",
+    stdout_path = "bundle_stdout.log", stderr_path = "bundle_stderr.log",
+    condition = list(component_id = "p01",
+                     message = "\033[38;5;255m`flag` must be size 2 or 1, not 0.\033[39m"))))
+  outcome <- migration_run_outcome(list(), list(status = "blocked", diagnostics = list()), attempts)
+  lines <- migration_outcome_lines(outcome)
+  expect_true(any(grepl("Bundle execution stopped in p01 (bundle_attempt_001): `flag` must be size",
+                        lines, fixed = TRUE)))
+  expect_false(any(grepl("\033", lines, fixed = TRUE)))
+})

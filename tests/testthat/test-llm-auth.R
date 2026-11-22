@@ -643,7 +643,7 @@ test_that("probe requests one bounded structured response", {
   expect_identical(seen$parameters$max_output_tokens, 32L)
 })
 
-test_that("lockfiles and logs retain selectors but never credentials", {
+test_that("logs retain selectors but never credentials", {
   dir <- withr::local_tempdir()
   secret <- "sas2r-unit-secret-9f4a"
   token <- "sas2r-unit-bearer-2d71"
@@ -658,14 +658,9 @@ test_that("lockfiles and logs retain selectors but never credentials", {
     credentials = function() token
   )
 
-  lock <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(cfg, prompts_dir = dir, path = lock)
   llm_log(list(config = cfg, authorization = paste("Bearer", token)), dir = dir)
-  text <- paste(
-    c(readLines(lock, warn = FALSE),
-      readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE)),
-    collapse = "\n"
-  )
+  text <- paste(readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE),
+                collapse = "\n")
 
   expect_match(text, "example.openai.azure.com", fixed = TRUE)
   expect_false(grepl(secret, text, fixed = TRUE))
@@ -697,20 +692,12 @@ test_that("persisted LLM artifacts redact configured secrets and cloud cache pat
     secret, nested_secret, aws_cache, aws_credentials, azure_cache, gcp_cache
   )
 
-  lock <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(
-    cfg_with_nested, prompts_dir = dir, path = lock,
-    requested_parameters = list(note = detail),
-    effective_parameters = list(note = detail)
-  )
   llm_log(list(
     config = cfg_with_nested,
     error = list(message = detail, response = list(detail = detail))
   ), dir = dir)
-  text <- paste(c(
-    readLines(lock, warn = FALSE),
-    readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE)
-  ), collapse = "\n")
+  text <- paste(readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE),
+                collapse = "\n")
 
   for (leak in c(
     secret, nested_secret, aws_cache, aws_credentials, azure_cache, gcp_cache

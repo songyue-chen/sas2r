@@ -33,6 +33,14 @@ test_that("skill loader fails closed on malformed package assets", {
                class = "sas2r_skill_schema_error")
 })
 
+test_that("a semantic registry that cannot load is reported, not read as empty", {
+  # An empty id list would blame the skill for a "nonexistent" trigger.
+  local_mocked_bindings(
+    load_semantic_registry = function(...) stop("registry unavailable")
+  )
+  expect_error(valid_semantic_rule_ids(), "registry unavailable")
+})
+
 test_that("production skill catalogue never searches a project directory", {
   project <- withr::local_tempdir()
   dir.create(file.path(project, ".sas2r", "skills", "project-skill"),
@@ -569,24 +577,6 @@ test_that("skill flags derive from SAS source order semantics", {
   expect_identical(skill_flags_from_sas("proc sort data=a; by k; run;"),
                    "order_dependent")
   expect_identical(skill_flags_from_sas("x = 1;"), character(0))
-})
-
-test_that("comparison reasons derive from repair difference evidence", {
-  outputs <- list(list(
-    target_key = "adam.adsl", kind = "dataset", status = "failed",
-    differences = list(
-      digest = list(pattern_hints = data.frame(
-        var = c("aval", NA), hint = c("NA_PATTERN_DIFF", "DUPLICATE_KEYS"),
-        stringsAsFactors = FALSE)),
-      structure = list(alignment_method = "keyless_multiset", dup_fanout = FALSE)
-    )
-  ))
-  expect_setequal(
-    comparison_reasons_from_outputs(outputs),
-    c("missing_order_difference", "duplicate_key_order", "keyless_reorder")
-  )
-  expect_identical(comparison_reasons_from_outputs(list()), character(0))
-  expect_identical(comparison_reasons_from_outputs(NULL), character(0))
 })
 
 test_that("ordering skills route for translator components with retain or by-group logic", {

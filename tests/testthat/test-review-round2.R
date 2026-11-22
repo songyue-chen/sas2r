@@ -13,7 +13,7 @@ test_that("agent policy stays in system instructions and source stays readable",
     prompt_vars = list(style = "PACKAGE_STYLE", phase = "PACKAGE_PHASE", skills = "PACKAGE_SKILL", unit = "data a;\nx='{{context}}';\nrun;", staged_r = "x <- 1", context = "SOURCE_CONTEXT"))
   expect_match(captured[[1]]$content, "PACKAGE_STYLE", fixed = TRUE)
   expect_match(captured[[1]]$content, "PACKAGE_PHASE", fixed = TRUE)
-  expect_match(captured[[1]]$content, "PACKAGE_SKILL", fixed = TRUE)
+  expect_match(captured[[2]]$content, "PACKAGE_SKILL", fixed = TRUE)
   expect_false(grepl("SOURCE_CONTEXT", captured[[1]]$content, fixed = TRUE))
   expect_match(captured[[2]]$content, "data a;\nx='{{context}}';\nrun;", fixed = TRUE)
   expect_match(captured[[2]]$content, "BEGIN SAS2R_TASK_", fixed = TRUE)

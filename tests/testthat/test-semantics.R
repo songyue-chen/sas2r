@@ -179,7 +179,7 @@ test_that("semantic registry validation rejects duplicate mapping fields", {
   )
 })
 
-test_that("semantic rulebook flags exercised rules without verification evidence", {
+test_that("semantic rulebook names the rules a program exercises", {
   src <- withr::local_tempfile(fileext = ".sas")
   writeLines(c(
     "data out; set input; y = round(x, 1); if y = 2 then z = 1; run;",
@@ -190,8 +190,6 @@ test_that("semantic rulebook flags exercised rules without verification evidence
   procs <- c("means")
   ids <- sas2r:::semantic_exercised_rules(p, procs)
   expect_true(all(c("functions.round", "operators.=", "procs.means") %in% ids))
-  usage <- sas2r:::semantic_usage_table(ids)
-  expect_true(nrow(usage) >= 3L)
 })
 
 test_that("semantic expression rules ignore assignment and PROC option equals signs", {

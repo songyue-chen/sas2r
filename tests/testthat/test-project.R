@@ -133,14 +133,6 @@ test_that("cached project scans preserve globally offset comment attachments", {
   expect_identical(p1$comments, p2$comments)
 })
 
-test_that("recreated dataset in sequential code does not trigger false cycle", {
-  src <- "data a; set src; run;\ndata b; set a; run;\ndata a; set b; run;"
-  u <- sas_units(sas_statements(src))
-  lin <- extract_dataset_refs(u)
-  ord <- unit_order(lin, unique(u$unit_id))
-  expect_identical(ord, c(1L, 2L, 3L))
-})
-
 test_that("sas_project with empty or non-existent path throws clear error", {
   expect_error(sas_project(""), "Path does not exist or is invalid")
   expect_error(sas_project("non_existent_dir_12345"), "Path does not exist or is invalid")

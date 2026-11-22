@@ -112,68 +112,6 @@ test_that("unknown providers are rejected regardless of ellmer", {
                class = "sas2r_llm_error")
 })
 
-test_that("lockfile pins provider, models, and prompt hashes", {
-  dir <- withr::local_tempdir()
-  pdir <- file.path(dir, "prompts"); dir.create(pdir)
-  writeLines("translate {{unit}}", file.path(pdir, "translator.md"))
-  lock <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(list(provider = "bedrock",
-                      tiers = list(frontier = "m1", cheap = "m2")), pdir, lock)
-  j <- jsonlite::read_json(lock)
-  expect_identical(j$provider, "bedrock")
-  expect_identical(j$tiers$frontier, "m1")
-  expect_true(nzchar(j$prompts[["translator.md"]]))
-})
-
-test_that("lockfile separates requested and effective optional parameters", {
-  dir <- withr::local_tempdir()
-  pdir <- file.path(dir, "prompts")
-  dir.create(pdir)
-  writeLines("translate", file.path(pdir, "translator.md"))
-  lock <- file.path(dir, "_sas2r.lock")
-
-  write_llm_lock(
-    list(provider = "openai", model = "m", temperature = 0),
-    pdir, lock,
-    requested_parameters = list(temperature = 0),
-    effective_parameters = list(temperature = NULL)
-  )
-  json <- jsonlite::read_json(lock)
-  text <- paste(readLines(lock, warn = FALSE), collapse = "\n")
-
-  expect_equal(json$requested_parameters$temperature, 0)
-  expect_null(json$effective_parameters$temperature)
-  expect_match(text, '"effective_parameters"')
-  expect_match(text, '"temperature": null')
-})
-
-test_that("lockfile capability identity matches the provider constructor", {
-  dir <- withr::local_tempdir()
-  model <- paste0("identity-", basename(tempfile()))
-  cfg <- list(
-    provider = "openai", model = model,
-    endpoint = "https://ignored.example.invalid",
-    base_url = "https://used.example.invalid/v1",
-    api_version = "ignored-for-openai",
-    capabilities = list(temperature = "supported"),
-    temperature = 0
-  )
-  lock <- file.path(dir, "_sas2r.lock")
-
-  write_llm_lock(cfg, dir, lock)
-
-  written <- jsonlite::read_json(lock)
-  expected <- resolve_model_capabilities(
-    "openai", cfg$base_url, model, NULL, overrides = cfg$capabilities
-  )
-  mismatched <- resolve_model_capabilities(
-    "openai", cfg$endpoint, model, cfg$api_version,
-    overrides = cfg$capabilities
-  )
-  expect_identical(written$capability_record_hash, expected$record_hash)
-  expect_false(identical(written$capability_record_hash, mismatched$record_hash))
-})
-
 test_that("llm_log appends jsonl locally", {
   dir <- withr::local_tempdir()
   llm_log(list(agent = "translator", tokens = 10), dir = dir)
@@ -367,6 +305,36 @@ test_that("strip_fences cleanly extracts json from markdown code fences", {
   expect_identical(strip_fences(fenced1), json_txt)
   expect_identical(strip_fences(fenced2), json_txt)
   expect_identical(strip_fences(json_txt), json_txt)
+})
+
+test_that("strict_json_list parses JSON text and never reads a file or URL", {
+  answer <- '{"r_code": "x <- 1", "summary": "file content"}'
+  path <- withr::local_tempfile(fileext = ".json")
+  writeLines(answer, path)
+  expect_null(strict_json_list(path))
+  expect_null(strict_json_list(path, strip_markdown_fences = TRUE))
+
+  reached <- FALSE
+  refuse <- function(...) { reached <<- TRUE; stop("parser reached") }
+  testthat::local_mocked_bindings(
+    fromJSON = refuse, parse_json = refuse, .package = "jsonlite"
+  )
+  url <- "https://example.invalid/answer.json"
+  for (text in c(url, paste0("  \n", url, " \n"),
+                 paste0("```json\n", url, "\n```"))) {
+    expect_null(strict_json_list(text))
+    expect_null(strict_json_list(text, strip_markdown_fences = TRUE))
+  }
+  expect_false(reached)
+})
+
+test_that("strict_json_list still accepts JSON objects, fenced objects and arrays", {
+  expect_identical(strict_json_list('{"a": 1}'), list(a = 1L))
+  expect_identical(
+    strict_json_list('```json\n{"a": [1, 2]}\n```', strip_markdown_fences = TRUE),
+    list(a = list(1L, 2L))
+  )
+  expect_identical(strict_json_list(' [1, "b"] '), list(1L, "b"))
 })
 
 test_that("sas_llm_probe does not retry definitive nonanswers and writes durable audit fields", {
@@ -1111,48 +1079,6 @@ test_that("render_prompt rejects slash-relative paths from cwd", {
   expect_error(render_prompt("\\translator.md"), class = "sas2r_prompt_error")
 })
 
-test_that("write_llm_lock hashes custom prompt files from specs and includes macro prompt", {
-  dir <- withr::local_tempdir()
-  withr::local_dir(dir)
-  # Plant a fake translator.md in cwd to verify it is NOT hashed for bare names
-  cwd_fake <- file.path(dir, "translator.md")
-  writeLines("CWD FAKE PROMPT", cwd_fake)
-
-  custom_prompt <- file.path(dir, "custom_fixer.md")
-  writeLines("CUSTOM FIXER CONTENT", custom_prompt)
-  specs <- list(
-    translator = list(prompt = "translator.md"),
-    fixer = list(prompt = custom_prompt)
-  )
-  lock_file <- file.path(dir, "_sas2r.lock")
-  write_llm_lock(list(provider = "bedrock", tiers = list(frontier = "m")),
-                 prompts_dir = dir, path = lock_file, specs = specs)
-  j <- jsonlite::read_json(lock_file)
-  expect_true("translator.md" %in% names(j$prompts))
-  # Must match the packaged prompt hash, NOT the stray cwd file hash
-  pkg_prompt <- system.file("prompts", "translator.md", package = "sas2r")
-  expect_identical(j$prompts[["translator.md"]], unname(tools::md5sum(pkg_prompt)))
-  # Must include custom prompt
-  expect_true("custom_fixer.md" %in% names(j$prompts))
-  expect_identical(j$prompts[["custom_fixer.md"]], unname(tools::md5sum(custom_prompt)))
-  # Must include translator-macro.md
-  expect_true("translator-macro.md" %in% names(j$prompts))
-})
-
-test_that("write_llm_lock warns and falls back on unresolvable prompt paths", {
-  dir <- withr::local_tempdir()
-  missing_prompt <- file.path(dir, "does_not_exist_translator.md")
-  specs <- list(
-    translator = list(prompt = missing_prompt)
-  )
-  lock_file <- file.path(dir, "_sas2r.lock")
-  expect_warning(
-    write_llm_lock(list(provider = "bedrock", tiers = list(frontier = "m")),
-                   prompts_dir = dir, path = lock_file, specs = specs),
-    "could not be resolved"
-  )
-})
-
 test_that("a zero-argument tool is callable", {
   # `names(list())` is NULL, not character(0), and mget(NULL) aborts with
   # "invalid first argument" -- which silently broke every argument-less tool
@@ -1279,6 +1205,61 @@ test_that("tool budget refusal round-trips through ellmer wrapper as JSON", {
   expect_s3_class(res2, "json")
   parsed2 <- jsonlite::fromJSON(as.character(res2))
   expect_identical(parsed2, list(error = "budget_exhausted"))
+})
+
+test_that("bound tool results carry the remaining allowance; unbound results are unchanged", {
+  state <- new_agent_tool_state(3L)
+  tool <- make_tool("lookup", function(args) list(name = args$name), 20L,
+    schema = closed_tool_schema(list(name = list(type = "string")), required = "name"))
+  bound <- bind_transport_tool_limits(list(lookup = tool), state)$lookup
+  out <- jsonlite::fromJSON(ellmer_tool_function(bound)(name = "round"))
+  expect_identical(out$name, "round")
+  expect_identical(out$tool_allowance, paste0(
+    "Tool allowance: 2 of 3 calls remaining for this agent invocation. ",
+    "Reuse retained evidence. When no calls remain, return the final answer."))
+  expect_identical(as.character(ellmer_tool_function(tool)(name = "round")), '{"name":"round"}')
+})
+
+test_that("the allowance note never corrupts a non-object tool result", {
+  state <- new_agent_tool_state(3L)
+  note <- agent_tool_allowance_message(state)
+  expect_identical(ellmer_tool_allowance("plain text", state), paste("plain text", note, sep = "\n\n"))
+  expect_identical(ellmer_tool_allowance(list("a", "b"), state), list("a", "b"))
+  content <- ellmer::ContentText("x")
+  expect_identical(ellmer_tool_allowance(content, state), content)
+  expect_identical(ellmer_tool_allowance(list(a = 1), NULL), list(a = 1))
+})
+
+test_that("data-frame and encoded JSON tool results pass through unchanged", {
+  state <- new_agent_tool_state(3L)
+  note <- agent_tool_allowance_message(state)
+  empty_rows <- data.frame(id = integer(), name = character())
+  two_rows <- data.frame(id = 1:2, name = c("a", "b"))
+  expect_identical(ellmer_tool_allowance(empty_rows, state), empty_rows)
+  expect_identical(ellmer_tool_allowance(two_rows, state), two_rows)
+  expect_identical(ellmer_tool_allowance(list(), state), list(tool_allowance = note))
+  encoded <- jsonlite::toJSON(list(a = 1), auto_unbox = TRUE)
+  expect_s3_class(encoded, "json")
+  expect_identical(ellmer_tool_allowance(encoded, state), encoded)
+})
+
+test_that("the native tool loop does not re-register tools while calls remain", {
+  state <- new_agent_tool_state(3L)
+  tools <- bind_transport_tool_limits(list(lookup = make_tool("lookup",
+    function(args) list(ok = TRUE), 20L,
+    schema = closed_tool_schema(list(name = list(type = "string")), required = "name"))), state)
+  set_calls <- list(); on_result <- NULL
+  chat <- list(
+    on_tool_result = function(fn) on_result <<- fn,
+    set_tools = function(tools) set_calls[[length(set_calls) + 1L]] <<- tools,
+    chat = function(prompt) {
+      state$count <- 1L
+      on_result(ellmer::ContentToolResult(value = "x",
+        request = ellmer::ContentToolRequest(id = "c1", name = "lookup", arguments = list())))
+      "done"
+    })
+  expect_identical(ellmer_gather_tools(chat, "prompt", tools), "done")
+  expect_length(set_calls, 0L)
 })
 
 test_that("parallel tool calls are paired with their results, not batched", {

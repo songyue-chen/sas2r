@@ -435,13 +435,6 @@ test_that("registry credential env values are redacted even when no name regex m
     list(error = list(message = paste("rejected", private_key))),
     dir = dir, redactor = redactor
   )
-  lock <- file.path(dir, "_sas2r.lock")
-  sas2r:::write_llm_lock(
-    cfg, prompts_dir = dir, path = lock,
-    requested_parameters = list(note = private_key),
-    effective_parameters = list(note = private_key)
-  )
-
   ledger <- file.path(dir, "usage.jsonl")
   llm <- sas2r:::new_llm(function(request) {
     stop(paste("provider rejected key", private_key))
@@ -459,13 +452,11 @@ test_that("registry credential env values are redacted even when no name regex m
 
   text <- paste(c(
     readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE),
-    readLines(lock, warn = FALSE),
     readLines(ledger, warn = FALSE)
   ), collapse = "\n")
   expect_false(grepl(private_key, text, fixed = TRUE))
   expect_match(text, "[REDACTED]", fixed = TRUE)
   expect_match(text, "run_summary", fixed = TRUE)
-  expect_match(text, "org-acct", fixed = TRUE)
 })
 
 test_that("existing provider arguments are unchanged after registry dispatch", {
@@ -863,12 +854,6 @@ test_that("credential_envs allowlist names only, and their values stay ephemeral
   )
   redacted <- redactor(list(message = paste("rejected", secret)))
   expect_false(grepl(secret, redacted$message, fixed = TRUE))
-
-  dir <- withr::local_tempdir()
-  lock <- file.path(dir, "_sas2r.lock")
-  sas2r:::write_llm_lock(cfg, prompts_dir = dir, path = lock)
-  expect_false(grepl(secret, paste(readLines(lock, warn = FALSE),
-                                   collapse = "\n"), fixed = TRUE))
 })
 
 test_that("missing auth commands yield a hint instead of an empty or NULL command", {
