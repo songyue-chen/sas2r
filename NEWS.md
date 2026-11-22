@@ -16,7 +16,8 @@
 
 - Give repair, triage and the run report a clearer description of execution
   failures in generated code, including row-size failures that were previously
-  reported as unclassified.
+  reported as unclassified. A failure is described the same way whether it is
+  found when one program is checked or when the whole project is run.
 
 - Remove settings and internal code that had no effect. A configuration file
   that sets `verification` is now rejected, with a message saying what to use

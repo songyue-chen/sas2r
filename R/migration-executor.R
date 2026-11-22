@@ -388,7 +388,7 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call, format_call_names) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_condition, format_call, format_call_names) {
     # Initialize fresh environment
     execution_env <- new.env(parent = globalenv())
 
@@ -459,10 +459,9 @@ run_program_smoke <- function(
       success = FALSE, executed_components = executed_components,
       executed_calls = executed_calls, failed_component_id = diagnostics$current,
       population_checks = diagnostics$population_checks,
-      condition = list(message = conditionMessage(e), class = class(e),
-                       call = format_call(conditionCall(e)), identifiers = e$identifiers,
-                       call_names = diagnostics$call_names,
-                       component_id = diagnostics$current, population_check = e$population_check)
+      # The same record a bundle failure gets, so both are classified alike.
+      condition = c(format_condition(e, format_call),
+                    list(call_names = diagnostics$call_names, component_id = diagnostics$current))
     )})
   }
 
@@ -484,6 +483,7 @@ run_program_smoke <- function(
         component_id = component_id,
         population_specs = plan$population_specs %||% list(),
         observe_population = observe_source_population,
+        format_condition = execution_condition,
         format_call = execution_call_text,
         format_call_names = execution_call_names
       ),
@@ -1134,7 +1134,9 @@ run_bundle_attempt <- function(
 # cause in its own. The deepest cause supplies the message, as before. The
 # classes of every level below callr's wrapper and the first recorded call are
 # kept as well: they say what kind of failure it was and where in the code.
-execution_condition <- function(error) {
+# A smoke run calls this inside the program's own process, where only base R,
+# `pkg::` calls and the arguments are certain to be the current code.
+execution_condition <- function(error, format_call = execution_call_text) {
   while (inherits(error, "callr_error") && inherits(error$parent, "condition")) error <- error$parent
   chain <- list(error)
   while (inherits(error$parent, "condition")) {
@@ -1150,7 +1152,7 @@ execution_condition <- function(error) {
   }
   list(message = cli::ansi_strip(conditionMessage(error)),
        class = unique(unlist(lapply(chain, class), use.names = FALSE)),
-       call = first(function(e) execution_call_text(conditionCall(e))),
+       call = first(function(e) format_call(conditionCall(e))),
        identifiers = first(function(e) e$identifiers),
        population_check = first(function(e) e$population_check))
 }
