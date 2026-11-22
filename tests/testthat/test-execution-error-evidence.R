@@ -227,6 +227,52 @@ test_that("a bundle failure keeps the class, call and location that a smoke fail
   }
 })
 
+test_that("a type mismatch inside a dplyr verb is classified at smoke as it is in the bundle", {
+  skip_if_not_installed("dplyr")
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  state <- fx$state
+  assignment <- 'dplyr::mutate(x, flag = dplyr::if_else(id == 1, 1, "a"))'
+  code <- paste(fx$fixed$p01, paste("x <-", assignment), sep = "\n")
+  state <- stage_workflow_revision(state, "p01", code, "reviewed_no_material_finding")
+  plan <- build_program_smoke_plan(state$graph, "p01", state$selected_revisions, execute = TRUE)
+  prep <- prepare_program_smoke(state, plan, withr::local_tempdir())
+  smoke <- run_program_smoke(prep$plan, prep$runtime, prep$attempt_dir)
+  bundle <- run_bundle_attempt(state)
+  for (execution in list(smoke, bundle)) {
+    expect_false(execution$passed)
+    # A saved record is what a resumed run reads.
+    saved <- jsonlite::fromJSON(jsonlite::toJSON(unclass(execution), auto_unbox = TRUE), simplifyVector = FALSE)
+    for (record in list(execution, saved)) {
+      diagnostics <- bounded_agent_diagnostics(record, source_code = code)
+      expect_identical(diagnostics$condition_kind, "incompatible_types", info = execution$scope)
+      expect_identical(diagnostics$condition_message, "Incompatible column types", info = execution$scope)
+      expect_identical(diagnostics$source_location, assignment, info = execution$scope)
+    }
+  }
+
+  # A failure recognized at smoke is recorded in the triage report with its program.
+  state$config$migration$bug_reports <- TRUE
+  state$selected_revisions$p01$smoke <- smoke
+  diagnosis <- suppressMessages(migration_package_bug_diagnosis(state, diagnosis_mock(list(findings = list()))))
+  expect_identical(diagnosis$observed_failures, "Program smoke test failed - p01 - Incompatible column types")
+})
+
+test_that("a missing source dataset read inside a dplyr verb is not blamed on the translation at smoke", {
+  skip_if_not_installed("dplyr")
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  state <- fx$state
+  code <- paste("x <- dplyr::mutate(data.frame(a = 1), n = nrow(lib_read('raw', 'input')))",
+                "lib_write(x, 'work', 'out1')", sep = "\n")
+  state <- stage_workflow_revision(state, "p01", code, "reviewed_no_material_finding")
+  unlink(file.path(fx$root, "inputs", "input.rds"))
+  plan <- build_program_smoke_plan(state$graph, "p01", state$selected_revisions, execute = TRUE)
+  prep <- prepare_program_smoke(state, plan, withr::local_tempdir())
+  smoke <- run_program_smoke(prep$plan, prep$runtime, prep$attempt_dir)
+  expect_false(smoke$passed)
+  expect_identical(non_translation_runtime_reason(state, "p01", smoke$condition),
+                   "source_input_unavailable: raw.input")
+})
+
 test_that("a saved condition keeps the program's own failure, not the subprocess wrapper", {
   plain <- tryCatch(callr::r(function() { f <- function() stop("plain failure"); f() }), error = identity)
   condition <- execution_condition(plain)
