@@ -614,6 +614,8 @@ agent_error_facts <- function(condition, source_code = "") {
   raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
   messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
     conditionMessage(e) else e$message %||% ""), use.names = FALSE)
+  # A saved subprocess message can carry terminal styling; match the plain text.
+  messages <- cli::ansi_strip(messages)
   lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
     unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
   if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
@@ -626,9 +628,11 @@ agent_error_facts <- function(condition, source_code = "") {
   facts$identifiers <- unique(tolower(regmatches(source_code,
     gregexpr("[A-Za-z_][A-Za-z0-9_.]*", source_code, perl = TRUE))[[1L]]))
   facts$calls <- character()
+  facts$argument_names <- character()
   walk <- function(x) {
     if (is.call(x)) {
       facts$calls <- c(facts$calls, paste(deparse(x), collapse = " "))
+      facts$argument_names <- c(facts$argument_names, setdiff(names(x), ""))
       # Generated functions can stop without retaining a call in the stack.
       # Ground both identifiers in the same call in the selected code.
       if (length(variable_errors) && is.symbol(x[[1L]]) && is.null(facts$variable_error)) {
@@ -706,6 +710,17 @@ agent_error_facts <- function(condition, source_code = "") {
   if (kind == "unclassified_error") for (candidate in names(fixed)) {
     if (any(grepl(fixed[[candidate]], lines, perl = TRUE))) { kind <- candidate; break }
   }
+  # One row-size failure has many wordings. Sizes are discarded; whether the
+  # offending value was empty is kept, because that is not a data count and it
+  # points at an absent column or NULL. A column name is sent only when the
+  # selected code assigns that name as a call argument.
+  if (kind == "unclassified_error") {
+    size_error <- execution_size_error(lines, raw_classes)
+    if (!is.null(size_error)) {
+      kind <- if (size_error$zero_length) "zero_length_value" else "differing_row_counts"
+      found_names <- intersect(size_error$names, facts$argument_names)
+    }
+  }
   if (kind == "unclassified_error" && "vctrs_error_incompatible_type" %in% raw_classes)
     kind <- "incompatible_types"
   if (kind == "unclassified_error" && "vctrs_error_subscript_oob" %in% raw_classes)
@@ -727,7 +742,8 @@ agent_error_facts <- function(condition, source_code = "") {
   classes <- intersect(raw_classes,
     c("error", "condition", "simpleError", "rlang_error", "dplyr:::mutate_error",
       "dplyr:::filter_error", "subscriptOutOfBoundsError", "sas2r_execution_timeout",
-      "vctrs_error_incompatible_type", "vctrs_error_subscript_oob", names(helper_kinds)))
+      "vctrs_error_incompatible_type", "vctrs_error_incompatible_size",
+      "vctrs_error_subscript_oob", names(helper_kinds)))
   # A call is safe only if it occurs verbatim in the supplied code tree.
   call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
   location <- intersect(call_text, facts$calls)
@@ -740,6 +756,7 @@ agent_error_facts <- function(condition, source_code = "") {
     non_numeric_operand = "Non-numeric operand in arithmetic", missing_boolean = "Missing value in an if/while condition",
     empty_argument = "Zero-length argument in a condition", subscript_out_of_bounds = "Subscript out of bounds",
     undefined_columns = "Undefined columns selected", differing_row_counts = "Incompatible row counts",
+    zero_length_value = "Zero-length value where one per row is required; an absent column or NULL is a common cause",
     incompatible_types = "Incompatible column types", filter_not_logical = "Filter condition must be logical",
     unknown_library = "Library is not registered", invalid_member = "Invalid dataset member name",
     lib_read_arguments = 'Invalid helper arguments; use lib_read("lib", "member")',
@@ -751,6 +768,40 @@ agent_error_facts <- function(condition, source_code = "") {
     source_location = location, called_function = called_function,
     condition_message = variable_message %||% printing_message %||% paste0(labels[[kind]],
       if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
+}
+
+# Recognize a row-size failure as base R, dplyr, tibble and vctrs word it.
+# Returns whether the offending value was empty and the column names the
+# message gives, or NULL when the lines describe something else. Sizes are
+# never returned: they can come from data.
+execution_size_error <- function(lines, classes = character()) {
+  name <- "`([A-Za-z_][A-Za-z0-9_.]*)`"
+  matches <- function(pattern) Filter(length, regmatches(lines, regexec(pattern, lines, perl = TRUE)))
+  result <- function(zero_length, names = character()) list(zero_length = zero_length, names = names)
+  # dplyr: `x` must be size 2 or 1, not 0.
+  hit <- matches(paste0("^", name, " must be size [0-9]+(?: or 1)?, not ([0-9]+)[.]?$"))
+  if (length(hit)) return(result(identical(hit[[1L]][3L], "0"), hit[[1L]][2L]))
+  # base R: replacement has 0 rows, data has 2
+  hit <- matches("^replacement has ([0-9]+) rows?, data has [0-9]+$")
+  if (length(hit)) return(result(identical(hit[[1L]][2L], "0")))
+  # tibble::add_column(): New column has 0 rows.
+  hit <- matches("^New columns? ha(?:s|ve) ([0-9]+) rows?[.]?$")
+  if (length(hit)) return(result(identical(hit[[1L]][2L], "0")))
+  # tibble::tibble(): one "Size n: Column `x`." line for each column.
+  if ("tibble_error_incompatible_size" %in% classes ||
+      any(grepl("^Tibble columns must have compatible sizes[.]?$", lines))) {
+    columns <- matches(paste0("^[*\u2022] Size ([0-9]+): Column ", name, "[.]?$"))
+    empty <- Filter(function(m) identical(m[2L], "0"), columns)
+    named <- if (length(empty)) empty else columns
+    return(result(length(empty) > 0L, vapply(named, `[[`, character(1), 3L)))
+  }
+  # vctrs: Can't recycle input of size 3 to size 2.
+  #        Can't recycle `a` (size 2) to match `b` (size 3).
+  if ("vctrs_error_incompatible_size" %in% classes ||
+      any(grepl("^Can't recycle .* to (?:size [0-9]+|match .* \\(size [0-9]+\\))[.]?$", lines, perl = TRUE))) {
+    return(result(any(grepl("^Can't recycle (?:input of size 0|.* \\(size 0\\)) to ", lines, perl = TRUE))))
+  }
+  NULL
 }
 
 bounded_agent_diagnostics <- function(execution,
