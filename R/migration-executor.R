@@ -8,6 +8,9 @@ execution_process_env <- function(startup_file) {
   names <- unique(c(names, names(current)[current %in% secrets & nzchar(current)]))
   env[names] <- NA_character_
   env[c("R_ENVIRON_USER", "R_PROFILE_USER")] <- startup_file
+  # Saved messages and logs are read as text and matched by pattern: a parent
+  # session that advertises colors must not make the child style them.
+  env[c("NO_COLOR", "R_CLI_NUM_COLORS")] <- "1"
   env
 }
 
@@ -1127,12 +1130,29 @@ run_bundle_attempt <- function(
   completed_rec
 }
 
-# callr wraps the useful child condition in parent; preserve the deepest cause.
+# callr wraps the child's condition, and a package such as dplyr wraps the
+# cause in its own. The deepest cause supplies the message, as before. The
+# classes of every level below callr's wrapper and the first recorded call are
+# kept as well: they say what kind of failure it was and where in the code.
 execution_condition <- function(error) {
-  while (inherits(error$parent, "condition")) error <- error$parent
-  list(message = conditionMessage(error), class = class(error),
-       call = execution_call_text(conditionCall(error)), identifiers = error$identifiers,
-       population_check = error$population_check)
+  while (inherits(error, "callr_error") && inherits(error$parent, "condition")) error <- error$parent
+  chain <- list(error)
+  while (inherits(error$parent, "condition")) {
+    error <- error$parent
+    chain <- c(chain, list(error))
+  }
+  first <- function(get) {
+    for (level in chain) {
+      value <- get(level)
+      if (!is.null(value)) return(value)
+    }
+    NULL
+  }
+  list(message = cli::ansi_strip(conditionMessage(error)),
+       class = unique(unlist(lapply(chain, class), use.names = FALSE)),
+       call = first(function(e) execution_call_text(conditionCall(e))),
+       identifiers = first(function(e) e$identifiers),
+       population_check = first(function(e) e$population_check))
 }
 
 # Capture only bare function names while the stack is live, never arguments or

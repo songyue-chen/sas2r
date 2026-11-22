@@ -183,4 +183,74 @@ test_that("a zero-length assignment reaches fixer prompts and the triage request
   expect_match(task, '"kind":"zero_length_value"', fixed = TRUE)
   expect_match(task, '"identifiers":"flag"', fixed = TRUE)
   expect_false(leaks(task))
+
+  # The report records the classified failure with its program and the
+  # code-confirmed name, whether or not triage finds a package defect.
+  symptom <- paste("Bundle execution failed - p01 - Zero-length value where one per row is required;",
+                   "an absent column or NULL is a common cause: flag")
+  expect_identical(diagnosis$observed_failures, symptom)
+  expect_true(any(grepl(paste("Recorded symptom:", symptom), package_bug_report_lines(diagnosis), fixed = TRUE)))
+  expect_false(leaks(paste(package_bug_report_lines(diagnosis), collapse = "\n")))
+  # A failure the classifier does not recognize is still not described.
+  state$attempt$condition <- list(component_id = "p01", class = c("simpleError", "error", "condition"),
+                                  message = "something else went wrong")
+  unrecognized <- suppressMessages(migration_package_bug_diagnosis(state, diagnosis_mock(list(findings = list()))))
+  expect_null(unrecognized$observed_failures)
+  # A recognized failure that belongs to no program is recorded without one.
+  terminal <- package_bug_evidence(state, simpleError("non-numeric argument to binary operator"), "Translation")[[1L]]
+  expect_identical(terminal$observed, "Translation - Non-numeric operand in arithmetic")
+})
+
+test_that("a bundle failure keeps the class, call and location that a smoke failure keeps", {
+  skip_if_not_installed("dplyr")
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  state <- fx$state
+  assignment <- "dplyr::mutate(x, flag = numeric(0))"
+  code <- paste(fx$fixed$p01, paste("x <-", assignment), sep = "\n")
+  state <- stage_workflow_revision(state, "p01", code, "reviewed_no_material_finding")
+  plan <- build_program_smoke_plan(state$graph, "p01", state$selected_revisions, execute = TRUE)
+  prep <- prepare_program_smoke(state, plan, withr::local_tempdir())
+  # A parent session that advertises colors must not get styled text back in
+  # the saved message or the saved log.
+  withr::local_envvar(R_CLI_NUM_COLORS = "256")
+  smoke <- run_program_smoke(prep$plan, prep$runtime, prep$attempt_dir)
+  bundle <- run_bundle_attempt(state)
+  for (execution in list(smoke, bundle)) {
+    condition <- execution$condition
+    expect_true("dplyr:::mutate_error" %in% unlist(condition$class))
+    expect_false(grepl("\033", condition$message, fixed = TRUE))
+    expect_false(any(grepl("\033", readLines(execution$stderr_path, warn = FALSE), fixed = TRUE)))
+    diagnostics <- bounded_agent_diagnostics(execution, source_code = code)
+    expect_identical(diagnostics$condition_kind, "zero_length_value")
+    expect_identical(diagnostics$source_location, assignment)
+    expect_true("dplyr:::mutate_error" %in% diagnostics$condition_class)
+  }
+})
+
+test_that("a saved condition keeps the program's own failure, not the subprocess wrapper", {
+  plain <- tryCatch(callr::r(function() { f <- function() stop("plain failure"); f() }), error = identity)
+  condition <- execution_condition(plain)
+  expect_identical(condition$message, "plain failure")
+  expect_identical(condition$call, "f()")
+  expect_false(any(grepl("callr", condition$class, fixed = TRUE)))
+
+  timeout <- tryCatch(callr::r(function() Sys.sleep(5), timeout = 0.5), error = identity)
+  expect_true(any(grepl("timeout", execution_condition(timeout)$class, fixed = TRUE)))
+
+  # A classed error raised below another package's wrapper keeps its class and
+  # identifiers, so helper failures are still recognized. The message stays the
+  # cause's own line, which later lookups rely on.
+  skip_if_not_installed("dplyr")
+  wrapped <- tryCatch(dplyr::mutate(data.frame(a = 1:2), b = stop(structure(
+    class = c("sas2r_dataset_not_found", "error", "condition"),
+    list(message = "Dataset not found: raw.x", call = NULL, identifiers = "raw.x")))), error = identity)
+  condition <- execution_condition(wrapped)
+  expect_true(all(c("dplyr:::mutate_error", "sas2r_dataset_not_found") %in% condition$class))
+  expect_identical(condition$message, "Dataset not found: raw.x")
+  expect_identical(condition$identifiers, "raw.x")
+  expect_match(condition$call, "^dplyr::mutate\\(")
+
+  styled <- structure(class = c("simpleError", "error", "condition"),
+                      list(message = "\033[38;5;255mplain failure\033[39m", call = NULL))
+  expect_identical(execution_condition(styled)$message, "plain failure")
 })

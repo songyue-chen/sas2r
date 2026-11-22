@@ -340,7 +340,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
       md_lines <- c(md_lines, paste0("  - `", attempt$attempt_id, "`: ", attempt$status,
         "; matches current revision: ", attempt$matches_current_revision,
         "; [execution record](<", record_path, ">)",
-        if (!is.null(attempt$condition$message)) paste0("; ", attempt$condition$message)))
+        if (!is.null(attempt$condition$message)) paste0("; ", cli::ansi_strip(attempt$condition$message))))
     }
   }
   md_lines <- c(md_lines, "", "## Repair observations (human review only)", "",

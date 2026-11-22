@@ -14,8 +14,9 @@
 
 - Parse model output more strictly. This raises the minimum jsonlite version.
 
-- Give repair and triage a usable description of row-size failures in
-  generated code, which were previously reported as unclassified.
+- Give repair, triage and the run report a clearer description of execution
+  failures in generated code, including row-size failures that were previously
+  reported as unclassified.
 
 - Remove settings and internal code that had no effect. A configuration file
   that sets `verification` is now rejected, with a message saying what to use

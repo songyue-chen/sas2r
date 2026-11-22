@@ -24,7 +24,7 @@ migration_run_outcome <- function(state, report, attempts) {
   details <- c(
     if (!is.null(failure$stage)) paste("Stopped during:", failure$stage),
     if (!is.null(stopped$message)) paste0("Bundle execution stopped in ", stopped$component_id %||% "unknown component",
-      " (", latest$attempt_id, "): ", stopped$message),
+      " (", latest$attempt_id, "): ", cli::ansi_strip(stopped$message)),
     if (!is.null(stopped$message)) {
       missing <- missing_source_dataset(state, stopped$component_id, stopped)
       recorded <- recorded_dataset_output(latest, missing)
