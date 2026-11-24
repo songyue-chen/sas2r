@@ -403,20 +403,26 @@ test_that("a worker receives equivalent review messages, settings and tool contr
 test_that("parallel workers receive the agent options set in the parent", {
   withr::local_options(sas2r.accept_gathered_answer = NULL,
                        sas2r.translator_baseline_reference = NULL,
-                       sas2r.agent_backoff_base = NULL)
+                       sas2r.agent_backoff_base = NULL,
+                       sas2r.stream_requests = NULL)
+  # An unset streaming choice is forwarded as unset, so the worker applies the
+  # same per-provider default as the parent.
   expect_identical(parallel_worker_options(), list(
     sas2r.accept_gathered_answer = TRUE,
     sas2r.translator_baseline_reference = TRUE,
-    sas2r.agent_backoff_base = 2
+    sas2r.agent_backoff_base = 2,
+    sas2r.stream_requests = NULL
   ))
   withr::local_options(sas2r.accept_gathered_answer = FALSE,
                        sas2r.translator_baseline_reference = FALSE,
-                       sas2r.agent_backoff_base = 0)
+                       sas2r.agent_backoff_base = 0,
+                       sas2r.stream_requests = FALSE)
   forwarded <- parallel_worker_options()
   expect_identical(forwarded, list(
     sas2r.accept_gathered_answer = FALSE,
     sas2r.translator_baseline_reference = FALSE,
-    sas2r.agent_backoff_base = 0
+    sas2r.agent_backoff_base = 0,
+    sas2r.stream_requests = FALSE
   ))
   # The child runs the same bootstrap as a worker and reports what it sees.
   seen <- callr::r(parallel_worker_boot, args = list(

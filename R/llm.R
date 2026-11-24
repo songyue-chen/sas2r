@@ -1069,11 +1069,17 @@ ellmer_last_text <- function(chat, fallback = NULL) {
 #' multiply wall time and spend beneath the budget ledger, which only counts
 #' sas2r-level retries. Options are the only levers ellmer exposes, so scope
 #' them to the request rather than mutating globally.
+#'
+#' `ellmer_echo` is pinned for the same reason. Left to itself ellmer echoes
+#' model text to the console, and streams the request, whenever the session
+#' sets that option or the caller counts as user facing (a package under test
+#' does). How a request is sent is decided here, not by the session.
 #' @noRd
 with_ellmer_limits <- function(timeout_seconds, max_tries, expr) {
   previous <- options(
     ellmer_timeout_s = timeout_seconds,
-    ellmer_max_tries = max_tries
+    ellmer_max_tries = max_tries,
+    ellmer_echo = "none"
   )
   on.exit(options(previous), add = TRUE)
   force(expr)
@@ -1083,13 +1089,61 @@ ELLMER_TRANSPORT_CONSTRAINTS <- list(
   tools_with_structured_output = "unsupported"
 )
 
+# Providers whose text requests are streamed unless `sas2r.stream_requests`
+# says otherwise. A whole-response request sends and receives nothing while the
+# model works, and a network or provider that closes silent connections then
+# ends every long request at the same elapsed time. A streamed request carries
+# the provider's keep-alive events instead. The list holds the providers whose
+# ellmer stream reader raises an error when a stream ends early; for the
+# others an early end reads as a finished turn, so they stay on whole
+# responses until that is checked.
+ELLMER_STREAMED_PROVIDERS <- "anthropic"
+
+# `sas2r.stream_requests` set to TRUE or FALSE decides for every provider;
+# left unset, the provider list above decides. Requests for native structured
+# output are not streamed either way.
+ellmer_streams_requests <- function(cfg) {
+  choice <- getOption("sas2r.stream_requests")
+  if (isTRUE(choice) || isFALSE(choice)) return(choice)
+  isTRUE(cfg$provider %in% ELLMER_STREAMED_PROVIDERS)
+}
+
+# Send one text request, tool rounds included, and return the last turn's
+# text. Streaming runs the same ellmer loop and callbacks as `chat$chat()`;
+# only the wire format differs, so a chat object that cannot stream gets the
+# whole-response call.
+#
+# Once a stream has started the provider has already answered 200, so a later
+# failure arrives as a stream event or an early end and ellmer raises it as a
+# plain error. Sent whole, the same failure is a 5xx or a dropped connection,
+# which the runner retries. Such an error is therefore raised as a transport
+# failure. Errors that already say what they are pass through: the package's
+# own conditions (closed tools, budget), HTTP statuses and connection errors.
+ellmer_send_text <- function(chat, prompt, stream = FALSE) {
+  if (!isTRUE(stream) || !is.function(chat$stream) ||
+      !requireNamespace("coro", quietly = TRUE)) return(chat$chat(prompt))
+  chunks <- tryCatch(
+    getExportedValue("coro", "collect")(chat$stream(prompt)),
+    error = function(error) {
+      if (any(startsWith(class(error), "sas2r_")) ||
+          inherits(error, c("httr2_error", "curl_error"))) stop(error)
+      stop(structure(list(
+        message = paste0("the streamed response ended before it was complete: ",
+                         conditionMessage(error)),
+        call = NULL
+      ), class = c("sas2r_llm_transport_error", "error", "condition")))
+    }
+  )
+  ellmer_last_text(chat, fallback = paste(unlist(chunks), collapse = ""))
+}
+
 # End native gathering at the allowance, rather than asking the provider to
 # stop while leaving its internal tool loop running. Public callbacks preserve
 # the last result even when ellmer has not appended the whole parallel batch.
-ellmer_gather_tools <- function(chat, prompt, tools) {
+ellmer_gather_tools <- function(chat, prompt, tools, stream = FALSE) {
   state <- if (length(tools)) tools[[1L]]$budget_state else NULL
   if (!is.environment(state) || !is.function(chat$on_tool_result) ||
-      !is.function(chat$set_tools)) return(chat$chat(prompt))
+      !is.function(chat$set_tools)) return(ellmer_send_text(chat, prompt, stream))
   seen <- native_results <- list()
   chat$on_tool_result(function(result) {
     native_results[[length(native_results) + 1L]] <<- result
@@ -1107,7 +1161,7 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
   })
-  tryCatch(chat$chat(prompt), sas2r_tools_closed = function(error) {
+  tryCatch(ellmer_send_text(chat, prompt, stream), sas2r_tools_closed = function(error) {
     messages <- ellmer_conversation_messages(chat)
     result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
                          function(m) m$tool_call_id %||% "", character(1))
@@ -1215,7 +1269,8 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     if (!is.null(meter)) end_request(chat$last_turn())
     list(type = "final", data = value)
   } else {
-    value <- ellmer_gather_tools(chat, prompt, request$tools)
+    value <- ellmer_gather_tools(chat, prompt, request$tools,
+                                 stream = ellmer_streams_requests(cfg))
     gathered_conversation <- attr(value, "conversation", exact = TRUE)
     if (!is.null(gathered_conversation)) value <- as.character(value)
     if (is.null(gathered_conversation)) value <- ellmer_last_text(chat, fallback = value)
