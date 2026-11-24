@@ -21,6 +21,13 @@ component_source_text <- function(graph, component_id) {
   }, character(1)), collapse = "\n")
 }
 
+# A checkpoint is reused only by the package version that saved it. Rules,
+# lint and prompt assembly live in package code that no other fingerprint field
+# hashes, so the version stands in for all of it.
+checkpoint_package_version <- function() {
+  as.character(utils::packageVersion("sas2r"))
+}
+
 migration_resume_fingerprint <- function(state, version = RESUME_CHECKPOINT_VERSION) {
   roles <- c("translator", "reviewer", "fixer")
   skills <- agent_skill_catalog()
@@ -29,7 +36,7 @@ migration_resume_fingerprint <- function(state, version = RESUME_CHECKPOINT_VERS
   source_outputs$reference_path <- NULL
   migration_hash(list(
     version = version,
-    package_version = as.character(utils::packageVersion("sas2r")),
+    package_version = checkpoint_package_version(),
     baseline = state$baseline$manifest[c("unit_id", "file", "code", "tier", "flags")],
     sources = stats::setNames(lapply(state$schedule$component_id, function(cid) {
       component_source_text(state$graph, cid)

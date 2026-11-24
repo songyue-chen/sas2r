@@ -574,8 +574,10 @@ installed dependency versions) refresh reviews while retaining translations.
 Saved reviews from before request identities were recorded also receive a fresh
 review; progress explains this with `saved review predates request identity;
 refreshing`. Changes to shared worker prompts, skills, policy or runtime helpers
-can invalidate the checkpoint itself and regenerate translations as well. A
-version-number change alone does not require regeneration.
+can invalidate the checkpoint itself and regenerate translations as well. So
+does installing a different sas2r version: a checkpoint is reused only by the
+version that saved it. Finish or resume a run before upgrading the package if
+you want to keep its saved translations.
 Version 0.4.5 changes the shared agent policy, so checkpoints created with an
 earlier policy regenerate translations under the current resume rules.
 The parallel checkpoint format can import compatible version-8 checkpoints while

@@ -229,6 +229,17 @@ test_that("readable comparison summaries survive serialization and retain type d
 })
 
 
+test_that("a different package version invalidates a saved checkpoint", {
+  # Deliberate and documented in docs/migration-evidence.md: package code that
+  # no other fingerprint field covers can change what a translation means. If
+  # this is ever relaxed, the guides and NEWS must change with it.
+  fx <- repair_workflow_fixture(n = 1L, failures = integer())
+  before <- migration_resume_fingerprint(fx$state)
+  expect_identical(migration_resume_fingerprint(fx$state), before)
+  local_mocked_bindings(checkpoint_package_version = function() "999.0.0")
+  expect_false(identical(migration_resume_fingerprint(fx$state), before))
+})
+
 test_that("report-only controls do not invalidate source translations or reviews", {
   fx <- repair_workflow_fixture(n = 1L, failures = integer())
   before <- migration_resume_fingerprint(fx$state)

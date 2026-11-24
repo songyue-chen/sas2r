@@ -23,6 +23,12 @@
   that sets `verification` is now rejected, with a message saying what to use
   instead.
 
+- Correct the guides on resuming after a package upgrade. A checkpoint is
+  reused only by the sas2r version that saved it, so `resume = TRUE` after an
+  upgrade regenerates translations with new model calls. The guides previously
+  said a version change alone did not. The behaviour has been this way since
+  0.5.5; only the documentation changes.
+
 - Remove the unused `read_comparison_report` agent tool. No translator,
   reviewer or fixer could be given it. A project skill that lists it under
   `tools` is now rejected as naming an unknown tool; delete the entry. The
