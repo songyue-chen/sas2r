@@ -926,13 +926,26 @@ macro statements; use block comments for inactive macro text.
 See SAS's [macro comment rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a000543665.htm)
 and [macro quoting rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a001061290.htm).
 
-Statement splitting does not fully support macro-quoted semicolons, such as
-`%exec_sql(query=%str(select a; select b;))`. Simplify these forms or supply
-expanded source before translation; a discovered macro name does not prove
-that its argument or statement boundaries were parsed correctly. Similarly,
+Statement splitting follows the argument of `%STR` and `%NRSTR` to its closing
+parenthesis, so a semicolon inside it does not end the statement, as in
+`%exec_sql(query=%str(select a; select b;))`. Parentheses inside the argument
+are counted, and the marked forms `%(`, `%)`, `%'`, `%"` and `%%` are read as
+text. Other quoting functions, such as `%BQUOTE`, and text produced when a
+macro runs are not followed: simplify those forms or supply expanded source
+before translation. If an argument is never closed, the statement is split at
+each semicolon as before, and preflight lists a `scanner_fallback` finding with
+the file and line. The finding is advisory. Similarly,
 `call execute('%my_macro(' || id || ')')` constructs code at runtime, so its
 single-quoted text is not mapped as a static call. Provide expanded source and
 the required macro definitions for such programs.
+
+Instream data follows the SAS rules. A `DATALINES`, `CARDS` or `PARMCARDS`
+block ends at the first line that contains a semicolon, and that line is read
+as code, so a block may end with `run;` as well as with a lone semicolon. Data
+lines that contain semicolons need `DATALINES4`, `CARDS4` or `PARMCARDS4`,
+which end only at a line beginning with `;;;;`. If such a block has no `;;;;`
+line, it ends at the first line beginning with a semicolon and preflight lists
+a `scanner_fallback` finding.
 
 ## Handy checks before a long run
 

@@ -23,6 +23,16 @@
   that sets `verification` is now rejected, with a message saying what to use
   instead.
 
+- Split SAS statements more faithfully. A semicolon inside a `%str()` or
+  `%nrstr()` argument no longer ends the statement, and a marked quotation mark
+  such as `%'` no longer hides the code after it. Plain instream data
+  (`datalines`, `cards`, `parmcards`) ends at the first line that contains a
+  semicolon, as in SAS, so a block ended by `run;` no longer absorbs the rest
+  of the file. `datalines4` and its relatives end only at `;;;;`. Sources with
+  none of these constructs are split exactly as before. Where an argument or a
+  `datalines4` block is never closed, the previous splitting is used and
+  preflight lists an advisory `scanner_fallback` finding.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

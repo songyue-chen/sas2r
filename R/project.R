@@ -1,6 +1,6 @@
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.5"
+SCAN_CACHE_SCHEMA_VERSION <- "4.6"
 
 # Cache source parsing within this R session without writing into input trees.
 project_cache_dir <- function(root) {
@@ -286,7 +286,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
         fmt_defs = fmt_defs_raw,
         fmt_uses = fmt_uses_raw,
         fn_defs = fn_defs_raw,
-        fn_uses = fn_uses_raw
+        fn_uses = fn_uses_raw,
+        scan_findings = source_records$findings
       )
       if (cache) {
         scan_cache[[h]] <- hit
@@ -320,6 +321,11 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     }
     stmt_list[[f]] <- u
     unit_rows[[f]] <- u_rows
+    if (!is.null(hit$scan_findings) && nrow(hit$scan_findings)) {
+      flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
+        kind = hit$scan_findings$kind,
+        detail = paste0(f, ":", hit$scan_findings$line, ": ", hit$scan_findings$reason))
+    }
 
     file_comments <- hit$comments
     if (nrow(file_comments) > 0L) {
