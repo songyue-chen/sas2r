@@ -1,11 +1,3 @@
-REVIEW_STATUSES <- c("no_issue", "issue_found", "uncertain")
-REVIEW_ACTIONS <- c("keep", "repair", "human_review")
-REVIEW_ISSUE_CODES <- c(
-  "missing_value_semantics", "sort_order_semantics", "by_group_semantics",
-  "lineage_mismatch", "sas_default_mismatch", "unsupported_assumption",
-  "generated_r_parse_risk", "unit_context_missing", "other_source_grounded"
-)
-
 #' The PROCs a translation unit runs, as skill routing sees them
 #'
 #' Skill triggers key off the proc name, and there is exactly one place to read

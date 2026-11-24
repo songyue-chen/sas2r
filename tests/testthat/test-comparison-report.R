@@ -190,21 +190,6 @@ test_that("report cannot modify verification units or clear review floor", {
   expect_false("approval" %in% names(report))
 })
 
-test_that("read_comparison_report tool works inside build_tools context", {
-  registry <- comparison_report_registry_fixture()
-  ctx <- list(report_registry = registry)
-  spec <- list(tools = list(read_comparison_report = list(max_calls = 5L)))
-  tools <- sas2r:::build_tools(spec, ctx)
-
-  expect_true("read_comparison_report" %in% names(tools))
-  tool_res <- tools$read_comparison_report$call(list(report_id = "report-1"))
-  expect_identical(tool_res, unclass(registry[["report-1"]]))
-  expect_identical(tool_res$report_id, "report-1")
-
-  expect_error(tools$read_comparison_report$call(list(report_id = "report-1", extra = 123)),
-               class = "sas2r_tool_arguments_error")
-})
-
 # --- Round 2: caps sized to the byte budget, truncation that says what ------
 
 test_that("an ADSL-shaped comparison is reported whole, not abridged", {
@@ -299,10 +284,10 @@ test_that("truncated and truncated_fields cannot disagree", {
                class = "sas2r_invalid_report_error")
 })
 
-# The closed-schema and limits gate. It runs twice on every report the model
-# can see -- once when new_comparison_report() assembles it, and again when
-# read_comparison_report() resolves a registered ID for the reviewer's tool --
-# so both call sites are exercised here, not just the function in isolation.
+# The closed-schema and limits gate. It runs twice on every report -- once when
+# new_comparison_report() assembles it, and again when read_comparison_report()
+# resolves a registered ID -- so both call sites are exercised here, not just
+# the function in isolation.
 
 test_that("validate_comparison_report accepts a well-formed report unchanged", {
   ref <- data.frame(usubjid = c("01", "02"), aval = c(1, 2))
@@ -424,7 +409,7 @@ test_that("an oversized report is refused when the constructor assembles it", {
   )
 })
 
-test_that("a malformed registered report is refused when the model tool resolves it", {
+test_that("a malformed registered report is refused when its ID is resolved", {
   registry <- comparison_report_registry_fixture()
   good <- registry[["report-1"]]
 
@@ -445,42 +430,28 @@ test_that("a malformed registered report is refused when the model tool resolves
                class = "sas2r_invalid_report_error")
   expect_error(sas2r:::read_comparison_report("report-oversize", registry),
                class = "sas2r_invalid_report_error")
-
-  # And through the tool the reviewer agent is actually handed.
-  tools <- sas2r:::build_tools(
-    list(tools = list(read_comparison_report = list(max_calls = 8L))),
-    list(report_registry = registry)
-  )
-  expect_identical(tools$read_comparison_report$call(list(report_id = "report-1")),
-                   unclass(good))
-  expect_error(tools$read_comparison_report$call(list(report_id = "report-malformed")),
-               class = "sas2r_invalid_report_error")
-  expect_error(tools$read_comparison_report$call(list(report_id = "report-oversize")),
-               class = "sas2r_invalid_report_error")
 })
 
 
-test_that("comparison evidence reaches the model through the native tool adapter", {
+test_that("no agent tool exposes a comparison report, whatever the spec names", {
   report <- compare_aligned_outputs(
     data.frame(id = 1:3, value = c(10, 20, 30)),
     data.frame(id = 1:3, value = c(10, 21, 30)),
     target = output_target_fixture(), context = alignment_context("id")
   )
   registry <- stats::setNames(list(report), report$report_id)
-  tools <- sas2r:::build_tools(
-    list(tools = list(read_comparison_report = list(max_calls = 3L))),
-    list(report_registry = registry)
-  )
-  # Exercise the actual callback handed to ellmer, including JSON encoding.
-  callback <- sas2r:::ellmer_tool_function(tools$read_comparison_report)
-  payload <- callback(report_id = report$report_id)
-  expected <- jsonlite::toJSON(unclass(report), auto_unbox = TRUE)
-  expect_identical(as.character(payload), as.character(expected))
-  decoded <- jsonlite::fromJSON(payload, simplifyVector = FALSE)
-  expect_identical(decoded$report_id, report$report_id)
-  expect_identical(names(decoded), names(report))
-  expect_lte(nchar(payload, type = "bytes"),
-             sas2r:::output_report_limits()$max_serialized_bytes)
+  # The report stays readable by its owner through the public function.
   expect_s3_class(read_comparison_report(report$report_id, registry),
                   "sas2r_comparison_report")
+  # No role, named or anonymous, can be handed a tool that reads it.
+  for (role in list(NULL, "translator", "reviewer", "fixer", "custom")) {
+    tools <- sas2r:::build_tools(
+      list(name = role, tools = list(read_comparison_report = list(max_calls = 3L))),
+      list(agent_role = role, report_registry = registry, comparison_reports = registry)
+    )
+    expect_length(tools, 0L)
+  }
+  expect_false("read_comparison_report" %in% names(sas2r:::TOOL_ARGUMENT_SCHEMAS))
+  expect_false("read_comparison_report" %in% names(sas2r:::TOOL_IMPLS))
+  expect_false("read_comparison_report" %in% names(sas2r:::TOOL_DESCRIPTIONS))
 })

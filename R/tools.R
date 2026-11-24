@@ -66,8 +66,7 @@ TOOL_ARGUMENT_SCHEMAS <- list(
     construct = tool_string(), package = tool_string(), topic = tool_string()
   )),
   search_skills = closed_tool_schema(list(query = tool_string()), "query"),
-  read_skill = closed_tool_schema(list(name = tool_string()), "name"),
-  read_comparison_report = closed_tool_schema(list(report_id = tool_string()), "report_id")
+  read_skill = closed_tool_schema(list(name = tool_string()), "name")
 )
 
 TOOL_DESCRIPTIONS <- c(
@@ -80,8 +79,7 @@ TOOL_DESCRIPTIONS <- c(
   list_macro_files = "List indexed SAS macro source filenames.",
   search_docs = "Search the configured local documentation mirror.",
   search_skills = "Search registered skills in the curated catalogue.",
-  read_skill = "Read full guidance and provenance for a registered skill.",
-  read_comparison_report = "Read a bounded output comparison report by registered report ID."
+  read_skill = "Read full guidance and provenance for a registered skill."
 )
 
 tool_argument_schema <- function(name) TOOL_ARGUMENT_SCHEMAS[[name]]
@@ -259,29 +257,6 @@ TOOL_IMPLS <- list(
       read_registered_skill(nm, catalog),
       sas2r_skill_not_registered = function(e) list(error = "skill_not_registered", message = conditionMessage(e))
     )
-  },
-  # Retain the report-only adapter and its serialization contract tests.
-  # Authoring roles cannot register it, even through project overrides.
-  read_comparison_report = function(ctx) function(args) {
-    report_id <- args$report_id %||% ""
-    registry <- ctx$report_registry %||% ctx$comparison_reports %||% new.env(parent = emptyenv())
-    # A bounded tool answers the model with a typed record. Letting the
-    # condition escape would abort the whole refinement run -- losing every
-    # comparison report already computed -- because a model named a stale or
-    # invented report_id. read_skill does the same.
-    tryCatch(
-      # Keep the public R object typed; tool results carry its validated fields
-      # as a plain list so every transport can encode the same report as JSON.
-      unclass(read_comparison_report(report_id, registry)),
-      # Most specific first: report_path_rejected inherits from
-      # report_not_registered, so the parent handler would otherwise shadow it.
-      sas2r_report_path_rejected = function(e) {
-        list(error = "report_path_rejected", message = conditionMessage(e))
-      },
-      sas2r_report_not_registered = function(e) {
-        list(error = "report_not_registered", message = conditionMessage(e))
-      }
-    )
   }
 )
 
@@ -294,8 +269,6 @@ TOOL_IMPLS <- list(
 build_tools <- function(spec, ctx) {
   out <- list()
   for (nm in names(spec$tools)) {
-    # Project overrides cannot reintroduce reference answers into authoring.
-    if (nm == "read_comparison_report" && (ctx$agent_role %||% spec$name %||% "") %in% c("translator", "fixer", "reviewer")) next
     if (nm == "search_docs") {
       if (isTRUE(ctx$config$search_docs$enabled) && !isFALSE(spec$tools$search_docs$enabled)) {
         if (exists("search_docs_impl", mode = "function")) {
@@ -308,6 +281,9 @@ build_tools <- function(spec, ctx) {
       }
       next
     }
+    # A name with no implementation registers nothing. That includes a project
+    # override asking for a comparison-report tool: no agent tool reads
+    # reference comparisons, so authoring stays reference-blind.
     impl <- TOOL_IMPLS[[nm]]
     if (is.null(impl)) next
     out[[nm]] <- make_tool(

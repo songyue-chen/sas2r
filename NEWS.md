@@ -23,6 +23,11 @@
   that sets `verification` is now rejected, with a message saying what to use
   instead.
 
+- Remove the unused `read_comparison_report` agent tool. No translator,
+  reviewer or fixer could be given it. A project skill that lists it under
+  `tools` is now rejected as naming an unknown tool; delete the entry. The
+  `read_comparison_report()` function is unchanged.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

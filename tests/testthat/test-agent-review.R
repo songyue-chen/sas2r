@@ -26,33 +26,6 @@ test_that("reviewer validates a closed finding schema", {
   expect_false(sas2r:::validate_output(missing_field, spec$output_schema)$ok)
 })
 
-test_that("all standard reviewer constants are defined and allowed by schema", {
-  expect_identical(
-    sas2r:::REVIEW_STATUSES,
-    c("no_issue", "issue_found", "uncertain")
-  )
-  expect_identical(
-    sas2r:::REVIEW_ACTIONS,
-    c("keep", "repair", "human_review")
-  )
-  expect_identical(
-    sas2r:::REVIEW_ISSUE_CODES,
-    c(
-      "missing_value_semantics", "sort_order_semantics", "by_group_semantics",
-      "lineage_mismatch", "sas_default_mismatch", "unsupported_assumption",
-      "generated_r_parse_risk", "unit_context_missing", "other_source_grounded"
-    )
-  )
-
-  spec <- load_agent_specs()$reviewer
-  for (code in sas2r:::REVIEW_ISSUE_CODES) {
-    review_data <- good_review(
-      status = "issue_found", action = "repair", codes = code
-    )$data
-    expect_true(sas2r:::validate_output(review_data, spec$output_schema)$ok, info = code)
-  }
-})
-
 test_that("reviewer spec tools are restricted and do not modify files or read datasets", {
   specs <- load_agent_specs()
   rev_spec <- specs$reviewer
