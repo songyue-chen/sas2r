@@ -179,3 +179,92 @@ test_that("package facts take one line so a longer default list does not crowd t
   expect_match(facts, "notapkg9 not installed", fixed = TRUE)
   expect_false(any(grepl("allowed by mechanical lint", lines, fixed = TRUE)))
 })
+
+# The pharmaverse dialect is opt-in. Package facts are mocked throughout: no
+# test may assume a pharmaverse package is installed where the suite runs.
+local_pharmaverse_facts <- function(allowed, installed, envir = parent.frame()) {
+  local_mocked_bindings(agent_package_facts = function(allowlist = NULL) {
+    versions <- stats::setNames(ifelse(allowed %in% installed, "1.0.0", "unknown"), allowed)
+    list(r_version = "4.4.0", allowed = allowed, versions = versions)
+  }, .env = envir)
+}
+
+test_that("the default style is unchanged and never mentions pharmaverse packages", {
+  default <- render_style_guidance(list())
+  expect_identical(render_style_guidance(list(dialect = "tidyverse")), default)
+  expect_match(default, "^Style: tidyverse first, faithful always\\.")
+  expect_false(grepl("pharmaverse|admiral|rtables|gtsummary", default, ignore.case = TRUE))
+  # Allowlisting a pharmaverse package does not switch the dialect on.
+  local_pharmaverse_facts(c("base", "dplyr", "admiral"), c("base", "dplyr", "admiral"))
+  expect_false(grepl("pharmaverse|admiral", render_style_guidance(list()), ignore.case = TRUE))
+  expect_false(grepl("admiral", render_style_guidance(list(dialect = "base")), fixed = TRUE))
+})
+
+test_that("the pharmaverse dialect keeps the tidyverse rules and adds faithful-first conditions", {
+  local_pharmaverse_facts(
+    allowed = c("base", "dplyr", "admiral", "tern"),
+    installed = c("base", "dplyr", "admiral"))
+  tidy <- render_style_guidance(list(dialect = "tidyverse"))
+  text <- render_style_guidance(list(dialect = "pharmaverse"))
+  expect_length(text, 1L)
+  expect_identical(render_style_guidance(list(dialect = "Pharmaverse")), text)
+  tidy_lines <- strsplit(tidy, "\n", fixed = TRUE)[[1L]]
+  lines <- strsplit(text, "\n", fixed = TRUE)[[1L]]
+  # Everything the tidyverse dialect says after its heading is still said,
+  # in the same order, before anything about pharmaverse packages.
+  expect_identical(lines[seq_along(tidy_lines)][-1L], tidy_lines[-1L])
+  expect_match(lines[1L], "pharmaverse only where it is exact, faithful always", fixed = TRUE)
+  added <- paste(lines[-seq_along(tidy_lines)], collapse = "\n")
+  expect_match(added, "the SAS program is the specification", fixed = TRUE)
+  expect_match(added, "- admiral::* for ADaM derivation steps", fixed = TRUE)
+  expect_match(added, "not installed here, so do not use: tern.", fixed = TRUE)
+  # Not allowlisted, so not named at all.
+  expect_false(grepl("gtsummary|rtables", added))
+  expect_match(added, "set each argument that affects results explicitly", fixed = TRUE)
+  expect_match(added, "not a defect", fixed = TRUE)
+  expect_match(added, "Add nothing a package adds by convention, and drop nothing", fixed = TRUE)
+  expect_match(added, "never replaces a bundle helper", fixed = TRUE)
+  expect_match(text, "sas_merge", fixed = TRUE)
+})
+
+test_that("the pharmaverse dialect names no package that is not allowlisted and installed", {
+  local_pharmaverse_facts(allowed = c("base", "dplyr"), installed = c("base", "dplyr"))
+  text <- render_style_guidance(list(dialect = "pharmaverse"))
+  expect_match(text, "No pharmaverse package is both allowlisted and installed here, so use none.", fixed = TRUE)
+  expect_false(grepl("admiral|tern|rtables|gtsummary", text))
+  expect_false(grepl("For every such call", text, fixed = TRUE))
+
+  local_pharmaverse_facts(allowed = c("base", "admiral"), installed = "base")
+  text <- render_style_guidance(list(dialect = "pharmaverse"))
+  expect_match(text, "so use none.", fixed = TRUE)
+  expect_match(text, "not installed here, so do not use: admiral.", fixed = TRUE)
+  expect_false(grepl("admiral::", text, fixed = TRUE))
+})
+
+test_that("the pharmaverse dialect adds nothing to the allowlist and reaches only writing roles", {
+  expect_false(any(names(STYLE_PHARMAVERSE_ROLES) %in% normalize_package_allowlist()))
+  local_pharmaverse_facts(c("base", "dplyr", "admiral"), c("base", "dplyr", "admiral"))
+  style <- render_style_guidance(list(dialect = "pharmaverse"))
+  for (file in c("translator.md", "translator-macro.md", "fixer.md")) {
+    expect_match(render_prompt(file, list(style = style)), "admiral::* for", fixed = TRUE)
+  }
+  reviewer <- paste(readLines(system.file("prompts", "reviewer.md", package = "sas2r")), collapse = "\n")
+  expect_false(grepl("{{style}}", reviewer, fixed = TRUE))
+})
+
+test_that("pharmaverse calls are counted only when present", {
+  expect_identical(code_pharmaverse_calls(paste(
+    "adsl <- lib_read('adam', 'adsl') |> admiral::derive_vars_merged(dataset_add = ex, by_vars = admiral::exprs(USUBJID))",
+    "t <- gtsummary::tbl_summary(adsl)", "# admiral::not_code()", "x <- 'tern::in_a_string'", sep = "\n")), 3L)
+  expect_identical(code_pharmaverse_calls("x <- dplyr::mutate(y, a = 1)"), 0L)
+  expect_identical(code_pharmaverse_calls("not r code ((("), 0L)
+
+  plain <- migration_style_observation(list(list(r_code = "x <- dplyr::mutate(y, a = 1)")))
+  expect_identical(names(plain), c("tidyverse", "base", "components"))
+  expect_identical(migration_style_line(plain),
+    "Style observation (advisory): tidyverse package calls 1; base data-frame operations 0; across 1 components.")
+  used <- migration_style_observation(list(list(r_code = "x <- admiral::derive_vars_dt(y, new_vars_prefix = 'A', dtc = DTC)")))
+  expect_identical(used$pharmaverse, 1L)
+  expect_identical(migration_style_line(used),
+    "Style observation (advisory): tidyverse package calls 0; base data-frame operations 0; pharmaverse package calls 1; across 1 components.")
+})
