@@ -33,6 +33,11 @@
   `datalines4` block is never closed, the previous splitting is used and
   preflight lists an advisory `scanner_fallback` finding.
 
+- Check the comparison summary a model may see against its closed format
+  before every request that carries it. A summary that does not fit is
+  withheld with a warning and recorded in the run diagnostics; the run
+  continues.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

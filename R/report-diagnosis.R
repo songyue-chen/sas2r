@@ -19,8 +19,10 @@ current_report_findings <- function(state) {
   result
 }
 
-report_diagnosis_context <- function(state, summaries, limit = 24000L) {
-  ids <- unique(unlist(lapply(names(summaries), function(key)
+# `keys` names every unresolved target, including one whose summary was
+# withheld: its code is still worth reading.
+report_diagnosis_context <- function(state, summaries, limit = 24000L, keys = names(summaries)) {
+  ids <- unique(unlist(lapply(keys, function(key)
     state$assessment$lineage_by_target[[key]]$upstream_components %||%
       graph_output_writers(state$graph, key)), use.names = FALSE))
   report_advice_context(state, list(discrepancies = summaries,
@@ -116,11 +118,15 @@ migration_report_diagnosis <- function(state) {
   }
   redact <- llm_audit_redactor(llm)
   tryCatch({
-    summaries <- lapply(names(targets), function(key) reviewer_discrepancy_summary(targets[[key]], key))
+    withheld <- new.env(parent = emptyenv())
+    summaries <- lapply(names(targets), function(key)
+      reviewer_discrepancy_summary(targets[[key]], key, omitted = withheld))
     names(summaries) <- names(targets)
+    summaries <- Filter(Negate(is.null), summaries)
+    if (length(withheld$items)) result$discrepancy_summary_omitted <- withheld$items
     result$provider <- llm$provider
     result$model <- llm$model
-    packet <- report_diagnosis_context(state, summaries)
+    packet <- report_diagnosis_context(state, summaries, keys = names(targets))
     cli::cli_inform('AI report diagnosis may send bounded SAS/R code and aggregate comparison patterns to {llm$provider}, subject to budget admission; no records or raw logs. Use migration.report_diagnosis: off to disable.')
     advice <- request_report_advice(llm, budget, packet, "report-diagnosis", "report_diagnosis_v1", "report_diagnosis")
     response <- advice$response
