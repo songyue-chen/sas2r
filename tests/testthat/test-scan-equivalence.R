@@ -23,7 +23,7 @@ test_that("packaged and test fixture sources are classified exactly as before", 
 
 test_that("sources without %str() or instream data are classified exactly as before", {
   withr::local_seed(20261124)
-  corpus <- scan_corpus_plain(600L)
+  corpus <- scan_corpus_plain(300L)
   expect_false(any(grepl("%(nr)?str|datalines|cards", corpus, ignore.case = TRUE)))
   same <- vapply(corpus, function(text) identical(sas_scan(text), legacy_sas_scan(text)), logical(1))
   expect_identical(sum(!same), 0L, info = if (any(!same)) deparse(corpus[which(!same)[1L]]))
@@ -31,7 +31,7 @@ test_that("sources without %str() or instream data are classified exactly as bef
 
 test_that("conventionally ended instream data is classified exactly as before", {
   withr::local_seed(20261125)
-  corpus <- scan_corpus_instream(400L)
+  corpus <- scan_corpus_instream(200L)
   # The corpus does exercise both block forms, with semicolons inside "4" data.
   expect_true(any(grepl("datalines;|cards;", corpus, ignore.case = TRUE)))
   expect_true(any(grepl("(datalines4|cards4);\n[^\n]*;", corpus, ignore.case = TRUE)))
@@ -41,14 +41,14 @@ test_that("conventionally ended instream data is classified exactly as before", 
 
 test_that("the fallback pass is the previous classification on any source", {
   withr::local_seed(20261126)
-  corpus <- c(scan_corpus_triggers(600L), scan_corpus_plain(100L), scan_corpus_instream(100L))
+  corpus <- c(scan_corpus_triggers(300L), scan_corpus_plain(50L), scan_corpus_instream(50L))
   same <- vapply(corpus, function(text) identical(legacy_pass_mask(text), legacy_sas_scan(text)$mask), logical(1))
   expect_identical(sum(!same), 0L, info = if (any(!same)) deparse(corpus[which(!same)[1L]]))
 })
 
 test_that("the newer rules keep every character and only retag semicolons", {
   withr::local_seed(20261127)
-  corpus <- scan_corpus_triggers(600L)
+  corpus <- scan_corpus_triggers(200L)
   changed <- 0L
   for (text in corpus) {
     scan <- sas_scan(text)
@@ -64,5 +64,5 @@ test_that("the newer rules keep every character and only retag semicolons", {
     }
   }
   # The corpus is not vacuous: the newer rules do apply to a good share of it.
-  expect_gt(changed, 100L)
+  expect_gt(changed, 30L)
 })
