@@ -23,6 +23,11 @@
   that sets `verification` is now rejected, with a message saying what to use
   instead.
 
+- Show more cost detail in the run reports and the printed summary: the share
+  of input tokens read from the provider's prompt cache, completed requests and
+  tokens for each role, and how many answers were accepted before the tool
+  phase ended. `report.json` carries the same figures under `usage`.
+
 - Correct the guides on resuming after a package upgrade. A checkpoint is
   reused only by the sas2r version that saved it, so `resume = TRUE` after an
   upgrade regenerates translations with new model calls. The guides previously

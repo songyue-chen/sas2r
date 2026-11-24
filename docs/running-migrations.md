@@ -514,6 +514,11 @@ These checks cover population behavior, not all derived values or SAS parity.
 The elapsed-time and
 usage summary distinguishes known spend from unknown-cost calls: `$0.0000`
 known spend with unknown-cost calls does not mean the run was free.
+It also shows the share of input tokens read from the provider's prompt cache,
+completed requests and tokens for each role, and how many answers were accepted
+before the tool phase ended. A cache share is shown only when the provider
+reported cached input; `not reported` does not mean zero. These figures
+describe cost. They say nothing about whether a translation is correct.
 
 ## Reference differences: translation error or different specification?
 
