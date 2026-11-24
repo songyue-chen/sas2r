@@ -893,9 +893,9 @@ test_that("the tool-call limit message names the scope it actually has", {
   # sends a caller to the project-level budget: max_tool_calls setting when the
   # one to change is the agent spec's tool_call_limit.
   state <- new_agent_tool_state(1L)
-  reserve_agent_tool_call(state, "read_unit_context")
+  reserve_agent_tool_call(state, "list_macro_files")
 
-  err <- tryCatch(reserve_agent_tool_call(state, "read_unit_context"),
+  err <- tryCatch(reserve_agent_tool_call(state, "list_macro_files"),
                   sas2r_agent_tool_limit = function(e) e)
 
   expect_s3_class(err, "sas2r_agent_tool_limit")

@@ -247,8 +247,6 @@ review_program_revision <- function(
     agent_role = "reviewer",
     component_id = component_id, selected_revisions = context$selected_revisions,
     project = context$project,
-    unit_stmts = comp_stmts,
-    schemas = infer_schemas(context$project),
     config = context$config %||% list()
   ))
 

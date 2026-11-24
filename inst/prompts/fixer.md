@@ -28,6 +28,9 @@ Constraints, in order:
 SAS source:
 {{unit}}
 
+Input schemas inferred from code references (dataset: variable=type; a type is a reading of the source, not an observation of data):
+{{input_schemas}}
+
 Comment evidence (fallback only):
 {{comments}}
 

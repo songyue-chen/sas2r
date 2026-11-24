@@ -649,6 +649,10 @@ test_that("the fixer keeps source tools and the allowlist without comparison evi
   ans <- find_tool("find_macro")$call(list(name = "dostuff"))
   expect_null(ans$error)
   expect_null(find_tool("read_comparison_report"))
-  unit <- find_tool("read_unit_context")$call(list())
-  expect_match(unit$sas, "adam.adsl", fixed = TRUE)
+  # The unit and its inferred input schemas are in the request itself; the tool
+  # that used to return them is gone.
+  expect_null(find_tool("read_unit_context"))
+  expect_match(sys_txt, "data adam.out; set adam.adsl; run;", fixed = TRUE)
+  expect_match(sys_txt, render_input_schemas(proj, component_statements(proj, "prog")), fixed = TRUE)
+  expect_match(sys_txt, "adam.adsl: ", fixed = TRUE)
 })

@@ -1082,11 +1082,11 @@ test_that("render_prompt rejects slash-relative paths from cwd", {
 test_that("a zero-argument tool is callable", {
   # `names(list())` is NULL, not character(0), and mget(NULL) aborts with
   # "invalid first argument" -- which silently broke every argument-less tool
-  # (read_unit_context, read_diff_evidence, list_macro_files) against a live
-  # provider while every mock-backed test passed.
+  # (such as list_macro_files) against a live provider while every mock-backed
+  # test passed.
   called <- FALSE
   tool <- list(
-    name = "read_unit_context",
+    name = "list_macro_files",
     description = "no arguments",
     schema = closed_tool_schema(),
     call = function(args) { called <<- TRUE; list(ok = TRUE, args = args) }

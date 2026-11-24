@@ -128,3 +128,32 @@ infer_schemas <- function(project) {
   }
   schemas
 }
+
+#' Inferred schemas of the datasets a component reads, for a model request
+#'
+#' One line per dataset, `dataset: var=kind, ...`, in the format the translator
+#' request uses, followed by the source line range of the component. The fixer
+#' request carries these lines directly; they were previously reachable only
+#' through a tool call that also repeated the SAS source.
+#'
+#' @param project A `sas2r_project` object.
+#' @param stmts The component's statements, or `NULL`.
+#' @return Length-1 character string.
+#' @noRd
+render_input_schemas <- function(project, stmts) {
+  has_stmts <- is.data.frame(stmts) && nrow(stmts) > 0L
+  inputs <- if (has_stmts && is.data.frame(project$lineage) && nrow(project$lineage) > 0L) {
+    unique(project$lineage$dataset[project$lineage$unit_id %in% stmts$unit_id &
+      project$lineage$role == "reads"])
+  } else character()
+  schemas <- if (length(inputs)) infer_schemas(project) else list()
+  lines <- vapply(inputs, function(ds) {
+    s <- schemas[[ds]]
+    if (is.null(s)) return(paste0(ds, ": unknown"))
+    paste0(ds, ": ", paste(s$vars$var, s$vars$kind, sep = "=", collapse = ", "))
+  }, character(1), USE.NAMES = FALSE)
+  span <- if (has_stmts && !is.null(stmts$line_start)) stats::na.omit(stmts$line_start) else integer()
+  paste(c(if (length(lines)) lines else "(none inferred)",
+    if (length(span)) paste0("lines: ", min(span), "-", max(span))), collapse = "\n")
+}
+

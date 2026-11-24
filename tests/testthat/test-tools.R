@@ -89,22 +89,35 @@ test_that("rulebook tool requires name while batch selectors remain optional", {
   expect_null(result$procs)
 })
 
-test_that("read_unit_context returns SAS text and schemas, nothing else", {
+test_that("input schemas for a request name the datasets read and never carry data", {
   dir <- withr::local_tempdir()
-  writeLines("data w1; set w.root; where sex = 'M'; run;", file.path(dir, "a.sas"))
+  writeLines(c("data w1; set w.root; where sex = 'M'; run;",
+               "data w2; set w1; y = 1; run;"), file.path(dir, "a.sas"))
   p <- sas_project(dir)
-  ctx <- list(project = p,
-              unit_stmts = p$statements[p$statements$unit_type == "data_step", ],
-              schemas = infer_schemas(p))
-  spec <- list(tools = list(read_unit_context = list(max_calls = 2)))
-  tools <- build_tools(spec, ctx)
-  out <- tools$read_unit_context$call(list())
-  expect_match(out$sas, "where sex = 'M'")
-  expect_true("w.root" %in% names(out$input_schemas))
-  expect_null(out$data)   # there is never data
+  first <- p$statements[p$statements$unit_id == min(p$statements$unit_id), ]
+  text <- render_input_schemas(p, first)
+  expect_match(text, "w.root: sex=character", fixed = TRUE)
+  expect_match(text, "lines: 1-1", fixed = TRUE)
+  expect_no_match(text, "w1:", fixed = TRUE)   # written by this unit, not read
+  expect_no_match(text, "'M'", fixed = TRUE)   # a literal from the source is not a schema
+
+  # For a whole component the lines are the translator request's, one for one,
+  # so the two requests cannot describe the same inputs differently.
+  cid <- p$graph$nodes$component_id[1L]
+  component <- strsplit(render_input_schemas(p, component_statements(p, cid)), "\n", fixed = TRUE)[[1L]]
+  translator <- strsplit(build_translator_context(cid, p, graph = p$graph)$context_packet,
+    "\n", fixed = TRUE)[[1L]]
+  schema_lines <- grep("^[a-z0-9_.]+: ", component, value = TRUE)
+  expect_gt(length(schema_lines), 0L)
+  expect_true(all(schema_lines %in% translator))
+  expect_true(utils::tail(component, 1L) %in% translator)
+
+  expect_identical(render_input_schemas(p, NULL), "(none inferred)")
+  expect_identical(render_input_schemas(p, first[0, ]), "(none inferred)")
+  writeLines("data z; x = 1; run;", file.path(dir, "a.sas"))
+  q <- sas_project(dir, cache = FALSE)
+  expect_identical(render_input_schemas(q, q$statements), "(none inferred)\nlines: 1-1")
 })
-
-
 test_that("multi-tool spec dispatches each tool independently with separate budgets", {
   spec <- list(tools = list(
     lookup_rulebook = list(max_calls = 1),
