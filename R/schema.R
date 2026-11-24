@@ -136,6 +136,10 @@ infer_schemas <- function(project) {
 #' request carries these lines directly; they were previously reachable only
 #' through a tool call that also repeated the SAS source.
 #'
+#' Schema inference runs for every request, as it did when the tool context
+#' carried it, and is not guarded: a failure stops the fixer. Sending a request
+#' that had quietly lost its dataset context would be worse.
+#'
 #' @param project A `sas2r_project` object.
 #' @param stmts The component's statements, or `NULL`.
 #' @return Length-1 character string.
@@ -146,7 +150,7 @@ render_input_schemas <- function(project, stmts) {
     unique(project$lineage$dataset[project$lineage$unit_id %in% stmts$unit_id &
       project$lineage$role == "reads"])
   } else character()
-  schemas <- if (length(inputs)) infer_schemas(project) else list()
+  schemas <- infer_schemas(project)
   lines <- vapply(inputs, function(ds) {
     s <- schemas[[ds]]
     if (is.null(s)) return(paste0(ds, ": unknown"))
