@@ -360,8 +360,11 @@ sas_translate <- function(
   budget$end_time <- Sys.time()
   write_migration_report(state, emit_outcome = TRUE)
   write_migration_checkpoint(state, resume_fingerprint)
+  usage_summary <- migration_usage_summary(budget)
   with_sas2r_progress(signal_bundle_event(
-    "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
+    "migration_summary", summary = c(
+      migration_usage_lines(usage_summary), migration_request_cut_lines(usage_summary)
+    )
   ))
 
   message("Start here: ", paths$start_here)
@@ -454,7 +457,9 @@ print.sas2r_translation <- function(x, ...) {
   }
 
   cli::cat_line(migration_coverage_lines(migration_coverage(x$output_assessments, x$component_evidence)))
-  cli::cat_line(migration_usage_lines(migration_usage_summary(x$usage)))
+  usage_summary <- migration_usage_summary(x$usage)
+  cli::cat_line(migration_usage_lines(usage_summary))
+  cli::cat_line(migration_request_cut_lines(usage_summary))
   invisible(x)
 }
 
