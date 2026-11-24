@@ -1368,7 +1368,7 @@ test_that("a tool event records what the tool was asked for", {
 test_that("a tool called with no arguments records none", {
   budget <- new_usage_budget(mode = "observe")
 
-  reserve_usage_tool_call(budget, tool_name = "list_macro_files")
+  reserve_usage_tool_call(budget, tool_name = "read_unit_context")
 
   expect_null(budget$tool_events[[1L]]$tool_arguments)
 })

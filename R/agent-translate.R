@@ -628,14 +628,23 @@ generate_program_revision <- function(
       skills = ctx$rendered_skills
     )
 
-    # Without the macro index, find_macro answered not_in_index for macros that
-    # were sitting in the configured search path while still consuming the
-    # tool-call budget.
+    # Tools get the same context the unit-level path builds. Without the
+    # component's statements, schemas, and macro index, find_macro answered
+    # not_in_index for macros that were sitting in the configured search path
+    # while still consuming the tool-call budget.
+    uids <- comp_nodes$original_index[!is.na(comp_nodes$original_index)]
+    unit_stmts <- if (!is.null(project$statements) && length(uids)) {
+      project$statements[project$statements$unit_id %in% uids, , drop = FALSE]
+    } else {
+      NULL
+    }
     macro_idx <- project_macro_index(project, config)
     tool_ctx <- list(
       agent_role = "translator",
       component_id = component_id, graph = graph, selected_revisions = selected_revisions,
       project = project,
+      unit_stmts = unit_stmts,
+      schemas = infer_schemas(project),
       config = config,
       macro_index = macro_idx
     )

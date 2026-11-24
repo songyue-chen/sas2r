@@ -47,6 +47,7 @@ closed_tool_schema <- function(properties = list(), required = character()) {
 }
 
 TOOL_ARGUMENT_SCHEMAS <- list(
+  read_unit_context = closed_tool_schema(),
   query_project_graph = closed_tool_schema(
     list(dataset = tool_string()), "dataset"
   ),
@@ -69,6 +70,7 @@ TOOL_ARGUMENT_SCHEMAS <- list(
 )
 
 TOOL_DESCRIPTIONS <- c(
+  read_unit_context = "Read the current SAS unit and inferred input schemas.",
   query_project_graph = "Query code-derived dataset lineage.",
   lookup_rulebook = "Look up deterministic SAS-to-R semantic rules.",
   find_macro = "Find indexed SAS macro definitions by name.",
@@ -128,6 +130,25 @@ TOOL_IMPLS <- list(
       if (!is.null(result$error) || identical(result$status, "unavailable")) unavailable <<- c(unavailable, key)
       result
     }
+  },
+  read_unit_context = function(ctx) function(args) {
+    inputs <- if (!is.null(ctx$project$lineage) && !is.null(ctx$unit_stmts)) {
+      unique(ctx$project$lineage$dataset[
+        ctx$project$lineage$unit_id %in% ctx$unit_stmts$unit_id &
+        ctx$project$lineage$role == "reads"])
+    } else character()
+    schemas <- lapply(inputs, function(ds) {
+      s <- ctx$schemas[[ds]]
+      if (is.null(s)) NULL else as.list(s$vars)
+    })
+    names(schemas) <- inputs
+    sas_txt <- if (!is.null(ctx$unit_stmts)) format_sas_statements(ctx$unit_stmts$text) else ""
+    line_range <- if (!is.null(ctx$unit_stmts) && !is.null(ctx$unit_stmts$line_start)) {
+      range(ctx$unit_stmts$line_start)
+    } else c(1L, 1L)
+    list(sas = sas_txt,
+         lines = line_range,
+         input_schemas = schemas, data = NULL)
   },
   query_project_graph = function(ctx) function(args) {
     ds <- tolower(args$dataset %||% "")

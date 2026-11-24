@@ -13,7 +13,7 @@ skill_allowed_tools <- function() {
   if (exists("TOOL_ARGUMENT_SCHEMAS", mode = "list")) {
     names(TOOL_ARGUMENT_SCHEMAS)
   } else {
-    c("query_project_graph", "lookup_rulebook",
+    c("read_unit_context", "query_project_graph", "lookup_rulebook",
       "find_macro", "get_macro_source", "list_macro_files", "search_docs",
       "search_skills", "read_skill")
   }

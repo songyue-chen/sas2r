@@ -65,38 +65,35 @@ test_that("lookup tools share the agent allowance and honor explicit overrides",
   expect_identical(spec$tools$lookup_rulebook$max_calls, 30L)
 })
 
-test_that("each agent's prompt carries its unit, so no tool repeats it", {
-  # read_unit_context returned the SAS unit and the inferred input schemas.
-  # Every request now carries both: it was the first call in all 61 units of a
-  # live sweep, 12.6% of every call made, and could only repeat the prompt. The
-  # fixer was the last role to keep it, for the schemas its prompt lacked.
+test_that("an agent is only offered read_unit_context when its prompt lacks the unit", {
+  # The tool returns ctx$unit_stmts$text and infer_schemas(project) -- the very
+  # objects that build {{unit}} and {{context}}. Where a prompt already renders
+  # both, the tool can only repeat them: it was the first call in all 61 units
+  # of a live sweep, 12.6% of every call made. Where a prompt renders neither,
+  # it is the agent's only route to that information and must stay.
   specs <- load_agent_specs()
   prompt_text <- function(spec) {
     path <- system.file("prompts", spec$prompt, package = "sas2r")
     if (!nzchar(path) || !file.exists(path)) return("")
     paste(readLines(path, warn = FALSE), collapse = "\n")
   }
-  for (name in migration_agent_names()) {
-    body <- prompt_text(specs[[name]])
-    expect_match(body, "{{unit}}", fixed = TRUE, info = name)
-    expect_true(grepl("{{context}}", body, fixed = TRUE) ||
-      grepl("{{input_schemas}}", body, fixed = TRUE), info = name)
-    expect_false("read_unit_context" %in% names(specs[[name]]$tools %||% list()), info = name)
+
+  for (name in names(specs)) {
+    spec <- specs[[name]]
+    body <- prompt_text(spec)
+    self_sufficient <- grepl("{{unit}}", body, fixed = TRUE) &&
+      grepl("{{context}}", body, fixed = TRUE)
+    offered <- "read_unit_context" %in% names(spec$tools %||% list())
+    if (self_sufficient) {
+      expect_false(offered, info = paste(name, "prompt already carries unit and context"))
+    }
   }
-  expect_false("read_unit_context" %in% names(TOOL_ARGUMENT_SCHEMAS))
-  expect_false("read_unit_context" %in% names(TOOL_IMPLS))
-  expect_false("read_unit_context" %in% skill_allowed_tools())
 })
 
-test_that("a project override naming the removed unit tool registers nothing", {
-  root <- withr::local_tempdir()
-  dir.create(file.path(root, ".sas2r", "agents"), recursive = TRUE)
-  yaml::write_yaml(list(tools = list(read_unit_context = list())),
-    file.path(root, ".sas2r", "agents", "fixer.yml"))
-  spec <- load_agent_specs(root)$fixer
-  tools <- build_tools(spec, list(agent_role = "fixer"))
-  expect_false("read_unit_context" %in% names(tools))
-  expect_true("get_macro_source" %in% names(tools))
+test_that("agents whose prompt lacks the unit keep the tool", {
+  specs <- load_agent_specs()
+
+  expect_true("read_unit_context" %in% names(specs$fixer$tools))
 })
 
 test_that("migration_agent_names returns exact active worker roles", {

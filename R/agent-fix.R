@@ -176,7 +176,6 @@ fix_program_revision <- function(
   prompt_vars <- list(
     phase = agent_phase_guidance(mode),
     unit = sas_text,
-    input_schemas = render_input_schemas(project, comp_stmts),
     comments = comments_text,
     staged_r = r_code,
     evidence = paste(evidence_text, "Current complete shared helper definitions (edit a nested function by returning its complete outermost parent):", helper_code, sep = "\n\n"),
@@ -203,6 +202,8 @@ fix_program_revision <- function(
     component_id = component_id, selected_revisions = selected_revisions,
     execution = bundle,
     project = project,
+    unit_stmts = comp_stmts,
+    schemas = infer_schemas(project),
     config = config,
     macro_index = project_macro_index(project, config)
   ))

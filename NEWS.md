@@ -49,11 +49,6 @@
   said a version change alone did not. The behaviour has been this way since
   0.5.5; only the documentation changes.
 
-- Send the fixer the inferred input schemas in its request, as the translator
-  and reviewer already receive them, and remove the `read_unit_context` tool,
-  which could then only repeat the request. A project skill that lists the
-  tool under `tools` is rejected as naming an unknown tool; delete the entry.
-
 - Remove the unused `read_comparison_report` agent tool. No translator,
   reviewer or fixer could be given it. A project skill that lists it under
   `tools` is now rejected as naming an unknown tool; delete the entry. The

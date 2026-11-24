@@ -8,7 +8,7 @@ metadata:
     priority: 90
     triggers:
       flags: [macro_execution]
-    tools: [get_macro_source]
+    tools: [get_macro_source, read_unit_context]
 ---
 
 # Macro execution and returned values
