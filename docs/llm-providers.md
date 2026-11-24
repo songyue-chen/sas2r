@@ -109,8 +109,8 @@ model can emit its full ceiling before they expire. The package's unset timeout
 default remains 300 seconds. A timeout is per HTTP attempt, not an inactivity
 timer or a whole-translation deadline.
 
-**Claude's full allowance is conditional:** the current sas2r/ellmer route is
-non-streaming. The settings probe can verify parameter acceptance, but cannot
+**Claude's full allowance is conditional:** sas2r streams its requests to
+Anthropic, but the settings probe can only verify parameter acceptance. It cannot
 establish reliable completion of very long responses. Read the
 [Anthropic profile](#anthropic) before relying on its 128,000-token allowance.
 
@@ -235,13 +235,16 @@ thinking, since manual extended-thinking budgets are rejected. See the
 [model overview](https://platform.claude.com/docs/en/models/sonnet-5/overview)
 and [migration guide for Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide).
 
-**Before relying on the full allowance:** sas2r uses non-streaming ellmer calls.
-Anthropic recommends streaming or batch processing for long requests, especially
-beyond ten minutes. The profile below requests the model maximum, but reliable
-very-long-response completion has not been established on this route. Validate
-representative requests before study use; if they need sustained long output,
-use a validated streaming/batch integration or another validated provider route.
-Changing YAML limits does not add streaming support. The separate **300K batch
+**Before relying on the full allowance:** sas2r sends requests to Anthropic as a
+stream, as Anthropic recommends for long requests. A request sent whole carries
+nothing while the model works, and some networks close a connection that stays
+silent; a streamed request carries the provider's keep-alive events instead. A
+request for native structured output (`capabilities.structured_output: native`)
+is the exception and is still sent whole. The profile below uses `fallback`, so
+all of its requests are streamed. `timeout_seconds` still bounds each request
+from start to finish. The profile requests the model maximum, but completion of
+responses near that size has not been established on this route, so validate
+representative requests before study use. The separate **300K batch
 beta** is not this package's Messages API ceiling. See
 [Anthropic's long-request guidance](https://platform.claude.com/docs/en/api/errors#long-requests).
 
@@ -703,6 +706,14 @@ single long model response can exceed the timeout and fail mid-stream with
 transport attempts beneath sas2r retries and can multiply elapsed time and spend.
 Values above 1 require `max_parallel_translations = 1`; incompatible
 effective settings raise a startup configuration error.
+
+A request can also be ended from outside before its timeout: a proxy, VPN or
+firewall that closes a connection after a fixed time, or a time limit at the
+provider. These failures are recorded as `sas2r_llm_transport_error`. When
+several of them end at the same elapsed time, the run summary says so under
+"Requests cut short", with the elapsed time and the configured limit. Requests
+to Anthropic are streamed and are less exposed; requests to other providers are
+sent whole.
 
 ```yaml
 llm:
