@@ -536,6 +536,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "## Resource Usage & Spend",
     "",
     migration_usage_lines(usage_summary),
+    migration_request_cut_lines(usage_summary),
     paste0("- **Total LLM Calls:** ", usage_summary$calls),
     paste0("- **Known Total Input Tokens:** ", usage_summary$input_tokens),
     paste0("- **Known Total Output Tokens:** ", usage_summary$output_tokens),

@@ -328,10 +328,10 @@ window, to give reasoning and complete R code room to finish.
   requests; larger ceilings may need more budget, especially with parallel work.
 
 Anthropic lists the Sonnet 5 model used in this example as legacy.
-Its 128,000-token maximum is conditional guidance for this package: sas2r currently
-uses non-streaming requests, and very long responses need transport validation.
-Anthropic recommends streaming or batch processing for long requests; increasing
-the token ceiling or timeout does not enable either. See the
+Its 128,000-token maximum is conditional guidance for this package: sas2r sends
+requests to Anthropic as a stream, which keeps the connection active while the
+model works, but completion of responses near the full allowance has not been
+established. See the
 [Claude profile](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md#anthropic) before using its full allowance.
 
 Use the [provider guide](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md) for complete connection profiles,
