@@ -206,7 +206,7 @@ write_run_navigation <- function(state, report) {
       '<ul>', output_rows[unresolved_rows], '</ul>'),
     '<h2>Model, settings, and usage</h2><pre>',
     run_html_escape(jsonlite::toJSON(settings, auto_unbox = TRUE, pretty = TRUE, null = "null")),
-    run_html_escape(paste(c(migration_environment_lines(report$environment), migration_usage_lines(report$usage)), collapse = "\n")), '</pre>',
+    run_html_escape(paste(c(migration_environment_lines(report$environment), migration_usage_lines(report$usage), migration_request_cut_lines(report$usage)), collapse = "\n")), '</pre>',
     '<h2>Use and edit your translated scripts</h2>', guide,
     '<h2>Run diagnostics</h2><pre>', run_html_escape(jsonlite::toJSON(report$diagnostics, pretty = TRUE, auto_unbox = TRUE, null = "null", force = TRUE)),
     '</pre></html>'), paths$start_here)

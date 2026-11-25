@@ -1,5 +1,17 @@
 # sas2r 0.6.2
 
+- Send requests to Anthropic as a stream, so the connection stays active while
+  the model works. A network that closes a silent connection after a fixed
+  time no longer ends every long request. Requests for native structured
+  output are still sent whole. With ellmer 0.5.0 or older, the provider's
+  reasoning-token count is not recorded for a streamed request; output-token
+  totals are unchanged.
+
+- Report when several model requests fail at the same elapsed time. That
+  pattern points to a time limit on the network or at the provider, not to
+  random failures, and the run report, the start-here page and the end-of-run
+  summary now say so.
+
 - Reduce repeated model requests during translation, review and repair, and
   keep request content stable between calls so providers can reuse cached
   prompts.

@@ -76,7 +76,8 @@ migration_usage_summary <- function(budget) {
     limits = stats::setNames(lapply(limits, function(nm) {
       value <- budget[[nm]]
       if (is.null(value)) "unavailable" else if (is.finite(value)) value else "unlimited"
-    }), limits)
+    }), limits),
+    request_cuts = usage_request_cuts(completed)
   )
 }
 

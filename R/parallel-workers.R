@@ -122,7 +122,8 @@ parallel_worker_options <- function() {
   list(
     sas2r.accept_gathered_answer = getOption("sas2r.accept_gathered_answer", TRUE),
     sas2r.translator_baseline_reference = getOption("sas2r.translator_baseline_reference", TRUE),
-    sas2r.agent_backoff_base = getOption("sas2r.agent_backoff_base", 2)
+    sas2r.agent_backoff_base = getOption("sas2r.agent_backoff_base", 2),
+    sas2r.stream_requests = getOption("sas2r.stream_requests")
   )
 }
 
