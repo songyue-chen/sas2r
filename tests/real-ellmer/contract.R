@@ -826,6 +826,11 @@ if (utils::packageVersion("ellmer") >= "0.5.1") {
 if (!identical(anthropic_requests[[1]]$body$model, "offline-anthropic-model")) {
   stop("the Anthropic Messages request lost the configured model selector")
 }
+# A text request to Anthropic goes out as a stream, so the connection carries
+# the provider's keep-alive events while the model works.
+if (!isTRUE(anthropic_requests[[1]]$body$stream)) {
+  stop("the Anthropic text request was not sent as a stream")
+}
 has_field <- function(request, name) !is.null(request$body[[name]])
 contains_pair <- function(value, name, expected) {
   if (!is.list(value)) return(FALSE)

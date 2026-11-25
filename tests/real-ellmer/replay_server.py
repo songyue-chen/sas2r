@@ -219,9 +219,16 @@ class ReplayHandler(BaseHTTPRequestHandler):
             response = self.chat_completions_response(body, response_kind)
         else:
             response = self.responses_response(body, response_kind)
-        payload = json.dumps(response).encode("utf-8")
+        if is_anthropic_messages and body.get("stream") is True:
+            # The Messages API answers a streamed request with server-sent
+            # events, not with one JSON document.
+            payload = self.anthropic_event_stream(response).encode("utf-8")
+            content_type = "text/event-stream"
+        else:
+            payload = json.dumps(response).encode("utf-8")
+            content_type = "application/json"
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Connection", "close")
         self.end_headers()
@@ -229,6 +236,35 @@ class ReplayHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
         except BrokenPipeError:
             pass
+
+    @staticmethod
+    def anthropic_event_stream(message):
+        """The same Messages reply as the event stream a streamed request gets."""
+        def event(data):
+            return f"event: {data['type']}\ndata: {json.dumps(data)}\n\n"
+
+        events = [event({
+            "type": "message_start",
+            "message": {**message, "content": [], "stop_reason": None,
+                        "usage": {**message["usage"], "output_tokens": 1}},
+        })]
+        for index, block in enumerate(message["content"]):
+            events += [
+                event({"type": "content_block_start", "index": index,
+                       "content_block": {"type": "text", "text": ""}}),
+                event({"type": "ping"}),
+                event({"type": "content_block_delta", "index": index,
+                       "delta": {"type": "text_delta", "text": block["text"]}}),
+                event({"type": "content_block_stop", "index": index}),
+            ]
+        events += [
+            event({"type": "message_delta",
+                   "delta": {"stop_reason": message["stop_reason"],
+                             "stop_sequence": message["stop_sequence"]},
+                   "usage": {"output_tokens": message["usage"]["output_tokens"]}}),
+            event({"type": "message_stop"}),
+        ]
+        return "".join(events)
 
     @staticmethod
     def two_round_kind(body, response_kind, completed):
