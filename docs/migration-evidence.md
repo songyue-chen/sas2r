@@ -284,7 +284,10 @@ in the checkpoint identity. Changes to them can regenerate translations, not
 just reviews. The native-graphics changes in 0.5.2 update the shared policy,
 skill catalogue and default package list. Checkpoints saved by 0.5.1 or
 earlier are invalidated and translations can regenerate with fresh model
-calls. A package version number alone does not invalidate a checkpoint.
+calls. The installed sas2r version is part of the checkpoint identity too. A
+checkpoint saved by one version is not reused by another, even when no prompt
+or helper changed, so resuming after a package upgrade regenerates
+translations.
 
 ## Checking figure content
 

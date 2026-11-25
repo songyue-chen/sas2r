@@ -514,6 +514,11 @@ These checks cover population behavior, not all derived values or SAS parity.
 The elapsed-time and
 usage summary distinguishes known spend from unknown-cost calls: `$0.0000`
 known spend with unknown-cost calls does not mean the run was free.
+It also shows the share of input tokens read from the provider's prompt cache,
+completed requests and tokens for each role, and how many answers were accepted
+before the tool phase ended. A cache share is shown only when the provider
+reported cached input; `not reported` does not mean zero. These figures
+describe cost. They say nothing about whether a translation is correct.
 
 ## Reference differences: translation error or different specification?
 
@@ -574,8 +579,10 @@ installed dependency versions) refresh reviews while retaining translations.
 Saved reviews from before request identities were recorded also receive a fresh
 review; progress explains this with `saved review predates request identity;
 refreshing`. Changes to shared worker prompts, skills, policy or runtime helpers
-can invalidate the checkpoint itself and regenerate translations as well. A
-version-number change alone does not require regeneration.
+can invalidate the checkpoint itself and regenerate translations as well. So
+does installing a different sas2r version: a checkpoint is reused only by the
+version that saved it. Finish or resume a run before upgrading the package if
+you want to keep its saved translations.
 Version 0.4.5 changes the shared agent policy, so checkpoints created with an
 earlier policy regenerate translations under the current resume rules.
 The parallel checkpoint format can import compatible version-8 checkpoints while
@@ -919,13 +926,26 @@ macro statements; use block comments for inactive macro text.
 See SAS's [macro comment rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a000543665.htm)
 and [macro quoting rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a001061290.htm).
 
-Statement splitting does not fully support macro-quoted semicolons, such as
-`%exec_sql(query=%str(select a; select b;))`. Simplify these forms or supply
-expanded source before translation; a discovered macro name does not prove
-that its argument or statement boundaries were parsed correctly. Similarly,
+Statement splitting follows the argument of `%STR` and `%NRSTR` to its closing
+parenthesis, so a semicolon inside it does not end the statement, as in
+`%exec_sql(query=%str(select a; select b;))`. Parentheses inside the argument
+are counted, and the marked forms `%(`, `%)`, `%'`, `%"` and `%%` are read as
+text. Other quoting functions, such as `%BQUOTE`, and text produced when a
+macro runs are not followed: simplify those forms or supply expanded source
+before translation. If an argument is never closed, the statement is split at
+each semicolon as before, and preflight lists a `scanner_fallback` finding with
+the file and line. The finding is advisory. Similarly,
 `call execute('%my_macro(' || id || ')')` constructs code at runtime, so its
 single-quoted text is not mapped as a static call. Provide expanded source and
 the required macro definitions for such programs.
+
+Instream data follows the SAS rules. A `DATALINES`, `CARDS` or `PARMCARDS`
+block ends at the first line that contains a semicolon, and that line is read
+as code, so a block may end with `run;` as well as with a lone semicolon. Data
+lines that contain semicolons need `DATALINES4`, `CARDS4` or `PARMCARDS4`,
+which end only at a line beginning with `;;;;`. If such a block has no `;;;;`
+line, it ends at the first line beginning with a semicolon and preflight lists
+a `scanner_fallback` finding.
 
 ## Handy checks before a long run
 

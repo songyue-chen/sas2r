@@ -29,7 +29,16 @@ test_that("percent-star macro comment is masked", {
 })
 
 test_that("datalines content is masked d until lone semicolon line", {
-  src <- "data a;\ninput x $;\ndatalines;\nfoo;bar\nbaz\n;\nrun;"
+  src <- "data a;\ninput x $;\ndatalines;\nfoo bar\nbaz\n;\nrun;"
+  sc <- sas_scan(src)
+  foo_pos <- regexpr("foo", src)[1]
+  expect_identical(sc$mask[foo_pos], "d")
+  run_pos <- regexpr("run", src)[1]
+  expect_identical(sc$mask[run_pos], "c")
+})
+
+test_that("datalines4 content is masked d until the ;;;; line, semicolons included", {
+  src <- "data a;\ninput x $;\ndatalines4;\nfoo;bar\nbaz\n;;;;\nrun;"
   sc <- sas_scan(src)
   foo_pos <- regexpr("foo", src)[1]
   expect_identical(sc$mask[foo_pos], "d")
@@ -59,7 +68,7 @@ test_that("trailing statement without semicolon is kept", {
 })
 
 test_that("datalines rows come through as one datalines_data statement", {
-  s <- sas_statements("data a;\ninput x $;\ndatalines;\nfoo;bar\nbaz\n;\nrun;")
+  s <- sas_statements("data a;\ninput x $;\ndatalines;\nfoo bar\nbaz\n;\nrun;")
   expect_identical(nrow(s), 5L)
   expect_identical(s$type[4], "datalines_data")
   expect_identical(s$first_token[3], "datalines")
@@ -230,3 +239,140 @@ test_that("adjacent comments retain distinct exact source records", {
     )
   )
 })
+
+# %str()/%nrstr() arguments ------------------------------------------------
+
+statement_text <- function(src) sas_statements(src)$text
+
+test_that("a semicolon inside %str() or %nrstr() does not end the statement", {
+  expect_identical(statement_text("%let x=%str(a;b);\ndata y; set z; run;"),
+    c("%let x=%str(a;b)", "data y", "set z", "run"))
+  expect_identical(statement_text("%let p=%NRSTR  (&x; %y;);\nrun;"),
+    c("%let p=%NRSTR  (&x; %y;)", "run"))
+  # Only that semicolon is tagged; the argument text keeps its ordinary tags,
+  # so it stays in the statement exactly as written.
+  sc <- sas_scan("%let x=%str(a;b);")
+  expect_identical(paste(sc$mask, collapse = ""), "cccccccccccccmccc")
+  expect_null(sc$fallbacks)
+})
+
+test_that("parentheses inside the argument are counted", {
+  expect_identical(statement_text("%let c=%str(if (a>1) then b=f(x););\ndata y; set z; &c run;"),
+    c("%let c=%str(if (a>1) then b=f(x);)", "data y", "set z", "&c run"))
+  expect_identical(statement_text("%let c=%str(a %str(;) b;);\nrun;"),
+    c("%let c=%str(a %str(;) b;)", "run"))
+})
+
+test_that("marked delimiters are text: they neither count nor open a string", {
+  # Before this, the marked quotation mark opened a string that swallowed the
+  # code after it.
+  expect_identical(statement_text("%let q=%str(it%'s);\ndata y; set z; run;\n%let r='x';"),
+    c("%let q=%str(it%'s)", "data y", "set z", "run", "%let r='x'"))
+  expect_identical(statement_text("%let q=%str(say %\"hi;);\nrun;"),
+    c("%let q=%str(say %\"hi;)", "run"))
+  expect_identical(statement_text("%let p=%str(a%);b);\nrun;"), c("%let p=%str(a%);b)", "run"))
+  expect_identical(statement_text("%let p=%str(a%(;b);\nrun;"), c("%let p=%str(a%(;b)", "run"))
+  # %% is a percent sign, so the parenthesis after it closes the argument.
+  expect_identical(statement_text("%let p=%str(20%%);\nx=1;"), c("%let p=%str(20%%)", "x=1"))
+  # A matched string inside the argument is still a string.
+  expect_identical(statement_text("%let p=%str('a);b' c;);\nrun;"), c("%let p=%str('a);b' c;)", "run"))
+})
+
+test_that("only %str and %nrstr are followed", {
+  expect_identical(statement_text("%let p=%strx(a;b);\nrun;"), c("%let p=%strx(a", "b)", "run"))
+  expect_identical(statement_text("%let p=%bquote(a;b);\nrun;"), c("%let p=%bquote(a", "b)", "run"))
+  expect_identical(statement_text("x = \"%str(a;b)\"; run;"), c("x = \"%str(a;b)\"", "run"))
+  expect_identical(statement_text("/* %str( */ a; b;"), c("a", "b"))
+})
+
+test_that("an unclosed argument falls back to the previous splitting and is reported", {
+  src <- "%let p=%str(a;b;\ndata y; set z; run;\nproc print; run;"
+  expect_identical(sas_scan(src)$mask, legacy_sas_scan(src)$mask)
+  expect_identical(statement_text(src), c("%let p=%str(a", "b", "data y", "set z", "run", "proc print", "run"))
+  fallbacks <- sas_scan(src)$fallbacks
+  expect_identical(fallbacks$kind, "macro_quote_unclosed")
+  expect_identical(fallbacks$position, as.integer(regexpr("%str", src, fixed = TRUE)))
+  findings <- sas_source_records(src)$findings
+  expect_identical(findings$kind, "scanner_fallback")
+  expect_identical(findings$line, 1L)
+  expect_match(findings$reason, "not closed", fixed = TRUE)
+
+  # A closed argument earlier in the same source still benefits.
+  src <- "%let a=%str(x;y);\n%let p=%str(a;b;\nrun;"
+  expect_identical(statement_text(src), c("%let a=%str(x;y)", "%let p=%str(a", "b", "run"))
+  expect_identical(sas_source_records(src)$findings$line, 2L)
+  expect_identical(nrow(sas_source_records("%let a=%str(x;y);")$findings), 0L)
+})
+
+test_that("a source with many unclosed constructs is read entirely by the previous rules", {
+  src <- paste(c("%let ok=%str(a;b);", rep("%let p=%str(a;b;", SCAN_FALLBACK_PASS_LIMIT + 5L), "run;"), collapse = "\n")
+  sc <- sas_scan(src)
+  expect_identical(sc$mask, legacy_sas_scan(src)$mask)
+  expect_identical(utils::tail(sc$fallbacks$kind, 1L), "scan_rules_disabled")
+  expect_lte(nrow(sc$fallbacks), SCAN_FALLBACK_PASS_LIMIT + 1L)
+})
+
+# Instream data ------------------------------------------------------------
+
+test_that("plain instream data ends at the first line holding a semicolon", {
+  # No lone semicolon line: before this, everything after `datalines;` was data.
+  s <- sas_statements("data a; input x y; datalines;\n1 2\n3 4\nrun;\nproc print data=a; run;\ndata b; set a; run;")
+  expect_identical(s$text, c("data a", "input x y", "datalines", "1 2\n3 4", "run",
+    "proc print data=a", "run", "data b", "set a", "run"))
+  expect_identical(s$type[4], "datalines_data")
+  expect_identical(s$first_token[5:6], c("run", "proc"))
+  expect_identical(s$line_start[4:6], c(2L, 4L, 5L))
+
+  # The ending line may be indented and may hold several statements.
+  expect_identical(statement_text("data a; input x; cards;\n1\n2\n  proc print data=a; run;"),
+    c("data a", "input x", "cards", "1\n2", "proc print data=a", "run"))
+
+  # A later data block keeps its own data.
+  s <- sas_statements("data a; input x; datalines;\n1\nrun;\ndata b; input y; datalines;\n2\n;\nrun;")
+  expect_identical(s$text[s$type == "datalines_data"], c("1", "2"))
+  expect_identical(sum(s$first_token == "run"), 2L)
+})
+
+test_that("datalines4 ends only at a line beginning with ;;;;", {
+  s <- sas_statements("data a; input x $; datalines4;\n;x\nc;d\n ;\n;;;;\nrun;\nproc print; run;")
+  expect_identical(s$text, c("data a", "input x $", "datalines4", ";x\nc;d\n ;", "run", "proc print", "run"))
+  # An indented terminator is accepted, as it was before.
+  expect_identical(trimws(statement_text("data a; input x $; cards4;\na;b\n  ;;;;\nrun;")),
+    c("data a", "input x $", "cards4", "a;b", "run"))
+})
+
+test_that("a datalines4 block with no ;;;; line falls back and is reported", {
+  src <- "data a; input x $; datalines4;\na;b\n;\nrun;\nproc print; run;"
+  expect_identical(sas_scan(src)$mask, legacy_sas_scan(src)$mask)
+  expect_identical(statement_text(src), c("data a", "input x $", "datalines4", "a;b", "run", "proc print", "run"))
+  expect_identical(sas_scan(src)$fallbacks$kind, "datalines4_unterminated")
+  findings <- sas_source_records(src)$findings
+  expect_identical(findings$line, 1L)
+  expect_match(findings$reason, ";;;;", fixed = TRUE)
+})
+
+test_that("macro call scanning sees a macro-quoted semicolon as text", {
+  units <- sas_units(sas_statements("%let x=%str(a; %inner(1););\n%outer(2);"))
+  expect_identical(units$text, c("%let x=%str(a; %inner(1);)", "%outer(2)"))
+})
+
+test_that("scanner fallbacks reach the project findings with their file and line", {
+  dir <- withr::local_tempdir()
+  writeLines(c("%let ok=%str(a;b);", "%let p=%str(a;b;", "data y; set z; run;"), file.path(dir, "p.sas"))
+  writeLines("data q; set y; run;", file.path(dir, "q.sas"))
+  flags <- sas_project(dir, cache = FALSE)$flags
+  hit <- flags[flags$kind == "scanner_fallback", ]
+  expect_identical(nrow(hit), 1L)
+  expect_match(hit$detail, "p.sas:2: ", fixed = TRUE)
+  expect_false("scanner_fallback" %in% preflight_blocking_findings())
+
+  # A cached scan serves another file with the same content under its own name.
+  file.copy(file.path(dir, "p.sas"), file.path(dir, "r.sas"))
+  cached <- sas_project(dir)$flags
+  cached <- sas_project(dir)$flags
+  details <- cached$detail[cached$kind == "scanner_fallback"]
+  expect_length(details, 2L)
+  expect_true(any(grepl("p.sas:2: ", details, fixed = TRUE)))
+  expect_true(any(grepl("r.sas:2: ", details, fixed = TRUE)))
+})
+

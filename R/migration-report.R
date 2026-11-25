@@ -211,6 +211,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   # Usage and cost
   usage_obj <- state$usage_budget %||% state$usage
   usage_summary <- migration_usage_summary(usage_obj)
+  usage_summary$gathered_answers <- gathered_answer_summary(paths$logs)
   coverage <- migration_coverage(output_assessments, histories, contracts = state$output_contracts)
 
   # Diagnostics

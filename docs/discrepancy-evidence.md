@@ -38,7 +38,17 @@ enumerated patterns. Row and column sizes become same, generated_more,
 generated_fewer or unknown; pairing becomes complete, partial or unknown.
 Variable differences become some, all or missing_only. It contains no exact
 dimensions, pairing totals, mismatch counts, offset magnitudes or numeric targets.
-The same projection serves focused investigation and terminal report explanation.
+The same projection serves focused investigation, terminal report explanation
+and AI bug triage.
+
+The projection is checked against this closed format each time it is built:
+only the fields above, only the listed values for sizes, pairing, differences
+and patterns, short single-line names, no number anywhere and no reference
+path. A projection that fails the check is not sent. The run continues without
+it, a warning names the target and the fields at fault (never a value), and
+the omission is recorded as `discrepancy_summary_omitted` in the run
+diagnostics or in the diagnosis record. Such a warning means a defect in
+sas2r, not in your programs; please report it.
 
 Execution diagnostics use a separate execution-facts-v3 projection. Recognized
 missing-dataset/object/column/function and argument errors retain names already

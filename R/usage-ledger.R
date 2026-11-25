@@ -1305,8 +1305,7 @@ USAGE_TOOL_IDENTIFIER_ARGUMENTS <- list(
   get_macro_source = "name",
   read_dependency_context = c("component_id", "language", "offset"),
   search_docs = c("construct", "package"),
-  read_skill = "name",
-  read_comparison_report = "report_id"
+  read_skill = "name"
 )
 
 usage_safe_identifier <- function(value, max_values = 12L,

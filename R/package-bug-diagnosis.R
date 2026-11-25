@@ -4,7 +4,9 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
   result <- list(schema_version = 2L, status = "unavailable", findings = list())
 
   tryCatch({
-    evidence <- package_bug_evidence(state, failure, stage)
+    withheld <- new.env(parent = emptyenv())
+    evidence <- package_bug_evidence(state, failure, stage, omitted = withheld)
+    if (length(withheld$items)) result$discrepancy_summary_omitted <- withheld$items
     if (!length(evidence)) {
       result$status <- "not_needed"
       result$reason <- "No observed run failures were eligible for AI bug triage."
@@ -100,7 +102,7 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
   })
 }
 
-package_bug_evidence <- function(state, failure, stage) {
+package_bug_evidence <- function(state, failure, stage, omitted = NULL) {
   items <- list()
   revisions <- state$selected_revisions
   condition_item <- function(scope, condition, cid = NULL, binding = NULL, code_ids = cid) {
@@ -208,8 +210,8 @@ package_bug_evidence <- function(state, failure, stage) {
     dataset <- identical(target$kind, "dataset")
     ids <- state$assessment$lineage_by_target[[key]]$upstream_components %||%
       graph_output_writers(state$graph, key)
-    summary <- if (dataset) reviewer_discrepancy_summary(target, key)
-    if (dataset) {
+    summary <- if (dataset) reviewer_discrepancy_summary(target, key, omitted = omitted)
+    if (dataset && !is.null(summary)) {
       summary$variables <- utils::head(summary$variables, 5L)
       summary$type_differences <- utils::head(summary$type_differences, 5L)
     }

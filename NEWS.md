@@ -35,6 +35,37 @@
   that sets `verification` is now rejected, with a message saying what to use
   instead.
 
+- Split SAS statements more faithfully. A semicolon inside a `%str()` or
+  `%nrstr()` argument no longer ends the statement, and a marked quotation mark
+  such as `%'` no longer hides the code after it. Plain instream data
+  (`datalines`, `cards`, `parmcards`) ends at the first line that contains a
+  semicolon, as in SAS, so a block ended by `run;` no longer absorbs the rest
+  of the file. `datalines4` and its relatives end only at `;;;;`. Sources with
+  none of these constructs are split exactly as before. Where an argument or a
+  `datalines4` block is never closed, the previous splitting is used and
+  preflight lists an advisory `scanner_fallback` finding.
+
+- Check the comparison summary a model may see against its closed format
+  before every request that carries it. A summary that does not fit is
+  withheld with a warning and recorded in the run diagnostics; the run
+  continues.
+
+- Show more cost detail in the run reports and the printed summary: the share
+  of input tokens read from the provider's prompt cache, completed requests and
+  tokens for each role, and how many answers were accepted before the tool
+  phase ended. `report.json` carries the same figures under `usage`.
+
+- Correct the guides on resuming after a package upgrade. A checkpoint is
+  reused only by the sas2r version that saved it, so `resume = TRUE` after an
+  upgrade regenerates translations with new model calls. The guides previously
+  said a version change alone did not. The behaviour has been this way since
+  0.5.5; only the documentation changes.
+
+- Remove the unused `read_comparison_report` agent tool. No translator,
+  reviewer or fixer could be given it. A project skill that lists it under
+  `tools` is now rejected as naming an unknown tool; delete the entry. The
+  `read_comparison_report()` function is unchanged.
+
 # sas2r 0.6.0 beta
 
 - Reconcile late dataset reports against source-bound libraries before deferring

@@ -225,24 +225,6 @@ test_that("search_skills and read_skill tools operate on bound context catalogue
   expect_identical(read_unknown$error, "skill_not_registered")
 })
 
-test_that("read_comparison_report answers the model instead of aborting the run", {
-  # A bounded tool must hand the model a typed record. Letting the condition
-  # escape aborts the whole sas_refine_with_outputs() call and discards every
-  # comparison report already computed, because a model named a bad report_id.
-  registry <- new.env(parent = emptyenv())
-  spec <- list(tools = list(read_comparison_report = list(max_calls = 2L)))
-  tools <- build_tools(spec, list(report_registry = registry))
-
-  unregistered <- tools$read_comparison_report$call(list(report_id = "no-such-report"))
-  expect_identical(unregistered$error, "report_not_registered")
-  expect_true(nzchar(unregistered$message))
-
-  # The traversal class inherits from the not-registered class, so this also
-  # pins the handler ordering.
-  traversal <- tools$read_comparison_report$call(list(report_id = "../secret.json"))
-  expect_identical(traversal$error, "report_path_rejected")
-})
-
 test_that("more than two useful lookups fit inside one shared agent allowance", {
   spec <- load_agent_specs()$translator
   spec$tool_call_limit <- 5L
