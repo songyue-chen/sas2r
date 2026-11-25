@@ -209,11 +209,12 @@ test_that("closing the tools at the allowance gives the same result streamed or 
   expect_identical(streamed, whole)
 })
 
-test_that("a streamed request records token totals but not the provider's reasoning count", {
-  # Characterization of ellmer 0.4.2 and 0.5.0: only the output total is kept
-  # from the end of a stream, so the reasoning breakdown is unknown for a
-  # streamed request while the whole-response route still records it. If this
-  # starts failing, ellmer carries the count and NEWS can say so.
+test_that("a streamed request records the provider's token totals and never a wrong reasoning count", {
+  # Break caught: usage read from a streamed turn that loses the output total,
+  # or that reports a reasoning count the provider did not send. ellmer 0.4.2
+  # and 0.5.0 keep only the output total from the end of a stream, so the
+  # reasoning count is unknown there; ellmer 0.5.2 carries the provider's whole
+  # usage, so the count is recorded. Either is right; any other number is not.
   skip_unless_scripted_requests_can_run()
   blocks <- list(list(type = "text", text = "answer"))
   ask <- function(llm) llm$request(llm_request(
@@ -232,8 +233,11 @@ test_that("a streamed request records token totals but not the provider's reason
 
   expect_identical(streamed$total_output_tokens, 9)
   expect_identical(whole$total_output_tokens, 9)
-  expect_true(is.na(streamed$reasoning_tokens))
   expect_identical(whole$reasoning_tokens, 4)
+  expect_true(
+    is.na(streamed$reasoning_tokens) || identical(streamed$reasoning_tokens, 4),
+    info = paste("streamed reasoning count:", format(streamed$reasoning_tokens))
+  )
 })
 
 test_that("a provider error sent inside a stream is a transient transport failure", {
