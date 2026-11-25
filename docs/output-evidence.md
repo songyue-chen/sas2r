@@ -137,6 +137,37 @@ specification is intended before asking a fixer to add the missing variables.
 Do not drop those columns merely to obtain a passing comparison. An independent
 R reconstruction can help attribute differences, but it is not a SAS execution.
 
+### SAS dates
+
+SAS stores a date as a number of days from 1 January 1960, with a format that
+shows the number as a date. A SAS dataset read into R shows such a column as a
+`Date`. Generated R keeps the number, because that is what the SAS program
+computes with.
+
+A dataset written by a migration stores the column as a `Date` when both of
+these hold:
+
+- The SAS source gives the variable a date format in a `FORMAT` or `ATTRIB`
+  statement on the way to that output.
+- The reference dataset stores the column as a date. Where the reference has no
+  such column, the declaration must instead reach the output through DATA steps
+  and `PROC SORT` steps with no macro-generated code between them.
+
+A date-like name, a plausible day number, or a date in the reference changes
+nothing alone. Inside the generated programs nothing changes either:
+`lib_read()` returns the SAS day number for these columns, so a later program
+computes exactly as the SAS does.
+
+The run report's "Date Columns" section lists each column stored as a date with
+the statement that declares it, and each declared column left as a number with
+the reason. A column left as a number against a date in the reference is still
+reported as a type difference, and its values are not compared.
+
+The formats covered are the ones a SAS file's date columns are read back with:
+`DATE`, `YYMMDD`, `MMDDYY` and `DDMMYY` with their separator variants,
+`E8601DA`, `B8601DA`, `IS8601DA` and `WEEKDATE`. Datetime and time formats are
+not covered and stay numbers.
+
 ---
 
 ## 3. Source Authority & Library Discovery

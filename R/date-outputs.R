@@ -1,0 +1,492 @@
+# SAS dates in delivered datasets
+#
+# SAS stores a date as a number of days from 1960-01-01 plus a format that
+# says to show the number as a date. Generated R keeps the number, so SAS date
+# arithmetic translates unchanged. This file reads the formats from the SAS
+# source and decides which output columns a bundle writes as R `Date`; the
+# conversion itself is inside lib_write() and lib_read() in R/runtime-data.R,
+# where generated code can neither call it nor replace it.
+#
+# A column is written as a date on two facts that do not depend on each other:
+#   1. the SAS source gives the variable a date format, in a FORMAT or ATTRIB
+#      statement this file reads exactly, on the way to that output; and
+#   2. the SAS reference for the output stores the column as a date. Where no
+#      reference column exists, the declaration must instead be followed to
+#      the output through steps that are read exactly, with no macro-generated
+#      code in between.
+# A date-like name, a plausible day number, or a date column in a reference
+# decides nothing alone. Anything else is left as the SAS number and listed
+# with the reason, so nothing is typed on a guess.
+
+# The SAS format names haven reads back as `Date`. A reference dataset is read
+# with haven, so a format typed here and not there would turn every such column
+# into a type difference. tests/testthat/test-date-outputs.R holds the two
+# lists together.
+SAS_DATE_FORMAT_PATTERN <-
+  "^(DATE|WEEKDATE|(YYMMDD|MMDDYY|DDMMYY)[BCDNPS]?|E8601DA|B8601DA|IS8601DA)[0-9]*$"
+
+# Procedures that can change a dataset's variables in place, without naming it
+# as an output the lineage records.
+DATE_TRACE_MODIFYING_PROCS <- c("datasets", "sql", "append", "copy", "cimport",
+                                "fedsql", "ds2", "iml", "delete")
+
+#' The date format a SAS format token names, if it names one
+#'
+#' @param token One format token as written in SAS, such as `yymmdd10.`.
+#' @return The upper-case format name without its dot, or `NA_character_`.
+#' @noRd
+sas_date_format_name <- function(token) {
+  hit <- regmatches(token, regexec("^([A-Za-z_][A-Za-z0-9_]*)\\.$", token))[[1]]
+  if (length(hit) != 2L) return(NA_character_)
+  name <- toupper(hit[2])
+  if (grepl(SAS_DATE_FORMAT_PATTERN, name)) name else NA_character_
+}
+
+is_sas_format_token <- function(token) grepl("^\\$?[A-Za-z0-9_]*\\.[0-9]*$", token)
+is_sas_plain_name <- function(token) {
+  grepl("^[A-Za-z_][A-Za-z0-9_]*$", token) &
+    !tolower(token) %in% c("_all_", "_numeric_", "_character_", "_char_")
+}
+
+# Text that macro processing could change is never read as a declaration.
+has_macro_trigger <- function(text) {
+  grepl("[%&]", vapply(text, mask_strings, "", keep_double = TRUE, USE.NAMES = FALSE))
+}
+
+#' Read the format each variable gets from one FORMAT or ATTRIB statement
+#'
+#' @param text Statement text without its semicolon.
+#' @return `NULL` when the statement cannot be read exactly: a macro reference,
+#'   a variable list such as `a--b`, `x1-x5`, `dt:` or `_numeric_`, or any
+#'   token outside the plain grammar. Otherwise a named list, one entry per
+#'   variable the statement changes, each `list(kind, format)` with `kind`
+#'   `"date"`, `"other"` or `"none"` (the format is removed).
+#' @noRd
+parse_format_declaration <- function(text) {
+  if (has_macro_trigger(text)) return(NULL)
+  masked <- mask_strings(text)
+  masked <- gsub("'[^']*'|\"[^\"]*\"", " Q ", masked)
+  keyword <- tolower(sub("^\\s*([A-Za-z]+).*$", "\\1", masked))
+  body <- sub("^\\s*[A-Za-z]+", "", masked)
+  if (grepl("[^A-Za-z0-9_$.=\\s]", body, perl = TRUE)) return(NULL)
+  body <- gsub("\\s*=\\s*", "=", body)
+  tokens <- strsplit(trimws(body), "\\s+")[[1]]
+  tokens <- tokens[nzchar(tokens)]
+  out <- list()
+  entry <- function(token) {
+    name <- sas_date_format_name(token)
+    if (is.na(name)) list(kind = "other", format = toupper(sub("\\.$", "", token)))
+    else list(kind = "date", format = name)
+  }
+  if (identical(keyword, "format")) {
+    pending <- character()
+    for (token in tokens) {
+      if (grepl("=", token, fixed = TRUE)) return(NULL)
+      if (is_sas_format_token(token)) {
+        if (!length(pending)) return(NULL)
+        for (v in pending) out[[v]] <- entry(token)
+        pending <- character()
+      } else if (is_sas_plain_name(token)) {
+        pending <- c(pending, tolower(token))
+      } else return(NULL)
+    }
+    for (v in pending) out[[v]] <- list(kind = "none", format = NA_character_)
+    return(out)
+  }
+  if (identical(keyword, "attrib")) {
+    group <- character()
+    closed <- FALSE
+    for (token in tokens) {
+      if (grepl("=", token, fixed = TRUE)) {
+        parts <- strsplit(token, "=", fixed = TRUE)[[1]]
+        if (length(parts) != 2L || !length(group)) return(NULL)
+        key <- tolower(parts[1])
+        if (!key %in% c("label", "format", "informat", "length", "transcode")) return(NULL)
+        if (key == "format") {
+          if (!is_sas_format_token(parts[2])) return(NULL)
+          for (v in group) out[[v]] <- entry(parts[2])
+        }
+        closed <- TRUE
+      } else if (is_sas_plain_name(token)) {
+        if (closed) { group <- character(); closed <- FALSE }
+        group <- c(group, tolower(token))
+      } else return(NULL)
+    }
+    return(out)
+  }
+  NULL
+}
+
+#' Read the pairs of a RENAME statement
+#'
+#' @return A character matrix with columns `old` and `new`, or `NULL` when the
+#'   statement cannot be read exactly.
+#' @noRd
+parse_rename_statement <- function(text) {
+  if (has_macro_trigger(text)) return(NULL)
+  body <- sub("^\\s*rename\\b", "", mask_strings(text), ignore.case = TRUE)
+  if (grepl("[^A-Za-z0-9_=\\s]", body, perl = TRUE)) return(NULL)
+  tokens <- strsplit(trimws(gsub("\\s*=\\s*", "=", body)), "\\s+")[[1]]
+  tokens <- tokens[nzchar(tokens)]
+  if (!length(tokens) || !all(grepl("^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z_][A-Za-z0-9_]*$", tokens))) return(NULL)
+  pairs <- do.call(rbind, strsplit(tolower(tokens), "=", fixed = TRUE))
+  colnames(pairs) <- c("old", "new")
+  pairs
+}
+
+# The steps of one source file in the order they run, with what each reads and
+# creates. A macro definition is text, not a step, and is left out.
+date_trace_file <- function(project, file) {
+  st <- project$statements
+  st <- st[st$type == "code" & st$file == file & st$unit_type != "macro_def", , drop = FALSE]
+  ids <- unique(st$unit_id[order(st$line_start, st$stmt_id)])
+  lin <- project$lineage
+  lin <- lin[lin$unit_id %in% ids, , drop = FALSE]
+  list(
+    ids = ids,
+    statements = function(id) {
+      us <- st[st$unit_id == id, , drop = FALSE]
+      us[order(us$line_start, us$stmt_id), , drop = FALSE]
+    },
+    type = function(id) st$unit_type[match(id, st$unit_id)],
+    reads = function(id) unique(lin$dataset[lin$unit_id == id & lin$role == "reads"]),
+    creates = function(id) unique(lin$dataset[lin$unit_id == id & lin$role == "creates"]),
+    # The step that last wrote `dataset` before step `id` runs.
+    prior_writer = function(id, dataset) {
+      before <- ids[seq_len(match(id, ids) - 1L)]
+      hits <- before[before %in% lin$unit_id[lin$role == "creates" & lin$dataset == dataset]]
+      if (length(hits)) hits[length(hits)] else NA_integer_
+    },
+    between = function(from, to) {
+      a <- match(from, ids); b <- match(to, ids)
+      if (b - a < 2L) integer() else ids[seq.int(a + 1L, b - 1L)]
+    }
+  )
+}
+
+# Every step that feeds the writer of an output, through the datasets each one
+# reads. Dataset names only: this says where a declaration could reach, not
+# that it does.
+date_trace_ancestors <- function(trace, writer) {
+  seen <- integer()
+  queue <- writer
+  while (length(queue)) {
+    id <- queue[1L]; queue <- queue[-1L]
+    if (id %in% seen) next
+    seen <- c(seen, id)
+    for (dataset in trace$reads(id)) {
+      prior <- trace$prior_writer(id, dataset)
+      if (!is.na(prior)) queue <- c(queue, prior)
+    }
+  }
+  trace$ids[trace$ids %in% seen]
+}
+
+# Each FORMAT and ATTRIB statement in the given DATA steps, in running order.
+date_declarations <- function(trace, units) {
+  rows <- list()
+  for (id in units) {
+    if (!identical(trace$type(id), "data_step")) next
+    us <- trace$statements(id)
+    for (k in which(us$first_token %in% c("format", "attrib"))) {
+      parsed <- parse_format_declaration(us$text[k])
+      base <- list(unit_id = id, line = as.integer(us$line_start[k]), file = us$file[k],
+                   text = trimws(gsub("\\s+", " ", us$text[k])))
+      if (is.null(parsed)) {
+        rows[[length(rows) + 1L]] <- c(base, list(var = NA_character_, kind = "unread", format = NA_character_))
+      } else for (v in names(parsed)) {
+        rows[[length(rows) + 1L]] <- c(base, list(var = v, kind = parsed[[v]]$kind, format = parsed[[v]]$format))
+      }
+    }
+  }
+  if (!length(rows)) return(tibble::tibble(unit_id = integer(), line = integer(), file = character(),
+    text = character(), var = character(), kind = character(), format = character()))
+  tibble::tibble(
+    unit_id = vapply(rows, function(r) as.integer(r$unit_id), integer(1)),
+    line = vapply(rows, `[[`, integer(1), "line"),
+    file = vapply(rows, `[[`, character(1), "file"),
+    text = vapply(rows, `[[`, character(1), "text"),
+    var = vapply(rows, `[[`, character(1), "var"),
+    kind = vapply(rows, `[[`, character(1), "kind"),
+    format = vapply(rows, `[[`, character(1), "format")
+  )
+}
+
+#' Follow one variable's format from the step that writes an output back to
+#' its declaration, through steps that are read exactly
+#'
+#' Supported: a FORMAT or ATTRIB statement in a DATA step; a DATA step whose
+#' first SET or MERGE dataset carries the format; PROC SORT. Any macro
+#' reference in a step on the way, any step or macro call in between that
+#' could change the dataset, a RENAME touching the variable, or a dataset this
+#' file does not see being created ends the trace as not followed.
+#'
+#' @return `list(ok = TRUE, format, line, file, text)` or
+#'   `list(ok = FALSE, reason)`.
+#' @noRd
+trace_declared_date <- function(trace, writer, var) {
+  fail <- function(...) list(ok = FALSE, reason = paste0(...))
+  at <- function(us) paste0("line ", us$line_start[1L])
+  generated <- function(us) {
+    any(has_macro_trigger(us$text)) ||
+      any(grepl("\\b(call\\s+execute|dosubl)\\b", us$text, ignore.case = TRUE, perl = TRUE))
+  }
+  follow_input <- function(id, dataset, depth) {
+    prior <- trace$prior_writer(id, dataset)
+    if (is.na(prior)) return(fail(dataset, " is not created earlier in this program, so its formats are not known from the source"))
+    for (mid in trace$between(prior, id)) {
+      us <- trace$statements(mid)
+      type <- trace$type(mid)
+      if (identical(type, "global")) {
+        text <- sub("^\\s*%(let|put|global|local|symdel)\\b", "", us$text, ignore.case = TRUE, perl = TRUE)
+        plain <- us$first_token %in% c("%let", "%put", "%global", "%local", "%symdel")
+        if (any(grepl("%", vapply(text[plain], mask_strings, "", keep_double = TRUE, USE.NAMES = FALSE), fixed = TRUE)) ||
+            any(has_macro_trigger(text[!plain])))
+          return(fail("macro-generated code at ", at(us), " runs between the declaration and the output"))
+        if (any(us$first_token == "libname")) return(fail("a LIBNAME statement at ", at(us), " runs between the declaration and the output"))
+        next
+      }
+      if (generated(us)) return(fail("macro-generated code at ", at(us), " runs between the declaration and the output"))
+      proc <- if (identical(type, "proc_step")) tolower(sub("^\\s*proc\\s+([A-Za-z0-9_]+).*$", "\\1", us$text[1L], ignore.case = TRUE)) else ""
+      if (proc %in% DATE_TRACE_MODIFYING_PROCS || any(us$first_token == "modify"))
+        return(fail("a step at ", at(us), " can change datasets in place"))
+    }
+    follow(prior, depth + 1L)
+  }
+  follow <- function(id, depth) {
+    if (depth > 50L) return(fail("the steps before the output form too long a chain to follow"))
+    us <- trace$statements(id)
+    type <- trace$type(id)
+    if (generated(us)) return(fail("the step at ", at(us), " contains macro-generated code"))
+    if (identical(type, "proc_step")) {
+      if (!grepl("^\\s*proc\\s+sort\\b", us$text[1L], ignore.case = TRUE, perl = TRUE))
+        return(fail("the procedure at ", at(us), " is not one whose output formats are followed"))
+      if (!all(us$first_token[-1L] %in% c("by", "run", "quit")) ||
+          grepl("\\brename\\s*=", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
+        return(fail("the PROC SORT at ", at(us), " has a statement or option that is not followed"))
+      input <- trace$reads(id)
+      if (length(input) != 1L) return(fail("the PROC SORT at ", at(us), " does not read exactly one dataset"))
+      return(follow_input(id, input, depth))
+    }
+    if (!identical(type, "data_step")) return(fail("the step at ", at(us), " is not a DATA step or PROC SORT"))
+    if (grepl("\\brename\\s*=|/", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
+      return(fail("the DATA statement at ", at(us), " has an option that is not followed"))
+    state <- NULL
+    for (k in seq_len(nrow(us))) {
+      token <- us$first_token[k]
+      if (token %in% c("format", "attrib")) {
+        parsed <- parse_format_declaration(us$text[k])
+        if (is.null(parsed)) state <- list(kind = "unread", line = us$line_start[k])
+        else if (!is.null(parsed[[var]])) state <- c(parsed[[var]], list(line = us$line_start[k],
+          file = us$file[k], text = trimws(gsub("\\s+", " ", us$text[k]))))
+      } else if (token == "rename") {
+        pairs <- parse_rename_statement(us$text[k])
+        if (is.null(pairs) || var %in% pairs) return(fail("a RENAME statement at line ", us$line_start[k], " may rename the variable"))
+      }
+    }
+    if (!is.null(state)) {
+      if (state$kind == "date") return(list(ok = TRUE, format = state$format, line = as.integer(state$line),
+        file = state$file, text = state$text))
+      if (state$kind == "unread") return(fail("a FORMAT or ATTRIB statement at line ", state$line, " is not read exactly"))
+      return(fail("the step at ", at(us), " leaves the variable without a date format"))
+    }
+    readers <- which(us$first_token %in% c("set", "merge", "update", "modify"))
+    if (length(readers) != 1L || !us$first_token[readers] %in% c("set", "merge"))
+      return(fail("the step at ", at(us), " does not read its data with one SET or MERGE statement"))
+    first <- regmatches(us$text[readers], regexec(
+      "^\\s*(?:set|merge)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\([^()]*(?:\\([^()]*\\)[^()]*)*\\))?",
+      us$text[readers], ignore.case = TRUE, perl = TRUE))[[1]]
+    if (length(first) < 2L) return(fail("the ", toupper(us$first_token[readers]), " statement at line ", us$line_start[readers], " is not read exactly"))
+    if (length(first) >= 3L && grepl("\\brename\\s*=", first[3L], ignore.case = TRUE, perl = TRUE))
+      return(fail("a RENAME= option at line ", us$line_start[readers], " may rename the variable"))
+    dataset <- tolower(first[2L])
+    if (!grepl(".", dataset, fixed = TRUE)) dataset <- paste0("work.", dataset)
+    follow_input(id, dataset, depth)
+  }
+  follow(writer, 0L)
+}
+
+#' The kind of each column in a reference dataset
+#'
+#' Reads no rows from a SAS file: the column types are in its header.
+#'
+#' @return A named character vector, lower-case column name to
+#'   [col_kind()], or `NULL` when the file is absent or unreadable.
+#' @noRd
+reference_column_kinds <- function(path) {
+  if (!is_scalar_character(path) || is.na(path) || !nzchar(path) || !file.exists(path) || dir.exists(path)) return(NULL)
+  data <- tryCatch(switch(tolower(tools::file_ext(path)),
+    rds = readRDS(path),
+    xpt = haven::read_xpt(path, n_max = 0L),
+    sas7bdat = haven::read_sas(path, n_max = 0L),
+    NULL), error = function(e) NULL)
+  if (!inherits(data, "data.frame")) return(NULL)
+  stats::setNames(vapply(data, col_kind, character(1)), tolower(names(data)))
+}
+
+empty_date_columns <- function() {
+  tibble::tibble(var = character(), format = character(), evidence = character(),
+                 file = character(), line = integer(), declaration = character(),
+                 reason = character())
+}
+
+#' Decide which output columns are SAS dates
+#'
+#' @param project A `sas2r_project`.
+#' @param diagnostics Also list reference date columns that have no
+#'   declaration. Off when only the bundle's own list is wanted.
+#' @return A named list keyed by output dataset. Each entry holds two tibbles
+#'   with the columns of [empty_date_columns()]: `typed`, the columns the
+#'   bundle writes as `Date` (`evidence` is `"reference"` or `"source"`), and
+#'   `deferred`, the columns left as SAS numbers with the `reason`.
+#' @noRd
+source_date_outputs <- function(project, diagnostics = TRUE) {
+  contracts <- project$output_contracts
+  lineage <- project$lineage
+  statements <- project$statements
+  if (is.null(contracts) || !nrow(contracts) || is.null(lineage) || is.null(statements)) return(list())
+  contracts <- contracts[contracts$kind == "dataset" & !is.na(contracts$logical_name), , drop = FALSE]
+  if (!nrow(contracts)) return(list())
+  rules <- project$config$outputs %||% list()
+  writer_of <- function(target) {
+    ids <- unique(lineage$unit_id[lineage$role == "creates" & lineage$dataset == target])
+    ids <- ids[ids %in% statements$unit_id[statements$unit_type != "macro_def"]]
+    files <- unique(statements$file[statements$unit_id %in% ids])
+    if (!length(ids) || length(files) != 1L) return(NULL)
+    trace <- date_trace_file(project, files)
+    list(trace = trace, id = trace$ids[max(match(ids, trace$ids))])
+  }
+  targets <- tolower(contracts$logical_name)
+  writers <- stats::setNames(lapply(targets, writer_of), targets)
+  position <- vapply(writers, function(w) if (is.null(w)) NA_integer_ else
+    match(w$id, project$order %||% unique(statements$unit_id)), integer(1))
+  out <- list()
+  for (target in targets[order(position, na.last = TRUE)]) {
+    w <- writers[[target]]
+    contract <- as.list(contracts[match(target, targets), , drop = FALSE])
+    typed <- deferred <- empty_date_columns()
+    add <- function(to, var, format, evidence, at, reason = NA_character_) {
+      rbind(to, tibble::tibble(var = var, format = format %||% NA_character_, evidence = evidence,
+        file = at$file %||% NA_character_, line = as.integer(at$line %||% NA_integer_),
+        declaration = at$text %||% NA_character_, reason = reason))
+    }
+    candidates <- list()
+    kinds <- NULL
+    if (!is.null(w)) {
+      ancestors <- date_trace_ancestors(w$trace, w$id)
+      declared <- date_declarations(w$trace, ancestors)
+      upstream <- intersect(unlist(lapply(ancestors, w$trace$reads)), setdiff(names(out), target))
+      upstream <- upstream[vapply(upstream, function(source) nrow(out[[source]]$typed) > 0L, logical(1))]
+      # The reference is read only when there is something for it to confirm.
+      if (any(declared$kind == "date") || length(upstream) || isTRUE(diagnostics))
+        kinds <- reference_column_kinds(output_reference_path(contract, rules))
+      for (var in unique(declared$var[declared$kind == "date"])) {
+        rows <- declared[!is.na(declared$var) & declared$var == var, , drop = FALSE]
+        last <- rows[max(which(rows$kind == "date")), , drop = FALSE]
+        candidates[[var]] <- list(format = last$format, file = last$file, line = last$line, text = last$text,
+          contradicted = any(rows$kind != "date"), inherited = NA_character_)
+      }
+      # A format declared for an upstream output travels with that dataset.
+      # It is considered only where the reference has the column as a date:
+      # nothing in the source says the column is kept in this output at all.
+      for (source in upstream) {
+        up <- out[[source]]$typed
+        for (k in seq_len(nrow(up))) {
+          var <- up$var[k]
+          if (!is.null(candidates[[var]]) || !identical(unname(kinds[var]), "date")) next
+          own <- declared[!is.na(declared$var) & declared$var == var, , drop = FALSE]
+          candidates[[var]] <- list(format = up$format[k], file = up$file[k], line = up$line[k],
+            text = up$declaration[k], contradicted = nrow(own) > 0L, inherited = source)
+        }
+      }
+    } else if (isTRUE(diagnostics)) {
+      kinds <- reference_column_kinds(output_reference_path(contract, rules))
+    }
+    for (var in names(candidates)) {
+      cand <- candidates[[var]]
+      kind <- if (var %in% names(kinds)) unname(kinds[[var]]) else NA_character_
+      traced <- if (is.na(cand$inherited)) trace_declared_date(w$trace, w$id, var) else
+        list(ok = FALSE, reason = paste0("the format is declared for ", cand$inherited, ", which this program reads"))
+      if (!is.na(kind) && kind != "date") {
+        deferred <- add(deferred, var, cand$format, "source", cand,
+          paste0("the SAS source declares a date format, but the reference stores this column as ", kind))
+      } else if (!is.na(kind) && (isTRUE(traced$ok) || !cand$contradicted)) {
+        typed <- add(typed, var, if (isTRUE(traced$ok)) traced$format else cand$format, "reference",
+          if (isTRUE(traced$ok)) traced else cand)
+      } else if (is.na(kind) && isTRUE(traced$ok)) {
+        typed <- add(typed, var, traced$format, "source", traced)
+      } else {
+        deferred <- add(deferred, var, cand$format, "source", cand, paste0(
+          if (cand$contradicted && !is.na(kind)) "another statement on the way to the output gives this variable a different format; "
+          else "", traced$reason,
+          if (is.na(kind)) "; there is no reference column to confirm the date format" else ""))
+      }
+    }
+    if (isTRUE(diagnostics)) {
+      for (var in setdiff(names(kinds)[kinds == "date"], names(candidates))) {
+        deferred <- add(deferred, var, NA_character_, "reference", list(),
+          "the reference stores a date, but no date format declaration for this variable was read from the SAS source")
+      }
+    }
+    out[[target]] <- list(typed = typed, deferred = deferred)
+  }
+  out[targets]
+}
+
+#' The date columns a bundle writes as `Date`, for `_sas2r_formats.R`
+#'
+#' A failure here must not stop a run: the columns stay SAS numbers, exactly as
+#' they were before this file existed, and the comparison reports the type.
+#'
+#' @return A named list, output dataset to a named character vector of
+#'   column name and SAS format. Empty when nothing is declared.
+#' @noRd
+output_date_registry <- function(project) {
+  decided <- tryCatch(source_date_outputs(project, diagnostics = FALSE), error = function(e) list())
+  registry <- lapply(decided, function(x) stats::setNames(as.character(x$typed$format), x$typed$var))
+  registry <- registry[vapply(registry, length, integer(1)) > 0L]
+  if (length(registry)) registry else list()
+}
+
+#' One output's date columns as plain records, for the run report
+#'
+#' @param decided One entry of [source_date_outputs()].
+#' @return `NULL` when nothing is declared or deferred, otherwise
+#'   `list(typed, deferred)`, each a list of records.
+#' @noRd
+date_columns_record <- function(decided) {
+  if (is.null(decided) || (!nrow(decided$typed) && !nrow(decided$deferred))) return(NULL)
+  records <- function(df) lapply(seq_len(nrow(df)), function(i) {
+    row <- as.list(df[i, , drop = FALSE])
+    row$file <- if (is.na(row$file)) NA_character_ else basename(row$file)
+    row[!vapply(row, function(v) is.na(v), logical(1))]
+  })
+  list(typed = records(decided$typed), deferred = records(decided$deferred))
+}
+
+#' Report lines for the date columns of every output
+#'
+#' @param output_assessments Named list of output assessments.
+#' @return Markdown lines, empty when no output has a declared or deferred
+#'   date column.
+#' @noRd
+date_columns_report_lines <- function(output_assessments) {
+  lines <- character()
+  for (key in names(output_assessments)) {
+    cols <- output_assessments[[key]]$date_columns
+    for (x in cols$typed) lines <- c(lines, paste0(
+      "- **", key, "** `", x$var, "`: stored as a date (SAS format ", x$format,
+      if (!is.null(x$file)) paste0(", declared at ", x$file, ":", x$line) else "",
+      if (identical(x$evidence, "reference")) "; the reference stores a date" else
+        "; followed from the declaration to the output", ")."))
+    for (x in cols$deferred) lines <- c(lines, paste0(
+      "- **", key, "** `", x$var, "`: left as a SAS day number. ",
+      toupper(substr(x$reason, 1L, 1L)), substring(x$reason, 2L), "."))
+  }
+  if (!length(lines)) return(character())
+  c("## Date Columns", "",
+    paste("SAS stores a date as a number of days from 1960-01-01 and a format that shows it as a date.",
+          "A column the SAS source declares with a date format is stored as an R `Date`;",
+          "the generated programs still compute with the SAS day number."),
+    "", lines, "")
+}

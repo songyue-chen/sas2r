@@ -552,6 +552,27 @@ lib_read <- function(libref, member, ...) {
   df <- if (target$type == "rds") readRDS(target$path)
   else if (target$type == "sas7bdat") haven::read_sas(target$path)
   else if (target$type == "xpt") haven::read_xpt(target$path)
+  # SAS keeps a date as a number of days from 1960-01-01 and a format that says
+  # to show it as a date. A column the SAS source declares that way is stored
+  # as an R Date (see lib_write()) and handed back here as the SAS number, so
+  # date arithmetic in a later program is the SAS arithmetic. The format
+  # attribute goes with the class: R arithmetic copies attributes, and a
+  # duration computed from two dates must not look like a date.
+  dates <- get0(".sas2r_output_dates", envir = sas2r_registry_env(), inherits = TRUE)
+  dates <- if (is.list(dates)) dates[[tolower(paste(libref, member, sep = "."))]]
+  if (is.character(dates) && !is.null(names(dates))) {
+    origin <- -as.numeric(as.Date("1960-01-01"))
+    for (name in names(dates)) {
+      at <- which(tolower(names(df)) == tolower(name))
+      if (length(at) != 1L || !inherits(df[[at]], "Date")) next
+      x <- unclass(df[[at]])
+      storage.mode(x) <- "double"
+      present <- !is.na(x)
+      x[present] <- x[present] + origin
+      attr(x, "format.sas") <- NULL
+      df[[at]] <- x
+    }
+  }
   class(df) <- unique(c("sas2r_dataset", class(df)))
   df
 }
@@ -599,10 +620,42 @@ lib_write <- function(df, libref, member, ...) {
   fmt <- if (is.null(reg$write)) "rds" else reg$write
   df <- as.data.frame(df)
   if (!fmt %in% c("rds", "xpt")) sas2r_libref_stop("sas2r_write_format", paste0("Unsupported write format: ", fmt))
+  # A column the SAS source declares with a date format (`.sas2r_output_dates`
+  # in `_sas2r_formats.R`, one entry per output dataset) is stored as an R
+  # Date. Only what is stored changes: the program keeps, and is returned, its
+  # own data, and lib_read() gives a later program the SAS day number again.
+  # A column is converted only when it is a plain number and every value comes
+  # back exactly, so reading returns the numbers written; one value that would
+  # not, such as some fractional day counts, leaves the whole column as it is.
+  # A missing value is never computed on, which keeps a special missing
+  # value's tag. A column that is already a Date is left.
+  stored <- df
+  dates <- get0(".sas2r_output_dates", envir = sas2r_registry_env(), inherits = TRUE)
+  dates <- if (is.list(dates)) dates[[tolower(paste(libref, member, sep = "."))]]
+  if (is.character(dates) && !is.null(names(dates))) {
+    origin <- -as.numeric(as.Date("1960-01-01"))
+    for (name in names(dates)) {
+      at <- which(tolower(names(stored)) == tolower(name))
+      if (length(at) != 1L) next
+      x <- stored[[at]]
+      if (!is.numeric(x) || !is.null(oldClass(x))) next
+      present <- !is.na(x)
+      shifted <- as.double(x[present]) - origin
+      if (!identical(shifted + origin, as.double(x[present]))) next
+      storage.mode(x) <- "double"
+      x[present] <- shifted
+      if (is.null(attr(x, "format.sas", exact = TRUE))) attr(x, "format.sas") <- dates[[name]]
+      class(x) <- "Date"
+      stored[[at]] <- x
+    }
+  }
   target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
   pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
   on.exit(unlink(pending), add = TRUE)
-  if (fmt == "rds") saveRDS(df, pending) else haven::write_xpt(df, pending)
+  # haven names an XPT member after its file, and the temporary file's name is
+  # not a SAS name: name the member after the file it becomes.
+  if (fmt == "rds") saveRDS(stored, pending) else
+    haven::write_xpt(stored, pending, name = sub("[.]xpt$", "", basename(target), ignore.case = TRUE))
   if (!file.rename(pending, target)) sas2r_libref_stop("sas2r_library_unavailable", paste0("Could not replace dataset member: ", target))
   invisible(df)
 }

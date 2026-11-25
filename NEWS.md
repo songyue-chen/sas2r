@@ -12,6 +12,22 @@
   random failures, and the run report, the start-here page and the end-of-run
   summary now say so.
 
+- Store a SAS date as an R `Date` in the datasets a migration writes. SAS keeps
+  a date as a day number with a date format; generated programs still compute
+  with that number, so date arithmetic is unchanged, and a later program that
+  reads the dataset with `lib_read()` receives the number again. A column is
+  stored as a date only when the SAS source gives it a date format in a
+  `FORMAT` or `ATTRIB` statement and either the reference dataset stores that
+  column as a date or, where no reference column exists, every step between the
+  declaration and the output is free of macro-generated code. The run report
+  lists each such column with its declaration, and each declared column left as
+  a number with the reason. A reference comparison of such a column now checks
+  the calendar date; before, the column failed on type and its values were not
+  compared. Datetime and time formats are not covered and stay numbers.
+
+- Fix `lib_write()` for a library written as XPT. Every write failed with
+  "A provided name contains an illegal character".
+
 - Reduce repeated model requests during translation, review and repair, and
   keep request content stable between calls so providers can reuse cached
   prompts.
