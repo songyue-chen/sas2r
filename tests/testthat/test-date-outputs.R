@@ -261,9 +261,14 @@ test_that("only a plain number that converts exactly is stored as a date", {
   expect_s3_class(readRDS(rt$file)$adt, "Date")
   expect_identical(rt$h$lib_read("adam", "adv")$adt, numeric())
 
-  rt$h$lib_write(data.frame(ID = 1, ADT = 23435), "adam", "ADV")
-  expect_identical(format(readRDS(rt$file)$ADT), "2024-02-29")
-  expect_identical(rt$h$lib_read("adam", "ADV")$ADT, 23435)
+  # An upper-case member and column match the lower-case declaration. This
+  # uses its own library: `adv` and `ADV` are one file on a case-insensitive
+  # file system and two files on a case-sensitive one.
+  upper <- date_runtime()
+  upper$h$lib_write(data.frame(ID = 1, ADT = 23435), "adam", "ADV")
+  stored <- readRDS(file.path(dirname(upper$file), "ADV.rds"))
+  expect_identical(format(stored$ADT), "2024-02-29")
+  expect_identical(upper$h$lib_read("adam", "ADV")$ADT, 23435)
 })
 
 test_that("nothing changes for a dataset or a bundle without declared dates", {
