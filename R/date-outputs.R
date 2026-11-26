@@ -17,6 +17,11 @@
 # A date-like name, a plausible day number, or a date column in a reference
 # decides nothing alone. Anything else is left as the SAS number and listed
 # with the reason, so nothing is typed on a guess.
+#
+# "On the way to that output" follows the variable, not its name: a DROP or
+# KEEP that removes the variable removes the format with it, and a variable of
+# the same name made afterwards is a new one. Where the source proves that, the
+# first fact does not hold and the reference cannot supply it.
 
 # The SAS format names haven reads back as `Date`. A reference dataset is read
 # with haven, so a format typed here and not there would turn every such column
@@ -134,6 +139,97 @@ parse_rename_statement <- function(text) {
   pairs
 }
 
+# DROP and KEEP. A format travels with its variable, so a variable that is
+# dropped, or left out of a KEEP list, takes its format out of the dataset: a
+# variable of the same name created later is a new one with no format.
+
+#' Whether one token of a DROP or KEEP list selects a variable
+#'
+#' @return `TRUE`, `FALSE`, or `NA` when the token is not read exactly: a
+#'   name range such as `a--b`, a keyword list such as `_numeric_`, or a
+#'   numbered range that could hold the variable.
+#' @noRd
+projection_token_selects <- function(token, var) {
+  token <- tolower(token)
+  if (is_sas_plain_name(token)) return(identical(token, var))
+  if (grepl("^[a-z_][a-z0-9_]*:$", token)) return(startsWith(var, sub(":$", "", token)))
+  range <- regmatches(token, regexec("^([a-z_][a-z0-9_]*?)[0-9]+-([a-z_][a-z0-9_]*?)[0-9]+$", token))[[1]]
+  if (length(range) == 3L && identical(range[2], range[3]) &&
+      !grepl(paste0("^", range[2], "[0-9]+$"), var)) return(FALSE)
+  NA
+}
+
+#' One DROP or KEEP list
+#'
+#' @param op `"drop"` or `"keep"`.
+#' @param body The list as written, without its keyword.
+#' @return `list(op, tokens, line)`.
+#' @noRd
+read_projection_list <- function(op, body, line) {
+  tokens <- strsplit(trimws(gsub("\\s*-\\s*", "-", body)), "\\s+")[[1]]
+  list(op = tolower(op), tokens = tokens[nzchar(tokens)], line = as.integer(line))
+}
+
+#' Whether a series of DROP and KEEP lists removes a variable
+#'
+#' The lists apply one after another, so one list that removes the variable
+#' settles it whatever the others say.
+#'
+#' @return `list(excluded, op, line)`: `excluded` is `TRUE`, `FALSE`, or `NA`
+#'   when no list removes the variable for certain and one could; `line` is
+#'   the list that decided.
+#' @noRd
+projection_excludes <- function(filters, var) {
+  unknown <- NA_integer_
+  for (f in filters) {
+    hits <- vapply(f$tokens, projection_token_selects, logical(1), var = var, USE.NAMES = FALSE)
+    selected <- if (any(hits %in% TRUE)) TRUE else if (!length(hits) || anyNA(hits)) NA else FALSE
+    gone <- if (f$op == "drop") selected else !selected
+    if (isTRUE(gone)) return(list(excluded = TRUE, op = toupper(f$op), line = f$line))
+    if (is.na(gone) && is.na(unknown)) unknown <- f$line
+  }
+  list(excluded = if (is.na(unknown)) FALSE else NA, op = NA_character_, line = unknown)
+}
+
+# Which tokens of a statement, as dataset_tokens() splits it, are outside every
+# parenthesis.
+top_level_tokens <- function(lex) {
+  open <- lex == "("
+  close <- lex == ")"
+  (cumsum(open) - cumsum(close)) == 0L & !open & !close
+}
+
+#' The DROP= and KEEP= lists among one dataset's options
+#'
+#' @param lex A statement's tokens from [dataset_tokens()].
+#' @param at The position of the dataset name; its options are the
+#'   parenthesised group that follows.
+#' @return A list of [read_projection_list()] records, empty when the dataset
+#'   has no DROP= or KEEP= option. Text inside a nested option such as WHERE=
+#'   or inside a quoted string is not read as an option.
+#' @noRd
+dataset_option_filters <- function(lex, at, line) {
+  n <- length(lex)
+  if (at >= n || lex[at + 1L] != "(") return(list())
+  depth <- cumsum(lex == "(") - cumsum(lex == ")")
+  end <- which(seq_len(n) > at + 1L & lex == ")" & depth == depth[at])[1L]
+  unread <- list(list(op = "drop", tokens = character(), line = as.integer(line)))
+  if (is.na(end)) return(unread)
+  inner <- if (end > at + 2L) lex[seq.int(at + 2L, end - 1L)] else character()
+  top <- top_level_tokens(inner)
+  filters <- list()
+  for (i in which(top & tolower(inner) %in% c("drop", "keep") & c(inner[-1L], "") == "=")) {
+    j <- i + 2L
+    while (j <= length(inner) && top[j] && !inner[j] %in% c("=", ",") &&
+           !(j < length(inner) && inner[j + 1L] == "=")) j <- j + 1L
+    # A list that runs into a parenthesis or a stray sign is not a plain list.
+    if (j <= length(inner) && (!top[j] || inner[j] %in% c("=", ","))) return(unread)
+    body <- if (j > i + 2L) paste(inner[seq.int(i + 2L, j - 1L)], collapse = " ") else ""
+    filters[[length(filters) + 1L]] <- read_projection_list(inner[i], body, line)
+  }
+  filters
+}
+
 # The steps of one source file in the order they run, with what each reads and
 # creates. A macro definition is text, not a step, and is left out.
 date_trace_file <- function(project, file) {
@@ -218,20 +314,47 @@ date_declarations <- function(trace, units) {
 #' Supported: a FORMAT or ATTRIB statement in a DATA step; a DATA step whose
 #' first SET or MERGE dataset carries the format; PROC SORT. Any macro
 #' reference in a step on the way, any step or macro call in between that
-#' could change the dataset, a RENAME touching the variable, or a dataset this
-#' file does not see being created ends the trace as not followed.
+#' could change the dataset, a RENAME touching the variable, a DROP or KEEP
+#' list that could remove it and is not read exactly, or a dataset this file
+#' does not see being created ends the trace as not followed.
 #'
-#' @return `list(ok = TRUE, format, line, file, text)` or
-#'   `list(ok = FALSE, reason)`.
+#' A DROP or KEEP that removes the variable ends the trace too. It is a proven
+#' exclusion, `excluded = TRUE`, only when every step between it and the output
+#' reads one dataset: with `merge a(drop=x) b` the variable and its format can
+#' still arrive from `b`, so that is reported as not followed.
+#'
+#' @param target The dataset the writer is followed for, as `lib.member`.
+#' @return `list(ok = TRUE, format, line, file, text)`, or
+#'   `list(ok = FALSE, reason)`, with `excluded = TRUE` when the source proves
+#'   that no format declared before the exclusion reaches the output.
 #' @noRd
-trace_declared_date <- function(trace, writer, var) {
+trace_declared_date <- function(trace, writer, var, target) {
   fail <- function(...) list(ok = FALSE, reason = paste0(...))
   at <- function(us) paste0("line ", us$line_start[1L])
   generated <- function(us) {
     any(has_macro_trigger(us$text)) ||
       any(grepl("\\b(call\\s+execute|dosubl)\\b", us$text, ignore.case = TRUE, perl = TRUE))
   }
-  follow_input <- function(id, dataset, depth) {
+  member_key <- function(name) {
+    name <- tolower(name)
+    ifelse(grepl(".", name, fixed = TRUE), name, paste0("work.", name))
+  }
+  # What a DROP or KEEP that removes the variable means for the trace.
+  removed <- function(gone, single, from = NULL) {
+    what <- paste0("the ", gone$op, " list at line ", gone$line, " removes the variable",
+                   if (is.null(from)) "" else paste0(" from ", from))
+    if (single) return(list(ok = FALSE, excluded = TRUE, reason = paste0(
+      what, " before the output, so the declared date format does not reach it")))
+    fail(what, ", and the variable may still come from another dataset read on the way to the output, which is not followed")
+  }
+  unread <- function(gone) fail("the DROP or KEEP list at line ", gone$line,
+                                " could remove the variable and is not read exactly")
+  # Where a PROC SORT statement names the dataset after DATA= or OUT=.
+  sort_names <- function(lex, key) {
+    i <- which(top_level_tokens(lex) & tolower(lex) == key & c(lex[-1L], "") == "=")
+    if (length(i) == 1L && i + 2L <= length(lex)) i + 2L else NA_integer_
+  }
+  follow_input <- function(id, dataset, depth, single) {
     prior <- trace$prior_writer(id, dataset)
     if (is.na(prior)) return(fail(dataset, " is not created earlier in this program, so its formats are not known from the source"))
     for (mid in trace$between(prior, id)) {
@@ -250,14 +373,32 @@ trace_declared_date <- function(trace, writer, var) {
       proc <- if (identical(type, "proc_step")) tolower(sub("^\\s*proc\\s+([A-Za-z0-9_]+).*$", "\\1", us$text[1L], ignore.case = TRUE)) else ""
       if (proc %in% DATE_TRACE_MODIFYING_PROCS || any(us$first_token == "modify"))
         return(fail("a step at ", at(us), " can change datasets in place"))
+      # PROC SORT with no OUT= rewrites its input with the options on DATA=.
+      # The lineage records that as a read, so it is met here and not as a
+      # writer.
+      if (identical(proc, "sort")) {
+        lex <- dataset_tokens(us$text[1L])$lex
+        data_at <- sort_names(lex, "data")
+        if (!is.na(data_at) && is.na(sort_names(lex, "out")) && identical(member_key(lex[data_at]), dataset)) {
+          if (grepl("\\brename\\s*=", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
+            return(fail("a RENAME= option at ", at(us), " may rename the variable"))
+          gone <- projection_excludes(dataset_option_filters(lex, data_at, us$line_start[1L]), var)
+          if (isTRUE(gone$excluded)) return(removed(gone, single, from = dataset))
+          if (is.na(gone$excluded)) return(unread(gone))
+        }
+      }
     }
-    follow(prior, depth + 1L)
+    follow(prior, dataset, depth + 1L, single)
   }
-  follow <- function(id, depth) {
+  # `member` is the dataset this step is followed for. `single` says every step
+  # between this one and the output reads one dataset.
+  follow <- function(id, member, depth, single) {
     if (depth > 50L) return(fail("the steps before the output form too long a chain to follow"))
     us <- trace$statements(id)
     type <- trace$type(id)
     if (generated(us)) return(fail("the step at ", at(us), " contains macro-generated code"))
+    lex <- dataset_tokens(us$text[1L])$lex
+    top <- top_level_tokens(lex)
     if (identical(type, "proc_step")) {
       if (!grepl("^\\s*proc\\s+sort\\b", us$text[1L], ignore.case = TRUE, perl = TRUE))
         return(fail("the procedure at ", at(us), " is not one whose output formats are followed"))
@@ -266,11 +407,38 @@ trace_declared_date <- function(trace, writer, var) {
         return(fail("the PROC SORT at ", at(us), " has a statement or option that is not followed"))
       input <- trace$reads(id)
       if (length(input) != 1L) return(fail("the PROC SORT at ", at(us), " does not read exactly one dataset"))
-      return(follow_input(id, input, depth))
+      data_at <- sort_names(lex, "data")
+      out_at <- sort_names(lex, "out")
+      written <- if (is.na(out_at)) input else member_key(lex[out_at])
+      if (!identical(written, member))
+        return(fail("the PROC SORT at ", at(us), " does not write ", member, " with OUT= or in place"))
+      # PROC SORT creates no variable: one removed on the way in or on the way
+      # out is not in the dataset it writes.
+      gone <- projection_excludes(c(
+        if (!is.na(data_at)) dataset_option_filters(lex, data_at, us$line_start[1L]),
+        if (!is.na(out_at)) dataset_option_filters(lex, out_at, us$line_start[1L])), var)
+      if (isTRUE(gone$excluded)) return(removed(gone, single))
+      if (is.na(gone$excluded)) return(unread(gone))
+      return(follow_input(id, input, depth, single))
     }
     if (!identical(type, "data_step")) return(fail("the step at ", at(us), " is not a DATA step or PROC SORT"))
     if (grepl("\\brename\\s*=|/", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
       return(fail("the DATA statement at ", at(us), " has an option that is not followed"))
+    # What the step writes to `member`: a DROP or KEEP statement applies to
+    # every dataset the step writes, a dataset option to that dataset only.
+    # This comes before the step's own FORMAT statement, because a variable the
+    # step leaves out takes that format with it.
+    member_at <- which(top & seq_along(lex) > 1L & member_key(lex) == member)
+    if (length(member_at) != 1L)
+      return(fail("the DATA statement at ", at(us), " does not name ", member, " exactly once"))
+    lists <- which(us$first_token %in% c("drop", "keep") &
+                     !grepl("^\\s*(drop|keep)\\s*=", us$text, ignore.case = TRUE, perl = TRUE))
+    gone <- projection_excludes(c(
+      lapply(lists, function(k) read_projection_list(us$first_token[k],
+        sub("^\\s*(drop|keep)\\b", "", us$text[k], ignore.case = TRUE, perl = TRUE), us$line_start[k])),
+      dataset_option_filters(lex, member_at, us$line_start[1L])), var)
+    if (isTRUE(gone$excluded)) return(removed(gone, single))
+    if (is.na(gone$excluded)) return(unread(gone))
     state <- NULL
     for (k in seq_len(nrow(us))) {
       token <- us$first_token[k]
@@ -293,17 +461,28 @@ trace_declared_date <- function(trace, writer, var) {
     readers <- which(us$first_token %in% c("set", "merge", "update", "modify"))
     if (length(readers) != 1L || !us$first_token[readers] %in% c("set", "merge"))
       return(fail("the step at ", at(us), " does not read its data with one SET or MERGE statement"))
+    # `if 0 then set lookup;` reads a second dataset that no statement starts
+    # with, and its formats come first when it is written first.
+    if (any(grepl("\\b(then|else)\\s+(set|merge|update|modify)\\b",
+                  vapply(us$text, mask_strings, "", USE.NAMES = FALSE), ignore.case = TRUE, perl = TRUE)))
+      return(fail("the step at ", at(us), " reads a dataset inside an IF statement, which is not followed"))
     first <- regmatches(us$text[readers], regexec(
       "^\\s*(?:set|merge)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\([^()]*(?:\\([^()]*\\)[^()]*)*\\))?",
       us$text[readers], ignore.case = TRUE, perl = TRUE))[[1]]
     if (length(first) < 2L) return(fail("the ", toupper(us$first_token[readers]), " statement at line ", us$line_start[readers], " is not read exactly"))
     if (length(first) >= 3L && grepl("\\brename\\s*=", first[3L], ignore.case = TRUE, perl = TRUE))
       return(fail("a RENAME= option at line ", us$line_start[readers], " may rename the variable"))
-    dataset <- tolower(first[2L])
-    if (!grepl(".", dataset, fixed = TRUE)) dataset <- paste0("work.", dataset)
-    follow_input(id, dataset, depth)
+    dataset <- member_key(first[2L])
+    # The format is followed through the first dataset only. Where that is the
+    # step's one input, a variable removed on the way in is new in this step.
+    one <- identical(trace$reads(id), dataset)
+    gone <- projection_excludes(dataset_option_filters(
+      dataset_tokens(us$text[readers])$lex, 2L, us$line_start[readers]), var)
+    if (isTRUE(gone$excluded)) return(removed(gone, single && one, from = dataset))
+    if (is.na(gone$excluded)) return(unread(gone))
+    follow_input(id, dataset, depth, single && one)
   }
-  follow(writer, 0L)
+  follow(writer, tolower(target), 0L, TRUE)
 }
 
 #' The kind of each column in a reference dataset
@@ -405,8 +584,18 @@ source_date_outputs <- function(project, diagnostics = TRUE) {
     for (var in names(candidates)) {
       cand <- candidates[[var]]
       kind <- if (var %in% names(kinds)) unname(kinds[[var]]) else NA_character_
-      traced <- if (is.na(cand$inherited)) trace_declared_date(w$trace, w$id, var) else
-        list(ok = FALSE, reason = paste0("the format is declared for ", cand$inherited, ", which this program reads"))
+      traced <- trace_declared_date(w$trace, w$id, var, target)
+      if (isTRUE(traced$excluded)) {
+        # The source proves the declared format stops before this output, so
+        # the column there is not that date and the reference cannot make it
+        # one. It is listed only where the reference stores a date, which the
+        # source then does not explain.
+        if (identical(kind, "date")) deferred <- add(deferred, var, cand$format, "source", cand, paste0(
+          traced$reason, "; the reference stores a date, which the SAS source read here does not explain"))
+        next
+      }
+      if (!is.na(cand$inherited))
+        traced <- list(ok = FALSE, reason = paste0("the format is declared for ", cand$inherited, ", which this program reads"))
       if (!is.na(kind) && kind != "date") {
         deferred <- add(deferred, var, cand$format, "source", cand,
           paste0("the SAS source declares a date format, but the reference stores this column as ", kind))

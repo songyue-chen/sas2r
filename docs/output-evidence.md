@@ -153,6 +153,14 @@ these hold:
   such column, the declaration must instead reach the output through DATA steps
   and `PROC SORT` steps with no macro-generated code between them.
 
+A format travels with its variable. Where a `DROP` or `KEEP` statement or
+dataset option removes the variable on the way to the output, the declaration
+does not reach it: a variable of the same name made later is a plain number
+unless it is given a date format of its own. A date in the reference does not
+change that, and the report names the list that removed the variable. A list
+that cannot be read exactly, such as `_numeric_` or `a--b`, is treated like
+macro-generated code: the reference decides.
+
 A date-like name, a plausible day number, or a date in the reference changes
 nothing alone. Inside the generated programs nothing changes either:
 `lib_read()` returns the SAS day number for these columns, so a later program

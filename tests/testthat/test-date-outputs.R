@@ -271,6 +271,175 @@ test_that("only a plain number that converts exactly is stored as a date", {
   expect_identical(upper$h$lib_read("adam", "ADV")$ADT, 23435)
 })
 
+# DROP and KEEP. Each program first writes work.stage with a date `elapsed`.
+# `projected()` scans one program, builds the bundle's date list from it, and
+# writes the frame the translated last step would hand to lib_write().
+stage_step <- c("data work.stage;", "  id = 1;", "  elapsed = '01Jan2020'd;",
+                "  format elapsed date9.;", "run;")
+remade <- c("data adam.adv;", "  set work.stage;", "  elapsed = 42;", "run;")
+projected <- function(program, value = 42, references = list(), envir = parent.frame()) {
+  fx <- date_fixture(list(p01 = program), "adam.adv", references, envir = envir)
+  registry <- output_date_registry(fx$project)
+  rt <- date_runtime(dates = registry, envir = envir)
+  rt$h$lib_write(data.frame(id = 1, elapsed = value), "adam", "adv")
+  dates <- registry[["adam.adv"]]
+  c(decided(fx), list(format = if ("elapsed" %in% names(dates)) dates[["elapsed"]] else NA_character_,
+                      stored = readRDS(rt$file)$elapsed))
+}
+
+test_that("a variable removed by DROP or KEEP takes its date format with it", {
+  # SAS writes a plain 42 in every one of these: the first `elapsed` and its
+  # format never reach the step that makes the second.
+  removed <- list(
+    "DROP= on SET" = c(stage_step, "data adam.adv;", "  set work.stage(drop=elapsed);", "  elapsed = 42;", "run;"),
+    "KEEP= on SET" = c(stage_step, "data adam.adv;", "  set work.stage(keep=id);", "  elapsed = 42;", "run;"),
+    "prefix list on SET" = c(stage_step, "data adam.adv;", "  set work.stage(drop=el:);", "  elapsed = 42;", "run;"),
+    "DROP statement" = c(stage_step[1:4], "  drop elapsed;", "run;", remade),
+    "KEEP statement" = c(stage_step[1:4], "  keep id;", "run;", remade),
+    "DROP= on DATA" = c("data work.stage(drop=elapsed);", stage_step[-1], remade),
+    "KEEP= on one DATA member" = c("data work.stage(keep=id) work.full;", stage_step[-1], remade),
+    "DROP= on SORT DATA=" = c(stage_step, "proc sort data=work.stage(drop=elapsed) out=work.s2;", "  by id;", "run;",
+                              sub("work.stage", "work.s2", remade, fixed = TRUE)),
+    "KEEP= on SORT OUT=" = c(stage_step, "proc sort data=work.stage out=work.s2(keep=id);", "  by id;", "run;",
+                             sub("work.stage", "work.s2", remade, fixed = TRUE)),
+    "DROP= on a sort in place" = c(stage_step, "proc sort data=work.stage(drop=elapsed);", "  by id;", "run;", remade),
+    "DROP of a new declaration" = c(stage_step, "data work.s2;", "  set work.stage(drop=elapsed);",
+      "  elapsed = 21916;", "  format elapsed date9.;", "run;",
+      "data adam.adv;", "  set work.s2(drop=elapsed);", "  elapsed = 42;", "run;"))
+  for (case in names(removed)) {
+    got <- projected(removed[[case]])
+    expect_identical(got$format, NA_character_, info = case)
+    expect_identical(got$stored, 42, info = case)
+    # Proven by the source, so there is nothing left to confirm or report.
+    expect_identical(c(nrow(got$typed), nrow(got$deferred)), c(0L, 0L), info = case)
+  }
+})
+
+test_that("a variable that survives DROP and KEEP keeps its date format", {
+  kept <- list(
+    "KEEP= names it" = c(stage_step, "data adam.adv;", "  set work.stage(keep=id ELAPSED);", "run;"),
+    "DROP= of another" = c(stage_step, "data adam.adv;", "  set work.stage(drop=id);", "run;"),
+    "KEEP statement" = c(stage_step[1:4], "  keep ID Elapsed;", "run;", "data adam.adv;", "  set work.stage;", "run;"),
+    "lists that cannot hold it" = c(stage_step[1:4], "  drop tmp: x1 - x5 i;", "run;",
+                                    "data adam.adv;", "  set work.stage;", "run;"),
+    "the other DATA member" = c("data work.stage(keep=id) work.full;", stage_step[-1],
+                                "data adam.adv;", "  set work.full;", "run;"),
+    "both SORT options" = c(stage_step, "proc sort data=work.stage(keep=id elapsed) out=adam.adv(drop=id);",
+                            "  by id;", "run;"),
+    "a sort in place" = c(stage_step, "proc sort data=work.stage;", "  by id;", "run;",
+                          "data adam.adv;", "  set work.stage;", "run;"),
+    "WHERE= that mentions it" = c(stage_step, "data adam.adv;",
+                                  "  set work.stage(where=(elapsed > 0 and id = 1));", "run;"),
+    "a variable named drop" = c(stage_step, "data adam.adv;", "  set work.stage;", "  drop = 1;", "run;"))
+  for (case in names(kept)) {
+    got <- projected(kept[[case]], value = sas_day("2020-01-01"))
+    expect_identical(got$format, "DATE9", info = case)
+    expect_identical(got$stored, structure(as.Date("2020-01-01"), format.sas = "DATE9"), info = case)
+    expect_identical(got$typed$evidence, "source", info = case)
+  }
+  # A new declaration after the old variable is removed is a new date.
+  renewed <- projected(c(stage_step, "data adam.adv;", "  set work.stage(drop=elapsed);",
+    "  elapsed = 21916;", "  format elapsed yymmdd10.;", "run;"), value = 21916)
+  expect_identical(renewed$format, "YYMMDD10")
+  expect_identical(format(renewed$stored), "2020-01-02")
+  expect_identical(renewed$typed$line, 9L)
+})
+
+test_that("a DROP or KEEP that is not settled by the source leaves the reference to decide", {
+  open <- list(
+    "keyword list" = c(stage_step, "data adam.adv;", "  set work.stage(drop=_numeric_);", "run;"),
+    "name range" = c(stage_step, "data adam.adv;", "  set work.stage(keep=id--elapsed);", "run;"),
+    "numbered range" = c("data work.stage;", "  id = 1;", "  elapsed3 = '01Jan2020'd;",
+                         "  format elapsed3 date9.;", "run;",
+                         "data adam.adv;", "  set work.stage(drop=elapsed1-elapsed5);", "run;"))
+  for (case in names(open)) {
+    got <- projected(open[[case]])
+    expect_identical(c(nrow(got$typed), nrow(got$deferred)), c(0L, 1L), info = case)
+    expect_match(got$deferred$reason, "DROP or KEEP list at line 7 could remove the variable", info = case)
+    expect_match(got$deferred$reason, "no reference column to confirm", info = case)
+  }
+  date_reference <- list(adam.adv = data.frame(id = 1, elapsed = as.Date("2020-01-01")))
+  confirmed <- projected(open[["keyword list"]], value = sas_day("2020-01-01"), references = date_reference)
+  expect_identical(confirmed$typed$evidence, "reference")
+  expect_identical(format(confirmed$stored), "2020-01-01")
+
+  # More than one dataset on the way: a variable dropped from the first can
+  # still arrive, with a format, from another. Not typed from the source
+  # alone, and not ruled out when the reference stores a date.
+  merged <- c(stage_step, "data work.other;", "  id = 1;", "  elapsed = 42;", "run;",
+              "data adam.adv;", "  merge work.stage(drop=elapsed) work.other;", "  by id;", "run;")
+  alone <- projected(merged)
+  expect_identical(alone$stored, 42)
+  expect_match(alone$deferred$reason, "DROP list at line 11 removes the variable from work.stage")
+  expect_match(alone$deferred$reason, "may still come from another dataset")
+  expect_identical(projected(merged, value = sas_day("2020-01-01"), references = date_reference)$typed$evidence,
+                   "reference")
+  later <- c(stage_step, "data work.s2;", "  set work.stage(drop=elapsed);", "run;",
+             "data work.other;", "  id = 1;", "  elapsed = 42;", "run;",
+             "data adam.adv;", "  merge work.s2 work.other;", "  by id;", "run;")
+  expect_match(projected(later)$deferred$reason, "may still come from another dataset")
+  expect_identical(projected(later, value = sas_day("2020-01-01"), references = date_reference)$typed$evidence,
+                   "reference")
+
+  # A dataset read inside an IF statement is one more input, and its formats
+  # come first.
+  lookup <- c(stage_step, "data work.look;", "  id = 1;", "  elapsed = 1.5;", "  format elapsed 8.2;", "run;",
+              "data adam.adv;", "  if 0 then set work.look;", "  set work.stage;", "run;")
+  expect_identical(projected(lookup, value = 1.5)$stored, 1.5)
+  expect_match(projected(lookup, value = 1.5)$deferred$reason, "inside an IF statement")
+})
+
+test_that("a reference date does not bring back a format the source removes", {
+  program <- c(stage_step, "data adam.adv;", "  set work.stage(drop=elapsed);", "  elapsed = 42;", "run;")
+  dated <- projected(program, references = list(adam.adv = data.frame(id = 1, elapsed = as.Date("1960-02-12"))))
+  expect_identical(dated$stored, 42)
+  expect_identical(nrow(dated$typed), 0L)
+  expect_identical(dated$deferred$var, "elapsed")
+  expect_match(dated$deferred$reason, "DROP list at line 7 removes the variable from work.stage before the output")
+  expect_match(dated$deferred$reason, "reference stores a date, which the SAS source read here does not explain")
+  # Where the reference agrees it is a number, there is nothing to report.
+  number <- projected(program, references = list(adam.adv = data.frame(id = 1, elapsed = 42)))
+  expect_identical(c(nrow(number$typed), nrow(number$deferred)), c(0L, 0L))
+
+  # The same for a date declared for an upstream output this program reads.
+  programs <- function(set) list(p01 = adv_program(),
+    p02 = c("data adam.adtte;", set, "  aval = 1;", "run;"))
+  reference <- list(adam.adtte = data.frame(usubjid = "S1", adt = as.Date("2024-02-29"), aval = 1))
+  dropped <- date_fixture(programs("  set adam.adv(drop=adt);"), c("adam.adv", "adam.adtte"), reference)
+  expect_null(output_date_registry(dropped$project)$adam.adtte)
+  expect_match(decided(dropped, "adam.adtte")$deferred$reason, "DROP list at line 2 removes the variable from adam.adv")
+  kept <- date_fixture(programs("  set adam.adv(keep=usubjid adt);"), c("adam.adv", "adam.adtte"), reference)
+  expect_identical(output_date_registry(kept$project)$adam.adtte, c(adt = "YYMMDD10"))
+})
+
+test_that("a DROP or KEEP list is read token by token", {
+  selects <- function(token, var = "elapsed") projection_token_selects(token, var)
+  expect_true(selects("ELAPSED"))
+  expect_false(selects("id"))
+  expect_true(selects("el:"))
+  expect_false(selects("tmp:"))
+  expect_false(selects("x1-x5"))
+  expect_identical(selects("elapsed1-elapsed5", "elapsed3"), NA)
+  for (token in c("a--b", "a-numeric-b", "_numeric_", "_all_", "_character_", "'el'n"))
+    expect_identical(selects(token), NA, info = token)
+
+  options <- function(text, at = 2L) dataset_option_filters(dataset_tokens(text)$lex, at, 1L)
+  expect_identical(options("set work.a"), list())
+  expect_identical(options("set work.a(where=(drop = 1) label='keep=x')"), list())
+  both <- options("set work.a(KEEP = id elapsed where=(id > 0) drop=id)")
+  expect_identical(lapply(both, `[`, c("op", "tokens")),
+                   list(list(op = "keep", tokens = c("id", "elapsed")), list(op = "drop", tokens = "id")))
+  expect_false(projection_excludes(both, "elapsed")$excluded)
+  expect_true(projection_excludes(both, "id")$excluded)
+  # A list that runs into something else is not a plain list.
+  expect_identical(projection_excludes(options("set work.a(drop=(elapsed))"), "elapsed")$excluded, NA)
+  expect_identical(projection_excludes(options("set work.a(keep=)"), "elapsed")$excluded, NA)
+  # One list that removes the variable settles it, whatever the others say.
+  series <- list(read_projection_list("keep", "id a--b", 1L), read_projection_list("drop", "elapsed", 2L))
+  expect_identical(projection_excludes(series, "elapsed")[c("excluded", "op", "line")],
+                   list(excluded = TRUE, op = "DROP", line = 2L))
+})
+
 test_that("nothing changes for a dataset or a bundle without declared dates", {
   rt <- date_runtime(dates = list(adam.other = c(adt = "DATE9")))
   rt$h$lib_write(data.frame(id = 1, adt = 23435), "adam", "adv")
