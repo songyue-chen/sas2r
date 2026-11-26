@@ -32,6 +32,19 @@
 - Fix `lib_write()` for a library written as XPT. Every write failed with
   "A provided name contains an illegal character".
 
+- Pair rows on the comparison keys you configure. The migration gate checked
+  that configured keys (`comparison_rules$keys` or a target's `keys`
+  assertion) were present and then paired rows on keys taken from the source
+  or guessed from column names. Configured keys now come first. If they
+  repeat, rows are paired inside each key group and are never paired across
+  different key values. Inside a group, rows pair on a key from the source or
+  from column names when it tells the group's rows apart on both sides, and
+  the record then lists the configured keys followed by that key. Otherwise
+  the rows of the group are matched by content. The comparison record now
+  names the keys rows were paired on and, separately, the keys that were
+  configured. A dataset compared with configured keys can get a different
+  result than before. `compare_datasets()` is unchanged.
+
 - Reduce repeated model requests during translation, review and repair, and
   keep request content stable between calls so providers can reuse cached
   prompts.
