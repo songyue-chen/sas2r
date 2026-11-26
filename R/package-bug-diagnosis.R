@@ -5,7 +5,11 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
 
   tryCatch({
     withheld <- new.env(parent = emptyenv())
-    evidence <- package_bug_evidence(state, failure, stage, omitted = withheld)
+    budget <- state$usage_budget
+    # Attribution reads the compared datasets again on this machine. That is
+    # worth doing only when a request can follow.
+    can_ask <- !is.null(llm) && !is.null(budget) && usage_budget_allows_future(budget)
+    evidence <- package_bug_evidence(state, failure, stage, omitted = withheld, attribute = can_ask)
     if (length(withheld$items)) result$discrepancy_summary_omitted <- withheld$items
     if (!length(evidence)) {
       result$status <- "not_needed"
@@ -17,7 +21,6 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
       result$observed_failures <- unname(vapply(recognized, function(item) item$observed, ""))
     }
 
-    budget <- state$usage_budget
     if (is.null(llm)) {
       result$status <- "not_configured"
       result$reason <- "AI bug triage requires a configured reviewer."
@@ -33,21 +36,34 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
     # metadata is retained for the draft and does not need to go to the model.
     facts <- lapply(evidence, function(item) item$facts)
     ids <- unique(unlist(lapply(evidence, function(item) item$code_ids), use.names = FALSE))
+    ids <- package_bug_program_ids(state, unique(c(ids, unlist(lapply(ids, function(cid)
+      context_component_dependencies(state$graph, cid)), use.names = FALSE))))
     calls <- unique(unlist(lapply(state$selected_revisions[ids], function(revision) {
       r_call_names(revision_code(revision))
     }), use.names = FALSE))
-    helpers <- utils::head(intersect(c(calls,
-      unlist(lapply(facts, function(fact) fact$runtime_helpers))), SAS2R_HELPER_NAMES), 4L)
+    # A helper that handled a differing column is documented before one that
+    # is merely called somewhere.
+    helpers <- utils::head(intersect(unique(c(
+      unlist(lapply(facts, function(fact) lapply(fact$columns, `[[`, "helpers"))),
+      unlist(lapply(facts, function(fact) fact$runtime_helpers)), calls)), SAS2R_HELPER_NAMES), 4L)
     docs <- if (length(helpers)) helper_documentation() else list()
     contracts <- lapply(docs[intersect(helpers, names(docs))], function(doc) substr(doc$text, 1L, 1800L))
-    packet <- report_advice_context(state, list(evidence = facts, helper_contracts = contracts,
-      execution_order = state$graph$execution_order %||% state$schedule$component_id), ids)
+    targets <- unlist(lapply(names(facts), function(id)
+      if (is_scalar_character(facts[[id]]$target)) stats::setNames(id, facts[[id]]$target)))
+    run_facts <- package_bug_run_facts(state, targets %||% character(), ids, withheld)
+    if (length(withheld$items)) result$discrepancy_summary_omitted <- withheld$items
+    packet <- package_bug_request_context(state, c(
+      if (length(run_facts$shared_patterns)) run_facts["shared_patterns"],
+      list(evidence = facts), run_facts[intersect(c("programs", "runtime_helpers"), names(run_facts))],
+      list(execution_order = state$graph$execution_order %||% state$schedule$component_id)),
+      contracts, ids)
     redact <- llm_audit_redactor(llm)
     result$provider <- llm$provider
     result$context_truncated <- packet$truncated
+    if (packet$truncated) result$context_truncated_sections <- packet$truncated_sections
     cli::cli_inform("AI bug triage may send bounded SAS/R code and structured run evidence to {llm$provider}, subject to the run budget. Use migration.bug_reports: false to disable it.")
     advice <- request_report_advice(llm, budget, packet, "package-bug-triage",
-      "package_bug_triage_v1", "package_bug_triage")
+      "package_bug_triage_v2", "package_bug_triage", schema_version = "2")
     response <- advice$response
     result$model <- redact(response$resolved_model %||% llm$model)
     result$response_status <- response$status
@@ -102,7 +118,45 @@ migration_package_bug_diagnosis <- function(state, llm = state$reviewer_llm, fai
   })
 }
 
-package_bug_evidence <- function(state, failure, stage, omitted = NULL) {
+# The request text: facts first, then the documentation of the runtime helpers
+# involved, then SAS and R code. Facts are bounded where they are built. Code
+# keeps a reserved share of the limit, so facts and documentation cannot crowd
+# it out, and every section that was cut is named.
+PACKAGE_BUG_CONTEXT_LIMIT <- 24000L
+PACKAGE_BUG_CODE_RESERVE <- 8000L
+
+package_bug_request_context <- function(state, facts, helper_contracts, ids,
+                                        limit = PACKAGE_BUG_CONTEXT_LIMIT) {
+  blocks <- vapply(ids, function(cid) paste0("\nComponent: ", cid, "\nSAS:\n",
+    component_source_text(state$graph, cid), "\nSelected R:\n",
+    state$selected_revisions[[cid]]$r_code %||% "Unavailable"), "")
+  if (length(blocks)) blocks[[1L]] <- paste0("\nCode of the programs involved:", blocks[[1L]])
+  reserve <- min(PACKAGE_BUG_CODE_RESERVE, sum(nchar(blocks)), limit)
+  cut <- character()
+  text <- paste0("Facts:\n", jsonlite::toJSON(facts, auto_unbox = TRUE, null = "null"))
+  if (nchar(text) > limit - reserve) {
+    text <- substr(text, 1L, limit - reserve)
+    cut <- c(cut, "facts")
+  }
+  if (length(helper_contracts)) {
+    documentation <- paste0("\nRuntime helper documentation (behavior sas2r owns):",
+      paste0("\n", names(helper_contracts), ": ", unlist(helper_contracts), collapse = ""))
+    room <- max(0L, limit - reserve - nchar(text))
+    if (nchar(documentation) > room) cut <- c(cut, "helper_documentation")
+    text <- paste0(text, substr(documentation, 1L, room))
+  }
+  for (block in blocks) {
+    remaining <- max(0L, limit - nchar(text))
+    text <- paste0(text, substr(block, 1L, remaining))
+    if (nchar(block) > remaining) { cut <- c(cut, "code"); break }
+  }
+  list(text = paste0(text, if (length(cut)) paste0("\n[Context truncated (", paste(cut, collapse = ", "),
+    "); omitted content is unknown.]")), truncated = length(cut) > 0L, truncated_sections = cut)
+}
+
+# `attribute` adds, for each failed dataset target, the attribution facts and
+# the package's own decisions. They need the compared datasets read again.
+package_bug_evidence <- function(state, failure, stage, omitted = NULL, attribute = FALSE) {
   items <- list()
   revisions <- state$selected_revisions
   condition_item <- function(scope, condition, cid = NULL, binding = NULL, code_ids = cid) {
@@ -205,20 +259,29 @@ package_bug_evidence <- function(state, failure, stage, omitted = NULL) {
   selected_record <- if (length(targets) && !is.null(selected$attempt_dir)) {
     if (identical(attempt$attempt_dir, selected$attempt_dir)) attempt else read_attempt_record(selected$attempt_dir)
   }
+  # The more targets share the request, the fewer columns each may describe.
+  described <- sum(vapply(targets, function(target)
+    identical(target$kind, "dataset") && identical(target$status, "failed"), logical(1)))
+  column_limit <- max(2L, min(8L, 12L %/% max(1L, described)))
   for (target in targets) {
     key <- target$target_key
     dataset <- identical(target$kind, "dataset")
     ids <- state$assessment$lineage_by_target[[key]]$upstream_components %||%
       graph_output_writers(state$graph, key)
     summary <- if (dataset) reviewer_discrepancy_summary(target, key, omitted = omitted)
+    attribution <- if (dataset && isTRUE(attribute) && identical(target$status, "failed")) {
+      package_bug_target_facts(state, target, key, ids, summary, column_limit, omitted)
+    }
     if (dataset && !is.null(summary)) {
+      # Each described column carries its own types, extent and patterns.
+      if (length(attribution$columns)) summary$variables <- summary$type_differences <- NULL
       summary$variables <- utils::head(summary$variables, 5L)
       summary$type_differences <- utils::head(summary$type_differences, 5L)
     }
     failed_checks <- names(Filter(function(check) isFALSE(check$passed), target$checks))
-    items <- c(items, list(list(facts = list(scope = "Output assessment", target = key,
+    items <- c(items, list(list(facts = c(list(scope = "Output assessment", target = key,
       kind = target$kind, status = target$status, discrepancy = summary,
-      failed_checks = failed_checks),
+      failed_checks = failed_checks), attribution),
       observed = paste0(target$kind %||% "Dataset", " output assessment - ",
         gsub("_", " ", target$status, fixed = TRUE),
         if (length(failed_checks)) paste0(" (", paste(failed_checks, collapse = ", "), ")")),
@@ -226,6 +289,45 @@ package_bug_evidence <- function(state, failure, stage, omitted = NULL) {
       code_ids = ids)))
   }
   stats::setNames(items, paste0(rep("E", length(items)), seq_along(items)))
+}
+
+# Attribution and decisions for one target, held to the closed format. A
+# failure to build them never stops triage: the target keeps its other facts.
+package_bug_target_facts <- function(state, target, key, ids, summary, limit, omitted = NULL) {
+  build <- function() {
+    attribution <- package_bug_attribution(state, target, key, ids, summary, limit)
+    described <- c(vapply(attribution$columns, `[[`, "", "name"), attribution$other_differing_columns)
+    c(attribution, list(decisions = package_bug_decisions(state, target, key, described)))
+  }
+  strict <- isTRUE(getOption("sas2r.strict_discrepancy_summary", FALSE))
+  facts <- if (strict) build() else tryCatch(build(), error = function(e) NULL)
+  if (is.null(facts)) {
+    return(withhold_package_bug_facts(key, "the facts could not be built", omitted))
+  }
+  checked_package_bug_facts(facts, key, c(target$candidate_path, target$reference_path), omitted)
+}
+
+# Facts about the run as a whole: difference classes that repeat across
+# outputs, who wrote each program in the request, and whose runtime helpers
+# the bundle ran with. Held to the closed format like the per-target facts.
+package_bug_run_facts <- function(state, evidence_ids, ids, omitted = NULL) {
+  build <- function() list(
+    shared_patterns = package_bug_shared_patterns(state, evidence_ids),
+    programs = package_bug_program_facts(state, ids),
+    runtime_helpers = runtime_helper_origin(state))
+  strict <- isTRUE(getOption("sas2r.strict_discrepancy_summary", FALSE))
+  facts <- if (strict) build() else tryCatch(build(), error = function(e) NULL)
+  if (is.null(facts)) {
+    return(withhold_package_bug_facts("the run", "the facts could not be built", omitted))
+  }
+  paths <- unlist(lapply(state$assessment$targets, function(target)
+    c(target$candidate_path, target$reference_path)), use.names = FALSE)
+  checked_package_bug_facts(facts, "the run", paths, omitted)
+}
+
+package_bug_step_label <- function(step) {
+  if (!is_scalar_character(step) || !step %in% PACKAGE_BUG_STEPS) return(NULL)
+  gsub("_", " ", step, fixed = TRUE)
 }
 
 package_bug_reproduction_label <- function(finding) {
@@ -245,6 +347,8 @@ package_bug_report_lines <- function(diagnosis) {
   c("## Possible sas2r bugs (AI beta)", "",
     unlist(lapply(diagnosis$findings, function(finding) c(
       paste("-", package_bug_finding_summary(finding)),
+      if (!is.null(package_bug_step_label(finding$responsible_step)))
+        paste("  - Package step:", package_bug_step_label(finding$responsible_step)),
       paste("  - Recorded symptom:", finding$observed),
       paste("  - Expected behavior:", finding$expected),
       paste("  - Uncertainty:", finding$uncertainty),

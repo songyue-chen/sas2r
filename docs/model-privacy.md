@@ -47,7 +47,18 @@ feeds repair or acceptance requests.
 The opt-in `migration.bug_reports` beta lets the configured reviewer triage
 possible package bugs in one budget-accounted request. It can receive bounded
 SAS/R code, structured failure facts, output check names and aggregate comparison
-patterns. It receives no dataset records, raw logs or raw execution messages.
+patterns. For each failed dataset it also receives attribution facts: the names
+and types of the differing columns, including columns present on one side only;
+whether the SAS and the generated R assign each one; the runtime helpers that
+handled it; the type sas2r told the translator; the names of the columns used
+to pair rows; whether the tolerance and keys were configured; the file types
+compared; who wrote each program; and difference classes that repeat across
+outputs. To say whether a type difference holds the same values, sas2r reads
+the generated dataset and the reference a second time on your machine and
+sends only yes, no or not checked. These facts are names and fixed words. The
+request receives no dataset records, cell values, key values, counts, file
+paths, raw logs or raw execution messages. See the
+[attribution fields](discrepancy-evidence.md#bug-triage-attribution-facts).
 `sas_bug_report()` exports the saved advice and any proposed synthetic R code
 to a local draft. Review the model's text and code for confidential information
 before sharing. The package leaves execution of the example to the reader.

@@ -180,7 +180,9 @@ write_run_navigation <- function(state, report) {
       '<h2>Possible sas2r bugs (AI beta)</h2>',
       '<ul>', vapply(report$package_bug_diagnosis$findings, function(finding) paste0(
         '<li>', run_html_escape(package_bug_finding_summary(finding)),
-        '<ul><li>Recorded symptom: ', run_html_escape(finding$observed),
+        '<ul>', if (!is.null(package_bug_step_label(finding$responsible_step))) paste0(
+          '<li>Package step: ', run_html_escape(package_bug_step_label(finding$responsible_step)), '</li>'),
+        '<li>Recorded symptom: ', run_html_escape(finding$observed),
         '</li><li>Expected behavior: ', run_html_escape(finding$expected),
         '</li><li>Uncertainty: ', run_html_escape(finding$uncertainty),
         '</li><li>Next step: ', run_html_escape(finding$next_step), '</li></ul></li>'), ""), '</ul>',

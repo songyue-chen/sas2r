@@ -83,6 +83,21 @@
   withheld with a warning and recorded in the run diagnostics; the run
   continues.
 
+- Give opt-in AI bug triage (`migration.bug_reports: true`) the evidence to
+  judge whether a failed output is the package's doing. For each differing
+  column of a failed dataset the request now says whether the SAS source and
+  the generated R assign it or only pass it through, which runtime helpers
+  handled it, what type sas2r told the translator it had, and whether a type
+  difference holds the same values in another representation (a SAS day
+  number against a date, for example). It also carries the comparison's own
+  decisions (row keys and where they came from, tolerance, file types), who
+  wrote each program (rules, model or repair), and difference classes that
+  repeat across outputs. A finding now names the package step it suspects.
+  These facts are column, program and helper names and fixed words: no data
+  values, counts or paths. The compared datasets are read a second time on
+  your machine for this. Triage is still one request, and runs with the
+  option off are unchanged.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

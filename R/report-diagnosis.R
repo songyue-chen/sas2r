@@ -45,14 +45,16 @@ report_advice_context <- function(state, evidence, ids, limit = 24000L) {
   list(text = paste0(text, if (truncated) "\n[Context truncated; omitted code is unknown.]"), truncated = truncated)
 }
 
-request_report_advice <- function(llm, budget, packet, prompt_name, schema_name, agent) {
+request_report_advice <- function(llm, budget, packet, prompt_name, schema_name, agent,
+                                  schema_version = "1") {
   settings <- attr(llm, "parallel_config", exact = TRUE)
   if (!is.null(settings)) {
     settings$max_tries <- 1L
     settings$timeout_seconds <- min(settings$timeout_seconds %||% 120, 120)
     llm <- sas_llm(settings)
   }
-  schema <- jsonlite::read_json(system.file("schemas", paste0(prompt_name, "-v1.json"), package = "sas2r"))
+  schema <- jsonlite::read_json(system.file("schemas",
+    paste0(prompt_name, "-v", schema_version, ".json"), package = "sas2r"))
   prompt <- paste(readLines(system.file("prompts", paste0(prompt_name, ".md"), package = "sas2r"),
     warn = FALSE), collapse = "\n")
   schema_mode <- if (identical(llm_capabilities_for(llm)$structured_output, "native")) "native" else "fallback"
@@ -61,7 +63,7 @@ request_report_advice <- function(llm, budget, packet, prompt_name, schema_name,
   }
   request <- llm_request(messages = list(list(role = "system", content = prompt),
     list(role = "user", content = llm_audit_redactor(llm)(packet$text))), output_schema = schema,
-    schema_name = schema_name, schema_version = "1",
+    schema_name = schema_name, schema_version = schema_version,
     schema_mode = schema_mode,
     max_output_tokens = llm$model_parameters$max_output_tokens %||% 4096L,
     reasoning_effort = llm$model_parameters$reasoning_effort,

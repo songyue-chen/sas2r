@@ -777,8 +777,14 @@ structured output when the model and connector are configured for it. Otherwise
 it includes the response schema in the prompt and validates the returned JSON
 locally. The same `bug_reports` setting applies across providers.
 
+For a failed dataset the request also says, for each differing column, which
+party handled it: the SAS source, the generated R, a runtime helper, the write
+and read conversion or the comparison. Each finding names the package step it
+suspects. An output that is wrong but fails no check is not examined, and
+neither is package behavior the run never exercised.
+
 `START_HERE.html` and the translation report show suspected package defects,
-recorded symptoms, expected behavior, and remaining uncertainty. The model can
+the package step, recorded symptoms, expected behavior, and remaining uncertainty. The model can
 propose a short synthetic R example or suggest how to isolate the failure.
 The report labels examples as unrun. Review code before running it and record
 the result on the reported build. See [model privacy](model-privacy.md).

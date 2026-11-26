@@ -10,7 +10,8 @@
 #' @return The destination path, invisibly.
 #' @details
 #' The draft includes the package-level suspicion and selected run metadata.
-#' It includes the reviewer's explanation, uncertainty and suggested next step.
+#' It includes the package step the reviewer suspects, its explanation,
+#' the uncertainty and a suggested next step.
 #' When the reviewer drafts synthetic R code, review it before running it in a
 #' fresh R session using the reported build. Record the result in the draft.
 #' A reproducible failure needs an observed result from that separate test.
@@ -88,6 +89,8 @@ bug_report_finding_lines <- function(finding) {
   c(
     paste0("## AI suspicion [", finding$evidence_id, "]"), "",
     paste("Recorded symptom:", finding$observed), "",
+    if (!is.null(package_bug_step_label(finding$responsible_step)))
+      c(paste("Suspected package step:", package_bug_step_label(finding$responsible_step)), ""),
     paste("Possible package cause:", finding$explanation), "",
     paste("Expected behavior:", finding$expected), "",
     paste("Uncertainty:", finding$uncertainty), "",
