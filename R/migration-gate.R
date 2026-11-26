@@ -290,10 +290,11 @@ assess_dataset_target <- function(contract, attempt, comparison_rules = list(), 
         keys <- policy$keys
         prof <- dataset_comparison_profile(policy)
 
-        # Engine alignment: configured keys steer row identity, and with none
-        # configured the keys are inferred and validated -- a content-equal
-        # reorder or duplicate-key permutation is no longer a wall of
-        # positional cell mismatches.
+        # Engine alignment: configured keys are row identity, ahead of the
+        # source context's BY/SORT/MERGE keys, which still supply the order
+        # contract. With none configured the keys are inferred and validated
+        # -- a content-equal reorder or duplicate-key permutation is no longer
+        # a wall of positional cell mismatches.
         comp_res <- tryCatch(
           compare_datasets_aligned(ref_data, cand_data, profile = prof, keys = keys,
             context = if (!is.null(project)) build_output_alignment_context(list(

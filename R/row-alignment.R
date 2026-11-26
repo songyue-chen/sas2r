@@ -200,6 +200,13 @@ infer_alignment_keys <- function(reference, candidate, context = NULL) {
     )
   }
 
+  # 0. Keys the user configured for the comparison. They state row identity
+  # outright, so they come before anything read or guessed from the source.
+  configured_vars <- as.character(context$configured_keys %||% character())
+  if (length(configured_vars) > 0L) {
+    add_candidate(configured_vars, "configured")
+  }
+
   # 1. Output BY clause (highest precedence source contract)
   if (!is.null(context$by)) {
     by_vars <- if (is.list(context$by)) context$by$vars else context$by
@@ -1106,6 +1113,8 @@ print.sas2r_row_alignment <- function(x, ...) {
 #'
 #' Automatically infers credible candidate keys from source contracts (BY, SORT,
 #' merge, lineage) and schema identifiers without requiring manual key configuration.
+#' Keys configured for the comparison (`context$configured_keys`) come first and,
+#' when usable, are not replaced by an inferred key.
 #' Handles unique keys, duplicate keys, and keyless datasets with multiset and residual
 #' assignment.
 #'
@@ -1160,6 +1169,19 @@ align_output_rows <- function(reference, candidate, context = NULL,
         best_groups <- groups
       }
     }
+  }
+
+  # Configured keys are the user's statement of row identity. When they can
+  # pair rows at all (present on both sides with one type), they are the keys:
+  # unique, they were selected above as the first candidate; repeated, rows are
+  # matched inside each configured key group, and no inferred key that happens
+  # to be unique may pair rows across different configured key values.
+  configured <- Filter(function(e) identical(e$provenance, "configured"), evaluated_candidates)
+  if (length(configured) && !isTRUE(configured[[1L]]$valid) &&
+      !configured[[1L]]$reason %in% c("empty_keys", "missing_columns", "type_mismatch")) {
+    selected_val <- NULL
+    first_valid_key <- configured[[1L]]
+    first_valid_key_names <- configured[[1L]]$keys
   }
 
   # 1. Unique Key Case
