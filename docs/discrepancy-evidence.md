@@ -80,7 +80,10 @@ how rows were paired (`method`, `keys_used`, `keys_from`, `keys_configured`,
 or `above_zero`, and the differing columns with their own tolerance), the file
 types of the reference and the generated dataset, and for a differing column
 any recorded date decision (stored as a date or left as a SAS day number, its
-basis, the SAS format name and the stated reason). The request as a whole
+basis, the SAS format name and the stated reason). The reason is a sentence
+sas2r writes from the SAS source. It can name a source line number, a program
+file without its directory, and a dataset. The text of the declaring statement
+is not sent, and a reason that holds a path is left out. The request as a whole
 carries `programs` (who wrote each program shown: rules, model or repair),
 `runtime_helpers` (the package's own, or patched during the run) and
 `shared_patterns` (a type difference, value pattern or failed check found in

@@ -257,15 +257,18 @@ triage_r <- "x <- lib_read('raw', 'input')\nx$value <- x$value + 1\nlib_write(x,
 triage_days <- c(21000, 21001, 21002)
 
 test_that("a type difference that holds the same values points at the write and read conversions", {
-  stored <- data.frame(id = 1:3, visitdt = triage_days, value = c(11, 12, 13))
+  stored <- data.frame(id = 1:3, visitdt = triage_days, otherdt = triage_days, value = c(11, 12, 13))
   as_dates <- function(days) as.Date(days - 3653, origin = "1970-01-01")
-  state <- triage_scenario(triage_sas, triage_r, generated = stored,
-    reference = transform(stored, visitdt = as_dates(visitdt)),
-    input = data.frame(id = 1:3, visitdt = triage_days, value = c(10, 11, 12)))
-  state$assessment$targets$work.out1$date_columns <- list(typed = list(), deferred = list(
-    list(var = "visitdt", format = "DATE9.", evidence = "source",
-      reason = "there is no reference column to confirm the date format"),
-    list(var = "otherdt", format = "DATE9.", evidence = "source", reason = "not a differing column")))
+  input <- data.frame(id = 1:3, visitdt = triage_days, otherdt = triage_days, value = c(10, 11, 12))
+  # The source declares both columns as dates and the reference stores both as
+  # dates. The generated dataset holds one of them as the SAS day number.
+  dated_sas <- "data work.out1; set raw.input; format visitdt otherdt date9.; value = value + 1; run;"
+  state <- triage_scenario(dated_sas, triage_r,
+    generated = transform(stored, otherdt = as_dates(otherdt)),
+    reference = transform(stored, visitdt = as_dates(visitdt), otherdt = as_dates(otherdt)), input = input)
+  # The gate wrote this record itself; the test does not build it.
+  recorded <- state$assessment$targets$work.out1$date_columns
+  expect_setequal(vapply(recorded$typed, function(x) x$var, ""), c("visitdt", "otherdt"))
   result <- triage_with_sign_reader(state)
   column <- triage_column(result$facts, "visitdt")
   expect_identical(column[c("difference", "reference_type", "generated_type")],
@@ -273,10 +276,10 @@ test_that("a type difference that holds the same values points at the write and 
   expect_identical(column$generated_code, "passed_through")
   expect_identical(column$representation_only, "yes")
   expect_identical(column$conversion, "sas_date_day_number")
+  # Only the differing column's decision is sent, without the declaration text.
   dates <- result$facts$evidence$E1$decisions$date_columns
-  expect_length(dates, 1L)
-  expect_identical(dates[[1L]][c("name", "decision", "basis", "format")],
-    list(name = "visitdt", decision = "left_as_day_number", basis = "source", format = "DATE9."))
+  expect_identical(dates, list(list(name = "visitdt", decision = "stored_as_date",
+    basis = "reference", format = "DATE9")))
   finding <- result$diagnosis$findings[[1L]]
   expect_identical(finding$responsible_step, "write_and_read_conversions")
   expect_true(any(grepl("Package step: write and read conversions",
@@ -291,6 +294,11 @@ test_that("a type difference that holds the same values points at the write and 
   result <- triage_with_sign_reader(state)
   expect_identical(triage_column(result$facts, "visitdt")$representation_only, "no")
   expect_length(result$diagnosis$findings, 0L)
+  # This source declares no date format, and the gate says so in its record.
+  dates <- result$facts$evidence$E1$decisions$date_columns
+  expect_identical(dates[[1L]][c("name", "decision", "basis")],
+    list(name = "visitdt", decision = "left_as_day_number", basis = "reference"))
+  expect_match(dates[[1L]]$reason, "no date format declaration", fixed = TRUE)
 
   # A labelled number is still a number, on whichever side it is.
   labelled <- stored
@@ -300,6 +308,39 @@ test_that("a type difference that holds the same values points at the write and 
   column <- package_bug_attribution(state, state$assessment$targets$work.out1, "work.out1", "p01")$columns[[1L]]
   expect_identical(column[c("reference_type", "generated_type", "representation_only")],
     list(reference_type = "numeric", generated_type = "date", representation_only = "yes"))
+})
+
+test_that("a date column left as a number carries the gate's own reason, and never a path", {
+  # Code that may run after the output is written, and no reference column to
+  # confirm the declared date: the gate leaves the column as a day number.
+  sas <- "data work.out1; set raw.input; format visitdt date9.; value = value + 1; run;\n%cleanup;"
+  generated <- data.frame(id = 1:3, visitdt = triage_days, value = c(11, 12, 13))
+  state <- triage_scenario(sas, triage_r, generated = generated, reference = generated[c("id", "value")],
+    input = data.frame(id = 1:3, visitdt = triage_days, value = c(10, 11, 12)))
+  recorded <- state$assessment$targets$work.out1$date_columns
+  expect_length(recorded$deferred, 1L)
+  result <- triage_with_sign_reader(state)
+  expect_identical(triage_column(result$facts, "visitdt")$difference, "extra_in_generated")
+  dates <- result$facts$evidence$E1$decisions$date_columns
+  expect_identical(dates[[1L]][c("name", "decision", "basis", "format")],
+    list(name = "visitdt", decision = "left_as_day_number", basis = "source", format = "DATE9"))
+  # The reason is the sentence the gate wrote, which names a source line.
+  expect_identical(dates[[1L]]$reason, recorded$deferred[[1L]]$reason)
+  expect_match(dates[[1L]]$reason, "^macro-generated code at line 2 ")
+  # The statement text and the program file of the declaration stay local.
+  expect_false(any(c("declaration", "file", "line") %in% names(dates[[1L]])))
+
+  # A reason that held a path, or ran to several lines, would be left out.
+  with_reason <- function(reason) {
+    record <- recorded
+    record$deferred[[1L]]$reason <- reason
+    package_bug_date_decisions(record, "visitdt")[[1L]]
+  }
+  expect_null(with_reason(file.path(tempdir(), "p01.sas"))$reason)
+  expect_null(with_reason("C:\\study\\p01.sas")$reason)
+  expect_null(with_reason("first line\nsecond line")$reason)
+  expect_null(with_reason(strrep("a", 241L))$reason)
+  expect_identical(with_reason("a short reason")$reason, "a short reason")
 })
 
 test_that("a storage requirement between integer and double is answered from the generated values", {

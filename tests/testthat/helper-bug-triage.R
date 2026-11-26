@@ -18,21 +18,23 @@ triage_scenario <- function(sas, r, generated, reference,
   saveRDS(input, file.path(inputs, "input.rds"))
   ids <- sprintf("p%02d", seq_len(n))
   for (i in seq_len(n)) writeLines(sas[[i]], file.path(root, paste0(ids[[i]], ".sas")))
-  config <- list(libraries = list(raw = list(path = inputs, engine = "rds")))
+  outputs <- paste0("work.out", seq_len(n))
+  references <- stats::setNames(as.list(file.path(root, paste0("reference", seq_len(n), ".rds"))), outputs)
+  for (i in seq_len(n)) saveRDS(reference[[i]], references[[i]])
+  # The outputs and their references are configured on the project, as a run
+  # configures them, so the gate records its own decisions for each output.
+  config <- list(libraries = list(raw = list(path = inputs, engine = "rds")),
+    outputs = list(datasets = outputs, references = references))
   project <- sas_project(root, config = config)
   state <- new_migration_state(project, file.path(root, "migration"), config = config)
   attempt_dir <- file.path(root, "attempt")
   dir.create(file.path(attempt_dir, "work"), recursive = TRUE)
-  references <- list()
   for (i in seq_len(n)) {
     state$selected_revisions[[ids[[i]]]] <- list(component_id = ids[[i]], revision_id = "r1",
       r_code = r[[i]], staged_file = paste0(ids[[i]], ".R"), agent_status = rep_len(origin, n)[[i]])
     saveRDS(generated[[i]], file.path(attempt_dir, "work", paste0("out", i, ".rds")))
-    references[[paste0("work.out", i)]] <- file.path(root, paste0("reference", i, ".rds"))
-    saveRDS(reference[[i]], references[[i]])
   }
-  state$output_contracts <- infer_output_contracts(project,
-    overrides = list(datasets = paste0("work.out", seq_len(n))))
+  state$output_contracts <- project$output_contracts
   state$comparison_rules <- c(list(references = references), rules)
   state$assessment <- assess_final_outputs(state$output_contracts,
     list(attempt_dir = attempt_dir, completed = TRUE, passed = TRUE), state$graph,

@@ -55,7 +55,11 @@ to pair rows; whether the tolerance and keys were configured; the file types
 compared; who wrote each program; and difference classes that repeat across
 outputs. To say whether a type difference holds the same values, sas2r reads
 the generated dataset and the reference a second time on your machine and
-sends only yes, no or not checked. These facts are names and fixed words. The
+sends only yes, no or not checked. These facts are names and fixed words, with
+one exception: for a differing column that the SAS source declares as a date,
+the request carries the reason sas2r recorded for storing it as a date or as a
+number. That reason is a sentence sas2r writes from the source; it can name a
+source line number, a program file without its directory, and a dataset. The
 request receives no dataset records, cell values, key values, counts, file
 paths, raw logs or raw execution messages. See the
 [attribution fields](discrepancy-evidence.md#bug-triage-attribution-facts).

@@ -601,7 +601,8 @@ package_bug_date_decisions <- function(record, column_names) {
     if (length(name) != 1L || !name %in% column_names) return(NULL)
     one <- list(name = name, decision = x$decision,
       basis = if (isTRUE(x$evidence %in% c("reference", "source"))) x$evidence else "unknown",
-      format = text(x$format, "^[$A-Za-z0-9_]*[.][0-9]*$"),
+      # The gate records a format name without its period, such as DATE9.
+      format = text(x$format, "^[$]?[A-Za-z_][A-Za-z0-9_]{0,31}([.][0-9]*)?$"),
       reason = text(x$reason, "^[^\r\n/\\\\]*$"))
     one[!vapply(one, is.null, logical(1))]
   })
