@@ -145,16 +145,36 @@ shows the number as a date. A SAS dataset read into R shows such a column as a
 computes with.
 
 The generated program says which columns of a dataset carry a SAS format,
-where it writes the dataset, as the SAS `FORMAT` statement did:
+where it writes the dataset, as the SAS `FORMAT` statement did. A column given
+a date format is stored as a `Date`. Inside the generated programs nothing
+changes: `lib_read()` returns the SAS day number for such a column, so a later
+program computes exactly as the SAS does.
 
+This example runs entirely offline:
+
+<!-- sas2r-example: offline declared-date-format -->
 ```r
-lib_write(adae, "adam", "adae",
-          formats = c(astdt = "yymmdd10.", aendt = "yymmdd10."))
-```
+library(sas2r)
 
-A column given a date format is stored as a `Date`. Inside the generated
-programs nothing changes: `lib_read()` returns the SAS day number for such a
-column, so a later program computes exactly as the SAS does.
+local({
+  folder <- tempfile("adam")
+  dir.create(folder)
+  .sas2r_registry <- list(
+    adam = list(read_path = folder, write_path = folder, engine = "rds", write = "rds")
+  )
+  # 23435 is 29 February 2024 as a SAS day number; ADY is a count of days.
+  adae <- data.frame(USUBJID = "01", ASTDT = 23435, ADY = 12)
+  lib_write(adae, "adam", "adae", formats = c(astdt = "yymmdd10."))
+
+  stored <- readRDS(file.path(folder, "adae.rds"))
+  read_back <- lib_read("adam", "adae")
+  stopifnot(
+    inherits(stored$ASTDT, "Date"), format(stored$ASTDT) == "2024-02-29",
+    identical(stored$ADY, 12), identical(read_back$ASTDT, 23435)
+  )
+  unlink(folder, recursive = TRUE)
+})
+```
 
 Two checks stand behind a declaration, and a program that fails either is sent
 back for repair:
