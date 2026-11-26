@@ -32,12 +32,23 @@ R_UNNAMED_COLUMN_CALLS <- c("across", "mutate_all", "mutate_if", "mutate_at",
   "pivot_longer", "pivot_wider", "gather", "spread", "do.call", "eval", "assign",
   "type.convert", ":=")
 
+# Calls that apply a function over the elements of an object, or turn a whole
+# object into another form. Given a data frame they rewrite every column
+# without naming one. Names are matched exactly: `Filter` is not `filter`.
+R_WHOLE_OBJECT_CALLS <- c("lapply", "sapply", "vapply", "mapply", "Map", "apply", "rapply",
+  "Filter", "as.matrix", "data.matrix", "t", "reshape", "melt", "dcast", "stack", "unstack")
+# purrr's map and modify families, and their furrr forms.
+R_WHOLE_OBJECT_PATTERN <- "^(future_)?(map|map2|pmap|imap|lmap|modify|modify2|imodify)(_[a-z]+)?$"
+
 #' What R code does with named columns, read from the parsed code
 #'
 #' The code is parsed and never run. A column is `assigned` when a visible
-#' assignment names it, `named` when the code mentions it without assigning it,
-#' and `not_named` otherwise. `unnamed` is `TRUE` when the code also changes
-#' columns without naming them.
+#' assignment names it, `named` when the code mentions it without assigning it
+#' (as a symbol, a word of a string or an argument name), and `not_named`
+#' otherwise. `unnamed` is `TRUE` when the code also changes columns without
+#' naming them: a replacement at a computed position, a call in
+#' `R_UNNAMED_COLUMN_CALLS`, or a call that works on a whole object
+#' (`R_WHOLE_OBJECT_CALLS`) whose result does not go into a named column.
 #'
 #' @param code R code as one string.
 #' @param columns Column names; matching ignores case.
@@ -68,13 +79,18 @@ r_column_use <- function(code, columns) {
         as.character(head[[1L]]) %in% c("::", ":::") && is.name(head[[3L]])) return(as.character(head[[3L]]))
     ""
   }
-  # Symbols and the words of string constants, such as by = "id visit".
-  words <- function(e) {
+  # Symbols and the words of string constants, such as by = "id visit". With
+  # `argument_names`, also the names arguments are passed under, such as the
+  # column in replace_na(x, list(col = 0)).
+  words <- function(e, argument_names = FALSE) {
     found <- character()
     visit <- function(x) {
       if (is.name(x)) found <<- c(found, as.character(x))
       else if (is.character(x)) found <<- c(found, unlist(strsplit(x[!is.na(x) & nchar(x) <= 200L], "[^A-Za-z0-9_.]+")))
-      else if (nested(x)) for (child in children(x)) visit(child)
+      else if (nested(x)) {
+        if (argument_names) found <<- c(found, names(x))
+        for (child in children(x)) visit(child)
+      }
     }
     visit(e)
     unique(tolower(found[nzchar(found)]))
@@ -114,7 +130,19 @@ r_column_use <- function(code, columns) {
     use[[column]]$role <<- "assigned"
     use[[column]]$helpers <<- union(use[[column]]$helpers, helpers_in(value))
   }
-  walk <- function(e) {
+  # Whether a replacement target is a column written by name, so that the
+  # value assigned goes into that column and nowhere else.
+  named_column_target <- function(lhs) {
+    if (!is.call(lhs) || length(lhs) < 2L) return(FALSE)
+    op <- head_name(lhs)
+    if (op %in% c("$", "@")) return(length(lhs) == 3L)
+    if (op %in% c("[[", "[")) return(!anyNA(target_columns(lhs)))
+    named_column_target(lhs[[2L]])
+  }
+  # `in_column` is TRUE while walking the value of a named column: the right
+  # side of df$col <- ..., or an argument such as col = ... of mutate().
+  walk <- function(e, in_column = FALSE) {
+    child_in_column <- NULL
     if (is.call(e)) {
       op <- head_name(e)
       if (op %in% c("<-", "=", "<<-") && length(e) == 3L) {
@@ -123,12 +151,18 @@ r_column_use <- function(code, columns) {
         if (anyNA(targets)) unnamed <<- TRUE
         if (is.call(lhs) && head_name(lhs) %in% c("names", "colnames", "dimnames")) unnamed <<- TRUE
         for (column in targets[!is.na(targets)]) assign_column(column, e[[3L]])
+        # Any other assignment starts again: its value goes to a variable.
+        child_in_column <- c(FALSE, FALSE, named_column_target(lhs))
       } else if (op %in% R_COLUMN_DEFINING_CALLS) {
         arguments <- as.list(e)[-1L]
         labels <- names(arguments) %||% rep("", length(arguments))
         for (i in which(nzchar(labels))) assign_column(tolower(labels[[i]]), arguments[[i]])
+        # Names that begin with a period or an underscore are options of the
+        # call, such as .data, and not columns.
+        child_in_column <- c(FALSE, nzchar(labels) & !grepl("^[._]", labels))
       }
       if (tolower(op) %in% R_UNNAMED_COLUMN_CALLS) unnamed <<- TRUE
+      if (!in_column && (op %in% R_WHOLE_OBJECT_CALLS || grepl(R_WHOLE_OBJECT_PATTERN, op))) unnamed <<- TRUE
       if (op %in% SAS2R_HELPER_NAMES) {
         called <<- union(called, op)
         for (column in intersect(words(e), columns)) {
@@ -136,9 +170,14 @@ r_column_use <- function(code, columns) {
         }
       }
     }
-    if (nested(e)) for (child in children(e)) walk(child)
+    if (nested(e)) {
+      parts <- as.list(e)
+      kept <- !vapply(seq_along(parts), function(i) identical(parts[[i]], quote(expr = )), logical(1))
+      flags <- if (is.null(child_in_column)) rep(in_column, length(parts)) else child_in_column
+      for (i in which(kept)) walk(parts[[i]], isTRUE(flags[[i]]))
+    }
   }
-  scanned <- tryCatch({ walk(exprs); words(exprs) }, error = function(e) NULL)
+  scanned <- tryCatch({ walk(exprs); words(exprs, argument_names = TRUE) }, error = function(e) NULL)
   if (is.null(scanned)) {
     return(list(columns = lapply(use, function(x) record("unknown")), parsed = FALSE,
       unnamed = FALSE, helpers = character()))
@@ -222,10 +261,21 @@ package_bug_program_ids <- function(state, ids) {
   ids[is_program]
 }
 
+# The input datasets among `ids`. A SAS format that the project does not define
+# is also an external node of the graph; it is told apart by its edges, which
+# are all `uses_format`.
 package_bug_external_inputs <- function(state, ids) {
   nodes <- state$graph$nodes
-  inputs <- unique(nodes$component_id[!is.na(nodes$component_id) & nodes$component_id %in% ids &
-    nodes$type %in% "external_input"])
+  edges <- state$graph$edges
+  external <- !is.na(nodes$component_id) & nodes$component_id %in% ids & nodes$type %in% "external_input"
+  if (is.data.frame(edges) && nrow(edges) && all(c("from", "type") %in% names(edges))) {
+    format_only <- vapply(nodes$node_id, function(id) {
+      kinds <- edges$type[edges$from %in% id]
+      length(kinds) > 0L && all(kinds %in% "uses_format")
+    }, logical(1))
+    external <- external & !format_only
+  }
+  inputs <- unique(nodes$component_id[external])
   utils::head(inputs[grepl(PACKAGE_BUG_NAME, inputs)], 4L)
 }
 
@@ -464,10 +514,13 @@ package_bug_attribution <- function(state, target, key, ids, summary = NULL, lim
     column$sas_source <- if (any(sas_roles == "assigned")) "assigned" else
       if (!length(scans) || any(sas_roles == "unknown")) "unknown" else
       if (any(sas_roles == "named_not_assigned")) "named_not_assigned" else "not_named"
+    # A call can change a column it names without an assignment the scan can
+    # see, such as fill(x, col), so only a column no program names is called
+    # passed through.
     column$generated_code <- if (any(r_roles == "assigned")) "assigned" else
       if (!parsed || (in_output && unnamed)) "unknown" else
-      if (in_output) "passed_through" else
-      if (any(r_roles == "named")) "named_not_assigned" else "not_named"
+      if (any(r_roles == "named")) "named_not_assigned" else
+      if (in_output) "passed_through" else "not_named"
     assigned_in <- utils::head(names(scans)[r_roles == "assigned"], 3L)
     if (length(assigned_in)) column$assigned_in <- assigned_in
     helpers <- utils::head(unique(unlist(lapply(scans, function(s) s$r$columns[[name]]$helpers),

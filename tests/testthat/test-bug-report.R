@@ -276,6 +276,8 @@ test_that("a type difference that holds the same values points at the write and 
   expect_identical(column$generated_code, "passed_through")
   expect_identical(column$representation_only, "yes")
   expect_identical(column$conversion, "sas_date_day_number")
+  # A SAS format the source names is not an input dataset.
+  expect_identical(result$facts$evidence$E1$external_inputs, "raw.input")
   # Only the differing column's decision is sent, without the declaration text.
   dates <- result$facts$evidence$E1$decisions$date_columns
   expect_identical(dates, list(list(name = "visitdt", decision = "stored_as_date",
@@ -379,6 +381,29 @@ test_that("a column the generated programs pass through and that changed points 
   result <- triage_with_sign_reader(state)
   expect_identical(triage_column(result$facts, "grade")$generated_code, "unknown")
   expect_length(result$diagnosis$findings, 0L)
+
+  # So does code that rebuilds the whole data frame through a function.
+  for (rebuild in c("x <- as.data.frame(lapply(x, trimws))", "x <- purrr::map_df(x, trimws)",
+      "cols <- lapply(x, trimws)\nx <- as.data.frame(cols)")) {
+    rebuilt <- paste("x <- lib_read('raw', 'input')", rebuild, "lib_write(x, 'work', 'out1')", sep = "\n")
+    result <- triage_with_sign_reader(triage_scenario(triage_sas, rebuilt, generated = lost, reference = kept))
+    expect_identical(triage_column(result$facts, "grade")$generated_code, "unknown", info = rebuild)
+    expect_length(result$diagnosis$findings, 0L)
+  }
+
+  # A call that names the column can have changed it, so the column is not
+  # called passed through and nothing points at the package.
+  for (naming in c("x <- tidyr::fill(x, grade)", "x <- tidyr::replace_na(x, list(grade = ''))")) {
+    named <- paste("x <- lib_read('raw', 'input')", naming, "lib_write(x, 'work', 'out1')", sep = "\n")
+    result <- triage_with_sign_reader(triage_scenario(triage_sas, named, generated = lost, reference = kept))
+    expect_identical(triage_column(result$facts, "grade")$generated_code, "named_not_assigned", info = naming)
+    expect_length(result$diagnosis$findings, 0L)
+  }
+
+  # Deriving one column through a function leaves the others passed through.
+  derived <- "x <- lib_read('raw', 'input')\nx$value <- vapply(x$value, function(v) v + 1, numeric(1))\nlib_write(x, 'work', 'out1')"
+  result <- triage_with_sign_reader(triage_scenario(triage_sas, derived, generated = lost, reference = kept))
+  expect_identical(triage_column(result$facts, "grade")$generated_code, "passed_through")
 })
 
 test_that("a helper called as documented with a wrong result points at the runtime helpers", {
@@ -702,6 +727,32 @@ test_that("the scan of generated R tells an assignment from a mention and admits
       "x <- dplyr::mutate(x, dplyr::across(dplyr::everything(), as.character))",
       "x <- dplyr::rename_with(x, toupper)", "x[] <- lapply(x, trimws)")) {
     expect_identical(roles(dynamic, "k")[["unnamed"]], "TRUE", info = dynamic)
+  }
+  # A call that works on a whole object can rewrite every column of a data
+  # frame, whatever its result is assigned to and however it is wrapped.
+  for (whole in c("x <- as.data.frame(lapply(x, as.character))",
+      "x <- purrr::modify_if(x, is.numeric, as.character)", "x <- purrr::map_df(x, as.character)",
+      "x <- data.frame(sapply(x, as.character))", "x <- as.data.frame(t(apply(x, 1, function(r) r)))",
+      "cols <- lapply(x, as.character)\nx <- as.data.frame(cols)", "x <- as.data.frame(as.matrix(x))",
+      "x <- as.data.frame(lapply(names(x), function(n) as.character(x[[n]])))",
+      "x <- Filter(function(col) !all(is.na(col)), x)", "x <- furrr::future_map_dfc(x, as.character)",
+      "x <- dplyr::mutate(.data = as.data.frame(Map(as.character, x)), flag = 1)",
+      "x$flag <- 1\ny <- vapply(x, class, '')", "x <- reshape2::dcast(x, id ~ variable)")) {
+    expect_identical(roles(whole, "k")[["unnamed"]], "TRUE", info = whole)
+  }
+  # Its result going into a column written by name changes that column only.
+  for (one_column in c("x$flag <- vapply(x$age, function(a) a > 65, logical(1))",
+      "x[['flag']] <- unlist(lapply(strsplit(x$name, ' '), `[`, 1))",
+      "x <- dplyr::mutate(x, flag = purrr::map_lgl(age, ~ .x > 65))",
+      "x <- transform(x, flag = sapply(age, nchar))", "levels(x$flag) <- sapply(levels(x$flag), toupper)",
+      "x <- dplyr::filter(x, age > 65)")) {
+    expect_identical(roles(one_column, "k")[["unnamed"]], "FALSE", info = one_column)
+  }
+  # A call can change a column it names without an assignment, and can name it
+  # as an argument name. Neither is an assignment, and neither is silence.
+  for (naming in c("x <- tidyr::fill(x, k)", "x <- tidyr::replace_na(x, list(k = 0))",
+      "x <- tidyr::separate(x, old, into = c('k', 'other'))")) {
+    expect_identical(roles(naming, "k")[["k"]], "named", info = naming)
   }
   broken <- r_column_use("x <- (", "k")
   expect_false(broken$parsed)
