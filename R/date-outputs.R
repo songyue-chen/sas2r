@@ -21,7 +21,9 @@
 # "On the way to that output" follows the variable, not its name: a DROP or
 # KEEP that removes the variable removes the format with it, and a variable of
 # the same name made afterwards is a new one. Where the source proves that, the
-# first fact does not hold and the reference cannot supply it.
+# first fact does not hold and the reference cannot supply it. "That output" is
+# the dataset as the programs leave it, so a step that can change it after it
+# is written ends the source-only trace too.
 
 # The SAS format names haven reads back as `Date`. A reference dataset is read
 # with haven, so a format typed here and not there would turn every such column
@@ -238,8 +240,31 @@ date_trace_file <- function(project, file) {
   ids <- unique(st$unit_id[order(st$line_start, st$stmt_id)])
   lin <- project$lineage
   lin <- lin[lin$unit_id %in% ids, , drop = FALSE]
+  other <- project$statements
+  other <- other[other$type == "code" & other$file != file & other$unit_type != "macro_def", , drop = FALSE]
+  found <- new.env(parent = emptyenv())
   list(
     ids = ids,
+    # The steps of this file that run after step `id`.
+    after = function(id) {
+      a <- match(id, ids)
+      if (a >= length(ids)) integer() else ids[seq.int(a + 1L, length(ids))]
+    },
+    # The steps of the other programs that name `member`, or that copy into
+    # `library`. Their place in the run is not known here, so each may run
+    # later.
+    outside = function(member, library) {
+      if (is.null(found$outside)) {
+        has <- function(pattern) other$unit_id[grepl(pattern, other$text, ignore.case = TRUE, perl = TRUE)]
+        hits <- unique(c(has(member), intersect(has("^\\s*proc\\s+(copy|cimport|datasets)\\b"), has(library))))
+        found$outside <- lapply(hits, function(id) {
+          us <- other[other$unit_id == id, , drop = FALSE]
+          list(us = us[order(us$line_start, us$stmt_id), , drop = FALSE], type = us$unit_type[1L],
+               reads = unique(project$lineage$dataset[project$lineage$unit_id == id & project$lineage$role == "reads"]))
+        })
+      }
+      found$outside
+    },
     statements = function(id) {
       us <- st[st$unit_id == id, , drop = FALSE]
       us[order(us$line_start, us$stmt_id), , drop = FALSE]
@@ -323,6 +348,14 @@ date_declarations <- function(trace, units) {
 #' reads one dataset: with `merge a(drop=x) b` the variable and its format can
 #' still arrive from `b`, so that is reported as not followed.
 #'
+#' The steps that run after the output is written are read as well, because the
+#' output is what they leave. In the same file, macro-generated code or a step
+#' that can change the output ends the trace. In another program, a step read
+#' exactly that names the output and can change it ends the trace; what
+#' macro-generated code there does is not known and is not held against the
+#' output. Reading the output, sorting it in place with no option, deleting
+#' other members and clearing another library change nothing.
+#'
 #' @param target The dataset the writer is followed for, as `lib.member`.
 #' @return `list(ok = TRUE, format, line, file, text)`, or
 #'   `list(ok = FALSE, reason)`, with `excluded = TRUE` when the source proves
@@ -340,11 +373,11 @@ trace_declared_date <- function(trace, writer, var, target) {
     ifelse(grepl(".", name, fixed = TRUE), name, paste0("work.", name))
   }
   # What a DROP or KEEP that removes the variable means for the trace.
-  removed <- function(gone, single, from = NULL) {
+  removed <- function(gone, single, from = NULL,
+                      so = "before the output, so the declared date format does not reach it") {
     what <- paste0("the ", gone$op, " list at line ", gone$line, " removes the variable",
                    if (is.null(from)) "" else paste0(" from ", from))
-    if (single) return(list(ok = FALSE, excluded = TRUE, reason = paste0(
-      what, " before the output, so the declared date format does not reach it")))
+    if (single) return(list(ok = FALSE, excluded = TRUE, reason = paste0(what, " ", so)))
     fail(what, ", and the variable may still come from another dataset read on the way to the output, which is not followed")
   }
   unread <- function(gone) fail("the DROP or KEEP list at line ", gone$line,
@@ -354,40 +387,119 @@ trace_declared_date <- function(trace, writer, var, target) {
     i <- which(top_level_tokens(lex) & tolower(lex) == key & c(lex[-1L], "") == "=")
     if (length(i) == 1L && i + 2L <= length(lex)) i + 2L else NA_integer_
   }
+  name_pattern <- function(name) {
+    paste0("(?<![A-Za-z0-9_])", gsub("([^A-Za-z0-9_])", "\\\\\\1", name), "(?![A-Za-z0-9_])")
+  }
+  names_any <- function(text, pattern) any(grepl(pattern, text, ignore.case = TRUE, perl = TRUE))
+  # What a step that does not create `dataset` can still do to it. `NULL` when
+  # it does nothing to the variable. `where` says which step it is: one that
+  # runs "between" the step that creates the dataset and the step that reads
+  # it, one "after" the step that writes the output in the same file, or one
+  # "elsewhere", in another program.
+  #
+  # Between two steps anything that could change a dataset ends the trace. For
+  # the finished output the step must name what it changes: clearing WORK at
+  # the end of a program, or reading the output in a later one, changes nothing.
+  step_effect <- function(us, type, reads, dataset, where, single = TRUE) {
+    here <- paste0(at(us), if (where == "elsewhere") paste0(" of ", basename(us$file[1L])) else "")
+    when <- switch(where, between = "runs between the declaration and the output",
+                   "runs after the step that writes the output")
+    parts <- strsplit(dataset, ".", fixed = TRUE)[[1L]]
+    delayedAssign("masked", vapply(us$text, mask_strings, "", USE.NAMES = FALSE))
+    escaped <- function(x) gsub("([^A-Za-z0-9_])", "\\\\\\1", x)
+    written <- if (identical(parts[1L], "work")) paste0("(?:work\\.)?", escaped(parts[2L]), "(?![A-Za-z0-9_.])")
+               else paste0(escaped(dataset), "(?![A-Za-z0-9_])")
+    # ODS OUTPUT and options such as DUPOUT= write a dataset the lineage does
+    # not record.
+    unrecorded <- function(rows = TRUE) {
+      if (where == "between" || dataset %in% reads || !names_any(masked[rows], paste0("=\\s*", written))) return(NULL)
+      fail("a statement at ", here, " may write ", dataset, " in a way that is not followed")
+    }
+    if (identical(type, "global")) {
+      if (where == "elsewhere") return(if (any(has_macro_trigger(us$text))) NULL else unrecorded(us$first_token == "ods"))
+      text <- sub("^\\s*%(let|put|global|local|symdel)\\b", "", us$text, ignore.case = TRUE, perl = TRUE)
+      plain <- us$first_token %in% c("%let", "%put", "%global", "%local", "%symdel")
+      if (any(grepl("%", vapply(text[plain], mask_strings, "", keep_double = TRUE, USE.NAMES = FALSE), fixed = TRUE)) ||
+          any(has_macro_trigger(text[!plain])))
+        return(fail("macro-generated code at ", here, " ", when))
+      if (where == "between" && any(us$first_token == "libname"))
+        return(fail("a LIBNAME statement at ", here, " ", when))
+      return(unrecorded(us$first_token == "ods"))
+    }
+    # What macro-generated code in another program does is not known from the
+    # source, and holding every earlier output to it would leave nothing typed.
+    if (generated(us)) return(if (where == "elsewhere") NULL else fail("macro-generated code at ", here, " ", when))
+    proc <- if (identical(type, "proc_step")) tolower(sub("^\\s*proc\\s+([A-Za-z0-9_]+).*$", "\\1", us$text[1L], ignore.case = TRUE)) else ""
+    if (where == "between") {
+      if (proc %in% DATE_TRACE_MODIFYING_PROCS || any(us$first_token == "modify"))
+        return(fail("a step at ", here, " can change datasets in place"))
+    } else {
+      member <- names_any(us$text, name_pattern(parts[2L]))
+      library <- name_pattern(parts[1L])
+      # A copy replaces the members of the library it writes to: the one after
+      # OUT=, or the procedure's own library for a COPY statement without it.
+      copies_into <- function(rows) {
+        if (names_any(masked[rows], paste0("\\bout(?:lib)?\\s*=\\s*", library))) return(TRUE)
+        own <- regmatches(masked[1L], regexec("\\b(?:library|lib|ddname|dd)\\s*=\\s*([A-Za-z_][A-Za-z0-9_]*)",
+                                              masked[1L], ignore.case = TRUE, perl = TRUE))[[1L]]
+        own <- if (length(own) == 2L) tolower(own[2L]) else "work"
+        identical(proc, "datasets") && identical(own, parts[1L]) &&
+          !all(grepl("\\bout(?:lib)?\\s*=", masked[rows], ignore.case = TRUE, perl = TRUE))
+      }
+      changes <- switch(proc,
+        # DELETE, SAVE and CONTENTS leave the variables of what remains alone.
+        datasets = (member && !all(us$first_token %in% c("proc", "delete", "save", "contents", "run", "quit"))) ||
+          (any(us$first_token == "copy") && copies_into(us$first_token == "copy")),
+        # Only ALTER TABLE changes the columns of a table that exists.
+        sql = member && any(us$first_token == "alter"),
+        copy = copies_into(1L),
+        cimport = member || names_any(us$text, library),
+        fedsql = , ds2 = , iml = member,
+        FALSE)
+      if (changes) return(fail("a step at ", here, " can change ", dataset, " in place"))
+    }
+    # PROC SORT with no OUT= rewrites its input with the options on DATA=.
+    # The lineage records that as a read, so it is met here and not as a
+    # writer.
+    if (identical(proc, "sort")) {
+      lex <- dataset_tokens(us$text[1L])$lex
+      data_at <- sort_names(lex, "data")
+      if (!is.na(data_at) && is.na(sort_names(lex, "out")) && identical(member_key(lex[data_at]), dataset)) {
+        if (grepl("\\brename\\s*=", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
+          return(fail("a RENAME= option at ", here, " may rename the variable"))
+        if (!all(us$first_token[-1L] %in% c("by", "run", "quit")))
+          return(fail("the PROC SORT at ", here, " rewrites ", dataset, " with a statement that is not followed"))
+        gone <- projection_excludes(dataset_option_filters(lex, data_at, us$line_start[1L]), var)
+        if (is.na(gone$excluded)) return(unread(gone))
+        if (isTRUE(gone$excluded)) return(switch(where,
+          between = removed(gone, single, from = dataset),
+          after = removed(gone, TRUE, from = dataset, so = "after it is written, so the declared date format is not in the output"),
+          fail("the ", gone$op, " list at ", here, " may remove the variable from ", dataset, " after it is written")))
+        return(NULL)
+      }
+    }
+    # A hash object writes the dataset its OUTPUT method names in a string.
+    if (identical(type, "data_step")) {
+      if (where != "between" && names_any(us$text, paste0("['\"]\\s*", written)))
+        return(fail("a statement at ", here, " may write ", dataset, " in a way that is not followed"))
+      return(NULL)
+    }
+    unrecorded()
+  }
+  # The latest step that does something decides: a step that cannot be read
+  # hides what came before it, and a removal holds whatever came before it.
+  latest_effect <- function(ids, dataset, where, single = TRUE) {
+    for (mid in rev(ids)) {
+      found <- step_effect(trace$statements(mid), trace$type(mid), trace$reads(mid), dataset, where, single)
+      if (!is.null(found)) return(found)
+    }
+    NULL
+  }
   follow_input <- function(id, dataset, depth, single) {
     prior <- trace$prior_writer(id, dataset)
     if (is.na(prior)) return(fail(dataset, " is not created earlier in this program, so its formats are not known from the source"))
-    for (mid in trace$between(prior, id)) {
-      us <- trace$statements(mid)
-      type <- trace$type(mid)
-      if (identical(type, "global")) {
-        text <- sub("^\\s*%(let|put|global|local|symdel)\\b", "", us$text, ignore.case = TRUE, perl = TRUE)
-        plain <- us$first_token %in% c("%let", "%put", "%global", "%local", "%symdel")
-        if (any(grepl("%", vapply(text[plain], mask_strings, "", keep_double = TRUE, USE.NAMES = FALSE), fixed = TRUE)) ||
-            any(has_macro_trigger(text[!plain])))
-          return(fail("macro-generated code at ", at(us), " runs between the declaration and the output"))
-        if (any(us$first_token == "libname")) return(fail("a LIBNAME statement at ", at(us), " runs between the declaration and the output"))
-        next
-      }
-      if (generated(us)) return(fail("macro-generated code at ", at(us), " runs between the declaration and the output"))
-      proc <- if (identical(type, "proc_step")) tolower(sub("^\\s*proc\\s+([A-Za-z0-9_]+).*$", "\\1", us$text[1L], ignore.case = TRUE)) else ""
-      if (proc %in% DATE_TRACE_MODIFYING_PROCS || any(us$first_token == "modify"))
-        return(fail("a step at ", at(us), " can change datasets in place"))
-      # PROC SORT with no OUT= rewrites its input with the options on DATA=.
-      # The lineage records that as a read, so it is met here and not as a
-      # writer.
-      if (identical(proc, "sort")) {
-        lex <- dataset_tokens(us$text[1L])$lex
-        data_at <- sort_names(lex, "data")
-        if (!is.na(data_at) && is.na(sort_names(lex, "out")) && identical(member_key(lex[data_at]), dataset)) {
-          if (grepl("\\brename\\s*=", mask_strings(us$text[1L]), ignore.case = TRUE, perl = TRUE))
-            return(fail("a RENAME= option at ", at(us), " may rename the variable"))
-          gone <- projection_excludes(dataset_option_filters(lex, data_at, us$line_start[1L]), var)
-          if (isTRUE(gone$excluded)) return(removed(gone, single, from = dataset))
-          if (is.na(gone$excluded)) return(unread(gone))
-        }
-      }
-    }
+    found <- latest_effect(trace$between(prior, id), dataset, "between", single)
+    if (!is.null(found)) return(found)
     follow(prior, dataset, depth + 1L, single)
   }
   # `member` is the dataset this step is followed for. `single` says every step
@@ -482,7 +594,18 @@ trace_declared_date <- function(trace, writer, var, target) {
     if (is.na(gone$excluded)) return(unread(gone))
     follow_input(id, dataset, depth, single && one)
   }
-  follow(writer, tolower(target), 0L, TRUE)
+  # The output is what is left when the programs have run, so the steps that
+  # run after its writer are read first. Another program's place in the run is
+  # not known here, so a step there that can change the output always counts.
+  output <- tolower(target)
+  parts <- strsplit(output, ".", fixed = TRUE)[[1L]]
+  for (step in trace$outside(name_pattern(parts[2L]), name_pattern(parts[1L]))) {
+    found <- step_effect(step$us, step$type, step$reads, output, "elsewhere")
+    if (!is.null(found)) return(found)
+  }
+  found <- latest_effect(trace$after(writer), output, "after")
+  if (!is.null(found)) return(found)
+  follow(writer, output, 0L, TRUE)
 }
 
 #' The kind of each column in a reference dataset

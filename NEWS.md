@@ -21,9 +21,11 @@
   column as a date or, where no reference column exists, every step between the
   declaration and the output is free of macro-generated code. A variable
   removed by `DROP` or `KEEP` on the way takes its format with it, so a later
-  variable of the same name is not a date. The run report
-  lists each such column with its declaration, and each declared column left as
-  a number with the reason. A reference comparison of such a column now checks
+  variable of the same name is not a date. Where a later step can change the
+  output after it is written, such as macro-generated code in the same file or
+  `PROC DATASETS` on that dataset, only a reference confirms the date. The run
+  report lists each such column with its declaration, and each declared column
+  left as a number with the reason. A reference comparison of such a column now checks
   the calendar date; before, the column failed on type and its values were not
   compared. Datetime and time formats are not covered and stay numbers.
 

@@ -161,6 +161,16 @@ change that, and the report names the list that removed the variable. A list
 that cannot be read exactly, such as `_numeric_` or `a--b`, is treated like
 macro-generated code: the reference decides.
 
+The output is the dataset as the programs leave it. Where the reference has no
+such column, a declared date is stored as a date only if nothing that runs
+after the step that writes the output can change it. Later in the same file,
+that rules out macro-generated code and any step that can change the output. In
+another program, it rules out a step, read exactly, that can change the output:
+`PROC DATASETS` or `ALTER TABLE` on it, a sort in place with options, or a copy
+into its library. Reading the output, sorting it in place with no option, and
+clearing another library change nothing. What a macro call in another program
+does to an output is not read from the source, so only a reference checks that.
+
 A date-like name, a plausible day number, or a date in the reference changes
 nothing alone. Inside the generated programs nothing changes either:
 `lib_read()` returns the SAS day number for these columns, so a later program

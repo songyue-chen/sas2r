@@ -277,8 +277,8 @@ test_that("only a plain number that converts exactly is stored as a date", {
 stage_step <- c("data work.stage;", "  id = 1;", "  elapsed = '01Jan2020'd;",
                 "  format elapsed date9.;", "run;")
 remade <- c("data adam.adv;", "  set work.stage;", "  elapsed = 42;", "run;")
-projected <- function(program, value = 42, references = list(), envir = parent.frame()) {
-  fx <- date_fixture(list(p01 = program), "adam.adv", references, envir = envir)
+projected <- function(program, value = 42, references = list(), others = list(), envir = parent.frame()) {
+  fx <- date_fixture(c(list(p01 = program), others), "adam.adv", references, envir = envir)
   registry <- output_date_registry(fx$project)
   rt <- date_runtime(dates = registry, envir = envir)
   rt$h$lib_write(data.frame(id = 1, elapsed = value), "adam", "adv")
@@ -410,6 +410,165 @@ test_that("a reference date does not bring back a format the source removes", {
   expect_match(decided(dropped, "adam.adtte")$deferred$reason, "DROP list at line 2 removes the variable from adam.adv")
   kept <- date_fixture(programs("  set adam.adv(keep=usubjid adt);"), c("adam.adv", "adam.adtte"), reference)
   expect_identical(output_date_registry(kept$project)$adam.adtte, c(adt = "YYMMDD10"))
+})
+
+# The output with its date declared in the step that writes it, and what runs
+# afterwards.
+written <- c("data adam.adv;", "  id = 1;", "  elapsed = '01Jan2020'd;", "  dur = 42;",
+             "  format elapsed date9.;", "run;")
+
+test_that("a step that can change the output after it is written ends the source-only trace", {
+  # SAS leaves no date called `elapsed` in any of these, or leaves one this
+  # file cannot read: the format is removed, the column is dropped or replaced,
+  # or code that is not read runs last.
+  changed <- list(
+    "PROC DATASETS removes the format" = list(
+      c("proc datasets lib=adam;", "  modify adv;", "  format elapsed;", "quit;"), "line 7 can change adam.adv in place"),
+    "ALTER TABLE" = list(
+      c("proc sql;", "  alter table adam.adv modify elapsed format=best12.;", "quit;"), "line 7 can change adam.adv in place"),
+    "sort in place with RENAME=" = list(
+      c("proc sort data=adam.adv(drop=elapsed rename=(dur=elapsed));", "  by id;", "run;"), "RENAME= option at line 7"),
+    "sort in place with a FORMAT statement" = list(
+      c("proc sort data=adam.adv;", "  by id;", "  format elapsed;", "run;"), "PROC SORT at line 7 rewrites adam.adv"),
+    "sort in place with a list not read exactly" = list(
+      c("proc sort data=adam.adv(drop=_numeric_);", "  by id;", "run;"), "DROP or KEEP list at line 7 could remove"),
+    "macro call" = list("%finalize;", "macro-generated code at line 7 runs after the step that writes the output"),
+    "%INCLUDE" = list("%include 'more.sas';", "macro-generated code at line 7 runs after"),
+    "CALL EXECUTE" = list(
+      c("data _null_;", "  call execute('proc datasets lib=adam; modify adv; format elapsed; quit;');", "run;"),
+      "macro-generated code at line 7 runs after"),
+    "a macro variable in a later step" = list(
+      c("proc print data=work.x(obs=&n);", "run;"), "macro-generated code at line 7 runs after"),
+    "ODS OUTPUT" = list(
+      c("ods output summary=adam.adv;", "proc means data=work.x;", "  var id;", "run;"), "line 7 may write adam.adv"),
+    "DUPOUT=" = list(
+      c("proc sort data=work.x out=work.y dupout=adam.adv nodupkey;", "  by id;", "run;"), "line 7 may write adam.adv"),
+    "hash OUTPUT" = list(
+      c("data _null_;", "  declare hash h();", "  h.output(dataset: 'adam.adv');", "run;"), "line 7 may write adam.adv"),
+    "PROC COPY into the library" = list(c("proc copy in=work out=adam;", "run;"), "line 7 can change adam.adv in place"),
+    "COPY statement into the library" = list(
+      c("proc datasets lib=adam;", "  copy in=work;", "quit;"), "line 7 can change adam.adv in place"),
+    "COPY statement with OUT=" = list(
+      c("proc datasets lib=work;", "  copy out=adam;", "quit;"), "line 7 can change adam.adv in place"))
+  for (case in names(changed)) {
+    got <- projected(c(written, changed[[case]][[1L]]))
+    expect_identical(got$format, NA_character_, info = case)
+    expect_identical(got$stored, 42, info = case)
+    expect_identical(c(nrow(got$typed), nrow(got$deferred)), c(0L, 1L), info = case)
+    expect_match(got$deferred$reason, changed[[case]][[2L]], fixed = TRUE, info = case)
+    expect_match(got$deferred$reason, "no reference column to confirm", info = case)
+  }
+
+  # A sort in place that drops the variable leaves no such column: that is
+  # proved, so there is nothing to type and nothing to report.
+  dropped <- c(written, "proc sort data=adam.adv(drop=elapsed);", "  by id;", "run;")
+  for (program in list(dropped, c(written, "proc sort data=adam.adv(keep=id dur);", "  by id;", "run;"),
+                       c(written, "%early;", "proc sort data=adam.adv(drop=elapsed);", "  by id;", "run;"))) {
+    got <- projected(program)
+    expect_identical(got$stored, 42)
+    expect_identical(c(nrow(got$typed), nrow(got$deferred)), c(0L, 0L))
+  }
+  # Code that is not read, running after the removal, hides what it leaves.
+  expect_match(projected(c(dropped, "%late;"))$deferred$reason, "macro-generated code at line 10 runs after")
+})
+
+test_that("reading the output afterwards, or changing something else, leaves the date typed", {
+  day <- sas_day("2020-01-01")
+  unchanged <- list(
+    "nothing" = character(),
+    "clearing WORK" = c("proc datasets lib=work kill nolist;", "quit;"),
+    "deleting other members" = c("proc datasets lib=adam nolist;", "  delete adv_old tmp;", "quit;"),
+    "sort in place with no option" = c("proc sort data=adam.adv;", "  by id;", "run;"),
+    "sort to another dataset" = c("proc sort data=adam.adv(drop=elapsed) out=work.s;", "  by id;", "run;"),
+    "DATA step that reads it" = c("data work.q;", "  set adam.adv(drop=elapsed);", "  elapsed = 1;", "run;"),
+    "a later output" = c("data adam.other;", "  set adam.adv;", "  elapsed = 1;", "run;"),
+    "PROC SQL that reads it" = c("proc sql;", "  create table work.n as select count(*) as n from adam.adv;",
+                                 "  delete from work.n;", "quit;"),
+    "procedures that report it" = c("proc print data=adam.adv;", "run;", "proc contents data=adam.adv;", "run;",
+                                    "proc means data=adam.adv;", "  var id;", "  output out=work.m;", "run;"),
+    "copying it out" = c("proc copy in=adam out=work;", "  select adv;", "run;"),
+    "plain global statements" = c("title 'done';", "%put done;", "%let x = 1;", "libname adam clear;"))
+  for (case in names(unchanged)) {
+    got <- projected(c(written, unchanged[[case]]), value = day)
+    expect_identical(got$format, "DATE9", info = case)
+    expect_identical(format(got$stored), "2020-01-01", info = case)
+    expect_identical(got$typed$evidence, "source", info = case)
+  }
+})
+
+test_that("a step in another program that names the output and can change it ends the source-only trace", {
+  # The order of programs is not read here, so a program listed first counts.
+  elsewhere <- list(
+    "PROC DATASETS" = list(c("proc datasets lib=adam;", "  modify adv;", "  format elapsed;", "quit;"),
+                           "line 1 of p02.sas can change adam.adv in place"),
+    "ALTER TABLE" = list(c("proc sql;", "  alter table adam.adv drop elapsed;", "quit;"),
+                         "line 1 of p02.sas can change adam.adv in place"),
+    "sort in place with DROP=" = list(c("proc sort data=adam.adv(drop=elapsed);", "  by id;", "run;"),
+                                      "DROP list at line 1 of p02.sas may remove the variable from adam.adv"),
+    "PROC COPY into the library" = list(c("proc copy in=stage out=adam;", "run;"),
+                                        "line 1 of p02.sas can change adam.adv in place"),
+    "ODS OUTPUT" = list("ods output summary=adam.adv;", "line 1 of p02.sas may write adam.adv"))
+  for (case in names(elsewhere)) {
+    for (name in c("p02", "p00")) {
+      got <- projected(written, others = stats::setNames(list(elsewhere[[case]][[1L]]), name))
+      expect_identical(got$stored, 42, info = case)
+      expect_identical(c(nrow(got$typed), nrow(got$deferred)), c(0L, 1L), info = case)
+      expect_match(got$deferred$reason, sub("p02", name, elsewhere[[case]][[2L]], fixed = TRUE), fixed = TRUE, info = case)
+    }
+  }
+  # Programs that read the output, pass it to a macro, or work on other
+  # members and libraries leave it as its own program wrote it.
+  reads <- c("data adam.adae;", "  set adam.adv;", "run;", "proc sort data=adam.adv;", "  by id;", "run;",
+             "proc sql;", "  create table work.j as select * from adam.adv;", "quit;", "%merge(in=adam.adv);",
+             "proc datasets lib=work kill;", "quit;", "proc datasets lib=adam;", "  delete old;", "quit;",
+             "proc copy in=adam out=xpt;", "  select adv;", "run;")
+  got <- projected(written, value = sas_day("2020-01-01"), others = list(p02 = reads))
+  expect_identical(got$typed$evidence, "source")
+  expect_identical(format(got$stored), "2020-01-01")
+})
+
+test_that("the reference still decides where a later step is not read, and not where the column is removed", {
+  date_reference <- list(adam.adv = data.frame(id = 1, elapsed = as.Date("2020-01-01")))
+  modified <- c(written, "proc datasets lib=adam;", "  modify adv;", "  format elapsed mmddyy10.;", "quit;")
+  confirmed <- projected(modified, value = sas_day("2020-01-01"), references = date_reference)
+  expect_identical(confirmed$typed$evidence, "reference")
+  expect_identical(format(confirmed$stored), "2020-01-01")
+  number <- projected(modified, references = list(adam.adv = data.frame(id = 1, elapsed = 42)))
+  expect_identical(number$stored, 42)
+  expect_match(number$deferred$reason, "the reference stores this column as numeric")
+
+  sorted <- c("proc sort data=adam.adv(drop=elapsed);", "  by id;", "run;")
+  removed <- projected(c(written, sorted), references = date_reference)
+  expect_identical(nrow(removed$typed), 0L)
+  expect_match(removed$deferred$reason, "DROP list at line 7 removes the variable from adam.adv after it is written")
+  expect_match(removed$deferred$reason, "reference stores a date, which the SAS source read here does not explain")
+  # In another program the same sort is not placed in the run, so it rules
+  # nothing out.
+  apart <- projected(written, value = sas_day("2020-01-01"), references = date_reference, others = list(p02 = sorted))
+  expect_identical(apart$typed$evidence, "reference")
+})
+
+test_that("between two steps the latest step that does something decides", {
+  # A sort in place is followed only where it has no statement but BY.
+  formatted <- c(stage_step, "proc sort data=work.stage;", "  by id;", "  format elapsed;", "run;",
+                 "data adam.adv;", "  set work.stage;", "run;")
+  got <- projected(formatted)
+  expect_identical(got$stored, 42)
+  expect_match(got$deferred$reason, "PROC SORT at line 6 rewrites work.stage with a statement that is not followed")
+
+  # Macro code after a removal can bring the variable back, so the removal is
+  # not proved and a reference date is not ruled out.
+  date_reference <- list(adam.adv = data.frame(id = 1, elapsed = as.Date("2020-01-01")))
+  sort_drop <- c("proc sort data=work.stage(drop=elapsed);", "  by id;", "run;")
+  reads <- c("data adam.adv;", "  set work.stage;", "  elapsed = 42;", "run;")
+  hidden <- c(stage_step, sort_drop, "%restore;", reads)
+  expect_match(projected(hidden)$deferred$reason, "macro-generated code at line 9 runs between")
+  expect_identical(projected(hidden, value = sas_day("2020-01-01"), references = date_reference)$typed$evidence,
+                   "reference")
+  # Macro code before the removal changes nothing about it.
+  proved <- projected(c(stage_step, "%before;", sort_drop, reads), references = date_reference)
+  expect_identical(nrow(proved$typed), 0L)
+  expect_match(proved$deferred$reason, "DROP list at line 7 removes the variable from work.stage before the output")
 })
 
 test_that("a DROP or KEEP list is read token by token", {
