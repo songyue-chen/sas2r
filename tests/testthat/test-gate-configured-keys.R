@@ -89,10 +89,112 @@ test_that("configured keys that repeat pair rows inside each key group", {
     expect_identical(unique(target$differences$mismatches$var), "id")
   }
 
-  # A content-equal reorder inside the groups still passes.
+  # A content-equal reorder inside the groups still passes. `id` tells the
+  # rows of each group apart on both sides, so it refines the configured key.
   target <- assess_with_keys(ref, ref[c(2, 1, 4, 3), ], rules = list(keys = "grp"))
   expect_true(target$reference_passed)
+  expect_identical(target$differences$structure$selected_keys, c("grp", "id"))
+  expect_identical(target$differences$structure$configured_keys, "grp")
+
+  # With no other key to refine it, the groups are matched by content.
+  plain <- ref[c("grp", "val")]
+  target <- assess_with_keys(plain, plain[c(2, 1, 4, 3), ], rules = list(keys = "grp"))
+  expect_true(target$reference_passed)
   expect_identical(target$differences$structure$selected_keys, "grp")
+  expect_identical(target$differences$structure$alignment_method, "duplicate_key_multiset")
+})
+
+# Several rows per subject and one sequence number across the dataset.
+repeating_key_frame <- function(subjects = 4L, per = 6L) {
+  n <- subjects * per
+  data.frame(
+    usubjid = rep(sprintf("S%02d", seq_len(subjects)), each = per),
+    aseq = seq_len(n),
+    val = seq_len(n) * 10,
+    stringsAsFactors = FALSE
+  )
+}
+
+comparison_count <- function(cmp, metric) {
+  as.integer(cmp$summary$value[cmp$summary$metric == metric])
+}
+
+test_that("a repeating configured key is refined by a key that tells a group's rows apart", {
+  ref <- repeating_key_frame()
+  gen <- transform(ref, val = val + 1)
+
+  cmp <- compare_datasets_aligned(ref, gen, keys = "usubjid")
+  st <- cmp$structure
+  expect_identical(st$alignment_method, "unique_key")
+  expect_identical(st$selected_keys, c("usubjid", "aseq"))
+  expect_identical(st$configured_keys, "usubjid")
+  expect_identical(cmp$keys, c("usubjid", "aseq"))
+  expect_false(st$dup_fanout)
+  expect_identical(comparison_count(cmp, "rows_matched"), nrow(ref))
+  expect_identical(unique(cmp$details$var), "val")
+  expect_identical(nrow(cmp$details), nrow(ref))
+  expect_false(cmp$passed)
+
+  # The gate reaches the same pairing with a project present.
+  target <- assess_with_keys(ref, gen, rules = list(keys = "usubjid"))
+  expect_identical(target$differences$structure$selected_keys, c("usubjid", "aseq"))
+  expect_identical(target$differences$structure$alignment_method, "unique_key")
+})
+
+test_that("a refined key pairs a group larger than the content-matching limit", {
+  ref <- repeating_key_frame(subjects = 2L, per = RESIDUAL_GROUP_LIMIT + 20L)
+  gen <- transform(ref, val = val + 1)
+
+  cmp <- compare_datasets_aligned(ref, gen, keys = "usubjid")
+  expect_identical(cmp$structure$alignment_resource_state, "complete")
+  expect_identical(comparison_count(cmp, "rows_matched"), nrow(ref))
+  expect_identical(cmp$structure$rows_only_base, 0L)
+  expect_identical(cmp$structure$rows_only_comp, 0L)
+  expect_identical(unique(cmp$details$var), "val")
+})
+
+test_that("a refined key reports missing and extra rows without content matching", {
+  ref <- repeating_key_frame()
+  gen <- transform(ref, val = val + 1)
+  # One row missing from the first subject, one extra row in the third.
+  gen <- rbind(gen[-2L, ], data.frame(usubjid = "S03", aseq = 99, val = 5, stringsAsFactors = FALSE))
+
+  cmp <- compare_datasets_aligned(ref, gen, keys = "usubjid")
+  st <- cmp$structure
+  expect_identical(st$alignment_method, "unique_key")
+  expect_identical(st$selected_keys, c("usubjid", "aseq"))
+  expect_identical(comparison_count(cmp, "rows_matched"), nrow(ref) - 1L)
+  expect_identical(st$rows_only_base, 1L)
+  expect_identical(st$rows_only_comp, 1L)
+  expect_identical(unique(cmp$details$var), "val")
+})
+
+test_that("a group the two sides disagree on for the refining key is matched by content", {
+  ref <- repeating_key_frame()
+  second <- ref$usubjid == "S02"
+  # Every other subject has a wrong value; the second has its rows renumbered.
+  gen <- transform(ref, val = ifelse(second, val, val + 1), aseq = ifelse(second, aseq + 100, aseq))
+
+  context <- empty_alignment_context()
+  context$configured_keys <- "usubjid"
+  alignment <- align_output_rows(ref, gen, context = context)
+  refined <- Filter(function(key) identical(key$provenance, "configured_refined"), alignment$candidate_keys)
+  expect_identical(refined[[1L]]$keys, c("usubjid", "aseq"))
+  # No pair crosses a configured key value, and no row is left unpaired.
+  expect_identical(ref$usubjid[alignment$pairs$reference_row], gen$usubjid[alignment$pairs$candidate_row])
+  expect_identical(nrow(alignment$pairs), nrow(ref))
+  expect_identical(alignment$method, "duplicate_key_multiset")
+  expect_identical(alignment$selected_keys, "usubjid")
+
+  # The renumbered rows are paired with their own content, so the refining
+  # column is compared and is the only difference in that subject.
+  cmp <- compare_datasets_aligned(ref, gen, keys = "usubjid")
+  expect_identical(cmp$keys, "usubjid")
+  differing <- table(cmp$details$var)
+  expect_setequal(names(differing), c("aseq", "val"))
+  expect_identical(as.integer(differing[["aseq"]]), sum(second))
+  expect_identical(as.integer(differing[["val"]]), sum(!second))
+  expect_identical(comparison_count(cmp, "rows_matched"), nrow(ref))
 })
 
 test_that("configured keys do not replace the source order contract", {

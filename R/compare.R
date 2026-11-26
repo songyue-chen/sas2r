@@ -70,10 +70,13 @@ compare_datasets <- function(base, comp, profile = compare_profile(),
 #' -- instead of positional matching, so a content-equal reorder is not
 #' reported as a wall of cell mismatches. Configured `keys` are the first
 #' candidate for row identity, ahead of any key in `context`: unique, rows pair
-#' on them; repeated, rows are matched inside each configured key group. Keys
-#' are inferred only when the configured ones cannot pair rows (a key column of
-#' a different type on each side). They are deliberately not treated as an
-#' order contract.
+#' on them; repeated, rows are paired inside each configured key group. Inside
+#' a group a source or inferred key that makes the configured keys unique pairs
+#' the rows, and `selected_keys` then holds both; a group the two sides
+#' disagree on for that key, or any group when there is no such key, is matched
+#' by content. Keys replace the configured ones only when those cannot pair
+#' rows (a key column of a different type on each side). They are deliberately
+#' not treated as an order contract.
 #'
 #' @param base The reference dataset.
 #' @param comp The candidate dataset.
