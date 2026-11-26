@@ -756,10 +756,10 @@ assess_final_outputs <- function(
 
   if (nrow(contract_df) > 0L) {
     report_files <- attempt_report_files(contract_df, attempt)
-    # Which columns the bundle stored as dates, and which it left as SAS day
-    # numbers and why. Reporting only: it changes no check.
-    date_outputs <- if (is.null(project)) list() else
-      tryCatch(source_date_outputs(project), error = function(e) list())
+    # Which columns the generated programs declared as dates, which of them
+    # the bundle stored as dates, and which it left as SAS day numbers and
+    # why. Reporting only: it changes no check.
+    declared_dates <- tryCatch(attempt_declared_dates(attempt), error = function(e) list())
     for (i in seq_len(nrow(contract_df))) {
       c_row <- contract_df[i, ]
       kind <- c_row$kind %||% "dataset"
@@ -791,8 +791,10 @@ assess_final_outputs <- function(
             paste(if (length(reasons)) reasons else skipped, collapse = "; "))
         }
       }
-      if (identical(kind, "dataset") && !is.na(c_row$logical_name))
-        res$date_columns <- date_columns_record(date_outputs[[tolower(c_row$logical_name)]])
+      if (identical(kind, "dataset") && !is.na(c_row$logical_name)) {
+        res$date_columns <- tryCatch(date_columns_record(declared_dates[[tolower(c_row$logical_name)]],
+          res$candidate_path, res$reference_path), error = function(e) NULL)
+      }
       assessed_targets[[c_row$target_key]] <- res
 
       if (isTRUE(c_row$required)) {

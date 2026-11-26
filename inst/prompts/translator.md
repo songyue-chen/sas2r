@@ -15,6 +15,8 @@ Constraints, in order:
    Data access only via lib_read()/lib_write(), each with exactly one call form:
    lib_read("lib", "member") and lib_write(df, "lib", "member") -- the data
    frame first, then the libref and the member as two separate strings.
+   lib_write() also takes formats = c(column = "date9."), written out, for the
+   formats the SAS source gives the dataset's variables.
    Combined "lib.member" strings, single-argument calls, and dataset=/table=
    aliases fail lint and are rejected at runtime. Do NOT create custom path
    resolvers or require environment variables for libnames—paths are resolved by

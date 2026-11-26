@@ -618,7 +618,7 @@ known_domains:
     strategy: deferred_datetime_contract
     implementation_status: deferred
     risk: high
-    scope: "Date/time epochs, formats, informats, and timezones beyond current format helpers."
+    scope: "Time and datetime epochs, informats, and timezones. SAS dates stay day numbers in generated R; a date format on a written dataset is declared in lib_write(formats = ...), which stores the column as a date (see the sas-formats-and-dates skill)."
     sources: *function_sources
     edge_cases: [date_epoch, datetime_epoch, timezone, missing_format]
 

@@ -752,7 +752,7 @@ sas_transpile <- function(project, out_dir) {
   write_helpers(out_dir)
   write_autoexec(project, out_dir, effective)
   fcat <- compile_format_catalog(project)
-  write_formats(fcat$catalog, out_dir, output_date_registry(project))
+  write_formats(fcat$catalog, out_dir)
 
   plan <- include_emission_plan(project, modules)
   emit_units <- include_emitting_units(project)
