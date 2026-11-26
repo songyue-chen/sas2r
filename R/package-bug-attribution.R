@@ -514,26 +514,38 @@ package_bug_translator_facts <- function(state, ids, column_names) {
   }, error = function(e) list())
 }
 
-PACKAGE_BUG_KEY_ORIGINS <- c("by", "sort", "merge", "lineage", "by_subset", "sort_subset",
+PACKAGE_BUG_KEY_ORIGINS <- c("configured", "by", "sort", "merge", "lineage", "by_subset", "sort_subset",
   "known_identifiers", "heuristic")
 PACKAGE_BUG_PAIRING_METHODS <- c("unique_key", "duplicate_key_multiset", "keyless_multiset")
 
 # Where the comparison's row keys came from. The gate keeps the keys it used
-# but not their origin; key candidates depend only on the shared column names
-# and the source context, so the origin is recovered without reading data.
+# and the keys that were configured, but not the origin of a key it inferred.
+# Key candidates depend only on the shared column names and the source
+# context, so that origin is recovered without reading data. When configured
+# keys repeat, the gate adds the first candidate that makes them unique on
+# both sides; `refined_by` is that candidate's origin. A candidate's validity
+# depends only on its key set, so the first candidate in order that gives the
+# keys used is the one the gate chose.
 package_bug_key_origin <- function(state, structure, policy, logical_name) {
   used <- tolower(as.character(unlist(structure$selected_keys)))
-  if (!length(used)) return("none")
+  if (!length(used)) return(list(from = "none"))
+  configured <- tolower(as.character(unlist(structure$configured_keys %||% policy$keys)))
+  if (length(configured) && identical(used, configured)) return(list(from = "configured"))
   common <- as.character(unlist(structure$common))
   frame <- as.data.frame(stats::setNames(rep(list(logical()), length(common)), common),
     check.names = FALSE, stringsAsFactors = FALSE)
-  configured <- tolower(as.character(unlist(policy$keys)))
   context <- tryCatch(package_bug_alignment_context(state, logical_name), error = function(e) NULL) %||%
-    if (length(configured)) list(lineage = list(keys = configured), known_identifiers = configured)
+    empty_alignment_context()
   candidates <- tryCatch(infer_alignment_keys(frame, frame, context = context), error = function(e) list())
-  hit <- Filter(function(x) identical(x$keys, used), candidates)
-  origin <- if (length(hit)) hit[[1L]]$provenance
-  if (isTRUE(origin %in% PACKAGE_BUG_KEY_ORIGINS)) origin else "unknown"
+  origin <- function(keys_of) {
+    hit <- Filter(function(x) identical(keys_of(x), used), candidates)
+    found <- if (length(hit)) hit[[1L]]$provenance
+    if (isTRUE(found %in% setdiff(PACKAGE_BUG_KEY_ORIGINS, "configured"))) found else "unknown"
+  }
+  if (length(configured) && all(configured %in% used)) {
+    return(list(from = "configured", refined_by = origin(function(x) union(configured, x$keys))))
+  }
+  list(from = origin(function(x) x$keys))
 }
 
 #' The decisions sas2r made for one failed dataset target
@@ -564,16 +576,18 @@ package_bug_decisions <- function(state, target, key, column_names = character()
   decisions <- list()
   compared <- !is.null(target$checks$reference_comparison$summary)
   if (compared) {
-    configured <- sendable(policy$keys)
+    configured <- sendable(structure$configured_keys %||% policy$keys)
     used <- sendable(structure$selected_keys)
     order <- structure$order
-    decisions$row_pairing <- list(
+    origin <- package_bug_key_origin(state, structure, policy, setup$logical_name)
+    decisions$row_pairing <- c(list(
       method = if (isTRUE(structure$alignment_method %in% PACKAGE_BUG_PAIRING_METHODS))
         structure$alignment_method else "unknown",
-      keys_used = used, keys_from = package_bug_key_origin(state, structure, policy, setup$logical_name),
-      keys_configured = configured,
-      row_order = if (!isTRUE(order$meaningful)) "not_required" else
-        if (isTRUE(order$order_equivalent)) "required_and_same" else "required_and_different")
+      keys_used = used, keys_from = origin$from),
+      if (!is.null(origin$refined_by)) list(keys_refined_by = origin$refined_by),
+      list(keys_configured = configured,
+        row_order = if (!isTRUE(order$meaningful)) "not_required" else
+          if (isTRUE(order$order_equivalent)) "required_and_same" else "required_and_different"))
     profile <- tryCatch(dataset_comparison_profile(policy), error = function(e) NULL)
     if (!is.null(profile)) {
       set <- !is.null(policy$tol_abs) || !is.null(policy$tol_rel) || !is.null(policy$numeric_tolerance)
@@ -707,6 +721,7 @@ PACKAGE_BUG_FACT_FORMAT <- local({
       row_pairing = record(method = one_of(PACKAGE_BUG_PAIRING_METHODS, "unknown"),
         keys_used = name, keys_configured = name,
         keys_from = one_of(PACKAGE_BUG_KEY_ORIGINS, "none", "unknown"),
+        keys_refined_by = one_of(setdiff(PACKAGE_BUG_KEY_ORIGINS, "configured"), "unknown"),
         row_order = one_of("not_required", "required_and_same", "required_and_different")),
       numeric_tolerance = record(source = one_of("configured", "package_default"),
         absolute = one_of("zero", "above_zero"), relative = one_of("zero", "above_zero"),

@@ -75,12 +75,18 @@ column carries the same facts.
 | `representation_only`, `conversion` | `yes`, `no`, `not_checked`; the rule tested | Whether a type difference holds the same values. See below |
 
 Each target also carries `helpers_called`, `external_inputs` and `decisions`:
-how rows were paired (`method`, `keys_used`, `keys_from`, `keys_configured`,
-`row_order`), the numeric tolerance (`package_default` or `configured`, `zero`
-or `above_zero`, and the differing columns with their own tolerance), the file
-types of the reference and the generated dataset, and for a differing column
-any recorded date decision (stored as a date or left as a SAS day number, its
-basis, the SAS format name and the stated reason). The reason is a sentence
+how rows were paired (`method`, `keys_used`, `keys_from`, `keys_refined_by`,
+`keys_configured`, `row_order`), the numeric tolerance (`package_default` or
+`configured`, `zero` or `above_zero`, and the differing columns with their own
+tolerance), the file types of the reference and the generated dataset, and for
+a differing column any recorded date decision (stored as a date or left as a
+SAS day number, its basis, the SAS format name and the stated reason).
+`keys_from` is `configured` when rows were paired on the keys you set;
+otherwise it names where sas2r took the keys from, such as a `BY` or `SORT`
+statement or a guess from column names (`heuristic`). `keys_refined_by` is
+present when the configured keys repeat and sas2r added a key of its own to
+tell the rows of a group apart; it names where that key came from. The date
+reason is a sentence
 sas2r writes from the SAS source. It can name a source line number, a program
 file without its directory, and a dataset. The text of the declaring statement
 is not sent, and a reason that holds a path is left out. The request as a whole

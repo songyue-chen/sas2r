@@ -487,11 +487,10 @@ test_that("the comparison's own decisions are recorded as they were made", {
   state <- triage_scenario(triage_sas, triage_r, generated, transform(generated, value = c(11, 12, 13)),
     rules = list(keys = "rowkey", tol_abs = 0, tolerances = list(value = list(abs = 0.5))))
   target <- state$assessment$targets$work.out1
-  # Whatever the gate paired on, the record keeps it apart from what was asked.
-  target$differences$structure$selected_keys <- "id"
   decisions <- package_bug_decisions(state, target, "work.out1", "value")
-  expect_identical(decisions$row_pairing, list(method = "unique_key", keys_used = "id",
-    keys_from = "heuristic", keys_configured = "rowkey", row_order = "not_required"))
+  # The gate paired the rows on the key that was configured.
+  expect_identical(decisions$row_pairing, list(method = "unique_key", keys_used = "rowkey",
+    keys_from = "configured", keys_configured = "rowkey", row_order = "not_required"))
   expect_identical(decisions$numeric_tolerance, list(source = "configured", absolute = "zero",
     relative = "zero", column_overrides = "value"))
   expect_identical(decisions[c("reference_file", "generated_file")],
@@ -502,6 +501,62 @@ test_that("the comparison's own decisions are recorded as they were made", {
     evidence = "reference", reason = "declared in /PRIVATE_PATH/derive.sas"))), "value")
   expect_identical(dates, list(list(name = "value", decision = "stored_as_date", basis = "reference",
     format = "DATE9.")))
+})
+
+test_that("the keys rows were paired on are told apart from the keys that were configured", {
+  # Each case reads the record the gate wrote for a made-up comparison.
+  pairing <- function(generated, reference, keys, sas = triage_sas) {
+    state <- triage_scenario(sas, triage_r, generated, reference, rules = list(keys = keys))
+    target <- state$assessment$targets$work.out1
+    expect_identical(target$status, "failed")
+    decisions <- package_bug_decisions(state, target, "work.out1", "value")
+    expect_identical(package_bug_fact_violations(list(decisions = decisions)), character())
+    decisions$row_pairing
+  }
+  visits <- data.frame(usubjid = rep(c("S1", "S2"), each = 3L), aseq = 1:6, value = c(11, 12, 13, 14, 15, 16))
+  wrong <- transform(visits, value = value + 1)
+
+  # A configured key that repeats is refined by a key sas2r chose: here a
+  # guess from the column names.
+  expect_identical(pairing(wrong, visits, "usubjid"), list(method = "unique_key",
+    keys_used = c("usubjid", "aseq"), keys_from = "configured", keys_refined_by = "heuristic",
+    keys_configured = "usubjid", row_order = "not_required"))
+
+  # With a source that orders the rows by those columns, the refining key is
+  # read from the source instead.
+  sorted <- paste("proc sort data=raw.input out=work.s; by usubjid aseq; run;",
+    "data work.out1; set work.s; value = value + 1; run;", sep = "\n")
+  from_source <- pairing(wrong, visits, "usubjid", sas = sorted)
+  expect_identical(from_source$keys_used, c("usubjid", "aseq"))
+  expect_false(from_source$keys_refined_by %in% c("heuristic", "unknown"))
+
+  # A group the two sides number differently is matched by content, so the
+  # configured key alone is the key used and nothing refined it.
+  renumbered <- transform(visits, value = ifelse(usubjid == "S1", value, value + 1),
+    aseq = ifelse(usubjid == "S1", aseq + 100L, aseq))
+  expect_identical(pairing(renumbered, visits, "usubjid"), list(method = "duplicate_key_multiset",
+    keys_used = "usubjid", keys_from = "configured", keys_configured = "usubjid", row_order = "not_required"))
+
+  # A configured key whose column differs in type cannot pair rows. The key
+  # used is then one sas2r inferred, and the facts say so.
+  typed <- pairing(data.frame(id = 1:3, rowkey = c(1, 2, 3), value = c(11, 12, 99)),
+    data.frame(id = 1:3, rowkey = c("1", "2", "3"), value = c(11, 12, 13), stringsAsFactors = FALSE), "rowkey")
+  expect_identical(typed[c("keys_used", "keys_from", "keys_configured")],
+    list(keys_used = "id", keys_from = "heuristic", keys_configured = "rowkey"))
+  expect_null(typed$keys_refined_by)
+
+  # With no keys configured the origin is the inferred one, as before.
+  state <- triage_scenario(triage_sas, triage_r, wrong, visits)
+  inferred <- package_bug_decisions(state, state$assessment$targets$work.out1, "work.out1", "value")$row_pairing
+  expect_identical(inferred$keys_configured, character())
+  expect_false(inferred$keys_from %in% c("configured", "none", "unknown"))
+  expect_null(inferred$keys_refined_by)
+
+  # The refining origin is held to its fixed words like every other fact.
+  bad <- list(decisions = list(row_pairing = list(keys_refined_by = "CELL_SENTINEL 1")))
+  expect_identical(package_bug_fact_violations(bad), "decisions$row_pairing$keys_refined_by is outside its fixed format")
+  bad$decisions$row_pairing$keys_refined_by <- "configured"
+  expect_length(package_bug_fact_violations(bad), 1L)
 })
 
 test_that("the request keeps room for code and names every section it cut", {
