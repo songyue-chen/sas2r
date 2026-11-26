@@ -294,7 +294,7 @@ snapshot_selected_bundle <- function(state, attempt) {
   if (!is.null(state$project) && inherits(state$project, "sas2r_project")) {
     fcat <- tryCatch(compile_format_catalog(state$project), error = function(e) list(catalog = list()))
     if (!is.null(fcat$catalog)) {
-      write_formats(fcat$catalog, bundle_dir)
+      write_formats(fcat$catalog, bundle_dir, output_date_registry(state$project))
     } else {
       writeLines(c("# sas2r: no format catalog definitions", ""), file.path(bundle_dir, "_sas2r_formats.R"))
     }

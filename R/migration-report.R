@@ -443,7 +443,8 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
         "", "## Unresolved Output Expressions", "",
         "Source expressions are not additional missing files. Concrete filenames and complete coverage remain unverified.",
         "", migration_md_table(targets_df[targets_df$status == "unresolved_target", , drop = FALSE])),
-      ""
+      "",
+      date_columns_report_lines(output_assessments)
     )
   }
 

@@ -137,6 +137,55 @@ specification is intended before asking a fixer to add the missing variables.
 Do not drop those columns merely to obtain a passing comparison. An independent
 R reconstruction can help attribute differences, but it is not a SAS execution.
 
+### SAS dates
+
+SAS stores a date as a number of days from 1 January 1960, with a format that
+shows the number as a date. A SAS dataset read into R shows such a column as a
+`Date`. Generated R keeps the number, because that is what the SAS program
+computes with.
+
+A dataset written by a migration stores the column as a `Date` when both of
+these hold:
+
+- The SAS source gives the variable a date format in a `FORMAT` or `ATTRIB`
+  statement on the way to that output.
+- The reference dataset stores the column as a date. Where the reference has no
+  such column, the declaration must instead reach the output through DATA steps
+  and `PROC SORT` steps with no macro-generated code between them.
+
+A format travels with its variable. Where a `DROP` or `KEEP` statement or
+dataset option removes the variable on the way to the output, the declaration
+does not reach it: a variable of the same name made later is a plain number
+unless it is given a date format of its own. A date in the reference does not
+change that, and the report names the list that removed the variable. A list
+that cannot be read exactly, such as `_numeric_` or `a--b`, is treated like
+macro-generated code: the reference decides.
+
+The output is the dataset as the programs leave it. Where the reference has no
+such column, a declared date is stored as a date only if nothing that runs
+after the step that writes the output can change it. Later in the same file,
+that rules out macro-generated code and any step that can change the output. In
+another program, it rules out a step, read exactly, that can change the output:
+`PROC DATASETS` or `ALTER TABLE` on it, a sort in place with options, or a copy
+into its library. Reading the output, sorting it in place with no option, and
+clearing another library change nothing. What a macro call in another program
+does to an output is not read from the source, so only a reference checks that.
+
+A date-like name, a plausible day number, or a date in the reference changes
+nothing alone. Inside the generated programs nothing changes either:
+`lib_read()` returns the SAS day number for these columns, so a later program
+computes exactly as the SAS does.
+
+The run report's "Date Columns" section lists each column stored as a date with
+the statement that declares it, and each declared column left as a number with
+the reason. A column left as a number against a date in the reference is still
+reported as a type difference, and its values are not compared.
+
+The formats covered are the ones a SAS file's date columns are read back with:
+`DATE`, `YYMMDD`, `MMDDYY` and `DDMMYY` with their separator variants,
+`E8601DA`, `B8601DA`, `IS8601DA` and `WEEKDATE`. Datetime and time formats are
+not covered and stay numbers.
+
 ---
 
 ## 3. Source Authority & Library Discovery
