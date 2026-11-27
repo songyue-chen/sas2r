@@ -496,6 +496,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     execution_order = candidate$execution_order,
     execution_passed = isTRUE(candidate$passed),
     population_checks = candidate$population_checks %||% list(),
+    log_notes = candidate$log_notes %||% list(),
     executed_component_ids = candidate$executed_component_ids %||% character()
   )
 

@@ -771,3 +771,69 @@ lib_delete <- function(libref, members) {
   }
   invisible(unique(stem(targets)))
 }
+
+#' Read variables no input supplied as missing, as a SAS DATA step does
+#'
+#' A SAS DATA step may read a variable that none of its inputs carries and
+#' that it never assigns. SAS does not stop: it creates the variable, leaves
+#' it missing in every row, and writes `NOTE: Variable X is uninitialized.` to
+#' the log. `sas_uninitialized()` does the same for a data frame. Each named
+#' variable that is absent is added as a missing column, and the note is
+#' printed and recorded, so a migration run lists it in its report. A
+#' variable that is present, in any letter case, is left as it is and gives
+#' no note.
+#'
+#' Use it where a step reads a variable in an expression (an assignment, an
+#' `IF` condition, a function or macro argument) and its inputs may not carry
+#' that variable. Apply it to the frame the step computes on, after its
+#' inputs are read and merged, never to one input of a merge. Write no
+#' separate test for the column, no fallback value and no `stop()` for that
+#' case. Name only variables the SAS source reads.
+#'
+#' SAS itself stops, and so must the R, when the absent variable is named in
+#' `BY`, in `WHERE`, in `KEEP=`, `DROP=` or `RENAME=` on an input dataset, or
+#' in the variable list of a procedure. Do not use this helper there.
+#'
+#' @param df A data frame.
+#' @param vars Character vector naming the variables the step reads.
+#' @param type `"numeric"`, the SAS type of a variable first met in an
+#'   expression, or `"character"` for a variable the step declares character
+#'   with `LENGTH`, `ATTRIB` or a `$` format.
+#' @return `df`, with a missing column for each absent variable, named as
+#'   given in `vars`.
+#' @seealso [sas2r_runtime]
+#' @examples
+#' dm <- data.frame(usubjid = c("01", "02"))
+#' sas_uninitialized(dm, c("USUBJID", "randdtc"))
+#' @export
+sas_uninitialized <- function(df, vars, type = "numeric") {
+  if (!is.data.frame(df)) stop("sas_uninitialized(): df must be a data frame", call. = FALSE)
+  if (!is.character(vars) || anyNA(vars) || !all(grepl("^[A-Za-z_][A-Za-z0-9_]*$", vars))) {
+    stop("sas_uninitialized(): vars names each variable as a string", call. = FALSE)
+  }
+  if (!is.character(type) || length(type) != 1L || !type %in% c("numeric", "character")) {
+    stop('sas_uninitialized(): type is "numeric" or "character"', call. = FALSE)
+  }
+  absent <- vars[!tolower(vars) %in% tolower(names(df))]
+  absent <- absent[!duplicated(tolower(absent))]
+  if (!length(absent)) return(df)
+  value <- if (identical(type, "character")) NA_character_ else NA_real_
+  for (name in absent) df[[name]] <- rep(value, nrow(df))
+  # A run reads the notes of each program from here; a script that loaded no
+  # registry still gets the columns and the printed note.
+  env <- tryCatch(sas2r_registry_env(), error = function(e) NULL)
+  if (!is.null(env)) {
+    notes <- get0(".sas2r_log_notes", envir = env, inherits = FALSE)
+    if (!is.list(notes)) notes <- list()
+    for (name in absent) {
+      notes[[length(notes) + 1L]] <- list(note = "uninitialized_variable", variable = name,
+        type = type, rows = nrow(df))
+    }
+    assign(".sas2r_log_notes", notes, envir = env)
+  }
+  for (name in absent) {
+    message(structure(class = c("sas2r_uninitialized_variable", "message", "condition"),
+      list(message = paste0("NOTE: Variable ", name, " is uninitialized.\n"), call = NULL, variable = name)))
+  }
+  df
+}

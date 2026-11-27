@@ -50,6 +50,7 @@ check_program_revision <- function(r_path, contract = NULL, registry = NULL, hel
   code_text <- paste(code_lines, collapse = "\n")
   errors <- c(errors, check_component_library_assignments(code_text, project, contract$component_id))
   errors <- c(errors, check_declared_date_formats(code_text, project))
+  errors <- c(errors, check_uninitialized_names(code_text, project))
 
   if (any(grepl("^# sas2r:untranslated", code_lines) & !grepl("reason=display_only$", code_lines))) {
     errors <- c(errors, "untranslated_source: generated code still contains untranslated SAS units")

@@ -32,6 +32,11 @@ migration_run_outcome <- function(state, report, attempts) {
         "but this reader could not find it. Check the effective library bindings; output contents remain unverified.")
     },
     if (!is.null(stopped$message)) paste("Bundle logs:", latest$stdout_path, latest$stderr_path),
+    if (length(log_note_sentences(report$log_notes))) {
+      named <- unique(unlist(lapply(report$log_notes, function(entries) vapply(entries, `[[`, "", "variable"))))
+      paste0("SAS log notes: ", length(named), " uninitialized variable", if (length(named) == 1L) "" else "s",
+        " read as missing (", paste(named, collapse = ", "), "); see SAS log notes in the report.")
+    },
     if (length(pending)) paste0("Separate outstanding static reviews (not proof these paths executed): ",
       paste(pending, collapse = ", ")),
     if (!is.null(report$diagnostics$pipeline)) pipeline_coverage_lines(report$diagnostics$pipeline),
