@@ -122,6 +122,15 @@
   model and runs no example. A finding saved by an earlier version exports
   what it has and says that the comparison details could not be linked.
 
+- Name the key column that keeps rows unpaired, in the issue draft. When a
+  reference comparison leaves rows unpaired on both sides, the comparison
+  matches those rows again with one key column left out. Where the other key
+  columns name one unpaired row on each side, it records the column, the
+  number of pairs found and the number of unpaired rows where the column is
+  missing on each side, and the draft shows them. The record holds names and
+  counts only. It stays on your computer, is not part of any model request,
+  and changes neither the pairing nor the result of the comparison.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

@@ -32,8 +32,12 @@ failed check, the comparison keys you configured and the keys rows were
 paired on, the pairing method, and the row counts of the reference and the
 generated dataset. "Records paired" counts the rows matched between the
 two. "Row matching ran to its end" says whether the matching step finished
-its work; it can finish and still leave rows unpaired. The output is found
-by the name saved with the finding. When a finding was saved without that
+its work; it can finish and still leave rows unpaired. When rows are left
+unpaired on both sides and one key column alone keeps some of them apart,
+the draft names that column, counts the pairs of unpaired rows that agree
+on every other key column, and counts the unpaired rows where the column
+is missing on each side. It does not say why the values differ. The output
+is found by the name saved with the finding. When a finding was saved without that
 name, or the saved assessment belongs to another bundle attempt, the draft
 says that the comparison details could not be linked.
 

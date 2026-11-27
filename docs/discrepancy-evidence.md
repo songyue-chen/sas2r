@@ -41,6 +41,17 @@ dimensions, pairing totals, mismatch counts, offset magnitudes or numeric target
 The same projection serves focused investigation, terminal report explanation
 and AI bug triage.
 
+The saved comparison of an output may also hold `unpaired_keys`: for a key
+column that alone keeps unpaired rows apart, its name, the number of pairs of
+unpaired rows that agree on every other key column (`pair_without`), and the
+number of unpaired rows where it is missing on each side (`missing_reference`,
+`missing_generated`). It is recorded when rows were paired on a key that names
+one row on each side, rows are left unpaired on both sides, and the other key
+columns name one unpaired row on each side. It holds names and counts, never a
+key value. Only the issue draft reads it: it is in neither the summary above
+nor the provider-bound projection, and it changes neither the pairing nor the
+verdict.
+
 The projection is checked against this closed format each time it is built:
 only the fields above, only the listed values for sizes, pairing, differences
 and patterns, short single-line names, no number anywhere and no reference

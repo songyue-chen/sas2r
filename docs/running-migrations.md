@@ -825,6 +825,15 @@ headings:
   the rows matched between the two. "Row matching ran to its end" says whether
   the matching step finished its work; it can finish and still leave rows
   unpaired.
+  When rows are left unpaired on both sides, the comparison matches those rows
+  again with one key column left out, once for each key column. Where the
+  other key columns name one unpaired row on each side, the draft names the
+  column left out, the number of pairs found, and the number of unpaired rows
+  where that column is missing on each side. These pairs are not part of
+  "Records paired" and do not change the result. The draft does not say why
+  the values differ or which side is right. A column is named only when it
+  explains a pair by itself: nothing is shown where leaving it out leaves a
+  repeated key, or where two key columns differ together.
 - **Suggested by the AI (not verified).** The package step it suspects, its
   suggested cause, the uncertainty, a next step and, when the model drafted
   one, a short synthetic R example. Examples are labelled as unrun.

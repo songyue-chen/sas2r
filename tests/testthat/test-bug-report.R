@@ -909,8 +909,21 @@ test_that("the start-here page and the Markdown export show the same draft", {
     "- Pairing method: `unique_key` (each key value names one row on each side)",
     "- Reference rows: 177", "- Generated rows: 177", "- Records paired: 117",
     "- Reference rows left unpaired: 60", "- Generated rows left unpaired: 60",
-    "- Row matching ran to its end: yes", "- Bundle attempt: `bundle_attempt_001`")
+    "- Row matching ran to its end: yes",
+    paste("- Among the unpaired rows, 60 pairs agree on the other key columns and differ on `visit`.",
+      "It is missing in 60 unpaired reference rows and 0 unpaired generated rows."),
+    "- Bundle attempt: `bundle_attempt_001`")
   expect_identical(lines[lines %in% recorded], recorded)
+  # The key line is what the comparison itself measured and the run saved with
+  # the output's assessment: nothing was put into the report by hand.
+  saved <- read_json_record(run$report, simplifyVector = FALSE)$output_assessments$work.out2
+  expect_identical(saved$differences$structure$unpaired_keys,
+    list(list(key = "visit", pair_without = 60L, missing_reference = 60L, missing_generated = 0L)))
+  expect_identical(saved$differences$structure$selected_keys, list("id", "visit"))
+  expect_identical(saved$status, "failed")
+  # It is explained once, and it blames nobody.
+  expect_identical(sum(lines == BUG_REPORT_KEY_PAIRS), 1L)
+  expect_false(any(grepl("translation|comparator|bug in", lines[grepl("unpaired rows", lines)], ignore.case = TRUE)))
   # What the run recorded comes before what the AI suggested, each under its
   # own heading, and the reader is asked to read and decide: nothing is to be
   # removed for them.
@@ -935,6 +948,8 @@ test_that("the start-here page and the Markdown export show the same draft", {
     grep("^<nav>", html)[[1L]] - 1L)]
   expect_true("<li>Records paired: 117</li>" %in% section)
   expect_true("<li>Row matching ran to its end: yes</li>" %in% section)
+  expect_true(paste("<li>Among the unpaired rows, 60 pairs agree on the other key columns and differ on",
+    "<code>visit</code>. It is missing in 60 unpaired reference rows and 0 unpaired generated rows.</li>") %in% section)
   expect_true("<li>Keys configured: <code>id</code>, <code>visit</code></li>" %in% section)
   shown <- gsub("<[^>]+>", "", section[!section %in% c("<ul>", "</ul>")])
   for (entity in list(c("&lt;", "<"), c("&gt;", ">"), c("&quot;", '"'), c("&#39;", "'"), c("&amp;", "&"))) {
@@ -957,7 +972,9 @@ test_that("the start-here page and the Markdown export show the same draft", {
 test_that("a draft says so when an output's comparison details cannot be linked", {
   run <- draft_run(draft_state(), "E2")
   export <- function(change) draft_lines(draft_changed(run$report, change))
-  facts <- "Records paired|Reference rows|Keys configured|Row matching"
+  facts <- "Records paired|Reference rows|Keys configured|Row matching|unpaired rows"
+  # The linked draft shows the key line; none of the drafts below may.
+  expect_true(any(grepl("^- Among the unpaired rows", draft_lines(run$report))))
   unlinked <- "The comparison details of this output could not be linked to this finding:"
 
   # A finding saved before the output's name was kept: what is there is
@@ -1029,25 +1046,46 @@ test_that("the draft tells configured keys from the keys used, and shows recorde
   lines <- draft_lines(run$report)
   expect_true(all(c("- Keys configured: `usubjid`", "- Keys rows were paired on: `usubjid`, `aseq`",
     "- Records paired: 6", "Observed difference: value: 6 constant difference (absolute 1)") %in% lines))
-  expect_false(any(grepl("^- Key column", lines)))
 
-  # A comparison may record, for each key column, counts about the rows left
-  # unpaired. They are shown as recorded, whichever way the record reads back.
+  expect_false(any(grepl("unpaired rows", lines)))
+  expect_false(BUG_REPORT_KEY_PAIRS %in% lines)
+
+  # A saved record is shown as recorded, whichever way it reads back, a count
+  # of zero included. One pair and one row are worded as one.
   counts <- list(list(key = "aseq", pair_without = 4, missing_reference = 2, missing_generated = 0),
-    list(key = "usubjid", pair_without = 0))
-  recorded <- draft_lines(draft_changed(run$report, function(report) {
-    report$output_assessments$work.out1$differences$structure$unpaired_keys <- counts
+    list(key = "usubjid", pair_without = 1, missing_reference = 1, missing_generated = 1))
+  shown <- c(paste("- Among the unpaired rows, 4 pairs agree on the other key columns and differ on `aseq`.",
+      "It is missing in 2 unpaired reference rows and 0 unpaired generated rows."),
+    paste("- Among the unpaired rows, 1 pair agrees on the other key columns and differs on `usubjid`.",
+      "It is missing in 1 unpaired reference row and 1 unpaired generated row."))
+  with_record <- function(record) draft_lines(draft_changed(run$report, function(report) {
+    report$output_assessments$work.out1$differences$structure$unpaired_keys <- record
     report
   }))
-  shown <- c(paste("- Key column `aseq`: unpaired rows that pair without it 4; unpaired reference rows",
-    "where it is missing 2; unpaired generated rows where it is missing 0"),
-    "- Key column `usubjid`: unpaired rows that pair without it 0")
-  expect_identical(recorded[grepl("^- Key column", recorded)], shown)
+  recorded <- with_record(counts)
+  expect_identical(recorded[grepl("Among the unpaired rows", recorded)], shown)
+  expect_true(BUG_REPORT_KEY_PAIRS %in% recorded)
   target <- state$assessment$targets$work.out1
   target$differences$structure$unpaired_keys <- data.frame(key = c("aseq", "usubjid"),
-    pair_without = c(4, 0), missing_reference = c(2, NA), missing_generated = c(0, NA))
+    pair_without = c(4, 1), missing_reference = c(2, 1), missing_generated = c(0, 1))
   frame <- bug_report_markdown(bug_report_output_blocks(target, "work.out1", NULL))
-  expect_identical(frame[grepl("^- Key column", frame)], shown)
+  expect_identical(frame[grepl("Among the unpaired rows", frame)], shown)
+
+  # A record that is not a column name with a count of pairs shows nothing:
+  # no pair, no count, a name that is not one short line, or no name.
+  for (record in list(list(list(key = "aseq", pair_without = 0, missing_reference = 2, missing_generated = 0)),
+      list(list(key = "aseq", missing_reference = 2, missing_generated = 0)),
+      list(list(key = "aseq", pair_without = "many")),
+      list(list(key = "a name\nover two lines", pair_without = 4)),
+      list(list(pair_without = 4)), list("aseq"), list())) {
+    odd <- with_record(record)
+    expect_false(any(grepl("unpaired rows|over two lines", odd)))
+    expect_identical(odd, lines)
+  }
+  # Pairs without the counts of missing values: the pairs alone.
+  partial <- with_record(list(list(key = "aseq", pair_without = 4, missing_reference = 2)))
+  expect_identical(partial[grepl("Among the unpaired rows", partial)],
+    "- Among the unpaired rows, 4 pairs agree on the other key columns and differ on `aseq`.")
 })
 
 test_that("what the draft needs is saved beside the finding and is not sent to the model", {
@@ -1073,4 +1111,47 @@ test_that("what the draft needs is saved beside the finding and is not sent to t
   expect_identical(marked$binding$target, "TARGET_SENTINEL")
   expect_identical(marked$messages, plain$messages)
   expect_false(grepl("SENTINEL", paste(unlist(marked$messages), collapse = "\n"), fixed = TRUE))
+})
+
+test_that("the key record stays out of the model request, and no row value enters either", {
+  # Values that would be recognised anywhere they turned up.
+  reference <- data.frame(id = sprintf("ROWVALUE_SENTINEL_%03d", 1:30), visit = c(rep(424242, 12L), rep(1, 18L)),
+    stringsAsFactors = FALSE)
+  generated <- transform(reference, visit = ifelse(visit == 424242, 737373, visit))
+  state <- triage_scenario("data work.out1; set raw.input; run;",
+    "lib_write(lib_read('raw', 'input'), 'work', 'out1')", generated, reference,
+    rules = list(keys = c("id", "visit")))
+  state$selected_attempt <- list(attempt_id = "bundle_attempt_001")
+  expect_identical(state$assessment$targets$work.out1$differences$structure$unpaired_keys,
+    list(list(key = "visit", pair_without = 12L, missing_reference = 0L, missing_generated = 0L)))
+
+  request_text <- function(state) {
+    request <- NULL
+    suppressMessages(migration_package_bug_diagnosis(state,
+      diagnosis_mock(bug_triage_answer(), function(req) request <<- req)))
+    paste(unlist(request$messages), collapse = "\n")
+  }
+  sent <- request_text(state)
+  expect_true(nzchar(sent))
+  expect_false(grepl("SENTINEL|424242|737373", sent))
+  expect_false(grepl("unpaired_keys|pair_without|missing_reference|missing_generated", sent))
+  # The request is the same without the record, and with anything in its place.
+  for (record in list(NULL, list(list(key = "KEY_SENTINEL", pair_without = 987654L,
+      missing_reference = 987654L, missing_generated = 987654L)))) {
+    changed <- state
+    changed$assessment$targets$work.out1$differences$structure$unpaired_keys <- record
+    expect_identical(request_text(changed), sent)
+  }
+
+  # The draft names the column and gives the counts. It holds no row's value.
+  run <- draft_run(state, "E1")
+  lines <- draft_lines(run$report)
+  expect_true(paste("- Among the unpaired rows, 12 pairs agree on the other key columns and differ on `visit`.",
+    "It is missing in 0 unpaired reference rows and 0 unpaired generated rows.") %in% lines)
+  expect_false(any(grepl("SENTINEL|424242|737373", lines)))
+  html <- readLines(run$page)
+  section <- html[seq.int(grep("<h2>Possible sas2r bugs (AI beta)</h2>", html, fixed = TRUE) + 1L,
+    grep("^<nav>", html)[[1L]] - 1L)]
+  expect_true(any(grepl("12 pairs agree on the other key columns", section, fixed = TRUE)))
+  expect_false(any(grepl("SENTINEL|424242|737373", section)))
 })

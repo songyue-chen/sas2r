@@ -498,6 +498,52 @@ validate_alignment_key <- function(reference, candidate, keys,
   )
 }
 
+#' Key columns that, taken alone, keep unpaired rows apart
+#'
+#' Row matching ran to its end and left rows over on both sides. For each key
+#' column this pairs the left-over rows on the other key columns through
+#' [validate_alignment_key()], so a key value is equal, missing or repeated
+#' here exactly as it is in the comparison. A column is recorded when the
+#' other columns name one left-over row on each side and at least one of the
+#' resulting pairs differs on the column left out. A column whose removal
+#' leaves a repeated key is ambiguous and is not recorded; neither is a
+#' difference that takes two key columns to explain. A row can count toward
+#' more than one column, so the counts are not to be added up.
+#'
+#' The record holds column names and counts, never a key value. It changes
+#' neither the pairing nor the verdict.
+#'
+#' @param ref_norm,cand_norm Normalized reference and candidate frames.
+#' @param alignment The result of [align_output_rows()] for those frames.
+#' @return A list with one record per recorded key column -- `key`,
+#'   `pair_without` (the pairs found without it that differ on it),
+#'   `missing_reference` and `missing_generated` (the left-over rows where it
+#'   is missing) -- or `NULL` when no column is recorded.
+#' @noRd
+unpaired_key_evidence <- function(ref_norm, cand_norm, alignment) {
+  keys <- as.character(alignment$selected_keys %||% character())
+  only_ref <- alignment$only_reference
+  only_cand <- alignment$only_candidate
+  # Matching that stopped at a size limit can leave rows of one key on both sides.
+  if (!identical(alignment$resource_state, "complete") || length(keys) < 2L ||
+      !length(only_ref) || !length(only_cand)) return(NULL)
+  # A diagnostic beside the comparison: it must never stop one.
+  tryCatch({
+    ref <- ref_norm[only_ref, keys, drop = FALSE]
+    cand <- cand_norm[only_cand, keys, drop = FALSE]
+    records <- lapply(keys, function(key) {
+      without <- validate_alignment_key(ref, cand, setdiff(keys, key), normalized = TRUE)
+      if (!isTRUE(without$valid)) return(NULL)
+      pairs <- sum(!vctrs::vec_equal(ref[[key]][without$pairs$reference_row],
+        cand[[key]][without$pairs$candidate_row], na_equal = TRUE))
+      if (pairs > 0L) list(key = key, pair_without = pairs,
+        missing_reference = sum(is.na(ref[[key]])), missing_generated = sum(is.na(cand[[key]])))
+    })
+    records <- Filter(Negate(is.null), records)
+    if (length(records)) records
+  }, error = function(e) NULL)
+}
+
 #' Match exact normalized row multisets within groups or whole datasets
 #'
 #' Within each duplicate key group—or the entire frame when keyless—hashes normalized full

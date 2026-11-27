@@ -68,7 +68,9 @@ Markdown file, is built on your computer from the saved report and is not sent
 anywhere. Building it asks no model and runs no example. Beside the model's
 saved text and any proposed synthetic R code, it shows what sas2r recorded for
 the output: its name, the key column names and the row counts of the
-comparison. Those row counts were never part of a model request. Read the
+comparison, including a key column that keeps unpaired rows apart and the
+counts recorded for it. Those counts were never part of a model request, and
+the draft holds no key value. Read the
 draft and decide what to share. The package leaves execution of the example to
 the reader.
 

@@ -20,8 +20,12 @@
 #' paired on, the pairing method, and the row counts of the reference and the
 #' generated dataset. "Records paired" counts the rows matched between the
 #' two. "Row matching ran to its end" says whether the matching step finished
-#' its work; it can finish and still leave rows unpaired. The output is found
-#' by the name saved with the finding. When a finding was saved without that
+#' its work; it can finish and still leave rows unpaired. When rows are left
+#' unpaired on both sides and one key column alone keeps some of them apart,
+#' the draft names that column, counts the pairs of unpaired rows that agree
+#' on every other key column, and counts the unpaired rows where the column
+#' is missing on each side. It does not say why the values differ. The output
+#' is found by the name saved with the finding. When a finding was saved without that
 #' name, or the saved assessment belongs to another bundle attempt, the draft
 #' says that the comparison details could not be linked.
 #'
@@ -85,6 +89,10 @@ BUG_REPORT_SUBMIT <- paste("To report this, post what you decide to share at",
 BUG_REPORT_COUNT_LABELS <- paste("\"Records paired\" counts the rows of the reference and of the",
   "generated dataset that were matched to each other. \"Row matching ran to its end\" says",
   "whether the matching step finished its work. It can finish and still leave rows unpaired.")
+BUG_REPORT_KEY_PAIRS <- paste("The pairs counted among the unpaired rows come from a check made",
+  "after the comparison: those rows were matched again with one key column left out. They are",
+  "not part of \"Records paired\" and did not change the result. The check does not say why the",
+  "values of that column differ or which side is right.")
 
 # The draft is built once, as a list of blocks, from a saved report, and
 # rendered twice: as Markdown by sas_bug_report() and as HTML on the start-here
@@ -252,6 +260,7 @@ bug_report_output_blocks <- function(assessment, target, output) {
     keyless_multiset = "no key was used, so rows were matched by content")
   finished <- pairing$alignment_resource_state
   summary <- dataset_discrepancy_summary(assessment, target)
+  key_items <- bug_report_unpaired_key_items(pairing$unpaired_keys, count)
   facts <- c(facts, list(
     keys("Keys configured", pairing$configured_keys),
     keys("Keys rows were paired on", pairing$selected_keys),
@@ -266,29 +275,33 @@ bug_report_output_blocks <- function(assessment, target, output) {
     if (!is_scalar_character(finished)) draft_item("Row matching ran to its end", "not recorded") else
       if (identical(finished, "complete")) draft_item("Row matching ran to its end", "yes") else
         draft_item("Row matching ran to its end", "no, it stopped at a size limit")),
-    bug_report_unpaired_key_items(pairing$unpaired_keys, count))
+    key_items)
   # The sentence the run report gives for this output, from the same summary.
   difference <- if (length(metrics)) tryCatch(discrepancy_description(summary), error = function(error) NULL)
   list(do.call(draft_list, facts), draft_statement("Observed difference", difference),
-    draft_text(BUG_REPORT_COUNT_LABELS))
+    draft_text(BUG_REPORT_COUNT_LABELS), if (length(key_items)) draft_text(BUG_REPORT_KEY_PAIRS))
 }
 
-# For each key column, the counts the comparison recorded about the rows left
-# unpaired, shown as recorded. The record is optional: a report saved without
-# it shows nothing. What the counts mean for the output is left to the
-# sentence the comparison summary gives.
+# A key column the comparison recorded as keeping unpaired rows apart: the
+# pairs of unpaired rows that agree on every other key column and differ on
+# this one, and the unpaired rows where it is missing on each side. The record
+# is optional and is shown as recorded, a count of zero included: a report
+# saved without it shows nothing. A column name and counts, never a key value.
 bug_report_unpaired_key_items <- function(records, count) {
   number <- function(x) if (is.null(x)) NA_real_ else suppressWarnings(as.numeric(x[[1L]]))
+  rows <- function(n, side) paste0(count(n), " unpaired ", side, if (n == 1) " row" else " rows")
   Filter(Negate(is.null), lapply(comparison_records(records), function(record) {
-    key <- if (is.list(record)) record$key
-    if (!is_scalar_character(key) || !draft_plain_names(key)) return(NULL)
-    counts <- c(`unpaired rows that pair without it` = number(record$pair_without),
-      `unpaired reference rows where it is missing` = number(record$missing_reference),
-      `unpaired generated rows where it is missing` = number(record$missing_generated))
-    counts <- counts[is.finite(counts)]
-    if (!length(counts)) return(NULL)
-    list(list(text = "Key column "), list(code = key), list(text = paste0(": ",
-      paste(names(counts), vapply(counts, count, ""), collapse = "; "))))
+    if (!is.list(record)) return(NULL)
+    key <- record$key
+    pairs <- number(record$pair_without)
+    if (!is_scalar_character(key) || !draft_plain_names(key) || !is.finite(pairs) || pairs < 1) return(NULL)
+    missing <- c(number(record$missing_reference), number(record$missing_generated))
+    list(list(text = paste0("Among the unpaired rows, ", count(pairs), if (pairs == 1)
+        " pair agrees on the other key columns and differs on " else
+        " pairs agree on the other key columns and differ on ")),
+      list(code = key),
+      list(text = paste0(".", if (all(is.finite(missing))) paste0(" It is missing in ",
+        rows(missing[[1L]], "reference"), " and ", rows(missing[[2L]], "generated"), "."))))
   }))
 }
 
