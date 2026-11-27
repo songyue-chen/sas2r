@@ -76,6 +76,7 @@ def structured_payload(body):
             return {"findings": [{"evidence_ids": ["E1"]}]}
         return {"findings": [{
             "evidence_id": "E1",
+            "responsible_step": "runtime_helpers",
             "explanation": "The synthetic output check reports a possible package failure.",
             "expected": "A supported operation produces the expected output.",
             "uncertainty": "Test this on the affected build.",

@@ -17,6 +17,16 @@ run_html_link <- function(path, label, root) {
   paste0('<a href="', run_html_escape(url), '">', run_html_escape(label), '</a>')
 }
 
+# The issue draft, as sas_bug_report() writes it. The page is written at the
+# end of a run, so a draft that cannot be built is replaced by a pointer and
+# never stops the report. Tests set the strict option and see the error.
+run_bug_report_draft <- function(report) {
+  build <- function() bug_report_html(bug_report_content(report))
+  if (isTRUE(getOption("sas2r.strict_discrepancy_summary", FALSE))) return(build())
+  tryCatch(build(), error = function(error)
+    "<p>The draft could not be shown on this page. The findings are saved in the machine report.</p>")
+}
+
 write_run_navigation <- function(state, report) {
   paths <- state$paths
   order_path <- file.path(paths$bundle, "run-order.json")
@@ -178,13 +188,8 @@ write_run_navigation <- function(state, report) {
         '</li>'), '</ul>')),
     if (length(report$package_bug_diagnosis$findings)) c(
       '<h2>Possible sas2r bugs (AI beta)</h2>',
-      '<ul>', vapply(report$package_bug_diagnosis$findings, function(finding) paste0(
-        '<li>', run_html_escape(package_bug_finding_summary(finding)),
-        '<ul><li>Recorded symptom: ', run_html_escape(finding$observed),
-        '</li><li>Expected behavior: ', run_html_escape(finding$expected),
-        '</li><li>Uncertainty: ', run_html_escape(finding$uncertainty),
-        '</li><li>Next step: ', run_html_escape(finding$next_step), '</li></ul></li>'), ""), '</ul>',
-      paste0("<p>To create a draft for review, pass this run's ", link("report/report.json", "machine report"),
+      run_bug_report_draft(report),
+      paste0("<p>To save this draft as a Markdown file, pass this run's ", link("report/report.json", "machine report"),
         ' to <code>sas2r::sas_bug_report()</code> with a destination Markdown file.</p>')),
     paste0('<nav>', paste(c(link("bundle/README.md", "Bundle instructions"), link("report/translation.md", "Translation report"),
       link("report/report.json", "Machine report"), link("manifest.json", "Run manifest"),

@@ -9,28 +9,58 @@ sas_bug_report(run, file)
 \arguments{
 \item{run}{A \code{sas2r_translation} object or the path to its \code{report.json}.}
 
-\item{file}{Explicit path for a new Markdown file.}
+\item{file}{Explicit path for a new Markdown file. An existing file is
+never replaced.}
 }
 \value{
 The destination path, invisibly.
 }
 \description{
 Enable \code{migration.bug_reports: true} before running \code{\link[=sas_translate]{sas_translate()}}.
-Use the returned run or its saved machine report, including a blocked
-run's report if translation raised an error. Review the draft before
-sending it to the maintainer or posting it to the public issue tracker.
+The draft is shown on the run's \code{START_HERE.html} page. This function saves
+the same draft as a Markdown file. Use the returned run or its saved machine
+report, including a blocked run's report if translation raised an error.
+Read the draft and decide what to share before you send it to the
+maintainer or post it to the public issue tracker.
 }
 \details{
-The draft includes the package-level suspicion and selected run metadata.
-It includes the reviewer's explanation, uncertainty and suggested next step.
-When the reviewer drafts synthetic R code, review it before running it in a
-fresh R session using the reported build. Record the result in the draft.
-A reproducible failure needs an observed result from that separate test.
+The draft has two kinds of content, each under its own heading.
+
+What sas2r recorded during the run: the package and R versions, the
+recorded symptom and, for a finding about an output, the output's name, the
+failed check, the comparison keys you configured and the keys rows were
+paired on, the pairing method, and the row counts of the reference and the
+generated dataset. "Records paired" counts the rows matched between the
+two. "Row matching ran to its end" says whether the matching step finished
+its work; it can finish and still leave rows unpaired. When rows are left
+unpaired on both sides and one key column alone keeps some of them apart,
+the draft names that column, counts the pairs of unpaired rows that agree
+on every other key column, and counts the unpaired rows where the column
+is missing on each side. It does not say why the values differ. The output
+is found by the name saved with the finding. When a finding was saved without that
+name, or the saved assessment belongs to another bundle attempt, the draft
+says that the comparison details could not be linked.
+
+What the AI suggested: the package step it suspects, its suggested cause,
+the uncertainty, a next step and, when it drafted one, a synthetic R
+example. None of this is verified. Read the example before you run it in a
+fresh R session using the reported build, and record the result in the
+draft. A reproducible failure needs an observed result from that separate
+test.
 
 AI triage occurs during translation using the configured reviewer. This
-function renders its saved findings locally. It neither calls the model
-nor runs examples. Model text and code may reflect the supplied project
-evidence, so review and remove confidential details before sharing.
+function renders the saved report locally. It neither calls the model nor
+runs examples, and it sends nothing anywhere. The draft holds your
+project's dataset and variable names, and the model's text and code may
+reflect the project evidence it was given. Read it and decide what to
+include.
+
+The Markdown file is written to be pasted into an issue. Names, and each
+sentence taken from the run or from the model, are written as literal text
+on one line, inside code marks, and proposed code is inside a code fence.
+Nothing in them is read as Markdown: a name such as \verb{_TYPE_} keeps its
+underscores, and a line break, a \verb{#} or a user mention in the model's text
+does not start a new paragraph, a heading or a notification.
 }
 \seealso{
 \code{\link[=sas_translate]{sas_translate()}}, \code{\link[=sas_config]{sas_config()}}

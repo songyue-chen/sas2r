@@ -87,7 +87,9 @@ compare_datasets <- function(base, comp, profile = compare_profile(),
 #' @return An object of class `sas2r_comparison` whose `structure` also
 #'   carries `alignment_method`, `selected_keys`, `configured_keys`, `order`,
 #'   and `alignment_resource_state`. Its `keys` are the keys rows were paired
-#'   on, which is `selected_keys`.
+#'   on, which is `selected_keys`. When rows are left unpaired on both sides
+#'   and one key column alone keeps some of them apart, `unpaired_keys` holds
+#'   the record from [unpaired_key_evidence()].
 #' @noRd
 compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
                                      keys = NULL, context = NULL) {
@@ -116,6 +118,8 @@ compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
   }
   alignment <- align_output_rows(ref_eng, cand_eng, context = ctx,
                                  profile = profile, normalized = TRUE)
+  # Measured on the rows the pairing left over, after the pairing is final.
+  unpaired_keys <- unpaired_key_evidence(ref_eng, cand_eng, alignment)
 
   # The record's `keys` are the keys rows were paired on; what was configured
   # is kept beside them, so the two can be told apart when they differ.
@@ -128,13 +132,13 @@ compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
       rows_only_base = length(alignment$only_reference),
       rows_only_comp = length(alignment$only_candidate),
       dup_fanout = identical(alignment$method, "duplicate_key_multiset"),
-      structure_extras = list(
+      structure_extras = c(list(
         alignment_method = alignment$method,
         selected_keys = alignment$selected_keys,
         configured_keys = as.character(keys %||% character()),
         order = alignment$order,
         alignment_resource_state = alignment$resource_state
-      )
+      ), if (!is.null(unpaired_keys)) list(unpaired_keys = unpaired_keys))
     )
   )
 }

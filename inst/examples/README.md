@@ -30,7 +30,9 @@ Do not generate data or migration outputs inside the installed package directory
 
 The saved sample represents AI triage for a run whose bundled PDF writer put
 PDF bytes in an HTML file. Use it to create a local draft without SAS, an API
-key, or a study project. Live triage uses the configured reviewer.
+key, or a study project. Live triage uses the configured reviewer. A real run
+shows the same draft on its `START_HERE.html` page, and `sas_bug_report()`
+saves it as a Markdown file.
 
 <!-- sas2r-example: offline bug-report-demo -->
 ```r
@@ -39,7 +41,10 @@ draft <- sas2r::sas_bug_report(demo, file = tempfile("sas2r-issue-", fileext = "
 cat(readLines(draft), sep = "\n")
 ```
 
-Review the R block, then run it in a fresh R session. On the
+The draft has what sas2r recorded (the output and its failed check) and what
+the AI suggested, under separate headings. For a dataset output a real draft
+also gives the comparison keys and the row counts. Read the R block, then run
+it in a fresh R session. On the
 current beta it should say that the helper rejected the destination before
 writing a file. The report represents an earlier runtime where the same
 assertion fails. The demo is for practice and does not require a GitHub issue.

@@ -95,6 +95,50 @@
   withheld with a warning and recorded in the run diagnostics; the run
   continues.
 
+- Give opt-in AI bug triage (`migration.bug_reports: true`) the evidence to
+  judge whether a failed output is the package's doing. For each differing
+  column of a failed dataset the request now says whether the SAS source and
+  the generated R assign it or only pass it through, which runtime helpers
+  handled it, what type sas2r told the translator it had, and whether a type
+  difference holds the same values in another representation (a SAS day
+  number against a date, for example). It also carries the comparison's own
+  decisions (row keys and where they came from, tolerance, file types), who
+  wrote each program (rules, model or repair), and difference classes that
+  repeat across outputs. A finding now names the package step it suspects.
+  These facts are column, program and helper names and fixed words: no data
+  values, counts or paths. The compared datasets are read a second time on
+  your machine for this. Triage is still one request, and runs with the
+  option off are unchanged.
+
+- Show the issue draft for a possible package bug on the start-here page, and
+  build it from what the run recorded. For a finding about an output the
+  draft gives the output's name, the failed check, the comparison keys you
+  configured and the keys rows were paired on, the pairing method and the row
+  counts. "Records paired" and "row matching ran to its end" are separate
+  facts: matching can finish and still leave rows unpaired. What sas2r
+  recorded and what the AI suggested are under separate headings.
+  `sas_bug_report()` saves the same draft as a Markdown file. The draft is
+  built on your computer from the saved report: it is sent nowhere, asks no
+  model and runs no example. A finding saved by an earlier version exports
+  what it has and says that the comparison details could not be linked.
+
+- Name the key column that keeps rows unpaired, in the issue draft. When a
+  reference comparison leaves rows unpaired on both sides, the comparison
+  matches those rows again with one key column left out. Where the other key
+  columns name one unpaired row on each side, it records the column, the
+  number of pairs found and the number of unpaired rows where the column is
+  missing on each side, and the draft shows them. The record holds names and
+  counts only. It stays on your computer, is not part of any model request,
+  and changes neither the pairing nor the result of the comparison.
+
+- Write the sentences an issue draft takes from the run and from the model as
+  literal text in the Markdown file `sas_bug_report()` saves. Each is on one
+  line, inside code marks, so nothing in it is read as Markdown when the draft
+  is pasted into an issue: a name such as `_TYPE_` keeps its underscores, and
+  a line break, a `#` or a user mention in the model's text does not start a
+  paragraph, a heading or a notification. The start-here page already showed
+  these sentences as plain text.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool
