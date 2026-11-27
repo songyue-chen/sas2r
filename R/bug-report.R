@@ -42,6 +42,13 @@
 #' project's dataset and variable names, and the model's text and code may
 #' reflect the project evidence it was given. Read it and decide what to
 #' include.
+#'
+#' The Markdown file is written to be pasted into an issue. Names, and each
+#' sentence taken from the run or from the model, are written as literal text
+#' on one line, inside code marks, and proposed code is inside a code fence.
+#' Nothing in them is read as Markdown: a name such as `_TYPE_` keeps its
+#' underscores, and a line break, a `#` or a user mention in the model's text
+#' does not start a new paragraph, a heading or a notification.
 #' @seealso [sas_translate()], [sas_config()]
 #' @export
 sas_bug_report <- function(run, file) {
@@ -102,8 +109,13 @@ BUG_REPORT_KEY_PAIRS <- paste("The pairs counted among the unpaired rows come fr
 # words or a name shown as code.
 draft_heading <- function(level, text) list(type = "heading", level = level, text = text)
 draft_text <- function(text, strong = FALSE) list(type = "text", text = text, strong = strong)
-draft_statement <- function(label, text) {
-  if (is_scalar_character(text)) list(type = "statement", label = label, text = text)
+# A labelled sentence on one line: line breaks, tabs and control characters
+# in it become single spaces. `literal` marks text taken from the saved report,
+# the run's or the model's own words, as opposed to the package's fixed words.
+draft_statement <- function(label, text, literal = FALSE) {
+  if (!is_scalar_character(text)) return(NULL)
+  text <- trimws(gsub("[\\x01-\\x20\\x7f]+", " ", text, perl = TRUE))
+  if (nzchar(text)) list(type = "statement", label = label, text = text, literal = literal)
 }
 draft_list <- function(...) {
   items <- Filter(Negate(is.null), list(...))
@@ -170,7 +182,7 @@ bug_report_finding_blocks <- function(report, finding, position) {
     draft_heading(1L, paste0("Finding ", position,
       if (is_scalar_character(id) && grepl("^E[0-9]+$", id)) paste0(" [", id, "]"))),
     draft_heading(2L, "Recorded by sas2r"),
-    draft_statement("Recorded symptom", finding$observed)),
+    draft_statement("Recorded symptom", finding$observed, literal = TRUE)),
     bug_report_recorded_blocks(report, binding),
     list(draft_list(
       draft_checked_item("Bundle attempt", binding$attempt_id, "^bundle_attempt_[0-9]+$"),
@@ -178,10 +190,10 @@ bug_report_finding_blocks <- function(report, finding, position) {
       draft_checked_item("Bundled runtime SHA-256", binding$helper_hash, "^[a-f0-9]{64}$")),
     draft_heading(2L, "Suggested by the AI (not verified)"),
     draft_statement("Suspected package step", step),
-    draft_statement("Suggested cause", finding$explanation),
-    draft_statement("Expected behavior", finding$expected),
-    draft_statement("Uncertainty", finding$uncertainty),
-    draft_statement("Next step", finding$next_step),
+    draft_statement("Suggested cause", finding$explanation, literal = TRUE),
+    draft_statement("Expected behavior", finding$expected, literal = TRUE),
+    draft_statement("Uncertainty", finding$uncertainty, literal = TRUE),
+    draft_statement("Next step", finding$next_step, literal = TRUE),
     draft_text(package_bug_reproduction_label(finding), strong = TRUE)),
     if (is_scalar_character(code)) list(
       draft_heading(3L, "Proposed synthetic reproduction"),
@@ -278,7 +290,7 @@ bug_report_output_blocks <- function(assessment, target, output) {
     key_items)
   # The sentence the run report gives for this output, from the same summary.
   difference <- if (length(metrics)) tryCatch(discrepancy_description(summary), error = function(error) NULL)
-  list(do.call(draft_list, facts), draft_statement("Observed difference", difference),
+  list(do.call(draft_list, facts), draft_statement("Observed difference", difference, literal = TRUE),
     draft_text(BUG_REPORT_COUNT_LABELS), if (length(key_items)) draft_text(BUG_REPORT_KEY_PAIRS))
 }
 
@@ -305,6 +317,13 @@ bug_report_unpaired_key_items <- function(records, count) {
   }))
 }
 
+# The Markdown is meant to be pasted into an issue, where a renderer reads it.
+# The package's fixed words are written as Markdown. A name and a sentence
+# taken from the saved report are written as literal text, inside a code span
+# longer than any run of backticks they hold, and proposed code inside a fence
+# chosen the same way. So nothing the run or the model wrote can start a
+# heading, a list, a link, an HTML element or a mention, and a name such as
+# `_TYPE_` keeps its underscores.
 bug_report_markdown <- function(blocks) {
   span <- function(name) {
     ticks <- gregexpr("`+", name)[[1L]]
@@ -316,7 +335,7 @@ bug_report_markdown <- function(blocks) {
   unlist(lapply(Filter(Negate(is.null), blocks), function(block) c(switch(block$type,
     heading = paste(strrep("#", block$level + 1L), block$text),
     text = if (isTRUE(block$strong)) paste0("**", block$text, "**") else block$text,
-    statement = paste0(block$label, ": ", block$text),
+    statement = paste0(block$label, ": ", if (isTRUE(block$literal)) span(block$text) else block$text),
     list = vapply(block$items, function(item)
       paste0("- ", paste(vapply(item, segment, ""), collapse = "")), ""),
     code = {

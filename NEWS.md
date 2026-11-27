@@ -131,6 +131,14 @@
   counts only. It stays on your computer, is not part of any model request,
   and changes neither the pairing nor the result of the comparison.
 
+- Write the sentences an issue draft takes from the run and from the model as
+  literal text in the Markdown file `sas_bug_report()` saves. Each is on one
+  line, inside code marks, so nothing in it is read as Markdown when the draft
+  is pasted into an issue: a name such as `_TYPE_` keeps its underscores, and
+  a line break, a `#` or a user mention in the model's text does not start a
+  paragraph, a heading or a notification. The start-here page already showed
+  these sentences as plain text.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

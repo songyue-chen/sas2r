@@ -847,7 +847,13 @@ To save the draft as a Markdown file, pass the returned translation result or
 the path to that run's `report/report.json` as the first argument of
 `sas2r::sas_bug_report()` and a new Markdown destination as `file`. Use the
 saved JSON path for a blocked run that raised an error. The file holds the same
-draft as the page, and an existing file is never replaced. The output is found
+draft as the page, and an existing file is never replaced. The file is written
+to be pasted into an issue: names, and each sentence taken from the run or from
+the model, are written as literal text on one line, inside code marks, and
+proposed code is inside a code fence. Nothing in them is read as Markdown, so a
+name such as `_TYPE_` keeps its underscores, and a line break, a `#` or a user
+mention in the model's text does not start a paragraph, a heading or a
+notification. The output is found
 by the name saved with the finding; a report saved by an earlier version
 exports what it has and says that the comparison details could not be linked.
 Send what you decide to share to the maintainer or post it in the

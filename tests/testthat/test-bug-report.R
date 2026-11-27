@@ -928,7 +928,7 @@ test_that("the start-here page and the Markdown export show the same draft", {
   # own heading, and the reader is asked to read and decide: nothing is to be
   # removed for them.
   order <- match(c("### Recorded by sas2r", recorded[[1L]], "### Suggested by the AI (not verified)",
-    "Suggested cause: The package could be dispatching the wrong helper.", code,
+    "Suggested cause: `The package could be dispatching the wrong helper.`", code,
     "### Result on your machine"), lines)
   expect_false(anyNA(order))
   expect_false(is.unsorted(order))
@@ -936,7 +936,7 @@ test_that("the start-here page and the Markdown export show the same draft", {
     "comparison with the reference measured, the AI's suggested cause and its proposed example.",
     "Read it and decide what to include.") %in% lines)
   # The run report's own sentence for the output; it may say more than this.
-  expect_true(any(startsWith(lines, "Observed difference: Some rows could not be paired")))
+  expect_true(any(startsWith(lines, "Observed difference: `Some rows could not be paired")))
   expect_false(any(grepl("\\b(remove|delete|redact)", lines, ignore.case = TRUE)))
   # Names and counts only: no path of the compared files.
   target <- state$assessment$targets$work.out2
@@ -985,7 +985,7 @@ test_that("a draft says so when an output's comparison details cannot be linked"
   })
   expect_true(paste("Comparison details could not be linked to this finding. It was saved without",
     "the name of the output or the failure stage it refers to.") %in% legacy)
-  expect_true(all(c("Recorded symptom: dataset output assessment - failed (reference_comparison)",
+  expect_true(all(c("Recorded symptom: `dataset output assessment - failed (reference_comparison)`",
     "- Bundle attempt: `bundle_attempt_001`", "### Suggested by the AI (not verified)") %in% legacy))
   expect_false(any(grepl(paste0(facts, "|^- Output:"), legacy)))
 
@@ -1045,7 +1045,7 @@ test_that("the draft tells configured keys from the keys used, and shows recorde
   run <- draft_run(state, "E1")
   lines <- draft_lines(run$report)
   expect_true(all(c("- Keys configured: `usubjid`", "- Keys rows were paired on: `usubjid`, `aseq`",
-    "- Records paired: 6", "Observed difference: value: 6 constant difference (absolute 1)") %in% lines))
+    "- Records paired: 6", "Observed difference: `value: 6 constant difference (absolute 1)`") %in% lines))
 
   expect_false(any(grepl("unpaired rows", lines)))
   expect_false(BUG_REPORT_KEY_PAIRS %in% lines)
@@ -1154,4 +1154,68 @@ test_that("the key record stays out of the model request, and no row value enter
     grep("^<nav>", html)[[1L]] - 1L)]
   expect_true(any(grepl("12 pairs agree on the other key columns", section, fixed = TRUE)))
   expect_false(any(grepl("SENTINEL|424242|737373", section)))
+})
+
+test_that("the Markdown export writes the run's and the model's sentences as literal text", {
+  run <- draft_run(draft_state(), "E2", code = "x <- 1")
+  plain <- draft_lines(run$report)
+  # The model's four sentences, saved with everything a Markdown reader acts on.
+  hostile <- list(
+    explanation = "Fix in step 2.\n\n# Not a heading\n- not a list\r\n1. not a step\tcc @someone see #12  ",
+    expected = "use `sas_sum()` then ``` a fence",
+    uncertainty = "`x` and `y`",
+    next_step = paste("<details><summary>s</summary> <!-- [a](https://example.com)",
+      "![i](https://example.com/i.png) _TYPE_ **b** | t | \\ https://example.com"))
+  changed <- draft_changed(run$report, function(report) {
+    finding <- report$package_bug_diagnosis$findings[[1L]]
+    report$package_bug_diagnosis$findings[[1L]] <- utils::modifyList(finding, hostile)
+    report
+  })
+  lines <- draft_lines(changed)
+  expected <- c(
+    "Suggested cause: `Fix in step 2. # Not a heading - not a list 1. not a step cc @someone see #12`",
+    "Expected behavior: ````use `sas_sum()` then ``` a fence````",
+    "Uncertainty: `` `x` and `y` ``",
+    paste("Next step: `<details><summary>s</summary> <!-- [a](https://example.com)",
+      "![i](https://example.com/i.png) _TYPE_ **b** | t | \\ https://example.com`"))
+  expect_identical(lines[grepl("^(Suggested cause|Expected behavior|Uncertainty|Next step): ", lines)], expected)
+  # Each sentence is one line, so the draft has the lines it had, and only
+  # those four differ. No heading, list item or blank line was added.
+  expect_length(lines, length(plain))
+  expect_identical(which(lines != plain), match(expected, lines))
+  expect_identical(lines[grepl("^#", lines)], plain[grepl("^#", plain)])
+  expect_identical(grepl("^- ", lines), grepl("^- ", plain))
+  # What the run recorded is written the same way; the package's own words are not.
+  expect_true(all(c("Recorded symptom: `dataset output assessment - failed (reference_comparison)`",
+    "Suspected package step: runtime helpers") %in% lines))
+  expect_identical(sum(grepl("^Observed difference: `.*`$", lines)), 1L)
+  expect_identical(bug_report_markdown(list(draft_statement("Observed difference",
+    "_type_: 3 mismatches", literal = TRUE))), c("Observed difference: `_type_: 3 mismatches`", ""))
+
+  # The page shows the same sentences, escaped, each on one line.
+  report <- read_json_record(changed, simplifyVector = FALSE)
+  html <- bug_report_html(bug_report_content(report))
+  expect_true(all(c("<p>Suggested cause: Fix in step 2. # Not a heading - not a list 1. not a step cc @someone see #12</p>",
+    "<p>Uncertainty: `x` and `y`</p>") %in% html))
+  expect_true(any(startsWith(html, "<p>Next step: &lt;details&gt;&lt;summary&gt;s&lt;/summary&gt; &lt;!-- [a]")))
+  expect_false(any(grepl("<details|<!--|<summary", html)))
+
+  # A sentence of nothing but spaces and line breaks is left out, in both.
+  blank <- draft_changed(run$report, function(report) {
+    report$package_bug_diagnosis$findings[[1L]]$uncertainty <- " \n\t "
+    report
+  })
+  expect_false(any(grepl("^Uncertainty", draft_lines(blank))))
+  expect_false(any(grepl("Uncertainty", bug_report_html(bug_report_content(read_json_record(blank, simplifyVector = FALSE))))))
+
+  # Proposed code sits inside a fence longer than any run of backticks in it.
+  fenced <- draft_changed(run$report, function(report) {
+    report$package_bug_diagnosis$findings[[1L]]$repro_r <- "x <- '```'\n```` <- 1\n# @someone"
+    report
+  })
+  code <- draft_lines(fenced)
+  open <- match("`````r", code)
+  expect_false(is.na(open))
+  expect_identical(code[open + 1:4], c("x <- '```'", "```` <- 1", "# @someone", "`````"))
+  expect_identical(sum(grepl("^`{5,}", code)), 2L)
 })

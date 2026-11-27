@@ -54,6 +54,13 @@ runs examples, and it sends nothing anywhere. The draft holds your
 project's dataset and variable names, and the model's text and code may
 reflect the project evidence it was given. Read it and decide what to
 include.
+
+The Markdown file is written to be pasted into an issue. Names, and each
+sentence taken from the run or from the model, are written as literal text
+on one line, inside code marks, and proposed code is inside a code fence.
+Nothing in them is read as Markdown: a name such as \verb{_TYPE_} keeps its
+underscores, and a line break, a \verb{#} or a user mention in the model's text
+does not start a new paragraph, a heading or a notification.
 }
 \seealso{
 \code{\link[=sas_translate]{sas_translate()}}, \code{\link[=sas_config]{sas_config()}}
