@@ -68,4 +68,6 @@ update semantics. Preserve genuinely overlapping source columns; do not remove
 them to silence the helper. If the DATA step truly creates an uninitialized
 numeric variable, use `df$score <- rep(NA_real_, nrow(df))` at that source stage.
 This also works with zero rows. A required input column absent from incompatible
-data does not authorize guessed values or alternative filters.
+data does not authorize guessed values or alternative filters. A variable an
+expression reads that the merged inputs may not carry goes through
+`sas_uninitialized()`, after the merge.

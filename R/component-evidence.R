@@ -769,6 +769,7 @@ record_program_smoke <- function(history, result) {
     blocked_by = result$blocked_by,
     condition = result$condition,
     population_checks = result$population_checks,
+    log_notes = result$log_notes,
     execution_id = result$execution_id,
     created_at = strftime(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )))

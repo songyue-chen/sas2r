@@ -753,6 +753,38 @@ lib_delete <- function(libref, members) {
   invisible(unique(stem(targets)))
 }
 
+sas_uninitialized <- function(df, vars, type = "numeric") {
+  if (!is.data.frame(df)) stop("sas_uninitialized(): df must be a data frame", call. = FALSE)
+  if (!is.character(vars) || anyNA(vars) || !all(grepl("^[A-Za-z_][A-Za-z0-9_]*$", vars))) {
+    stop("sas_uninitialized(): vars names each variable as a string", call. = FALSE)
+  }
+  if (!is.character(type) || length(type) != 1L || !type %in% c("numeric", "character")) {
+    stop('sas_uninitialized(): type is "numeric" or "character"', call. = FALSE)
+  }
+  absent <- vars[!tolower(vars) %in% tolower(names(df))]
+  absent <- absent[!duplicated(tolower(absent))]
+  if (!length(absent)) return(df)
+  value <- if (identical(type, "character")) NA_character_ else NA_real_
+  for (name in absent) df[[name]] <- rep(value, nrow(df))
+  # A run reads the notes of each program from here; a script that loaded no
+  # registry still gets the columns and the printed note.
+  env <- tryCatch(sas2r_registry_env(), error = function(e) NULL)
+  if (!is.null(env)) {
+    notes <- get0(".sas2r_log_notes", envir = env, inherits = FALSE)
+    if (!is.list(notes)) notes <- list()
+    for (name in absent) {
+      notes[[length(notes) + 1L]] <- list(note = "uninitialized_variable", variable = name,
+        type = type, rows = nrow(df))
+    }
+    assign(".sas2r_log_notes", notes, envir = env)
+  }
+  for (name in absent) {
+    message(structure(class = c("sas2r_uninitialized_variable", "message", "condition"),
+      list(message = paste0("NOTE: Variable ", name, " is uninitialized.\n"), call = NULL, variable = name)))
+  }
+  df
+}
+
 # Runtime helpers: PROC SORT and MERGE. Part of the runtime every translated
 # program carries; see ?sas2r_runtime.
 

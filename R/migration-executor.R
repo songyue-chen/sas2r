@@ -412,15 +412,19 @@ run_program_smoke <- function(
     diagnostics <- new.env(parent = emptyenv())
     diagnostics$current <- component_id
     diagnostics$population_checks <- list()
+    diagnostics$log_notes <- list()
     diagnostics$call_names <- character()
     execute_component <- function(id, code) {
       diagnostics$current <- id
       diagnostics$call_names <- character()
       if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
+      # Notes sas_uninitialized() records belong to the program that is running.
+      if (exists(".sas2r_log_notes", envir = execution_env, inherits = FALSE)) rm(".sas2r_log_notes", envir = execution_env)
       observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
         diagnostics$population_checks[[id]] <- observer$finish()
         observer$restore()
+        diagnostics$log_notes[[id]] <- get0(".sas2r_log_notes", envir = execution_env, inherits = FALSE)
       })
       withCallingHandlers(eval(parse(text = code), envir = execution_env),
         error = function(e) {
@@ -451,14 +455,15 @@ run_program_smoke <- function(
       success = TRUE,
       executed_components = executed_components,
       executed_calls = executed_calls,
-      population_checks = diagnostics$population_checks
+      population_checks = diagnostics$population_checks,
+      log_notes = diagnostics$log_notes
     )
     }, error = function(e) {
       message("Error: ", conditionMessage(e))
       list(
       success = FALSE, executed_components = executed_components,
       executed_calls = executed_calls, failed_component_id = diagnostics$current,
-      population_checks = diagnostics$population_checks,
+      population_checks = diagnostics$population_checks, log_notes = diagnostics$log_notes,
       # The same record a bundle failure gets, so both are classified alike.
       condition = c(format_condition(e, format_call),
                     list(call_names = diagnostics$call_names, component_id = diagnostics$current))
@@ -564,6 +569,7 @@ run_program_smoke <- function(
     failed_component_id = condition$component_id %||% NULL,
     blocked_by = if (!is.null(condition$component_id) && !identical(condition$component_id, component_id)) condition$component_id else NULL,
     population_checks = res$population_checks %||% list(),
+    log_notes = run_log_notes(res$log_notes),
     executed_component_ids = if (passed) c(names(dep_codes), component_id) else (res$executed_components %||% character()),
     executed_call_ids = if (passed && nzchar(call_site_str)) "call_site_1" else character(),
     stdout_path = stdout_path,
@@ -982,10 +988,14 @@ run_bundle_attempt <- function(
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
     population_checks <- list()
+    log_notes <- list()
     diagnostics <- new.env(parent = emptyenv())
     for (item in execution_order) {
       assign(".sas2r_registry", registry_seed, envir = execution_env)
-      writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
+      # Notes sas_uninitialized() records belong to the program that is running.
+      if (exists(".sas2r_log_notes", envir = execution_env, inherits = FALSE)) rm(".sas2r_log_notes", envir = execution_env)
+      writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks,
+        log_notes = log_notes), auto_unbox = TRUE), status_file)
       candidates <- c(
         file.path(bundle_dir, program_files[[item]]),
         file.path(bundle_dir, item),
@@ -1012,19 +1022,22 @@ run_bundle_attempt <- function(
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
+          log_notes[[item]] <- get0(".sas2r_log_notes", envir = execution_env, inherits = FALSE)
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
-            population_checks = population_checks, call_names = diagnostics$call_names), auto_unbox = TRUE), status_file)
+            population_checks = population_checks, log_notes = log_notes,
+            call_names = diagnostics$call_names), auto_unbox = TRUE), status_file)
         })
         bindings <- get(".sas2r_registry", envir = execution_env)
         for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))
         executed <- c(executed, item)
-        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
+        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks,
+          log_notes = log_notes), auto_unbox = TRUE), status_file)
       } else {
         stop(sprintf("Target program %s not found in bundle", item))
       }
     }
     list(success = TRUE, executed = executed, population_checks = population_checks,
-      output_dirs = output_dirs)
+      log_notes = log_notes, output_dirs = output_dirs)
   }
 
   startup_file <- tempfile("sas2r-empty-startup-")
@@ -1113,6 +1126,7 @@ run_bundle_attempt <- function(
     deferred_component_ids = scope$deferred_component_ids,
     deferred_reasons = scope$deferred_reasons,
     population_checks = res$population_checks %||% prog_info$population_checks %||% list(),
+    log_notes = run_log_notes(res$log_notes %||% prog_info$log_notes),
     condition = condition,
     stdout_path = stdout_path,
     stderr_path = stderr_path,

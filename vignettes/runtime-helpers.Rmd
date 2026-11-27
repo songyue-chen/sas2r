@@ -163,7 +163,7 @@ In brief, the runtime covers:
 
 | Group | Helpers |
 |---|---|
-| Data access | `lib_read()`, `lib_write()`, `sas2r_libname_assign()`, `sas2r_libname_clear()`, `sas2r_fold_names()`, the `sas2r_dataset` `$`/`[[` methods |
+| Data access | `lib_read()`, `lib_write()`, `sas2r_libname_assign()`, `sas2r_libname_clear()`, `sas2r_fold_names()`, `sas_uninitialized()`, the `sas2r_dataset` `$`/`[[` methods |
 | SAS value semantics | `chr_cmp()`, `%notin%`, `%+%`, `sas_if_else()`, `sas_sum()`, `sas_mean()`, `sas_min()`, `sas_max()`, `sas_round()`, `sas_length()`, `sas_substr()`, `sas_compress()`, `sas_display()` |
 | Sorting and merging | `sas_sort()`, `sas_merge()` |
 | Formats | `apply_format()`, `sas_put()` |

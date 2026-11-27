@@ -49,7 +49,7 @@ Attach sas2r when you want the help pages.
 \describe{
 \item{Data access}{\code{\link[=lib_read]{lib_read()}}, \code{\link[=lib_write]{lib_write()}}, \code{\link[=sas2r_libname_assign]{sas2r_libname_assign()}},
 \code{\link[=sas2r_libname_clear]{sas2r_libname_clear()}}, \code{\link[=sas2r_resolve_registry]{sas2r_resolve_registry()}},
-\code{\link[=sas2r_fold_names]{sas2r_fold_names()}}; datasets read through
+\code{\link[=sas2r_fold_names]{sas2r_fold_names()}}, \code{\link[=sas_uninitialized]{sas_uninitialized()}}; datasets read through
 \code{lib_read()} carry class \code{sas2r_dataset}, whose \code{$} and \code{[[} methods
 resolve column names case-insensitively.}
 \item{SAS value semantics}{\code{\link[=chr_cmp]{chr_cmp()}}, \code{\link[=sas_if_else]{sas_if_else()}}, \code{\link[=sas_sum]{sas_sum()}} and

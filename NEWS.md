@@ -12,6 +12,16 @@
   random failures, and the run report, the start-here page and the end-of-run
   summary now say so.
 
+- Read a variable no input supplies as missing, and report it, as SAS does.
+  A DATA step that reads such a variable does not stop in SAS; it logs
+  `NOTE: Variable X is uninitialized.` Generated programs now call the new
+  runtime helper `sas_uninitialized()` for that case. Before, a generated
+  program either stopped or filled the missing values without saying so. The
+  run report, the start-here page and the end-of-run summary list each note
+  under "SAS log notes". A name written in the call must be one the SAS source
+  uses. Where SAS stops on an absent variable (`BY`, `WHERE`, `KEEP=`,
+  `DROP=`, `RENAME=`, procedure variable lists), the generated R still stops.
+
 - Store a SAS date as an R `Date` in the datasets a migration writes. SAS keeps
   a date as a day number with a date format; generated programs still compute
   with that number, so date arithmetic is unchanged. The generated program

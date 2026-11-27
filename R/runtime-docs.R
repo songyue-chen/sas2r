@@ -40,7 +40,7 @@
 #' \describe{
 #'   \item{Data access}{[lib_read()], [lib_write()], [sas2r_libname_assign()],
 #'     [sas2r_libname_clear()], [sas2r_resolve_registry()],
-#'     [sas2r_fold_names()]; datasets read through
+#'     [sas2r_fold_names()], [sas_uninitialized()]; datasets read through
 #'     `lib_read()` carry class `sas2r_dataset`, whose `$` and `[[` methods
 #'     resolve column names case-insensitively.}
 #'   \item{SAS value semantics}{[chr_cmp()], [sas_if_else()], [sas_sum()] and
