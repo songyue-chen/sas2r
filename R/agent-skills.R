@@ -535,6 +535,12 @@ skill_flags_from_sas <- function(sas_text) {
   if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {
     flags <- c(flags, "statistical_defaults")
   }
+  # A FORMAT or ATTRIB statement, a format= option, a date literal, or one of
+  # the functions that make or measure dates. PROC FORMAT defines value
+  # formats and is not this.
+  if (grepl("(^|;)\\s*(format|attrib)\\b|\\bformat\\s*=|'[0-9]{1,2}[a-z]{3}[0-9]{2,4}'d\\b|\\b(mdy|today|datepart|intck|intnx)\\s*\\(", x, perl = TRUE)) {
+    flags <- c(flags, "sas_formats")
+  }
   unique(flags)
 }
 

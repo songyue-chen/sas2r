@@ -144,42 +144,73 @@ shows the number as a date. A SAS dataset read into R shows such a column as a
 `Date`. Generated R keeps the number, because that is what the SAS program
 computes with.
 
-A dataset written by a migration stores the column as a `Date` when both of
-these hold:
+The generated program says which columns of a dataset carry a SAS format,
+where it writes the dataset, as the SAS `FORMAT` statement did. A column given
+a date format is stored as a `Date`. Inside the generated programs nothing
+changes: `lib_read()` returns the SAS day number for such a column, so a later
+program computes exactly as the SAS does.
 
-- The SAS source gives the variable a date format in a `FORMAT` or `ATTRIB`
-  statement on the way to that output.
-- The reference dataset stores the column as a date. Where the reference has no
-  such column, the declaration must instead reach the output through DATA steps
-  and `PROC SORT` steps with no macro-generated code between them.
+This example runs entirely offline:
 
-A format travels with its variable. Where a `DROP` or `KEEP` statement or
-dataset option removes the variable on the way to the output, the declaration
-does not reach it: a variable of the same name made later is a plain number
-unless it is given a date format of its own. A date in the reference does not
-change that, and the report names the list that removed the variable. A list
-that cannot be read exactly, such as `_numeric_` or `a--b`, is treated like
-macro-generated code: the reference decides.
+<!-- sas2r-example: offline declared-date-format -->
+```r
+library(sas2r)
 
-The output is the dataset as the programs leave it. Where the reference has no
-such column, a declared date is stored as a date only if nothing that runs
-after the step that writes the output can change it. Later in the same file,
-that rules out macro-generated code and any step that can change the output. In
-another program, it rules out a step, read exactly, that can change the output:
-`PROC DATASETS` or `ALTER TABLE` on it, a sort in place with options, or a copy
-into its library. Reading the output, sorting it in place with no option, and
-clearing another library change nothing. What a macro call in another program
-does to an output is not read from the source, so only a reference checks that.
+local({
+  folder <- tempfile("adam")
+  dir.create(folder)
+  .sas2r_registry <- list(
+    adam = list(read_path = folder, write_path = folder, engine = "rds", write = "rds")
+  )
+  # 23435 is 29 February 2024 as a SAS day number; ADY is a count of days.
+  adae <- data.frame(USUBJID = "01", ASTDT = 23435, ADY = 12)
+  lib_write(adae, "adam", "adae", formats = c(astdt = "yymmdd10."))
 
-A date-like name, a plausible day number, or a date in the reference changes
-nothing alone. Inside the generated programs nothing changes either:
-`lib_read()` returns the SAS day number for these columns, so a later program
-computes exactly as the SAS does.
+  stored <- readRDS(file.path(folder, "adae.rds"))
+  read_back <- lib_read("adam", "adae")
+  stopifnot(
+    inherits(stored$ASTDT, "Date"), format(stored$ASTDT) == "2024-02-29",
+    identical(stored$ADY, 12), identical(read_back$ASTDT, 23435)
+  )
+  unlink(folder, recursive = TRUE)
+})
+```
+
+Two checks stand behind a declaration, and a program that fails either is sent
+back for repair:
+
+- It is written out in the program as `c(column = "format.")` with string
+  constants, so what a program declares can be read from its code and cannot
+  depend on a file read while it runs.
+- The format is one the SAS source gives that variable in a `FORMAT` or
+  `ATTRIB` statement, or one the source uses in a statement whose variables
+  cannot be read by name (a macro reference, a list such as `x1-x5`, a
+  `format=` option).
+
+A reference dataset decides nothing. The same programs write the same column
+types with or without one, and the reference is compared afterwards. A
+date-like name, a plausible day number, or a date in the reference types
+nothing.
+
+How a format is inherited from a dataset a step reads, and lost when a variable
+is dropped, is part of translating the program. The `sas-formats-and-dates`
+skill gives those rules to the translator, the reviewer and the fixer. The
+checks above show that a declaration was not invented. They do not show that
+the format reaches the output: a format the source gives a variable that is
+later dropped and created again could still be declared by a mistaken
+translation. With a reference, the comparison reports that as a type
+difference.
 
 The run report's "Date Columns" section lists each column stored as a date with
-the statement that declares it, and each declared column left as a number with
-the reason. A column left as a number against a date in the reference is still
-reported as a type difference, and its values are not compared.
+its format, each declared column left as a number with the reason, and each
+column the reference stores as a date that the program does not declare. A
+column left as a number against a date in the reference is still reported as a
+type difference, and its values are not compared.
+
+A date column read from an input file arrives as a `Date` and, passed on
+untouched, is written as one. A dataset whose name is worked out while a
+program runs is read back as day numbers within that run; a program run on its
+own in another session reads it as stored.
 
 The formats covered are the ones a SAS file's date columns are read back with:
 `DATE`, `YYMMDD`, `MMDDYY` and `DDMMYY` with their separator variants,

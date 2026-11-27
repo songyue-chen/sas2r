@@ -12,22 +12,34 @@
   random failures, and the run report, the start-here page and the end-of-run
   summary now say so.
 
+- Read a variable no input supplies as missing, and report it, as SAS does.
+  A DATA step that reads such a variable does not stop in SAS; it logs
+  `NOTE: Variable X is uninitialized.` Generated programs now call the new
+  runtime helper `sas_uninitialized()` for that case. Before, a generated
+  program either stopped or filled the missing values without saying so. The
+  run report, the start-here page and the end-of-run summary list each note
+  under "SAS log notes". A name written in the call must be one the SAS source
+  uses. Where SAS stops on an absent variable (`BY`, `WHERE`, `KEEP=`,
+  `DROP=`, `RENAME=`, procedure variable lists), the generated R still stops.
+
 - Store a SAS date as an R `Date` in the datasets a migration writes. SAS keeps
   a date as a day number with a date format; generated programs still compute
-  with that number, so date arithmetic is unchanged, and a later program that
-  reads the dataset with `lib_read()` receives the number again. A column is
-  stored as a date only when the SAS source gives it a date format in a
-  `FORMAT` or `ATTRIB` statement and either the reference dataset stores that
-  column as a date or, where no reference column exists, every step between the
-  declaration and the output is free of macro-generated code. A variable
-  removed by `DROP` or `KEEP` on the way takes its format with it, so a later
-  variable of the same name is not a date. Where a later step can change the
-  output after it is written, such as macro-generated code in the same file or
-  `PROC DATASETS` on that dataset, only a reference confirms the date. The run
-  report lists each such column with its declaration, and each declared column
-  left as a number with the reason. A reference comparison of such a column now checks
-  the calendar date; before, the column failed on type and its values were not
-  compared. Datetime and time formats are not covered and stay numbers.
+  with that number, so date arithmetic is unchanged. The generated program
+  states the format where it writes the dataset, as the SAS `FORMAT` statement
+  did: `lib_write(df, "lib", "member", formats = c(visitdt = "date9."))`. A
+  column given a date format is stored as a date, and a later program that
+  reads the dataset with `lib_read()` receives the day number again. The
+  result is the same with or without a reference dataset: a reference is
+  compared afterwards and decides nothing. A declaration must be written out
+  in the program and must be a format the SAS source gives that variable, or
+  the program fails its checks. A new skill, `sas-formats-and-dates`, tells
+  the translator, reviewer and fixer how SAS formats are inherited and lost.
+  The run report lists each column stored as a date, each declared column left
+  as a number with the reason, and each column a reference stores as a date
+  that the program does not declare. A reference comparison of a date column
+  now checks the calendar date; before, the column failed on type and its
+  values were not compared. Datetime and time formats are not covered and stay
+  numbers.
 
 - Fix `lib_write()` for a library written as XPT. Every write failed with
   "A provided name contains an illegal character".

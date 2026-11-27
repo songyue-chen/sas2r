@@ -473,6 +473,16 @@ sas2r_fold_names <- function(df) {
 #' the canonical form in the message, so a wrong call in an agent translation
 #' becomes repair feedback instead of being silently reinterpreted.
 #'
+#' `lib_write()` also takes `formats`, the SAS formats the program gives the
+#' dataset's variables, as a `FORMAT` statement does:
+#' `lib_write(df, "lib", "member", formats = c(visitdt = "date9."))`. A SAS
+#' date is a day number from 1 January 1960 with a format that shows it as a
+#' date, and generated R keeps that number. A column given a date format here
+#' is stored as an R `Date`, and `lib_read()` hands a later program the SAS day
+#' number again, so date arithmetic is unchanged. Only a plain numeric column
+#' whose values convert back exactly is stored that way; a format that is not
+#' a date format changes nothing. Datetime and time formats are not covered.
+#'
 #' The registry is the `.sas2r_registry` list a bundle's `autoexec.R`
 #' defines; in a translated program it is loaded by the bootstrap header. To
 #' use these helpers interactively, create `runtime <- new.env()` and source
@@ -482,6 +492,8 @@ sas2r_fold_names <- function(df) {
 #' @param libref The libref, as a single string.
 #' @param member The dataset member name, as a single string.
 #' @param df The data frame to write.
+#' @param formats A named character vector, column name to SAS format, written
+#'   as it is in SAS (`"yymmdd10."`). `NULL` when the program gives no format.
 #' @param ... Not used; present so a rejected alias fails with a clear message.
 #' @return `lib_read()` returns the dataset with class `sas2r_dataset`;
 #'   `lib_write()` returns `df`, invisibly.
@@ -553,8 +565,9 @@ lib_read <- function(libref, member, ...) {
   else if (target$type == "sas7bdat") haven::read_sas(target$path)
   else if (target$type == "xpt") haven::read_xpt(target$path)
   # SAS keeps a date as a number of days from 1960-01-01 and a format that says
-  # to show it as a date. A column the SAS source declares that way is stored
-  # as an R Date (see lib_write()) and handed back here as the SAS number, so
+  # to show it as a date. A column a program gave a date format when it wrote
+  # the dataset is stored as an R Date (see lib_write()) and handed back here
+  # as the SAS number, so
   # date arithmetic in a later program is the SAS arithmetic. The format
   # attribute goes with the class: R arithmetic copies attributes, and a
   # duration computed from two dates must not look like a date.
@@ -579,13 +592,19 @@ lib_read <- function(libref, member, ...) {
 
 #' @rdname lib_read
 #' @export
-lib_write <- function(df, libref, member, ...) {
-  # Exactly one call form: lib_write(df, "lib", "member"), data frame first.
+lib_write <- function(df, libref, member, formats = NULL, ...) {
+  # Exactly one call form: lib_write(df, "lib", "member"), data frame first,
+  # with the optional formats = c(column = "format.") after it.
   # See lib_read() for why the other forms are rejected rather than absorbed.
   canonical <- 'lib_write(df, "lib", "member")'
   if (length(list(...)) > 0L) {
     sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write(): dataset=/table= aliases are not accepted; use ",
          canonical))
+  }
+  if (!is.null(formats) && (!is.character(formats) || is.null(names(formats)) || anyNA(formats) ||
+      anyNA(names(formats)) || !all(nzchar(names(formats))) || anyDuplicated(tolower(names(formats))) > 0L)) {
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write(): formats names each column once with its SAS format; use ",
+         canonical, ' with formats = c(column = "date9.")'))
   }
   if (missing(df)) {
     sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the data frame first; use ", canonical))
@@ -620,34 +639,43 @@ lib_write <- function(df, libref, member, ...) {
   fmt <- if (is.null(reg$write)) "rds" else reg$write
   df <- as.data.frame(df)
   if (!fmt %in% c("rds", "xpt")) sas2r_libref_stop("sas2r_write_format", paste0("Unsupported write format: ", fmt))
-  # A column the SAS source declares with a date format (`.sas2r_output_dates`
-  # in `_sas2r_formats.R`, one entry per output dataset) is stored as an R
-  # Date. Only what is stored changes: the program keeps, and is returned, its
-  # own data, and lib_read() gives a later program the SAS day number again.
+  # A SAS date is a day number with a format that shows it as a date. A column
+  # the program gives a date format, in `formats`, is stored as an R Date. Only
+  # what is stored changes: the program keeps, and is returned, its own data,
+  # and lib_read() gives a later program the SAS day number again.
   # A column is converted only when it is a plain number and every value comes
   # back exactly, so reading returns the numbers written; one value that would
   # not, such as some fractional day counts, leaves the whole column as it is.
   # A missing value is never computed on, which keeps a special missing
   # value's tag. A column that is already a Date is left.
+  # The date formats are the ones haven reads back as a date.
   stored <- df
-  dates <- get0(".sas2r_output_dates", envir = sas2r_registry_env(), inherits = TRUE)
-  dates <- if (is.list(dates)) dates[[tolower(paste(libref, member, sep = "."))]]
-  if (is.character(dates) && !is.null(names(dates))) {
-    origin <- -as.numeric(as.Date("1960-01-01"))
-    for (name in names(dates)) {
-      at <- which(tolower(names(stored)) == tolower(name))
-      if (length(at) != 1L) next
-      x <- stored[[at]]
-      if (!is.numeric(x) || !is.null(oldClass(x))) next
-      present <- !is.na(x)
-      shifted <- as.double(x[present]) - origin
-      if (!identical(shifted + origin, as.double(x[present]))) next
-      storage.mode(x) <- "double"
-      x[present] <- shifted
-      if (is.null(attr(x, "format.sas", exact = TRUE))) attr(x, "format.sas") <- dates[[name]]
-      class(x) <- "Date"
-      stored[[at]] <- x
-    }
+  dates <- character()
+  if (length(formats)) {
+    declared <- toupper(sub("[.][0-9]*$", "", trimws(formats)))
+    is_date <- grepl("^(DATE|WEEKDATE|(YYMMDD|MMDDYY|DDMMYY)[BCDNPS]?|E8601DA|B8601DA|IS8601DA)[0-9]*$", declared)
+    dates <- declared[is_date]
+    names(dates) <- tolower(names(formats)[is_date])
+  }
+  as_dates <- character()
+  origin <- -as.numeric(as.Date("1960-01-01"))
+  for (name in names(dates)) {
+    at <- which(tolower(names(stored)) == name)
+    if (length(at) != 1L) next
+    x <- stored[[at]]
+    # A declared column that is a Date already is stored as it is, and is
+    # read back as a day number like any other declared date.
+    if (inherits(x, "Date")) { as_dates[[name]] <- dates[[name]]; next }
+    if (!is.numeric(x) || !is.null(oldClass(x))) next
+    present <- !is.na(x)
+    shifted <- as.double(x[present]) - origin
+    if (!identical(shifted + origin, as.double(x[present]))) next
+    storage.mode(x) <- "double"
+    x[present] <- shifted
+    if (is.null(attr(x, "format.sas", exact = TRUE))) attr(x, "format.sas") <- dates[[name]]
+    class(x) <- "Date"
+    stored[[at]] <- x
+    as_dates[[name]] <- dates[[name]]
   }
   target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
   pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
@@ -657,6 +685,18 @@ lib_write <- function(df, libref, member, ...) {
   if (fmt == "rds") saveRDS(stored, pending) else
     haven::write_xpt(stored, pending, name = sub("[.]xpt$", "", basename(target), ignore.case = TRUE))
   if (!file.rename(pending, target)) sas2r_libref_stop("sas2r_library_unavailable", paste0("Could not replace dataset member: ", target))
+  # lib_read() returns the day number for the columns stored as dates here. A
+  # bundle's `_sas2r_formats.R` lists the same columns for a program run in
+  # another session; this keeps the list right within one, also for a member
+  # written again without the format.
+  env <- sas2r_registry_env()
+  known <- get0(".sas2r_output_dates", envir = env, inherits = TRUE)
+  key <- tolower(paste(libref, member, sep = "."))
+  if (length(as_dates) || (is.list(known) && !is.null(known[[key]]))) {
+    if (!is.list(known)) known <- list()
+    known[[key]] <- if (length(as_dates)) as_dates else NULL
+    assign(".sas2r_output_dates", known, envir = env)
+  }
   invisible(df)
 }
 
@@ -730,4 +770,70 @@ lib_delete <- function(libref, members) {
       paste0("Could not delete all requested datasets in ", write_dir))
   }
   invisible(unique(stem(targets)))
+}
+
+#' Read variables no input supplied as missing, as a SAS DATA step does
+#'
+#' A SAS DATA step may read a variable that none of its inputs carries and
+#' that it never assigns. SAS does not stop: it creates the variable, leaves
+#' it missing in every row, and writes `NOTE: Variable X is uninitialized.` to
+#' the log. `sas_uninitialized()` does the same for a data frame. Each named
+#' variable that is absent is added as a missing column, and the note is
+#' printed and recorded, so a migration run lists it in its report. A
+#' variable that is present, in any letter case, is left as it is and gives
+#' no note.
+#'
+#' Use it where a step reads a variable in an expression (an assignment, an
+#' `IF` condition, a function or macro argument) and its inputs may not carry
+#' that variable. Apply it to the frame the step computes on, after its
+#' inputs are read and merged, never to one input of a merge. Write no
+#' separate test for the column, no fallback value and no `stop()` for that
+#' case. Name only variables the SAS source reads.
+#'
+#' SAS itself stops, and so must the R, when the absent variable is named in
+#' `BY`, in `WHERE`, in `KEEP=`, `DROP=` or `RENAME=` on an input dataset, or
+#' in the variable list of a procedure. Do not use this helper there.
+#'
+#' @param df A data frame.
+#' @param vars Character vector naming the variables the step reads.
+#' @param type `"numeric"`, the SAS type of a variable first met in an
+#'   expression, or `"character"` for a variable the step declares character
+#'   with `LENGTH`, `ATTRIB` or a `$` format.
+#' @return `df`, with a missing column for each absent variable, named as
+#'   given in `vars`.
+#' @seealso [sas2r_runtime]
+#' @examples
+#' dm <- data.frame(usubjid = c("01", "02"))
+#' sas_uninitialized(dm, c("USUBJID", "randdtc"))
+#' @export
+sas_uninitialized <- function(df, vars, type = "numeric") {
+  if (!is.data.frame(df)) stop("sas_uninitialized(): df must be a data frame", call. = FALSE)
+  if (!is.character(vars) || anyNA(vars) || !all(grepl("^[A-Za-z_][A-Za-z0-9_]*$", vars))) {
+    stop("sas_uninitialized(): vars names each variable as a string", call. = FALSE)
+  }
+  if (!is.character(type) || length(type) != 1L || !type %in% c("numeric", "character")) {
+    stop('sas_uninitialized(): type is "numeric" or "character"', call. = FALSE)
+  }
+  absent <- vars[!tolower(vars) %in% tolower(names(df))]
+  absent <- absent[!duplicated(tolower(absent))]
+  if (!length(absent)) return(df)
+  value <- if (identical(type, "character")) NA_character_ else NA_real_
+  for (name in absent) df[[name]] <- rep(value, nrow(df))
+  # A run reads the notes of each program from here; a script that loaded no
+  # registry still gets the columns and the printed note.
+  env <- tryCatch(sas2r_registry_env(), error = function(e) NULL)
+  if (!is.null(env)) {
+    notes <- get0(".sas2r_log_notes", envir = env, inherits = FALSE)
+    if (!is.list(notes)) notes <- list()
+    for (name in absent) {
+      notes[[length(notes) + 1L]] <- list(note = "uninitialized_variable", variable = name,
+        type = type, rows = nrow(df))
+    }
+    assign(".sas2r_log_notes", notes, envir = env)
+  }
+  for (name in absent) {
+    message(structure(class = c("sas2r_uninitialized_variable", "message", "condition"),
+      list(message = paste0("NOTE: Variable ", name, " is uninitialized.\n"), call = NULL, variable = name)))
+  }
+  df
 }

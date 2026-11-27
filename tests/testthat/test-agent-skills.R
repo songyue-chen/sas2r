@@ -2,7 +2,7 @@ test_that("installed package skills validate with stable hashes", {
   skills <- sas2r:::agent_skill_catalog()
   expect_setequal(names(skills),
                   c("sas-missing-sort-semantics", "sas-dataset-row-alignment", "sas-statistical-defaults",
-                    "sas-macro-execution", "sas-native-graphics", "tidyverse-idioms"))
+                    "sas-macro-execution", "sas-native-graphics", "tidyverse-idioms", "sas-formats-and-dates"))
   expect_true(all(vapply(skills, function(x)
     grepl("^[a-f0-9]{64}$", x$content_hash), logical(1))))
   expect_true(all(vapply(skills, function(x)
@@ -413,6 +413,17 @@ test_that("curated skill files contain required domain concepts", {
   expect_match(align_skill$body, "multiset", ignore.case = TRUE, all = FALSE)
   expect_match(align_skill$body, "unique", ignore.case = TRUE, all = FALSE)
   expect_match(align_skill$body, "order", ignore.case = TRUE, all = FALSE)
+
+  # sas-formats-and-dates
+  date_skill <- skills[["sas-formats-and-dates"]]
+  expect_false(is.null(date_skill))
+  for (concept in c("1 January 1960", "day number", "FORMAT", "ATTRIB", "DROP", "KEEP", "RENAME",
+                    "lib_write", "formats = c(", "string constants", "input file", "Do not declare")) {
+    expect_match(date_skill$body, concept, fixed = TRUE, all = FALSE, info = concept)
+  }
+  # A routed skill's whole text goes into the request, so it stays short.
+  expect_lte(length(strsplit(date_skill$body, "\n", fixed = TRUE)[[1]]), 80L)
+  expect_setequal(date_skill$agents, c("translator", "reviewer", "fixer"))
 })
 
 test_that("sort metadata deterministically routes missing-sort guidance", {
@@ -577,6 +588,28 @@ test_that("skill flags derive from SAS source order semantics", {
   expect_identical(skill_flags_from_sas("proc sort data=a; by k; run;"),
                    "order_dependent")
   expect_identical(skill_flags_from_sas("x = 1;"), character(0))
+})
+
+test_that("format and date code is flagged, and PROC FORMAT is not", {
+  for (text in c("format adt yymmdd10.;", "data a; set b;\n  attrib adt format=date9.;", "select x format=date9. from b;",
+                 "cutoff = '01JAN2020'd;", "n = intck('day', a, b);", "d = mdy(1, 2, 2020);")) {
+    expect_identical(skill_flags_from_sas(text), "sas_formats", info = text)
+  }
+  for (text in c("proc format; value yn 1 = 'Y'; run;", "informat adt yymmdd10.;", "x = formatted + 1;")) {
+    expect_identical(skill_flags_from_sas(text), character(0), info = text)
+  }
+})
+
+test_that("the formats skill routes for a component that formats a variable, and not otherwise", {
+  rendered <- function(step) {
+    dir <- withr::local_tempdir()
+    writeLines(c("data adam.out;", "  set adam.adsl;", step, "run;"), file.path(dir, "prog.sas"))
+    proj <- sas_project(dir)
+    baseline <- sas_transpile(proj, withr::local_tempdir())
+    build_translator_context("prog", proj, baseline = baseline, graph = build_dependency_graph(proj))$rendered_skills
+  }
+  expect_match(rendered("  format trtsdt date9.;"), "sas-formats-and-dates")
+  expect_no_match(rendered("  x = 1;") %||% "", "sas-formats-and-dates")
 })
 
 test_that("ordering skills route for translator components with retain or by-group logic", {

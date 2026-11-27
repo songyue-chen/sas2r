@@ -677,7 +677,9 @@ generate_program_revision <- function(
       }
       lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(lint_code, allowlist = config$allowlist) else NULL
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
-      binding_errors <- check_component_library_assignments(tr_data$r_code, project, component_id)
+      binding_errors <- c(check_component_library_assignments(tr_data$r_code, project, component_id),
+        check_declared_date_formats(tr_data$r_code, project),
+        check_uninitialized_names(tr_data$r_code, project))
 
       if (inherits(parsed_chk, "error") || has_lint_err || length(binding_errors)) {
         err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(
