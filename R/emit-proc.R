@@ -199,8 +199,8 @@ compile_format_catalog <- function(project) {
 
 #' Write compiled format catalog to file
 #'
-#' Emits `_sas2r_formats.R` containing `.sas2r_formats` and, when the SAS
-#' source declares output columns as dates, `.sas2r_output_dates`.
+#' Emits `_sas2r_formats.R` containing `.sas2r_formats` and, when the
+#' generated programs declare output columns as dates, `.sas2r_output_dates`.
 #'
 #' @param catalog Named list of format definitions from `compile_format_catalog()`.
 #' @param out_dir Output directory path.
@@ -216,9 +216,10 @@ write_formats <- function(catalog, out_dir, output_dates = list()) {
                paste0(".sas2r_formats <- ",
                       paste(deparse(catalog, control = "all"), collapse = "\n")),
                if (length(output_dates)) c(
-                 "# Output columns the SAS source declares as dates. lib_write() stores them",
-                 "# as R Date; lib_read() returns the SAS day number, so date arithmetic in",
-                 "# a later program is unchanged. Remove an entry to store the number.",
+                 "# Output columns the programs of this bundle give a SAS date format in",
+                 "# lib_write(). They are stored as R Date; this list lets lib_read() return",
+                 "# the SAS day number to a program run on its own, so date arithmetic is",
+                 "# unchanged. It is rebuilt from the programs each time the bundle is written.",
                  paste0(".sas2r_output_dates <- ",
                         paste(deparse(output_dates, control = "all"), collapse = "\n")))),
              path)

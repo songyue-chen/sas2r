@@ -74,7 +74,8 @@ find_isna_vars <- function(e) {
 #'   `kind`, and `detail`.
 #' @noRd
 # The bundle helpers accept exactly one call form each -- lib_read("lib",
-# "member") and lib_write(df, "lib", "member") -- and fail loudly otherwise.
+# "member") and lib_write(df, "lib", "member"), the latter with an optional
+# formats = c(column = "format.") -- and fail loudly otherwise.
 # Flagging the other forms statically turns a wrong call into repair feedback
 # in the immediate loop, before a smoke run spends a subprocess on it. Only
 # literal arguments can be judged; symbolic calls pass through to the runtime.
@@ -110,8 +111,25 @@ lib_call_misuse <- function(e, fname) {
                      fname, canonical))
     }
     need <- if (identical(fname, "lib_read")) 2L else 3L
-    if (length(args) < need) {
+    if (length(args[nms != "formats"]) < need) {
       return(sprintf("%s() needs both a libref and a member; use %s", fname, canonical))
+    }
+    # lib_write() takes the SAS formats of the dataset's variables as one named
+    # argument. It has to be written out, so that what a program declares can
+    # be read from its code and never depends on anything read at run time.
+    if (identical(fname, "lib_write")) {
+      written <- 'formats = c(column = "date9.")'
+      if (length(positional) > 3L) {
+        return(sprintf("lib_write() takes formats by name; use %s with %s", canonical, written))
+      }
+      if ("formats" %in% nms) {
+        declared <- declared_write_formats(paste(deparse(e), collapse = "\n"))
+        declared <- if (length(declared)) declared[[1L]]
+        if (is.null(declared$formats)) {
+          return(sprintf("lib_write(): write formats out with a name and a string for each column; use %s with %s",
+                         canonical, written))
+        }
+      }
     }
     NULL
   }, error = function(err) NULL)

@@ -7,7 +7,7 @@
 \usage{
 lib_read(libref, member, ...)
 
-lib_write(df, libref, member, ...)
+lib_write(df, libref, member, formats = NULL, ...)
 }
 \arguments{
 \item{libref}{The libref, as a single string.}
@@ -17,6 +17,9 @@ lib_write(df, libref, member, ...)
 \item{...}{Not used; present so a rejected alias fails with a clear message.}
 
 \item{df}{The data frame to write.}
+
+\item{formats}{A named character vector, column name to SAS format, written
+as it is in SAS (\code{"yymmdd10."}). \code{NULL} when the program gives no format.}
 }
 \value{
 \code{lib_read()} returns the dataset with class \code{sas2r_dataset};
@@ -36,6 +39,16 @@ Exactly one call form is accepted for each. Combined \code{"lib.member"}
 strings, single-argument calls, and \verb{dataset=}/\verb{table=} aliases fail with
 the canonical form in the message, so a wrong call in an agent translation
 becomes repair feedback instead of being silently reinterpreted.
+
+\code{lib_write()} also takes \code{formats}, the SAS formats the program gives the
+dataset's variables, as a \code{FORMAT} statement does:
+\code{lib_write(df, "lib", "member", formats = c(visitdt = "date9."))}. A SAS
+date is a day number from 1 January 1960 with a format that shows it as a
+date, and generated R keeps that number. A column given a date format here
+is stored as an R \code{Date}, and \code{lib_read()} hands a later program the SAS day
+number again, so date arithmetic is unchanged. Only a plain numeric column
+whose values convert back exactly is stored that way; a format that is not
+a date format changes nothing. Datetime and time formats are not covered.
 
 The registry is the \code{.sas2r_registry} list a bundle's \code{autoexec.R}
 defines; in a translated program it is loaded by the bootstrap header. To

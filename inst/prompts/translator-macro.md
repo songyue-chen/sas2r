@@ -7,7 +7,9 @@ Constraints, in order:
 2. Data reading and writing inside the function must use lib_read("lib", "member")
    and lib_write(df, "lib", "member") -- the data frame first, then the libref and
    the member as two separate strings; combined "lib.member" strings and
-   single-argument calls are rejected at runtime.
+   single-argument calls are rejected at runtime. lib_write() also takes
+   formats = c(column = "date9."), written out, for the formats the SAS source
+   gives the dataset's variables.
    Use ONLY packages from the allowlist, plus base R and the bundle helpers.
    Allowlist: {{allowlist}}. Code outside the allowlist fails lint and may not
    exist in the runtime that executes the bundle.
