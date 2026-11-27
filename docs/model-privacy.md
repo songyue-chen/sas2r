@@ -62,9 +62,15 @@ generated program declares no date format for the column. The
 request receives no dataset records, cell values, key values, counts, file
 paths, raw logs or raw execution messages. See the
 [attribution fields](discrepancy-evidence.md#bug-triage-attribution-facts).
-`sas_bug_report()` exports the saved advice and any proposed synthetic R code
-to a local draft. Review the model's text and code for confidential information
-before sharing. The package leaves execution of the example to the reader.
+
+The issue draft on `START_HERE.html`, which `sas_bug_report()` saves as a
+Markdown file, is built on your computer from the saved report and is not sent
+anywhere. Building it asks no model and runs no example. Beside the model's
+saved text and any proposed synthetic R code, it shows what sas2r recorded for
+the output: its name, the key column names and the row counts of the
+comparison. Those row counts were never part of a model request. Read the
+draft and decide what to share. The package leaves execution of the example to
+the reader.
 
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only

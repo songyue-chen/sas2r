@@ -54,7 +54,12 @@ test_that("opt-in AI triage uses the reviewer and drafts an unrun synthetic exam
   expect_true(any(vapply(enabled$usage$records,
     function(x) identical(x$agent, "package_bug_triage"), logical(1))))
   html <- file.path(dirname(dirname(enabled$report_json_path)), "START_HERE.html")
-  expect_match(paste(readLines(html), collapse = "\n"), "Reproduction unverified", fixed = TRUE)
+  page <- paste(readLines(html), collapse = "\n")
+  expect_match(page, "Reproduction unverified", fixed = TRUE)
+  # The page holds the draft itself: what was recorded, and the example unrun.
+  expect_match(page, "<li>Failure stage: Bundle execution failed</li>", fixed = TRUE)
+  expect_match(page, "REPRO_MUST_NOT_RUN", fixed = TRUE)
+  expect_identical(finding$binding$scope, "Bundle execution failed")
 
   file <- file.path(root, "draft.md")
   expect_error(sas_bug_report(disabled, file), class = "sas2r_bug_diagnosis_disabled")
@@ -65,6 +70,8 @@ test_that("opt-in AI triage uses the reviewer and drafts an unrun synthetic exam
   expect_match(draft, "Proposed synthetic reproduction", fixed = TRUE)
   expect_match(draft, "draft R example not run", fixed = TRUE)
   expect_match(draft, "REPRO_MUST_NOT_RUN", fixed = TRUE)
+  expect_true("- Failure stage: Bundle execution failed" %in% lines)
+  expect_false(any(grepl("could not be linked", lines, fixed = TRUE)))
   expect_false(grepl("RAW_DIAGNOSTIC_SENTINEL", draft, fixed = TRUE))
   expect_error(sas_bug_report(enabled, file), class = "sas2r_record_exists")
   expect_identical(readLines(file), lines)
@@ -292,7 +299,8 @@ test_that("a type difference that holds the same values points at the write and 
   expect_identical(finding$responsible_step, "write_and_read_conversions")
   expect_true(any(grepl("Package step: write and read conversions",
     package_bug_report_lines(result$diagnosis), fixed = TRUE)))
-  expect_true("Suspected package step: write and read conversions" %in% bug_report_finding_lines(finding))
+  expect_true("Suspected package step: write and read conversions" %in%
+    bug_report_markdown(bug_report_finding_blocks(list(), finding, 1L)))
   # The flag is the only thing the second look at the data sends.
   expect_false(grepl("21000|21001|2027-|3653", result$request$messages[[2L]]$content))
 
@@ -704,7 +712,9 @@ test_that("a finding must name one of the package-owned steps", {
   result <- suppressMessages(migration_package_bug_diagnosis(state, diagnosis_mock(answer)))
   expect_true("missing field: responsible_step" %in% result$validation_errors)
   # A report saved before the field existed still renders.
-  expect_false(any(grepl("package step", bug_report_finding_lines(list(evidence_id = "E1")), ignore.case = TRUE)))
+  legacy <- bug_report_markdown(bug_report_finding_blocks(list(), list(evidence_id = "E1"), 1L))
+  expect_true("## Finding 1 [E1]" %in% legacy)
+  expect_false(any(grepl("package step", legacy, ignore.case = TRUE)))
 })
 
 test_that("the compared datasets are read again only when a request can follow", {
@@ -803,4 +813,264 @@ test_that("a revision's record says who wrote it", {
     "model_repair_with_helper_patch")
   expect_identical(revision_origin(list(r_code = "x <- 1")), "unknown")
   expect_identical(revision_origin(NULL), "unknown")
+})
+
+# The issue draft. Each case renders the saved report of a made-up run: two
+# programs, each with an output the real gate compared with a reference on the
+# configured keys. The second output is 177 rows whose key `visit` is missing
+# on 60 reference rows and 0 on the generated side, so 117 rows pair.
+
+draft_state <- function(envir = parent.frame()) {
+  reference <- data.frame(id = seq_len(177L), visit = c(rep(NA_real_, 60L), rep(1, 117L)))
+  generated <- transform(reference, visit = ifelse(is.na(visit), 0, visit))
+  small <- data.frame(id = 1:3, visit = c(1, 1, 1), value = c(11, 12, 13))
+  state <- triage_scenario(
+    c("data work.out1; set raw.input; value = value + 1; run;", "data work.out2; set raw.input; run;"),
+    c(triage_r, "lib_write(lib_read('raw', 'input'), 'work', 'out2')"),
+    list(transform(small, value = c(11, 12, 99)), generated), list(small, reference),
+    rules = list(keys = c("id", "visit")), envir = envir)
+  state$selected_attempt <- list(attempt_id = "bundle_attempt_001")
+  state
+}
+
+# Triage with a stand-in model that returns one finding on `evidence_id`, then
+# the report as a run saves it.
+draft_run <- function(state, evidence_id, code = "", envir = parent.frame()) {
+  answer <- bug_triage_answer(code)
+  answer$findings[[1L]]$evidence_id <- evidence_id
+  requests <- list()
+  llm <- diagnosis_mock(answer, function(request) requests[[length(requests) + 1L]] <<- request)
+  state$package_bug_diagnosis <- suppressMessages(migration_package_bug_diagnosis(state, llm))
+  suppressMessages(write_migration_report(state))
+  # A later run of the same state writes to the same place: keep this one.
+  kept <- withr::local_tempdir(.local_envir = envir)
+  file.copy(c(state$paths$report_json, state$paths$start_here), kept)
+  list(state = state, report = file.path(kept, basename(state$paths$report_json)),
+    page = file.path(kept, basename(state$paths$start_here)), requests = function() requests)
+}
+
+draft_lines <- function(report, envir = parent.frame()) {
+  file <- withr::local_tempfile(fileext = ".md", .local_envir = envir)
+  readLines(sas_bug_report(report, file))
+}
+
+# A saved report with changes, written back as a run would write it.
+draft_changed <- function(report, change, envir = parent.frame()) {
+  path <- withr::local_tempfile(fileext = ".json", .local_envir = envir)
+  atomic_write_json(change(read_json_record(report, simplifyVector = FALSE)), path)
+  path
+}
+
+test_that("the issue draft finds its output by the name saved with the finding", {
+  state <- draft_state()
+  # An earlier failure takes the first evidence ID: the outputs are E2 and E3.
+  state$diagnostics$component_failures <- list(p01 = list(reason = "made-up failure"))
+  third <- draft_run(state, "E3")
+  finding <- third$state$package_bug_diagnosis$findings[[1L]]
+  expect_identical(finding$binding[c("attempt_id", "scope", "target")],
+    list(attempt_id = "bundle_attempt_001", scope = "Output assessment", target = "work.out2"))
+  lines <- draft_lines(third$report)
+  expect_true(all(c("## Finding 1 [E3]", "- Output: `work.out2`", "- Failed check: `reference_comparison`",
+    "- Reference rows: 177") %in% lines))
+
+  # E2 is the first output, although the second saved assessment is the other.
+  second <- draft_lines(draft_run(state, "E2")$report)
+  expect_true(all(c("- Output: `work.out1`", "- Reference rows: 3", "- Records paired: 3") %in% second))
+  expect_false(any(grepl("177", second, fixed = TRUE)))
+
+  # The saved order of the assessments does not matter either.
+  reordered <- draft_changed(third$report, function(report) {
+    report$output_assessments <- rev(report$output_assessments)
+    report
+  })
+  expect_identical(draft_lines(reordered), lines)
+
+  # A finding about a program names its failure stage and has no output.
+  first <- draft_lines(draft_run(state, "E1")$report)
+  expect_true(all(c("- Failure stage: Component processing failed", "- Program: `p01`") %in% first))
+  expect_false(any(grepl("^- Output:|could not be linked|Records paired", first)))
+})
+
+test_that("the start-here page and the Markdown export show the same draft", {
+  state <- draft_state()
+  marker <- file.path(withr::local_tempdir(), "example-was-run")
+  code <- sprintf('file.create("%s")', gsub("\\", "/", marker, fixed = TRUE))
+  run <- draft_run(state, "E2", code)
+  # Exporting reads the saved report. It asks no model and runs no example.
+  local_mocked_bindings(request_report_advice = function(...) stop("the export asked a model"))
+  lines <- draft_lines(run$report)
+  expect_length(run$requests(), 1L)
+  expect_false(file.exists(marker))
+
+  expect_identical(lines[c(1L, 3L)], c("# Possible sas2r bug",
+    "This draft was written on your computer and has not been sent anywhere. Read it and decide what to share."))
+  recorded <- c("- Output: `work.out2`", "- Failed check: `reference_comparison`",
+    "- Keys configured: `id`, `visit`", "- Keys rows were paired on: `id`, `visit`",
+    "- Pairing method: `unique_key` (each key value names one row on each side)",
+    "- Reference rows: 177", "- Generated rows: 177", "- Records paired: 117",
+    "- Reference rows left unpaired: 60", "- Generated rows left unpaired: 60",
+    "- Row matching ran to its end: yes", "- Bundle attempt: `bundle_attempt_001`")
+  expect_identical(lines[lines %in% recorded], recorded)
+  # What the run recorded comes before what the AI suggested, each under its
+  # own heading, and the reader is asked to read and decide: nothing is to be
+  # removed for them.
+  order <- match(c("### Recorded by sas2r", recorded[[1L]], "### Suggested by the AI (not verified)",
+    "Suggested cause: The package could be dispatching the wrong helper.", code,
+    "### Result on your machine"), lines)
+  expect_false(anyNA(order))
+  expect_false(is.unsorted(order))
+  expect_true(paste("The part below holds your project's dataset and variable names, what the",
+    "comparison with the reference measured, the AI's suggested cause and its proposed example.",
+    "Read it and decide what to include.") %in% lines)
+  # The run report's own sentence for the output; it may say more than this.
+  expect_true(any(startsWith(lines, "Observed difference: Some rows could not be paired")))
+  expect_false(any(grepl("\\b(remove|delete|redact)", lines, ignore.case = TRUE)))
+  # Names and counts only: no path of the compared files.
+  target <- state$assessment$targets$work.out2
+  expect_false(any(grepl(dirname(target$reference_path), lines, fixed = TRUE)))
+
+  # The page section is the same draft, line for line, then how to save it.
+  html <- readLines(run$page)
+  section <- html[seq.int(grep("<h2>Possible sas2r bugs (AI beta)</h2>", html, fixed = TRUE) + 1L,
+    grep("^<nav>", html)[[1L]] - 1L)]
+  expect_true("<li>Records paired: 117</li>" %in% section)
+  expect_true("<li>Row matching ran to its end: yes</li>" %in% section)
+  expect_true("<li>Keys configured: <code>id</code>, <code>visit</code></li>" %in% section)
+  shown <- gsub("<[^>]+>", "", section[!section %in% c("<ul>", "</ul>")])
+  for (entity in list(c("&lt;", "<"), c("&gt;", ">"), c("&quot;", '"'), c("&#39;", "'"), c("&amp;", "&"))) {
+    shown <- gsub(entity[[1L]], entity[[2L]], shown, fixed = TRUE)
+  }
+  exported <- lines[nzchar(lines) & !grepl("^```", lines)][-1L]
+  exported <- gsub("`|\\*\\*", "", sub("^(#+|-) ", "", exported))
+  expect_identical(utils::head(shown, -1L), exported)
+  expect_match(utils::tail(shown, 1L), "To save this draft as a Markdown file", fixed = TRUE)
+  expect_false(any(grepl(dirname(target$reference_path), section, fixed = TRUE)))
+  expect_false(file.exists(marker))
+
+  # A destination that exists is kept as it is.
+  kept <- withr::local_tempfile(fileext = ".md")
+  writeLines("mine", kept)
+  expect_error(sas_bug_report(run$report, kept), class = "sas2r_record_exists")
+  expect_identical(readLines(kept), "mine")
+})
+
+test_that("a draft says so when an output's comparison details cannot be linked", {
+  run <- draft_run(draft_state(), "E2")
+  export <- function(change) draft_lines(draft_changed(run$report, change))
+  facts <- "Records paired|Reference rows|Keys configured|Row matching"
+  unlinked <- "The comparison details of this output could not be linked to this finding:"
+
+  # A finding saved before the output's name was kept: what is there is
+  # exported, and the draft says what could not be linked.
+  legacy <- export(function(report) {
+    report$package_bug_diagnosis$findings[[1L]]$binding <- list(attempt_id = "bundle_attempt_001")
+    report
+  })
+  expect_true(paste("Comparison details could not be linked to this finding. It was saved without",
+    "the name of the output or the failure stage it refers to.") %in% legacy)
+  expect_true(all(c("Recorded symptom: dataset output assessment - failed (reference_comparison)",
+    "- Bundle attempt: `bundle_attempt_001`", "### Suggested by the AI (not verified)") %in% legacy))
+  expect_false(any(grepl(paste0(facts, "|^- Output:"), legacy)))
+
+  # The saved assessment belongs to another attempt than the finding.
+  other <- export(function(report) {
+    report$selected_attempt_id <- "bundle_attempt_002"
+    report
+  })
+  expect_true(all(c("- Output: `work.out2`",
+    paste(unlinked, "the finding and the saved assessment belong to different bundle attempts.")) %in% other))
+  expect_false(any(grepl(facts, other)))
+
+  # No attempt recorded on one side, and no assessment saved for the output.
+  unknown <- export(function(report) {
+    report$selected_attempt_id <- NULL
+    report
+  })
+  expect_true(paste(unlinked, "the bundle attempt of the finding or of the saved assessment was not recorded.") %in% unknown)
+  absent <- export(function(report) {
+    report$output_assessments$work.out2 <- NULL
+    report
+  })
+  expect_true(paste(unlinked, "the saved report holds no assessment for this output.") %in% absent)
+  expect_false(any(grepl(facts, c(unknown, absent))))
+
+  # A comparison saved without its row counts keeps the keys and says which
+  # counts were not recorded. A count of zero is a count.
+  uncounted <- export(function(report) {
+    report$output_assessments$work.out2$checks$reference_comparison$summary <- NULL
+    report$output_assessments$work.out2$dimensions <- NULL
+    report
+  })
+  expect_true(all(c("- Keys configured: `id`, `visit`", "- Reference rows: not recorded",
+    "- Records paired: not recorded", "- Generated rows left unpaired: not recorded",
+    "- Row matching ran to its end: yes") %in% uncounted))
+  first <- draft_lines(draft_run(draft_state(), "E1")$report)
+  expect_true(all(c("- Output: `work.out1`", "- Records paired: 3", "- Reference rows left unpaired: 0",
+    "- Generated rows left unpaired: 0") %in% first))
+  stopped <- export(function(report) {
+    report$output_assessments$work.out2$differences$structure$alignment_resource_state <- "residual_group_limit"
+    report
+  })
+  expect_true("- Row matching ran to its end: no, it stopped at a size limit" %in% stopped)
+  expect_true("- Records paired: 117" %in% stopped)
+
+  # An output that is not a dataset has no row comparison to show.
+  demo <- draft_lines(system.file("examples", "bug-report-demo", "report.json", package = "sas2r"))
+  expect_true(all(c("- Output: `listing.html`", "- Failed check: `structure_valid`") %in% demo))
+  expect_false(any(grepl(paste0(facts, "|could not be linked"), demo)))
+})
+
+test_that("the draft tells configured keys from the keys used, and shows recorded key counts", {
+  visits <- data.frame(usubjid = rep(c("S1", "S2"), each = 3L), aseq = 1:6, value = c(11, 12, 13, 14, 15, 16))
+  state <- triage_scenario(triage_sas, triage_r, transform(visits, value = value + 1), visits,
+    rules = list(keys = "usubjid"))
+  state$selected_attempt <- list(attempt_id = "bundle_attempt_001")
+  run <- draft_run(state, "E1")
+  lines <- draft_lines(run$report)
+  expect_true(all(c("- Keys configured: `usubjid`", "- Keys rows were paired on: `usubjid`, `aseq`",
+    "- Records paired: 6", "Observed difference: value: 6 constant difference (absolute 1)") %in% lines))
+  expect_false(any(grepl("^- Key column", lines)))
+
+  # A comparison may record, for each key column, counts about the rows left
+  # unpaired. They are shown as recorded, whichever way the record reads back.
+  counts <- list(list(key = "aseq", pair_without = 4, missing_reference = 2, missing_generated = 0),
+    list(key = "usubjid", pair_without = 0))
+  recorded <- draft_lines(draft_changed(run$report, function(report) {
+    report$output_assessments$work.out1$differences$structure$unpaired_keys <- counts
+    report
+  }))
+  shown <- c(paste("- Key column `aseq`: unpaired rows that pair without it 4; unpaired reference rows",
+    "where it is missing 2; unpaired generated rows where it is missing 0"),
+    "- Key column `usubjid`: unpaired rows that pair without it 0")
+  expect_identical(recorded[grepl("^- Key column", recorded)], shown)
+  target <- state$assessment$targets$work.out1
+  target$differences$structure$unpaired_keys <- data.frame(key = c("aseq", "usubjid"),
+    pair_without = c(4, 0), missing_reference = c(2, NA), missing_generated = c(0, NA))
+  frame <- bug_report_markdown(bug_report_output_blocks(target, "work.out1", NULL))
+  expect_identical(frame[grepl("^- Key column", frame)], shown)
+})
+
+test_that("what the draft needs is saved beside the finding and is not sent to the model", {
+  state <- draft_state()
+  state$diagnostics$component_failures <- list(p01 = list(reason = "made-up failure"))
+  ask <- function() {
+    request <- NULL
+    diagnosis <- suppressMessages(migration_package_bug_diagnosis(state,
+      diagnosis_mock(bug_triage_answer(), function(req) request <<- req)))
+    list(binding = diagnosis$findings[[1L]]$binding, messages = request$messages)
+  }
+  plain <- ask()
+  expect_identical(plain$binding, list(scope = "Component processing failed", component = "p01"))
+
+  # Whatever the local fields hold, the request is the same request.
+  evidence <- package_bug_evidence
+  local_mocked_bindings(package_bug_evidence = function(...) lapply(evidence(...), function(item) {
+    item$binding <- list(attempt_id = "ATTEMPT_SENTINEL", scope = "SCOPE_SENTINEL",
+      component = "PROGRAM_SENTINEL", target = "TARGET_SENTINEL")
+    item
+  }))
+  marked <- ask()
+  expect_identical(marked$binding$target, "TARGET_SENTINEL")
+  expect_identical(marked$messages, plain$messages)
+  expect_false(grepl("SENTINEL", paste(unlist(marked$messages), collapse = "\n"), fixed = TRUE))
 })

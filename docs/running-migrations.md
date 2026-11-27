@@ -813,19 +813,35 @@ and read conversion or the comparison. Each finding names the package step it
 suspects. An output that is wrong but fails no check is not examined, and
 neither is package behavior the run never exercised.
 
-`START_HERE.html` and the translation report show suspected package defects,
-the package step, recorded symptoms, expected behavior, and remaining uncertainty. The model can
-propose a short synthetic R example or suggest how to isolate the failure.
-The report labels examples as unrun. Review code before running it and record
-the result on the reported build. See [model privacy](model-privacy.md).
+`START_HERE.html` shows an issue draft for each suspected package defect,
+under "Possible sas2r bugs (AI beta)". The draft was written on your computer
+and has not been sent anywhere. It keeps two kinds of content under separate
+headings:
 
-Pass the returned translation result or the path to that run's
-`report/report.json` as the first argument of `sas2r::sas_bug_report()` and a new
-Markdown destination as `file`. Use the saved JSON path for a blocked run
-that raised an error. The draft has expected and observed behavior, package
-and R versions, and a synthetic example or steps to isolate the failure.
-Review it before sharing and record whether the example reproduced on your
-machine. Send the reviewed draft to the maintainer or post it in the
+- **Recorded by sas2r.** The recorded symptom and, for a finding about an
+  output, the output's name, the failed check, the comparison keys you
+  configured and the keys rows were paired on, the pairing method, and the row
+  counts of the reference and the generated dataset. "Records paired" counts
+  the rows matched between the two. "Row matching ran to its end" says whether
+  the matching step finished its work; it can finish and still leave rows
+  unpaired.
+- **Suggested by the AI (not verified).** The package step it suspects, its
+  suggested cause, the uncertainty, a next step and, when the model drafted
+  one, a short synthetic R example. Examples are labelled as unrun.
+
+The draft holds your project's dataset and variable names. Read it and decide
+what to share. Read an example before you run it, and record the result on the
+reported build. The translation report lists the same findings in short. See
+[model privacy](model-privacy.md).
+
+To save the draft as a Markdown file, pass the returned translation result or
+the path to that run's `report/report.json` as the first argument of
+`sas2r::sas_bug_report()` and a new Markdown destination as `file`. Use the
+saved JSON path for a blocked run that raised an error. The file holds the same
+draft as the page, and an existing file is never replaced. The output is found
+by the name saved with the finding; a report saved by an earlier version
+exports what it has and says that the comparison details could not be linked.
+Send what you decide to share to the maintainer or post it in the
 [issue tracker](https://github.com/songyue-chen/sas2r/issues).
 Try the [saved triage demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
 

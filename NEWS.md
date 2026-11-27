@@ -110,6 +110,18 @@
   your machine for this. Triage is still one request, and runs with the
   option off are unchanged.
 
+- Show the issue draft for a possible package bug on the start-here page, and
+  build it from what the run recorded. For a finding about an output the
+  draft gives the output's name, the failed check, the comparison keys you
+  configured and the keys rows were paired on, the pairing method and the row
+  counts. "Records paired" and "row matching ran to its end" are separate
+  facts: matching can finish and still leave rows unpaired. What sas2r
+  recorded and what the AI suggested are under separate headings.
+  `sas_bug_report()` saves the same draft as a Markdown file. The draft is
+  built on your computer from the saved report: it is sent nowhere, asks no
+  model and runs no example. A finding saved by an earlier version exports
+  what it has and says that the comparison details could not be linked.
+
 - Show more cost detail in the run reports and the printed summary: the share
   of input tokens read from the provider's prompt cache, completed requests and
   tokens for each role, and how many answers were accepted before the tool

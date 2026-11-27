@@ -159,6 +159,13 @@ package_bug_request_context <- function(state, facts, helper_contracts, ids,
 package_bug_evidence <- function(state, failure, stage, omitted = NULL, attribute = FALSE) {
   items <- list()
   revisions <- state$selected_revisions
+  # What an item refers to, kept beside the saved finding for the issue draft:
+  # the failure scope, and the program or the output target. `binding` never
+  # goes to the model; only `facts` do.
+  local_binding <- function(binding, scope, component = NULL, target = NULL) {
+    c(binding, list(scope = scope), if (is_scalar_character(component)) list(component = component),
+      if (is_scalar_character(target)) list(target = target))
+  }
   condition_item <- function(scope, condition, cid = NULL, binding = NULL, code_ids = cid) {
     facts <- agent_error_facts(condition, revision_code(revisions[[code_ids %||% ""]]))
     # Package condition classes and code-confirmed helper names provide hints,
@@ -182,7 +189,8 @@ package_bug_evidence <- function(state, failure, stage, omitted = NULL, attribut
       !facts$kind %in% c("none", "unclassified_error")
     if (recognized) symptom <- paste0(if (!is.null(cid)) paste0(cid, " - "), facts$condition_message)
     list(facts = projected, observed = paste0(scope, " - ", symptom),
-      recognized = recognized, binding = binding, code_ids = code_ids)
+      recognized = recognized, binding = local_binding(binding, scope, component = cid),
+      code_ids = code_ids)
   }
   if (!is.null(failure)) {
     terminal <- condition_item(stage, list(class = class(failure), message = conditionMessage(failure)))
@@ -238,7 +246,8 @@ package_bug_evidence <- function(state, failure, stage, omitted = NULL, attribut
         affected_components = utils::head(item$affected, 8L),
         member_availability = as.list(availability)),
       observed = "Execution deferred by dependency reconciliation",
-      binding = list(revision_id = revisions[[cid]]$revision_id), code_ids = cid)))
+      binding = local_binding(list(revision_id = revisions[[cid]]$revision_id),
+        "Execution deferred by dependency reconciliation", component = cid), code_ids = cid)))
   }
 
   if (length(items) < 6L) {
@@ -285,7 +294,8 @@ package_bug_evidence <- function(state, failure, stage, omitted = NULL, attribut
       observed = paste0(target$kind %||% "Dataset", " output assessment - ",
         gsub("_", " ", target$status, fixed = TRUE),
         if (length(failed_checks)) paste0(" (", paste(failed_checks, collapse = ", "), ")")),
-      binding = list(attempt_id = selected$attempt_id, helper_hash = selected_record$helper_hash),
+      binding = local_binding(list(attempt_id = selected$attempt_id,
+        helper_hash = selected_record$helper_hash), "Output assessment", target = key),
       code_ids = ids)))
   }
   stats::setNames(items, paste0(rep("E", length(items)), seq_along(items)))
@@ -353,5 +363,6 @@ package_bug_report_lines <- function(diagnosis) {
       paste("  - Expected behavior:", finding$expected),
       paste("  - Uncertainty:", finding$uncertainty),
       paste("  - Next step:", finding$next_step))), use.names = FALSE), "",
-    "Create an issue draft with `sas2r::sas_bug_report()` using this run's `report.json`.", "")
+    paste("The issue draft, with what sas2r recorded for each finding, is on this run's `START_HERE.html` page.",
+      "`sas2r::sas_bug_report()` saves it as a Markdown file from this run's `report.json`."), "")
 }

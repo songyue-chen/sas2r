@@ -1,6 +1,25 @@
 {
   "schema_version": "1",
   "run_id": "run_20261112T000000Z_00000000",
+  "selected_attempt_id": "bundle_attempt_001",
+  "output_assessments": {
+    "listing.html": {
+      "target_key": "listing.html",
+      "kind": "tlf",
+      "status": "failed",
+      "checks": {
+        "candidate_exists": {
+          "name": "candidate_exists",
+          "passed": true
+        },
+        "structure_valid": {
+          "name": "structure_valid",
+          "passed": false,
+          "details": "Invalid HTML document structure"
+        }
+      }
+    }
+  },
   "package_bug_diagnosis": {
     "schema_version": 2,
     "status": "completed",
@@ -14,7 +33,8 @@
     "findings": [
       {
         "evidence_id": "E1",
-        "observed": "Output assessment - failed (HTML structure check).",
+        "responsible_step": "runtime_helpers",
+        "observed": "tlf output assessment - failed (structure_valid)",
         "explanation": "The bundled sas_print_table() writer may have accepted an HTML destination and written PDF bytes. The writer should reject destinations outside its PDF contract.",
         "expected": "The PDF-only helper raises a format error before creating the file.",
         "uncertainty": "The file header and exact helper behavior need to be checked on the reported runtime.",
@@ -24,7 +44,9 @@
         "binding": {
           "attempt_id": "bundle_attempt_001",
           "revision_id": "r1",
-          "helper_hash": "8fc509190c3bb447c2b21a0becc9d92970c37637c118774320bcd666419ee5ed"
+          "helper_hash": "8fc509190c3bb447c2b21a0becc9d92970c37637c118774320bcd666419ee5ed",
+          "scope": "Output assessment",
+          "target": "listing.html"
         }
       }
     ],
