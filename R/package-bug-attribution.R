@@ -658,7 +658,9 @@ package_bug_decisions <- function(state, target, key, column_names = character()
 }
 
 # The date-column record of an assessment, for the differing columns only: a
-# SAS date stored as an R Date or left as a day number, and why.
+# SAS date stored as an R Date or left as a day number, and why. The basis is
+# `declared` when the generated program gives the column a date format where
+# it writes the dataset, and `reference` when only the reference stores a date.
 package_bug_date_decisions <- function(record, column_names) {
   rows <- c(lapply(record$typed, function(x) c(x, decision = "stored_as_date")),
     lapply(record$deferred, function(x) c(x, decision = "left_as_day_number")))
@@ -667,7 +669,7 @@ package_bug_date_decisions <- function(record, column_names) {
     name <- tolower(as.character(x$var %||% ""))
     if (length(name) != 1L || !name %in% column_names) return(NULL)
     one <- list(name = name, decision = x$decision,
-      basis = if (isTRUE(x$evidence %in% c("reference", "source"))) x$evidence else "unknown",
+      basis = if (isTRUE(x$evidence %in% c("declared", "reference"))) x$evidence else "unknown",
       # The gate records a format name without its period, such as DATE9.
       format = text(x$format, "^[$]?[A-Za-z_][A-Za-z0-9_]{0,31}([.][0-9]*)?$"),
       reason = text(x$reason, "^[^\r\n/\\\\]*$"))
@@ -782,7 +784,7 @@ PACKAGE_BUG_FACT_FORMAT <- local({
       reference_file = one_of("rds", "xpt", "sas7bdat", "other", "none"),
       generated_file = one_of("rds", "xpt", "sas7bdat", "other", "none"),
       date_columns = records(name = name, decision = one_of("stored_as_date", "left_as_day_number"),
-        basis = one_of("reference", "source", "unknown"), format = label, reason = label)),
+        basis = one_of("declared", "reference", "unknown"), format = label, reason = label)),
     shared_patterns = records(class = one_of("type_difference", "value_pattern", "failed_check"),
       reference_type = name, generated_type = name,
       pattern = one_of(REVIEWER_SUMMARY_VOCABULARY$patterns), check = name,

@@ -260,28 +260,34 @@ test_that("a type difference that holds the same values points at the write and 
   stored <- data.frame(id = 1:3, visitdt = triage_days, otherdt = triage_days, value = c(11, 12, 13))
   as_dates <- function(days) as.Date(days - 3653, origin = "1970-01-01")
   input <- data.frame(id = 1:3, visitdt = triage_days, otherdt = triage_days, value = c(10, 11, 12))
-  # The source declares both columns as dates and the reference stores both as
-  # dates. The generated dataset holds one of them as the SAS day number.
+  # The generated program declares both columns as dates where it writes the
+  # dataset, and the reference stores both as dates. The generated dataset
+  # holds one of them as the SAS day number.
   dated_sas <- "data work.out1; set raw.input; format visitdt otherdt date9.; value = value + 1; run;"
-  state <- triage_scenario(dated_sas, triage_r,
+  dated_r <- sub("'out1')", "'out1', formats = c(visitdt = 'DATE9.', otherdt = 'DATE9.'))", triage_r, fixed = TRUE)
+  state <- triage_scenario(dated_sas, dated_r,
     generated = transform(stored, otherdt = as_dates(otherdt)),
     reference = transform(stored, visitdt = as_dates(visitdt), otherdt = as_dates(otherdt)), input = input)
   # The gate wrote this record itself; the test does not build it.
   recorded <- state$assessment$targets$work.out1$date_columns
-  expect_setequal(vapply(recorded$typed, function(x) x$var, ""), c("visitdt", "otherdt"))
+  expect_identical(vapply(recorded$typed, function(x) x$var, ""), "otherdt")
+  expect_identical(vapply(recorded$deferred, function(x) x$var, ""), "visitdt")
   result <- triage_with_sign_reader(state)
   column <- triage_column(result$facts, "visitdt")
   expect_identical(column[c("difference", "reference_type", "generated_type")],
     list(difference = "type", reference_type = "date", generated_type = "numeric"))
-  expect_identical(column$generated_code, "passed_through")
+  # The program names the column only to declare its format, in the call that
+  # writes the dataset. That call could have changed how it is stored.
+  expect_identical(column$generated_code, "named_not_assigned")
+  expect_true("lib_write" %in% unlist(result$facts$evidence$E1$helpers_called))
   expect_identical(column$representation_only, "yes")
   expect_identical(column$conversion, "sas_date_day_number")
   # A SAS format the source names is not an input dataset.
   expect_identical(result$facts$evidence$E1$external_inputs, "raw.input")
-  # Only the differing column's decision is sent, without the declaration text.
+  # Only the differing column's decision is sent.
   dates <- result$facts$evidence$E1$decisions$date_columns
-  expect_identical(dates, list(list(name = "visitdt", decision = "stored_as_date",
-    basis = "reference", format = "DATE9")))
+  expect_identical(dates, list(list(name = "visitdt", decision = "left_as_day_number",
+    basis = "declared", format = "DATE9", reason = recorded$deferred[[1L]]$reason)))
   finding <- result$diagnosis$findings[[1L]]
   expect_identical(finding$responsible_step, "write_and_read_conversions")
   expect_true(any(grepl("Package step: write and read conversions",
@@ -290,17 +296,28 @@ test_that("a type difference that holds the same values points at the write and 
   # The flag is the only thing the second look at the data sends.
   expect_false(grepl("21000|21001|2027-|3653", result$request$messages[[2L]]$content))
 
+  # A program that declares no date format leaves the day number as it is.
+  # When a model wrote that program, the missing declaration is not the
+  # package's doing; when the rules wrote it, it is.
+  reference <- transform(stored, visitdt = as_dates(visitdt))
+  result <- triage_with_sign_reader(triage_scenario(dated_sas, triage_r, generated = stored,
+    reference = reference, input = input))
+  expect_identical(triage_column(result$facts, "visitdt")$representation_only, "yes")
+  dates <- result$facts$evidence$E1$decisions$date_columns
+  expect_identical(dates[[1L]][c("name", "decision", "basis")],
+    list(name = "visitdt", decision = "left_as_day_number", basis = "reference"))
+  expect_match(dates[[1L]]$reason, "declares no date format", fixed = TRUE)
+  expect_length(result$diagnosis$findings, 0L)
+  result <- triage_with_sign_reader(triage_scenario(dated_sas, triage_r, generated = stored,
+    reference = reference, input = input, origin = NA_character_))
+  expect_identical(result$diagnosis$findings[[1L]]$responsible_step, "rule_based_translation_and_support_files")
+
   # Day numbers that are not the reference dates are a different finding.
   state <- triage_scenario(triage_sas, triage_r, generated = stored,
     reference = transform(stored, visitdt = as_dates(visitdt + 1)))
   result <- triage_with_sign_reader(state)
   expect_identical(triage_column(result$facts, "visitdt")$representation_only, "no")
   expect_length(result$diagnosis$findings, 0L)
-  # This source declares no date format, and the gate says so in its record.
-  dates <- result$facts$evidence$E1$decisions$date_columns
-  expect_identical(dates[[1L]][c("name", "decision", "basis")],
-    list(name = "visitdt", decision = "left_as_day_number", basis = "reference"))
-  expect_match(dates[[1L]]$reason, "no date format declaration", fixed = TRUE)
 
   # A labelled number is still a number, on whichever side it is.
   labelled <- stored
@@ -313,11 +330,11 @@ test_that("a type difference that holds the same values points at the write and 
 })
 
 test_that("a date column left as a number carries the gate's own reason, and never a path", {
-  # Code that may run after the output is written, and no reference column to
-  # confirm the declared date: the gate leaves the column as a day number.
-  sas <- "data work.out1; set raw.input; format visitdt date9.; value = value + 1; run;\n%cleanup;"
+  # The program declares a date format for a column its dataset holds as a
+  # plain number, and the reference has no such column to compare with.
+  dated_r <- sub("'out1')", "'out1', formats = c(visitdt = 'DATE9.'))", triage_r, fixed = TRUE)
   generated <- data.frame(id = 1:3, visitdt = triage_days, value = c(11, 12, 13))
-  state <- triage_scenario(sas, triage_r, generated = generated, reference = generated[c("id", "value")],
+  state <- triage_scenario(triage_sas, dated_r, generated = generated, reference = generated[c("id", "value")],
     input = data.frame(id = 1:3, visitdt = triage_days, value = c(10, 11, 12)))
   recorded <- state$assessment$targets$work.out1$date_columns
   expect_length(recorded$deferred, 1L)
@@ -325,12 +342,11 @@ test_that("a date column left as a number carries the gate's own reason, and nev
   expect_identical(triage_column(result$facts, "visitdt")$difference, "extra_in_generated")
   dates <- result$facts$evidence$E1$decisions$date_columns
   expect_identical(dates[[1L]][c("name", "decision", "basis", "format")],
-    list(name = "visitdt", decision = "left_as_day_number", basis = "source", format = "DATE9"))
-  # The reason is the sentence the gate wrote, which names a source line.
+    list(name = "visitdt", decision = "left_as_day_number", basis = "declared", format = "DATE9"))
+  # The reason is the sentence the gate wrote, one of its fixed sentences.
   expect_identical(dates[[1L]]$reason, recorded$deferred[[1L]]$reason)
-  expect_match(dates[[1L]]$reason, "^macro-generated code at line 2 ")
-  # The statement text and the program file of the declaration stay local.
-  expect_false(any(c("declaration", "file", "line") %in% names(dates[[1L]])))
+  expect_match(dates[[1L]]$reason, "^the program declares a date format for this column")
+  expect_setequal(names(dates[[1L]]), c("name", "decision", "basis", "format", "reason"))
 
   # A reason that held a path, or ran to several lines, would be left out.
   with_reason <- function(reason) {

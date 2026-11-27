@@ -29,9 +29,13 @@ triage_scenario <- function(sas, r, generated, reference,
   state <- new_migration_state(project, file.path(root, "migration"), config = config)
   attempt_dir <- file.path(root, "attempt")
   dir.create(file.path(attempt_dir, "work"), recursive = TRUE)
+  # The attempt keeps the programs it ran, where the gate reads the date
+  # formats they declare.
+  dir.create(file.path(attempt_dir, "bundle"))
   for (i in seq_len(n)) {
     state$selected_revisions[[ids[[i]]]] <- list(component_id = ids[[i]], revision_id = "r1",
       r_code = r[[i]], staged_file = paste0(ids[[i]], ".R"), agent_status = rep_len(origin, n)[[i]])
+    writeLines(r[[i]], file.path(attempt_dir, "bundle", paste0(ids[[i]], ".R")))
     saveRDS(generated[[i]], file.path(attempt_dir, "work", paste0("out", i, ".rds")))
   }
   state$output_contracts <- project$output_contracts
@@ -69,7 +73,13 @@ triage_sign_reader <- function(request) {
       told <- unique(vapply(column$translator_told, function(x) x$type, ""))
       documented <- vapply(unlist(column$helpers), function(helper)
         grepl(paste0("\n", helper, ": "), text, fixed = TRUE), logical(1))
-      step <- if (identical(column$representation_only, "yes")) {
+      # A date the generated program never declared was not the write's to store.
+      undeclared <- any(vapply(facts$evidence[[id]]$decisions$date_columns, function(date)
+        identical(date$name, column$name) && identical(date$decision, "left_as_day_number") &&
+          identical(date$basis, "reference"), logical(1)))
+      step <- if (identical(column$representation_only, "yes") && undeclared) {
+        if (rule_written) "rule_based_translation_and_support_files"
+      } else if (identical(column$representation_only, "yes")) {
         "write_and_read_conversions"
       } else if (length(told) == 1L && !identical(told, column$reference_type) &&
           identical(told, column$generated_type)) {

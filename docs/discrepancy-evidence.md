@@ -85,11 +85,12 @@ SAS day number, its basis, the SAS format name and the stated reason).
 otherwise it names where sas2r took the keys from, such as a `BY` or `SORT`
 statement or a guess from column names (`heuristic`). `keys_refined_by` is
 present when the configured keys repeat and sas2r added a key of its own to
-tell the rows of a group apart; it names where that key came from. The date
-reason is a sentence
-sas2r writes from the SAS source. It can name a source line number, a program
-file without its directory, and a dataset. The text of the declaring statement
-is not sent, and a reason that holds a path is left out. The request as a whole
+tell the rows of a group apart; it names where that key came from. A date
+decision's basis is `declared` when the generated program gives the column a
+SAS date format where it writes the dataset, and `reference` when only the
+reference stores a date. The date reason is one of the fixed sentences sas2r
+writes for the run report, such as that the generated program declares no date
+format for the column. A reason that holds a path is left out. The request as a whole
 carries `programs` (who wrote each program shown: rules, model or repair),
 `runtime_helpers` (the package's own, or patched during the run) and
 `shared_patterns` (a type difference, value pattern or failed check found in
