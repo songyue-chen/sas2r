@@ -17,14 +17,14 @@
 - **Observable Outputs**: Repaired R code units, audit summaries, and usage ledger logs (`<out_dir>/.sas2r/usage.jsonl`).
 
 ### Use Case 3: Saved Final Outputs
-- **Inputs**: SAS source, configured library directories containing authentic SAS outputs (`.sas7bdat` / `.xpt`), and candidate R output datasets (`.rds` / `.xpt`).
-- **Internal Work**: The output-review inventory discovers dataset targets from AST lineage and pairs accessible files. Standalone comparison functions instead take data frames directly. Migration reference checks use the configured `outputs.references` paths and optional assertions for keys and tolerances.
-- **Observable Outputs**: Structured target plans and bounded comparison reports under `<out_dir>/.sas2r/output-review/<run_id>/`. The separate migration summary is saved in the run folder as `report/report.json` and `report/translation.md`; `.sas2r/report.json` also tracks the latest run.
+- **Inputs**: SAS source, authentic SAS outputs (`.sas7bdat` / `.xpt`) that you name as references, and candidate R output datasets (`.rds` / `.xpt`).
+- **Internal Work**: References are not discovered by scanning folders. Standalone comparison functions take data frames that you read yourself. Migration reference checks use the configured `outputs.references` paths and optional assertions for keys and tolerances.
+- **Observable Outputs**: Bounded comparison reports, written by `write_comparison_report()` to the file you name, or under `<dir>/output-review/<run_id>/` when you pass `run_id` and `dir`. The separate migration summary is saved in the run folder as `report/report.json` and `report/translation.md`; `.sas2r/report.json` also tracks the latest run.
 
 ### Use Case 4: TLF (Table, Listing, Figure) Preparation Data
 - **Inputs**: SAS programs producing intermediate datasets that feed report procedures (`PROC REPORT`, `PROC TABULATE`, `PROC PRINT`, `PROC SGPLOT`, `PROC SGPANEL`, `PROC SGRENDER`).
-- **Internal Work**: AST lineage identifies intermediate preparation datasets consumed by reporting PROCs. This dataset-review path compares structured preparation data; rendered artifact checks belong to the separate migration output gate.
-- **Observable Outputs**: Comparison reports and target plans designating role `tlf_preparation_data`.
+- **Internal Work**: A preparation dataset that the program saves is compared like any other saved dataset, with the comparison functions below. Rendered artifact checks belong to the separate migration output gate.
+- **Observable Outputs**: Comparison reports for the preparation data. Rendered tables, listings, and figures are assessed in the migration report.
 
 ### Use Case 5: Equal Content with SAS-Missing-First vs. R-NA-Last Ordering
 - **Inputs**: Saved datasets with identical row sets but differing sort orders due to SAS placing missing values first while R sorts `NA` last.
@@ -38,8 +38,8 @@
 
 ### Use Case 7: Evidence Missing, Ambiguous, or Resource-Limited
 - **Inputs**: Partial output folders, missing candidate files, or datasets exceeding fixed evidence limits.
-- **Internal Work**: Fails closed safely per target. A target with no candidate output stays `missing_candidate` and one with no reference stays `missing_reference`; unresolvable ambiguous candidates stay `ambiguous`.
-- **Observable Outputs**: Translation results remain intact; output review reports explicit diagnostic statuses without halting or corrupting code generation.
+- **Internal Work**: Fails closed per target. In a migration, a target with no candidate output is reported as `missing_candidate`, and a configured reference that cannot be found fails its `reference_exists` check; neither counts as verified. In a comparison, ambiguous row pairing or a resource limit is recorded in the report instead of being resolved by guessing.
+- **Observable Outputs**: Translation results remain intact; the migration report and comparison reports carry explicit diagnostic statuses without halting or corrupting code generation.
 
 ---
 
@@ -137,6 +137,86 @@ specification is intended before asking a fixer to add the missing variables.
 Do not drop those columns merely to obtain a passing comparison. An independent
 R reconstruction can help attribute differences, but it is not a SAS execution.
 
+### SAS dates
+
+SAS stores a date as a number of days from 1 January 1960, with a format that
+shows the number as a date. A SAS dataset read into R shows such a column as a
+`Date`. Generated R keeps the number, because that is what the SAS program
+computes with.
+
+The generated program says which columns of a dataset carry a SAS format,
+where it writes the dataset, as the SAS `FORMAT` statement did. A column given
+a date format is stored as a `Date`. Inside the generated programs nothing
+changes: `lib_read()` returns the SAS day number for such a column, so a later
+program computes exactly as the SAS does.
+
+This example runs entirely offline:
+
+<!-- sas2r-example: offline declared-date-format -->
+```r
+library(sas2r)
+
+local({
+  folder <- tempfile("adam")
+  dir.create(folder)
+  .sas2r_registry <- list(
+    adam = list(read_path = folder, write_path = folder, engine = "rds", write = "rds")
+  )
+  # 23435 is 29 February 2024 as a SAS day number; ADY is a count of days.
+  adae <- data.frame(USUBJID = "01", ASTDT = 23435, ADY = 12)
+  lib_write(adae, "adam", "adae", formats = c(astdt = "yymmdd10."))
+
+  stored <- readRDS(file.path(folder, "adae.rds"))
+  read_back <- lib_read("adam", "adae")
+  stopifnot(
+    inherits(stored$ASTDT, "Date"), format(stored$ASTDT) == "2024-02-29",
+    identical(stored$ADY, 12), identical(read_back$ASTDT, 23435)
+  )
+  unlink(folder, recursive = TRUE)
+})
+```
+
+Two checks stand behind a declaration, and a program that fails either is sent
+back for repair:
+
+- It is written out in the program as `c(column = "format.")` with string
+  constants, so what a program declares can be read from its code and cannot
+  depend on a file read while it runs.
+- The format is one the SAS source gives that variable in a `FORMAT` or
+  `ATTRIB` statement, or one the source uses in a statement whose variables
+  cannot be read by name (a macro reference, a list such as `x1-x5`, a
+  `format=` option).
+
+A reference dataset decides nothing. The same programs write the same column
+types with or without one, and the reference is compared afterwards. A
+date-like name, a plausible day number, or a date in the reference types
+nothing.
+
+How a format is inherited from a dataset a step reads, and lost when a variable
+is dropped, is part of translating the program. The `sas-formats-and-dates`
+skill gives those rules to the translator, the reviewer and the fixer. The
+checks above show that a declaration was not invented. They do not show that
+the format reaches the output: a format the source gives a variable that is
+later dropped and created again could still be declared by a mistaken
+translation. With a reference, the comparison reports that as a type
+difference.
+
+The run report's "Date Columns" section lists each column stored as a date with
+its format, each declared column left as a number with the reason, and each
+column the reference stores as a date that the program does not declare. A
+column left as a number against a date in the reference is still reported as a
+type difference, and its values are not compared.
+
+A date column read from an input file arrives as a `Date` and, passed on
+untouched, is written as one. A dataset whose name is worked out while a
+program runs is read back as day numbers within that run; a program run on its
+own in another session reads it as stored.
+
+The formats covered are the ones a SAS file's date columns are read back with:
+`DATE`, `YYMMDD`, `MMDDYY` and `DDMMYY` with their separator variants,
+`E8601DA`, `B8601DA`, `IS8601DA` and `WEEKDATE`. Datetime and time formats are
+not covered and stay numbers.
+
 ---
 
 ## 3. Source Authority & Library Discovery
@@ -144,7 +224,7 @@ R reconstruction can help attribute differences, but it is not a SAS execution.
 1. **Point-of-Use Source Authority**: An accessible `LIBNAME` statement in SAS source code is authoritative for its scope.
 2. **Configured Fallback**: `libraries:` definitions in `_sas2r.yml` supply bindings only when a source libref is absent or unresolvable.
 3. **No Member Fall-Through**: A missing dataset member under an accessible source root does not fall through to a configured fallback directory.
-4. **Inventory Roots**: Configured library paths serve as search roots for automatic output review. The migration gate separately accepts explicit reference paths and per-target key/tolerance assertions in `_sas2r.yml`.
+4. **Explicit References**: Reference outputs are not found by scanning library folders. The migration gate compares only against the reference paths listed in `_sas2r.yml`, with optional per-target key/tolerance assertions.
 
 ---
 

@@ -186,11 +186,21 @@ macro_unknown_dataset_effects <- function(project) {
   stats::setNames(vapply(seq_len(nrow(calls)), function(i) unknown(target(calls[i, ])), logical(1)), calls$call_id)
 }
 
+# Bind the catalog at PROC entry. Its RUN groups share that binding until
+# QUIT or a new DATA/PROC step, including statements reached via %INCLUDE.
+catalog_library_key <- function(project, options, file, line) {
+  lib <- c(dataset_option_values(options, "lib"), dataset_option_values(options, "library"), "work")[1L]
+  if (lib == "work") return(NULL)
+  binding <- libref_binding_at(project$libref_registry, lib, file, line)
+  if (!identical(binding$status, "bound") || isTRUE(binding$context_truncated)) return("unresolved")
+  paste("catalog", binding$selected_path, sep = "\r")
+}
+
 # Walk existing statements and resolved include sites in execution order.
 # No macro expansion: an unmodeled effect invalidates previous producer claims.
 # Occurrences remain separate so a reused include can consume different states.
-ordered_dataset_producers <- function(project, paths, identity) {
-  roots <- configured_execution_files(project)
+ordered_dataset_producers <- function(project, paths, identity,
+                                      roots = configured_execution_files(project)) {
   lineage <- project$lineage
   statements <- project$statements
   sites <- project$include_graph$occurrences
@@ -216,7 +226,13 @@ ordered_dataset_producers <- function(project, paths, identity) {
   current <- list()
   uncertain <- FALSE
   events <- list()
-  invalidate <- function() {
+  # Sparse chronology for later macro inputs. A key's integer positions include
+  # every execution of a reused include without copying the live producer map.
+  history <- list()
+  catalog <- NULL
+  mark <- function(key) history[[length(history) + 1L]] <<- key
+  invalidate <- function(cause = "unresolved") {
+    mark(cause)
     current <<- list()
     uncertain <<- TRUE
   }
@@ -251,6 +267,8 @@ ordered_dataset_producers <- function(project, paths, identity) {
     for (indices in units) {
       unit <- code[indices, ]
       uid <- unit$unit_id[1L]
+      site_keys <- paste("site", uid, unit$stmt_id)
+      mark(site_keys[1L])
       rows <- lineage_rows[[as.character(uid)]] %||% integer()
       is_data <- identical(unit$unit_type[1L], "data_step")
       # DATA-step outputs become visible only after all input reads.
@@ -270,10 +288,27 @@ ordered_dataset_producers <- function(project, paths, identity) {
           any(grepl("\\bcall\\s+execute\\s*\\(", unit$text, ignore.case = TRUE)) ||
           (is_data && any(unit$first_token == "%include")))
         unknown_owners <<- union(owner, unknown_owners)
-      if (mutation || is_sql || dynamic) invalidate()
+      if (mutation || is_sql || dynamic) invalidate(if (is_sql) "unresolved" else "unknown")
       read_rows(rows[lineage$role[rows] == "reads"], owner)
       for (s in seq_len(nrow(unit))) {
+        if (s > 1L) mark(site_keys[s])
         at <- unit$line_start[s]
+        token <- unit$first_token[s]
+        if (token %in% c("proc", "data", "quit")) catalog <<- NULL
+        if (token == "proc" && mutation) {
+          options <- tolower(dataset_tokens(unit$text[s])$flat)
+          catalog <<- catalog_library_key(project, options, file, at)
+          if (!is.null(catalog) && "kill" %in% options) mark(catalog)
+        }
+        if (!is.null(catalog) && token %in% c("delete", "change", "exchange", "save", "age")) {
+          # A simple DELETE list names individual members. Ranges, patterns
+          # and other destructive commands conservatively affect the library.
+          members <- tolower(dataset_tokens(unit$text[s])$flat[-1L])
+          if (token == "delete" && catalog != "unresolved" && length(members) &&
+              all(grepl("^[a-z_][a-z0-9_]*$", members))) {
+            for (member in members) mark(paste(catalog, member, sep = "\r"))
+          } else mark(catalog)
+        }
         include <- sites[sites$parent_unit_id == uid & sites$line == at, ]
         if (unit$first_token[s] == "%include") {
           if (!nrow(include)) { invalidate(); unknown_owners <<- union(owner, unknown_owners) }
@@ -283,8 +318,8 @@ ordered_dataset_producers <- function(project, paths, identity) {
             else { invalidate(); unknown_owners <<- union(owner, unknown_owners) }
           }
         }
-        if (any(calls$source_file == file & calls$line == at) ||
-            grepl("\\bcall\\s+execute\\s*\\(", unit$text[s], ignore.case = TRUE)) invalidate()
+        if (any(calls$source_file == file & calls$line == at)) invalidate("unknown")
+        if (grepl("\\bcall\\s+execute\\s*\\(", unit$text[s], ignore.case = TRUE)) invalidate()
         refs <- dataset_statement_refs(unit$text[s], unit$first_token[s], unit$unit_type[s])
         if (length(refs$creates) && any(grepl("[&%]", refs$creates))) {
           invalidate(); unknown_owners <<- union(owner, unknown_owners)
@@ -292,15 +327,20 @@ ordered_dataset_producers <- function(project, paths, identity) {
       }
       # SQL with several writes and catalog mutations need statement-level
       # semantics; do not resurrect a possibly deleted/intermediate dataset.
-      if (mutation || is_sql || dynamic) invalidate()
+      if (mutation || is_sql || dynamic) invalidate(if (is_sql) "unresolved" else "unknown")
       else write_rows(rows[lineage$role[rows] == "creates"], owner)
       # Only the completed prefix can explain an uncertain permanent read.
       # Even an invalidating unit can contain a possible (not known) write.
       created <- rows[lineage$role[rows] == "creates" & !is.na(paths[rows])]
+      for (row in created[!is_work[created]]) {
+        mark(paste(if (mutation || is_sql || dynamic) "possible" else "writer", row))
+      }
       keys <- paste(file, unit$stmt_id, sep = "\r")
+      possible_keys <- unlist(possible[intersect(keys, names(possible))], use.names = FALSE)
+      for (key in possible_keys) mark(paste("macro", key))
       remember(c(identity[created], unlist(context_writes[intersect(keys, names(context_writes))],
         use.names = FALSE)), owner)
-      seen <<- c(seen, identity[created], unlist(possible[intersect(keys, names(possible))], use.names = FALSE))
+      seen <<- c(seen, identity[created], possible_keys)
     }
     invisible(NULL)
   }
@@ -326,5 +366,6 @@ ordered_dataset_producers <- function(project, paths, identity) {
   }
   list(path = paths, identity = identity, writer = writer,
     backward = rep(FALSE, n), generated = generated, deferred = deferred,
-    events = events, execution_files = roots)
+    events = events, execution_files = roots,
+    late_order = split(seq_along(history), unlist(history, use.names = FALSE) %||% character()))
 }

@@ -8,33 +8,89 @@ read_sas_source <- function(path) {
 
 DL_TOKENS <- c("datalines", "cards", "datalines4", "cards4", "parmcards", "parmcards4")
 
+# A scan gives up on the newer rules after this many repeat passes and
+# classifies the whole text the way it was classified before those rules.
+SCAN_FALLBACK_PASS_LIMIT <- 20L
+
 #' Classify every character of SAS source code
 #'
 #' Walks the source character-by-character and classifies every character
 #' as code (`c`), single-quoted string (`s`), double-quoted string (`q`),
-#' comment (`k`), or datalines data (`d`).
+#' comment (`k`), datalines data (`d`), or a semicolon that is text inside a
+#' `%str()` or `%nrstr()` argument (`m`). Only that semicolon is tagged `m`;
+#' every other character of the argument keeps the tag it would have anywhere
+#' else, so the argument text stays in the statement exactly as written.
+#'
+#' @section Macro-quoted text:
+#' The argument of `%str()` or `%nrstr()` runs to its matching parenthesis.
+#' Parentheses inside it are counted, and the SAS marks `%(`, `%)`, `%'`, `%"`
+#' and `%%` stand for the second character as text: a marked parenthesis is not
+#' counted and a marked quotation mark does not open a string.
+#'
+#' @section Instream data:
+#' A `datalines`, `cards` or `parmcards` block ends at the first line that
+#' contains a semicolon, and that line is code. A `datalines4`, `cards4` or
+#' `parmcards4` block ends only at a line that begins with `;;;;`.
+#'
+#' @section Fallback:
+#' A `%str(` whose argument never closes, or a `datalines4` block with no
+#' `;;;;` line, is classified the way it was before these rules existed, so a
+#' malformed or unusual construct cannot swallow the rest of the file. Each such
+#' place is listed in the `fallbacks` element of the result.
+#'
+#' @section Known Limitations:
+#' \itemize{
+#'   \item Only `%str()` and `%nrstr()` are followed. Other macro quoting
+#'     functions and text produced by macro execution are not.
+#' }
+#' The scanner reads the source as written. It does not expand the program.
 #'
 #' @param text A length-1 character string representing SAS source code.
-#' @return A list with two components:
-#'   \item{chars}{Character vector of individual characters.}
-#'   \item{mask}{Character vector of single-character type tags:
-#'     `"c"` (code), `"s"` (single-quoted string), `"q"` (double-quoted string),
-#'     `"k"` (comment), `"d"` (datalines data).}
-#'
-#' @section Known Limitations (v1):
-#' \itemize{
-#'   \item `datalines4` and `cards4` accept a lone `;` terminator instead of requiring `;;;;`.
-#'   \item Macro-quoted semicolons (e.g. `%str(;)`) are treated as code semicolons.
-#' }
-#' Macro-quoted semicolons can leave statement boundaries incomplete; dependency
-#' lookup masks simple NRSTR literals but does not expand the source program.
+#' @return A list with `chars` (the individual characters) and `mask` (one tag
+#'   per character). `fallbacks`, a data frame of `position` and `kind`, is
+#'   present only when a fallback was used.
 #'
 #' @noRd
 sas_scan <- function(text) {
   stopifnot(is.character(text), length(text) == 1L)
   chars <- strsplit(text, "", fixed = TRUE)[[1]]
-  n <- length(chars)
   whitespace <- grepl("[[:space:]]", chars)
+  skip <- integer()
+  kinds <- character()
+  repeat {
+    pass <- sas_scan_pass(chars, whitespace, skip)
+    if (is.na(pass$unclosed)) break
+    skip <- c(skip, pass$unclosed)
+    kinds <- c(kinds, pass$unclosed_kind)
+    if (length(skip) >= SCAN_FALLBACK_PASS_LIMIT) {
+      pass <- sas_scan_pass(chars, whitespace, legacy = TRUE)
+      skip <- c(skip, 1L)
+      kinds <- c(kinds, "scan_rules_disabled")
+      break
+    }
+  }
+  out <- list(chars = chars, mask = pass$mask)
+  if (length(skip)) {
+    out$fallbacks <- data.frame(position = skip, kind = kinds, stringsAsFactors = FALSE)
+  }
+  out
+}
+
+# Position of the opening parenthesis when the `%` at `i` begins `%str(` or
+# `%nrstr(`, and 0 otherwise. Blanks may separate the name and the parenthesis.
+macro_quote_paren <- function(chars, whitespace, i, n) {
+  word <- tolower(paste(chars[(i + 1L):min(n, i + 5L)], collapse = ""))
+  len <- if (startsWith(word, "nrstr")) 5L else if (startsWith(word, "str")) 3L else return(0L)
+  k <- i + len + 1L
+  while (k <= n && whitespace[k]) k <- k + 1L
+  if (k <= n && chars[k] == "(") k else 0L
+}
+
+# One pass over the text. `skip` lists the constructs, by the position where
+# each begins, that an earlier pass found unclosed: they get the previous
+# rules. `legacy = TRUE` applies the previous rules to everything.
+sas_scan_pass <- function(chars, whitespace, skip = integer(), legacy = FALSE) {
+  n <- length(chars)
   mask <- character(n)
   state <- "code"
   macro_comment <- FALSE
@@ -42,10 +98,21 @@ sas_scan <- function(text) {
   at_stmt_start <- TRUE
   last_split <- 0L
   line_start_pos <- 1L
+  # %str()/%nrstr(): where the name begins, where its parenthesis opens, and
+  # how many parentheses of the argument are open.
+  quote_start <- NA_integer_
+  quote_open_at <- 0L
+  quote_depth <- 0L
+  # How the current instream data block ends: "line" (first line holding a
+  # semicolon), "four" (a line beginning with ;;;;) or "legacy" (a line
+  # beginning with one semicolon, the rule before the other two existed).
+  dl_rule <- "legacy"
+  dl_start <- NA_integer_
+  nl_pos <- NULL
   first_token_of <- function(from, to) {
     if (from > to) return("")
     idx <- from:to
-    keep <- idx[mask[idx] %in% c("c", "s", "q", "k")]
+    keep <- idx[mask[idx] %in% c("c", "s", "q", "k", "m")]
     if (!length(keep)) return("")
     token_chars <- chars[keep]
     token_chars[mask[keep] == "k"] <- " "
@@ -59,19 +126,45 @@ sas_scan <- function(text) {
     ch <- chars[i]
     nxt <- if (i < n) chars[i + 1L] else ""
     if (state == "code") {
-      if (ch == "'") { state <- "sq"; mask[i] <- "s" }
+      if (quote_depth > 0L && ch == "%" && nxt %in% c("%", "(", ")", "'", '"')) {
+        # A marked character is text: it neither counts nor opens a string.
+        mask[i] <- "c"; mask[i + 1L] <- "c"; at_stmt_start <- FALSE; i <- i + 1L
+      }
+      else if (ch == "'") { state <- "sq"; mask[i] <- "s" }
       else if (ch == '"') { state <- "dq"; mask[i] <- "q" }
       else if (ch == "/" && nxt == "*") { state <- "blockc"; mask[i] <- "k"; mask[i + 1L] <- "k"; i <- i + 1L }
       else if (at_stmt_start && ch == "*") { state <- "starc"; macro_comment <- FALSE; mask[i] <- "k" }
       else if (ch == "%" && nxt == "*") { state <- "starc"; macro_comment <- TRUE; comment_quote <- ""; mask[i] <- "k"; mask[i + 1L] <- "k"; i <- i + 1L }
       else {
         mask[i] <- "c"
-        if (ch == ";") {
+        if (i == quote_open_at) {
+          quote_depth <- 1L
+          quote_open_at <- 0L
+          at_stmt_start <- FALSE
+        } else if (quote_depth > 0L) {
+          if (ch == "(") quote_depth <- quote_depth + 1L
+          else if (ch == ")") {
+            quote_depth <- quote_depth - 1L
+            if (quote_depth == 0L) quote_start <- NA_integer_
+          } else if (ch == ";") mask[i] <- "m"
+          if (!whitespace[i]) at_stmt_start <- FALSE
+        } else if (ch == ";") {
           tok <- first_token_of(last_split + 1L, i - 1L)
-          if (tok %in% DL_TOKENS) state <- "datalines"
+          if (tok %in% DL_TOKENS) {
+            state <- "datalines"
+            dl_start <- i
+            dl_rule <- if (legacy || i %in% skip) "legacy" else if (endsWith(tok, "4")) "four" else "line"
+          }
           last_split <- i
           at_stmt_start <- TRUE
-        } else if (!whitespace[i]) at_stmt_start <- FALSE
+        } else {
+          if (!whitespace[i]) at_stmt_start <- FALSE
+          if (ch == "%" && !legacy && quote_open_at == 0L &&
+              (nxt == "s" || nxt == "S" || nxt == "n" || nxt == "N") && !(i %in% skip)) {
+            open <- macro_quote_paren(chars, whitespace, i, n)
+            if (open > 0L) { quote_start <- i; quote_open_at <- open }
+          }
+        }
       }
     } else if (state == "sq") {
       mask[i] <- "s"
@@ -98,15 +191,44 @@ sas_scan <- function(text) {
     } else { # datalines
       if (ch == ";") {
         seg <- if (line_start_pos <= i - 1L) paste(chars[line_start_pos:(i - 1L)], collapse = "") else ""
-        if (grepl("^[[:space:]]*$", seg)) {
+        ends <- grepl("^[[:space:]]*$", seg) &&
+          (dl_rule != "four" || (i + 3L <= n && all(chars[i + 1:3] == ";")))
+        if (ends) {
           mask[i] <- "c"; state <- "code"; at_stmt_start <- TRUE; last_split <- i
+          dl_start <- NA_integer_
         } else mask[i] <- "d"
       } else mask[i] <- "d"
     }
-    if (ch == "\n") line_start_pos <- i + 1L
+    if (ch == "\n") {
+      line_start_pos <- i + 1L
+      if (state == "datalines" && dl_rule == "line" && i < n) {
+        # SAS ends plain instream data at the first line holding a semicolon and
+        # reads that line as code. A line that begins with the semicolon is
+        # left to the rule above, which tags it as it always has.
+        if (is.null(nl_pos)) nl_pos <- which(chars == "\n")
+        k <- findInterval(i, nl_pos)
+        end <- if (k < length(nl_pos)) nl_pos[k + 1L] - 1L else n
+        if (end > i) {
+          line <- (i + 1L):end
+          semi <- match(";", chars[line])
+          if (!is.na(semi) && semi > 1L && !all(whitespace[line[seq_len(semi - 1L)]])) {
+            state <- "code"; at_stmt_start <- TRUE; dl_start <- NA_integer_
+          }
+        }
+      }
+    }
     i <- i + 1L
   }
-  list(chars = chars, mask = mask)
+  unclosed <- NA_integer_
+  unclosed_kind <- NA_character_
+  if (quote_depth > 0L || quote_open_at > 0L) {
+    unclosed <- quote_start
+    unclosed_kind <- "macro_quote_unclosed"
+  } else if (state == "datalines" && dl_rule == "four") {
+    unclosed <- dl_start
+    unclosed_kind <- "datalines4_unterminated"
+  }
+  list(mask = mask, unclosed = unclosed, unclosed_kind = unclosed_kind)
 }
 
 #' Blank string literal contents while preserving string delimiters and character offsets
@@ -344,19 +466,41 @@ trim_statement_positions <- function(chars, positions, is_data) {
   if (start > end) integer() else positions[start:end]
 }
 
+# Places where the scanner used its previous rules. They are advisory: the
+# text is still split, only the way it was split before. The file is left out
+# so a cached scan can serve any file with the same content.
+scan_fallback_findings <- function(scan) {
+  fallbacks <- scan$fallbacks
+  if (is.null(fallbacks) || !nrow(fallbacks)) {
+    return(tibble::tibble(kind = character(), line = integer(), reason = character()))
+  }
+  reason <- vapply(fallbacks$kind, function(kind) switch(kind,
+    macro_quote_unclosed =
+      "the argument of %str( or %nrstr( is not closed; semicolons after it end statements as usual",
+    datalines4_unterminated =
+      "no line beginning with ;;;; ends this data block; it ends at the first line beginning with a semicolon",
+    "too many unclosed constructs; %str( text and data blocks in this source are read by the previous rules"
+  ), character(1), USE.NAMES = FALSE)
+  tibble::tibble(kind = "scanner_fallback",
+    line = as.integer(cumsum(scan$chars == "\n")[fallbacks$position] + 1L), reason = reason)
+}
+
 #' Split SAS source into statements
 #'
 #' Splits on semicolons that are real code (never inside strings, comments,
-#' or datalines blocks). Comment text is stripped from statement text.
+#' datalines blocks or a `%str()`/`%nrstr()` argument). Comment text is
+#' stripped from statement text.
 #' @param text Length-1 character: full SAS source.
 #' @param source_file Optional source path for parse diagnostics.
-#' @return A tibble with columns stmt_id, text, first_token, type,
-#'   line_start, line_end.
+#' @return A list with `statements` (a tibble with columns stmt_id, text,
+#'   first_token, type, line_start, line_end, char_start, char_end), `comments`
+#'   and `findings` (places where the scanner fell back to its previous rules).
 #' @noRd
 sas_source_records <- function(text, source_file = NULL) {
   sc <- sas_scan(text)
   chars <- sc$chars; mask <- sc$mask
   n <- length(chars)
+  findings <- scan_fallback_findings(sc)
   comments <- comment_records_from_scan(chars, mask, cumsum(chars == "\n") + 1L)
   if (nrow(comments) && n > 0L && mask[n] == "k" &&
       utils::tail(comments$kind, 1L) == "macro") {
@@ -368,12 +512,20 @@ sas_source_records <- function(text, source_file = NULL) {
     ), class = "sas2r_sas_parse_error", source_file = source_file, line = line)
   }
   if (n == 0L) {
-    return(list(statements = empty_sas_statements(), comments = comments))
+    return(list(statements = empty_sas_statements(), comments = comments, findings = findings))
   }
   line_no <- cumsum(chars == "\n") + 1L
   # Comments separate tokens as whitespace; deleting them would join names.
   chars[mask == "k" & chars != "\n"] <- " "
   splits <- which(chars == ";" & mask == "c")
+  # Instream data ended by a code line has no terminator of its own: the data
+  # stops at its last character and the code line starts a new statement.
+  if (n > 1L) {
+    after <- 2:n
+    data_end <- which(mask[after - 1L] == "d" & mask[after] != "d" &
+      !(chars[after] == ";" & mask[after] == "c"))
+    if (length(data_end)) splits <- sort(c(splits, data_end))
+  }
   bounds_start <- c(1L, utils::head(splits, -1L) + 1L)
   bounds_end <- splits
   if (!length(splits)) { bounds_start <- 1L; bounds_end <- n }
@@ -384,7 +536,7 @@ sas_source_records <- function(text, source_file = NULL) {
   out <- lapply(seq_along(bounds_start), function(k) {
     idx <- bounds_start[k]:bounds_end[k]
     is_data <- any(mask[idx] == "d")
-    keep <- if (is_data) idx[mask[idx] == "d"] else idx[mask[idx] %in% c("c", "s", "q", "k")]
+    keep <- if (is_data) idx[mask[idx] == "d"] else idx[mask[idx] %in% c("c", "s", "q", "k", "m")]
     if (!is_data && length(keep) && chars[keep[length(keep)]] == ";" && mask[keep[length(keep)]] == "c")
       keep <- keep[-length(keep)]
 
@@ -423,7 +575,7 @@ sas_source_records <- function(text, source_file = NULL) {
   res <- fast_bind(out, empty_sas_statements()[setdiff(names(empty_sas_statements()), "stmt_id")])
   res <- res[!(res$type == "code" & res$text == ""), ]
   if (is.null(res) || nrow(res) == 0L) {
-    return(list(statements = empty_sas_statements(), comments = comments))
+    return(list(statements = empty_sas_statements(), comments = comments, findings = findings))
   }
   res$stmt_id <- seq_len(nrow(res))
   list(
@@ -431,7 +583,8 @@ sas_source_records <- function(text, source_file = NULL) {
       "stmt_id", "text", "first_token", "type", "line_start", "line_end",
       "char_start", "char_end"
     )]),
-    comments = comments
+    comments = comments,
+    findings = findings
   )
 }
 

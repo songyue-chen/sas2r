@@ -105,7 +105,7 @@ llm_ambient_url_identity <- function(variable) {
   if (!grepl("^https?://", value)) value <- paste0("https://", value)
   if (!grepl("^https?://[^/?#[:space:]]+", value)) return(NULL)
   # User info, query, and fragment data can carry a token, so they are dropped
-  # before the value can reach a capability key, lockfile, or audit row.
+  # before the value can reach a capability key or audit row.
   value <- sub("[?#].*$", "", value)
   value <- sub("^([^:]+://)[^/@]+@", "\\1", value)
   value
@@ -149,7 +149,9 @@ normalize_llm_config <- function(config) {
   if (!is.list(config) || is.null(names(config)) || any(!nzchar(names(config)))) {
     llm_config_abort("LLM configuration must be a named mapping")
   }
-  unknown <- setdiff(names(config), LLM_CONFIG_KEYS)
+  config$provider <- llm_canonical_provider(llm_scalar_string(config$provider, "provider", TRUE))
+  spec <- llm_provider_spec(config$provider)
+  unknown <- setdiff(names(config), c(LLM_CONFIG_KEYS, spec$config_fields))
   if (length(unknown)) {
     llm_config_abort(
       "Unknown key{?s} in {.field llm}: {.field {unknown}}"
@@ -162,8 +164,6 @@ normalize_llm_config <- function(config) {
         value < 0 || (field == "max_output_tokens" && (value < 1 || value != floor(value)))))
       llm_config_abort("{field} must be a finite non-negative number (positive integer for max_output_tokens)")
   }
-  config$provider <- tolower(llm_scalar_string(config$provider, "provider", TRUE))
-  spec <- llm_provider_spec(config$provider)
   wrong_provider <- setdiff(
     names(config), c(LLM_SHARED_CONFIG_KEYS, spec$config_fields)
   )
@@ -327,11 +327,6 @@ register_llm_secret_values <- function(value) {
 }
 
 llm_registered_secret_values <- function() .llm_secret_state$values
-
-clear_llm_registered_secrets <- function() {
-  .llm_secret_state$values <- character()
-  invisible(NULL)
-}
 
 tracked_llm_credentials <- function(callback) {
   if (is.null(callback)) return(NULL)

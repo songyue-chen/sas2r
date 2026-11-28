@@ -19,6 +19,10 @@ in this directory.
 | Providers and agents | Offline provider/configuration contracts, schema validation and repair, tool budgets and installed worker schemas |
 | CRAN review regressions | Temporary default audit logs, explicit demo destinations, file-writing side effects and documentation contracts |
 
+The 0.6.2 profile also exercises macro input ordering, report paths and PDF layout,
+repair evidence, optional bug triage and its issue draft, date columns in written
+datasets, SAS log notes, comparison keys, and which requests are streamed.
+
 The extended acceptance, concurrency, provider/accounting and accumulated
 integration regression matrices remain on `develop`. This includes the separate
 parallel missing-input, called-macro bundle, startup export, partial execution
@@ -39,6 +43,6 @@ including on Windows R release and R-devel.
 
 Run this suite from the repository's `tests/` directory against an installed package
 with `Rscript -e 'testthat::test_check("sas2r")'`. Check the built archive with
-`NOT_CRAN=false R CMD check --as-cran sas2r_0.5.8.tar.gz`.
+`NOT_CRAN=false R CMD check --as-cran sas2r_0.6.2.tar.gz`.
 
 See [the release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) before preparing the next version.

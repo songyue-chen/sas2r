@@ -35,7 +35,7 @@ MACRO_BUILTINS <- c(
 macro_call_scan <- function(units) {
   visible_text <- function(text) {
     sc <- sas_scan(text)
-    keep <- sc$mask %in% c("c", "q") | (sc$mask == "s" & sc$chars == "'")
+    keep <- sc$mask %in% c("c", "q", "m") | (sc$mask == "s" & sc$chars == "'")
     sc$chars[!keep] <- " "
     paste(sc$chars, collapse = "")
   }

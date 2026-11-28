@@ -344,20 +344,6 @@ withheld_model_params <- function(request, capabilities) {
   setdiff(requested, names(effective))
 }
 
-llm_optional_parameter_error <- function(parameter, message = NULL) {
-  if (!parameter %in% LLM_OPTIONAL_PARAMETERS) {
-    cli::cli_abort("unknown optional LLM parameter {.val {parameter}}",
-                   class = "sas2r_llm_capability_error")
-  }
-  structure(
-    list(
-      message = message %||% paste0("optional parameter not supported: ", parameter),
-      call = NULL, parameter = parameter, status_code = 400L
-    ),
-    class = c("sas2r_llm_optional_parameter_error", "error", "condition")
-  )
-}
-
 optional_parameter_from_error <- function(error, sent_parameters) {
   if (inherits(error, "sas2r_llm_optional_parameter_error")) {
     parameter <- error$parameter

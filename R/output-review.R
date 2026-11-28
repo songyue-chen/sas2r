@@ -856,8 +856,12 @@ new_comparison_report <- function(target, alignment, comparison,
 #'
 #' @param reference Reference data frame or tibble.
 #' @param candidate Candidate data frame or tibble.
-#' @param target Discovered target metadata row or list.
-#' @param context Optional alignment context list.
+#' @param target Target metadata: a list or one-row data frame with
+#'   `target_id`, `logical_dataset`, `role` and `contributing_unit_ids`, as in
+#'   the example.
+#' @param context Optional list of source knowledge about row identity and
+#'   order, such as `by` (key columns) and `order_contract`. `NULL` infers row
+#'   keys from the data alone.
 #' @param profile Comparison profile.
 #' @param hashes Hash list.
 #' @param resource_state Resource status string.
@@ -1096,7 +1100,8 @@ output_target_writer_units <- function(lineage, target_ds) {
 #' guess. The *order* contract is not: it is asserted about the target itself,
 #' so it is taken only from a unit that writes the target.
 #'
-#' @param target_row One row of the output target plan.
+#' @param target_row A comparison target: a list or one-row data frame with
+#'   `logical_dataset` and `contributing_unit_ids`.
 #' @param project The `sas2r_project` the translation was produced from.
 #' @return An alignment context list; the empty context when the source says
 #'   nothing about row identity or order.

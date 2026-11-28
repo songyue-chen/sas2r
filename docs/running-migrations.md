@@ -72,6 +72,19 @@ skipped, and skipped outputs count as not executed rather than missing. Such an
 attempt cannot be reported as migration-ready. Deferral does not trigger
 repeated attempts to repair code for absent resources. Missing configured SAS
 references prevent comparison, but do not by themselves prevent execution.
+
+For a literal dataset passed to a macro, sas2r checks the library bound at
+the call site. If another program writes the same member in that library,
+an existing file alone cannot establish which version the macro should read.
+Declare the source program sequence in `migration.execution_order`. A caller
+that runs first needs a readable input. A caller that follows the writer can
+use its generated member, including when the input directory starts empty.
+With a declared writer-first sequence, a setup macro, an omitted argument
+with a literal dataset default, or a call inside a step can leave the member's
+state uncertain. The dependency appears as an advisory and the caller runs.
+An unresolved binding, an ambiguous library alias, or an explicit deletion
+after the write can still defer execution.
+
 An intermediate dataset with no producer visible to the scanner, or a possible
 statement-order issue, remains a warning and can be tested by execution. This
 allows translated macros to create their intermediate datasets at runtime.
@@ -501,6 +514,41 @@ These checks cover population behavior, not all derived values or SAS parity.
 The elapsed-time and
 usage summary distinguishes known spend from unknown-cost calls: `$0.0000`
 known spend with unknown-cost calls does not mean the run was free.
+It also shows the share of input tokens read from the provider's prompt cache,
+completed requests and tokens for each role, and how many answers were accepted
+before the tool phase ended. A cache share is shown only when the provider
+reported cached input; `not reported` does not mean zero. These figures
+describe cost. They say nothing about whether a translation is correct.
+
+## SAS log notes: a variable no input supplies
+
+A SAS DATA step that reads a variable none of its inputs carries does not
+stop. It reads the variable as missing and writes
+`NOTE: Variable X is uninitialized.` to its log. The generated R does the
+same through `sas_uninitialized()`, and the run report lists every case under
+**SAS log notes**, with the program and the number of rows.
+
+Such a note often points to the input and not to the translation: a
+supplemental qualifier that was never loaded, a column that was renamed, or a
+dataset from a different data cut. Columns derived from that variable are then
+missing in the output, as they would be in SAS. Check the input first.
+
+A note marked "The SAS source never names this variable" names a variable the
+SAS code does not use, so look at the generated program instead.
+
+Where SAS itself stops on an absent variable, the generated R stops as well:
+in `BY`, in `WHERE`, in `KEEP=`, `DROP=` or `RENAME=` on an input dataset, and
+in the variable list of a procedure.
+
+<!-- sas2r-example: offline uninitialized-variable -->
+```r
+library(sas2r)
+dm <- data.frame(usubjid = c("01", "02"))
+# SAS: randdt = input(randdtc, yymmdd10.);   with no RANDDTC in the input
+dm <- sas_uninitialized(dm, "randdtc")
+dm$randdt <- as.numeric(as.Date(substr(dm$randdtc, 1, 10)) - as.Date("1960-01-01"))
+stopifnot(identical(dm$randdt, c(NA_real_, NA_real_)))
+```
 
 ## Reference differences: translation error or different specification?
 
@@ -561,8 +609,10 @@ installed dependency versions) refresh reviews while retaining translations.
 Saved reviews from before request identities were recorded also receive a fresh
 review; progress explains this with `saved review predates request identity;
 refreshing`. Changes to shared worker prompts, skills, policy or runtime helpers
-can invalidate the checkpoint itself and regenerate translations as well. A
-version-number change alone does not require regeneration.
+can invalidate the checkpoint itself and regenerate translations as well. So
+does installing a different sas2r version: a checkpoint is reused only by the
+version that saved it. Finish or resume a run before upgrading the package if
+you want to keep its saved translations.
 Version 0.4.5 changes the shared agent policy, so checkpoints created with an
 earlier policy regenerate translations under the current resume rules.
 The parallel checkpoint format can import compatible version-8 checkpoints while
@@ -735,6 +785,81 @@ categorical mismatch patterns without exact counts or offsets; fixers and candid
 findings without reference targets. Neither evidence policy permits record previews
 or raw runtime logs. See [model privacy](model-privacy.md).
 
+## Report a possible sas2r bug (beta)
+
+Opt in before running `sas_translate()` by adding this setting to your
+`_sas2r.yml`. Set it to `false` to disable it. It defaults to `false`.
+
+```yaml
+migration:
+  bug_reports: true
+```
+
+From R, the equivalent setting is `config = list(migration = list(bug_reports = TRUE))`.
+After translation and repair decisions, the configured reviewer can make one
+budget-accounted triage request for recorded failures in translation, execution
+or output checks. This opt-in is independent of the dataset explanations
+controlled by `migration.report_diagnosis`. Without a reviewer or request budget,
+the run report explains why triage could not run.
+
+Triage uses the same ellmer-backed reviewer as the migration. It requests native
+structured output when the model and connector are configured for it. Otherwise
+it includes the response schema in the prompt and validates the returned JSON
+locally. The same `bug_reports` setting applies across providers.
+
+For a failed dataset the request also says, for each differing column, which
+party handled it: the SAS source, the generated R, a runtime helper, the write
+and read conversion or the comparison. Each finding names the package step it
+suspects. An output that is wrong but fails no check is not examined, and
+neither is package behavior the run never exercised.
+
+`START_HERE.html` shows an issue draft for each suspected package defect,
+under "Possible sas2r bugs (AI beta)". The draft was written on your computer
+and has not been sent anywhere. It keeps two kinds of content under separate
+headings:
+
+- **Recorded by sas2r.** The recorded symptom and, for a finding about an
+  output, the output's name, the failed check, the comparison keys you
+  configured and the keys rows were paired on, the pairing method, and the row
+  counts of the reference and the generated dataset. "Records paired" counts
+  the rows matched between the two. "Row matching ran to its end" says whether
+  the matching step finished its work; it can finish and still leave rows
+  unpaired.
+  When rows are left unpaired on both sides, the comparison matches those rows
+  again with one key column left out, once for each key column. Where the
+  other key columns name one unpaired row on each side, the draft names the
+  column left out, the number of pairs found, and the number of unpaired rows
+  where that column is missing on each side. These pairs are not part of
+  "Records paired" and do not change the result. The draft does not say why
+  the values differ or which side is right. A column is named only when it
+  explains a pair by itself: nothing is shown where leaving it out leaves a
+  repeated key, or where two key columns differ together.
+- **Suggested by the AI (not verified).** The package step it suspects, its
+  suggested cause, the uncertainty, a next step and, when the model drafted
+  one, a short synthetic R example. Examples are labelled as unrun.
+
+The draft holds your project's dataset and variable names. Read it and decide
+what to share. Read an example before you run it, and record the result on the
+reported build. The translation report lists the same findings in short. See
+[model privacy](model-privacy.md).
+
+To save the draft as a Markdown file, pass the returned translation result or
+the path to that run's `report/report.json` as the first argument of
+`sas2r::sas_bug_report()` and a new Markdown destination as `file`. Use the
+saved JSON path for a blocked run that raised an error. The file holds the same
+draft as the page, and an existing file is never replaced. The file is written
+to be pasted into an issue: names, and each sentence taken from the run or from
+the model, are written as literal text on one line, inside code marks, and
+proposed code is inside a code fence. Nothing in them is read as Markdown, so a
+name such as `_TYPE_` keeps its underscores, and a line break, a `#` or a user
+mention in the model's text does not start a paragraph, a heading or a
+notification. The output is found
+by the name saved with the finding; a report saved by an earlier version
+exports what it has and says that the comparison details could not be linked.
+Send what you decide to share to the maintainer or post it in the
+[issue tracker](https://github.com/songyue-chen/sas2r/issues).
+Try the [saved triage demo](../inst/examples/README.md#try-the-package-bug-reporting-beta).
+
 ## Code style and packages
 
 Translated code is written for maintenance as well as fidelity. Two
@@ -868,13 +993,26 @@ macro statements; use block comments for inactive macro text.
 See SAS's [macro comment rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a000543665.htm)
 and [macro quoting rules](https://support.sas.com/documentation/cdl/en/mcrolref/61885/HTML/default/a001061290.htm).
 
-Statement splitting does not fully support macro-quoted semicolons, such as
-`%exec_sql(query=%str(select a; select b;))`. Simplify these forms or supply
-expanded source before translation; a discovered macro name does not prove
-that its argument or statement boundaries were parsed correctly. Similarly,
+Statement splitting follows the argument of `%STR` and `%NRSTR` to its closing
+parenthesis, so a semicolon inside it does not end the statement, as in
+`%exec_sql(query=%str(select a; select b;))`. Parentheses inside the argument
+are counted, and the marked forms `%(`, `%)`, `%'`, `%"` and `%%` are read as
+text. Other quoting functions, such as `%BQUOTE`, and text produced when a
+macro runs are not followed: simplify those forms or supply expanded source
+before translation. If an argument is never closed, the statement is split at
+each semicolon as before, and preflight lists a `scanner_fallback` finding with
+the file and line. The finding is advisory. Similarly,
 `call execute('%my_macro(' || id || ')')` constructs code at runtime, so its
 single-quoted text is not mapped as a static call. Provide expanded source and
 the required macro definitions for such programs.
+
+Instream data follows the SAS rules. A `DATALINES`, `CARDS` or `PARMCARDS`
+block ends at the first line that contains a semicolon, and that line is read
+as code, so a block may end with `run;` as well as with a lone semicolon. Data
+lines that contain semicolons need `DATALINES4`, `CARDS4` or `PARMCARDS4`,
+which end only at a line beginning with `;;;;`. If such a block has no `;;;;`
+line, it ends at the first line beginning with a semicolon and preflight lists
+a `scanner_fallback` finding.
 
 ## Handy checks before a long run
 

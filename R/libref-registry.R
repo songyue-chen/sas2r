@@ -1263,8 +1263,7 @@ resolve_libref_at <- function(registry, libref, file, line,
 #' Exact column order of the effective-libref projection
 #'
 #' The projection is a contract, not an internal helper: [write_autoexec()] and
-#' the staged-module emitter read it today, and confined output-evidence
-#' discovery reads the same rows later, so the column list is declared once
+#' the staged-module emitter both read it, so the column list is declared once
 #' here.
 #'
 #' The first five columns describe the *point of use* the row was resolved at;
@@ -1310,9 +1309,8 @@ empty_effective_librefs <- function() {
 
 #' Project a finished project onto the bindings its generated bundle needs
 #'
-#' The one projection of `project$libref_registry` that generated R and, later,
-#' confined output-evidence discovery are built from. Its whole purpose is that
-#' there be exactly one: before it, [write_autoexec()] independently reparsed
+#' The one projection of `project$libref_registry` that generated R is built
+#' from. Its whole purpose is that there be exactly one: before it, [write_autoexec()] independently reparsed
 #' `project$librefs` and emitted a single static project-wide map, so a
 #' generated bundle could disagree with the very bindings the project had
 #' already selected -- an accessible source `LIBNAME` won in `project$lineage`

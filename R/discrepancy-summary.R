@@ -43,15 +43,103 @@ dataset_discrepancy_summary <- function(target, key = target$target_key) {
     alignment = target$differences$structure$alignment_resource_state %||% "unknown")
 }
 
+# The closed format of the summary a model may see. Anything outside it stays
+# in the human report: counts, magnitudes, cell values, keys, reference paths.
+REVIEWER_SUMMARY_FIELDS <- c("schema_version", "target", "kind", "status",
+  "reference_present", "rows", "columns", "row_pairing", "variables",
+  "type_differences", "alignment")
+REVIEWER_SUMMARY_VARIABLE_FIELDS <- c("name", "kind", "differences", "patterns")
+REVIEWER_SUMMARY_TYPE_FIELDS <- c("name", "reference_type", "generated_type")
+REVIEWER_SUMMARY_VOCABULARY <- list(
+  relation = c("same", "generated_more", "generated_fewer", "unknown"),
+  row_pairing = c("complete", "partial", "unknown"),
+  differences = c("missing_only", "all", "some"),
+  patterns = c("CONSTANT_OFFSET", "NA_PATTERN_DIFF", "CASE_ONLY_DIFF", "PADDING_ONLY"))
+
+# Why a summary does not fit the closed format; empty when it does. The reasons
+# name fields only. They never quote a value, which could be the very thing
+# that should not leave the machine.
+reviewer_summary_violations <- function(summary, reference_path = NULL) {
+  if (!is.list(summary)) return("the summary is not a list")
+  vocabulary <- REVIEWER_SUMMARY_VOCABULARY
+  field_names <- function(x) names(x) %||% character()
+  unexpected <- function(found, allowed, where) {
+    extra <- setdiff(found, allowed)
+    safe <- extra[grepl("^[A-Za-z_][A-Za-z0-9_.]{0,39}$", extra)]
+    c(if (length(extra)) paste0("unexpected field in ", where,
+        if (length(safe)) paste0(" (", paste(safe, collapse = ", "), ")")),
+      if (length(setdiff(allowed, found))) paste0("missing field in ", where))
+  }
+  # A name or label: one short single-line string. NULL means not recorded.
+  label <- function(x) is.null(x) || (is.character(x) && length(x) == 1L && !is.na(x) &&
+    nchar(x) <= 200L && !grepl("[\r\n]", x))
+  one_of <- function(x, allowed) is.character(x) && length(x) == 1L && !is.na(x) && x %in% allowed
+  rows <- function(x) if (is.list(x) && is.null(names(x))) x else NULL
+  variables <- rows(summary$variables)
+  types <- rows(summary$type_differences)
+  leaves <- unlist(summary, use.names = FALSE)
+  problems <- c(
+    unexpected(field_names(summary), REVIEWER_SUMMARY_FIELDS, "the summary"),
+    if (!identical(summary$schema_version, DISCREPANCY_SUMMARY_VERSION)) "schema_version is not the current one",
+    if (!all(vapply(summary[c("target", "kind", "status", "alignment")], label, logical(1))))
+      "target, kind, status or alignment is not a short label",
+    if (!(is.logical(summary$reference_present) && length(summary$reference_present) == 1L &&
+        !is.na(summary$reference_present))) "reference_present is not TRUE or FALSE",
+    if (!one_of(summary$rows, vocabulary$relation) || !one_of(summary$columns, vocabulary$relation))
+      "rows or columns is outside the fixed vocabulary",
+    if (!one_of(summary$row_pairing, vocabulary$row_pairing)) "row_pairing is outside the fixed vocabulary",
+    if (is.null(variables) && length(summary$variables)) "variables is not a list of records",
+    unlist(lapply(variables, function(v) c(
+      unexpected(field_names(v), REVIEWER_SUMMARY_VARIABLE_FIELDS, "a variable record"),
+      if (!label(v$name) || !label(v$kind)) "a variable name or kind is not a short label",
+      if (!one_of(v$differences, vocabulary$differences)) "a variable's differences value is outside the fixed vocabulary",
+      if (!(is.character(v$patterns) || is.null(v$patterns)) || !all(v$patterns %in% vocabulary$patterns))
+        "a variable's patterns are outside the fixed vocabulary"))),
+    if (is.null(types) && length(summary$type_differences)) "type_differences is not a list of records",
+    unlist(lapply(types, function(v) c(
+      unexpected(field_names(v), REVIEWER_SUMMARY_TYPE_FIELDS, "a type-difference record"),
+      if (!label(v$name) || !label(v$reference_type) || !label(v$generated_type))
+        "a type-difference name or type is not a short label"))),
+    if (any(unlist(rapply(summary, is.numeric, how = "list")))) "a numeric value is present",
+    if (is.character(reference_path) && length(reference_path) == 1L && !is.na(reference_path) &&
+        nzchar(reference_path) && is.character(leaves) &&
+        any(grepl(reference_path, leaves, fixed = TRUE))) "a reference path is present"
+  )
+  unique(as.character(problems))
+}
+
+# A summary that fails the closed format never reaches a model. The run goes on
+# without it and the omission is recorded where the caller keeps diagnostics.
+# Tests run with the strict option set, so a defect in the constructor fails
+# there loudly instead of dropping summaries quietly.
+withhold_reviewer_summary <- function(key, problems, omitted = NULL) {
+  key <- if (is.character(key) && length(key) == 1L && !is.na(key)) key else "unknown"
+  if (isTRUE(getOption("sas2r.strict_discrepancy_summary", FALSE))) {
+    cli::cli_abort(c("The reviewer discrepancy summary for {.val {key}} is outside its closed format.",
+      "x" = "{problems}"), class = "sas2r_discrepancy_summary_violation")
+  }
+  if (is.environment(omitted)) {
+    omitted$items <- c(omitted$items, list(list(type = "discrepancy_summary_omitted",
+      target = key, reasons = problems)))
+  }
+  cli::cli_warn(c("The comparison summary for {.val {key}} was withheld from model requests.",
+    "i" = "It did not fit the closed format a model is allowed to see: {problems}.",
+    "i" = "The run continues without it. Please report this as a sas2r defect."),
+    class = "sas2r_discrepancy_summary_omitted")
+  NULL
+}
+
 # Investigation only. Counts and offset magnitudes belong to human reports.
-# This projection deliberately contains no numeric comparison targets.
-reviewer_discrepancy_summary <- function(target, key = target$target_key) {
+# This projection deliberately contains no numeric comparison targets, and the
+# check below holds it to that before it is returned. `omitted` is an
+# environment the caller supplies to collect what was withheld.
+reviewer_discrepancy_summary <- function(target, key = target$target_key, omitted = NULL) {
   s <- dataset_discrepancy_summary(target, key)
   relative <- function(a, b) {
     if (any(!is.finite(c(a, b)))) return("unknown")
     if (a == b) "same" else if (a > b) "generated_more" else "generated_fewer"
   }
-  list(schema_version = DISCREPANCY_SUMMARY_VERSION, target = s$target,
+  summary <- list(schema_version = DISCREPANCY_SUMMARY_VERSION, target = s$target,
     kind = s$kind, status = s$status, reference_present = s$reference_present,
     rows = relative(s$generated$rows, s$reference$rows),
     columns = relative(s$generated$columns, s$reference$columns),
@@ -62,6 +150,9 @@ reviewer_discrepancy_summary <- function(target, key = target$target_key) {
         if (isTRUE(v$mismatches == v$compared)) "all" else "some",
       patterns = v$patterns)), type_differences = s$type_differences,
     alignment = s$alignment)
+  problems <- reviewer_summary_violations(summary, target$reference_path)
+  if (!length(problems)) return(summary)
+  withhold_reviewer_summary(key, problems, omitted)
 }
 
 discrepancy_description <- function(summary) {
@@ -119,6 +210,14 @@ report_repair_table <- function(state) {
   for (repair in state$diagnostics$rejected_repairs %||% list())
     add(repair$component_id, repair$revision_id, "Rejected; previous code retained", repair$errors,
       repair$reference_triggered_review)
+  for (outcome in state$diagnostics$bundle_repair$outcomes %||% list())
+    if (identical(outcome$outcome, "identical_patch"))
+      add(outcome$component_id, outcome$revision_id, "No change; previous code retained",
+        c(paste("Outcome run:", outcome$run_id %||% "Unknown"),
+          paste("Diagnosis (unverified):", outcome$diagnosis),
+          paste("Remaining uncertainty:", paste(outcome$remaining_uncertainty, collapse = "; ")),
+          paste("Evidence:", paste(outcome$evidence_ids, collapse = ", "))),
+        outcome$reference_triggered_review)
   for (cid in names(state$histories)) {
     history <- state$histories[[cid]]
     if (length(history$revisions) < 2L) next

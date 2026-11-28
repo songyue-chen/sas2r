@@ -1,5 +1,5 @@
 # Apply one bounded, evidence-grounded repair and refresh its review.
-repair_bundle_component <- function(state, packet, attempt_rec, round) {
+repair_bundle_component <- function(state, packet, attempt_rec, round, prior_repairs = list()) {
   attempt_rec <- packet$attempt %||% attempt_rec
   primary_cid <- packet$primary_component_id
   if (is.null(primary_cid) || !primary_cid %in% names(state$selected_revisions)) {
@@ -45,6 +45,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
       config = state$config,
       round = round + 1L,
       attempt_id = attempt_rec$attempt_id,
+      prior_outcomes = c(prior_repairs, state$diagnostics$bundle_repair$outcomes %||% list()),
       evidence_ids = packet$evidence_ids
     ),
     error = function(e) {
@@ -59,6 +60,9 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   }
 
   if (!isTRUE(fixed_rev$checks$pass)) {
+    outcome <- bundle_repair_outcome(state, attempt_rec, fixed_rev, reference_triggered,
+      round, "repair_mechanical_checks_failed", fixed_rev$checks$errors)
+    state$diagnostics$bundle_repair$outcomes <- c(state$diagnostics$bundle_repair$outcomes, list(outcome))
     state$diagnostics$rejected_repairs <- c(state$diagnostics$rejected_repairs, list(list(
       component_id = primary_cid, revision_id = fixed_rev$revision_id,
       reference_triggered_review = reference_triggered,
@@ -75,6 +79,9 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
 
   if ((is_identical_code || is_identical_patch) && !has_helper_patch) {
     stop_reason <- "identical_patch"
+    outcome <- bundle_repair_outcome(state, attempt_rec, fixed_rev, reference_triggered,
+      round, stop_reason)
+    state$diagnostics$bundle_repair$outcomes <- c(state$diagnostics$bundle_repair$outcomes, list(outcome))
     return(list(state = state, applied = FALSE, reason = stop_reason))
   }
 
@@ -95,6 +102,9 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     paste("candidate review unavailable:", conditionMessage(e))
   })
   if (length(rejection)) {
+    outcome <- bundle_repair_outcome(state, attempt_rec, fixed_rev, reference_triggered,
+      round, "repair_review_regressed", rejection)
+    retained$diagnostics$bundle_repair$outcomes <- c(retained$diagnostics$bundle_repair$outcomes, list(outcome))
     rejected_revisions <- list()
     for (cid in affected) {
       h <- state$histories[[cid]]
@@ -125,12 +135,8 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
   fixed_rev <- state$selected_revisions[[primary_cid]]
 
   # Record repair
-  repair_rec <- list(
-    round = round + 1L,
-    component_id = fixed_rev$component_id %||% primary_cid,
-    revision_id = fixed_rev$revision_id,
-    reference_triggered_review = reference_triggered,
-    diagnosis = fixed_rev$diagnosis,
+  repair_rec <- c(bundle_repair_outcome(state, attempt_rec, fixed_rev, reference_triggered,
+    round, "applied"), list(
     summary = fixed_rev$summary,
     patch_hash = fixed_rev$patch_hash,
     helper_patch = fixed_rev$bundle_helper_patch,
@@ -139,7 +145,7 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
     changed_interfaces = fixed_rev$changed_interfaces,
     affected_outputs = fixed_rev$affected_outputs,
     spend_usd = fixed_rev$spend_usd %||% 0
-  )
+  ))
 
   signal_bundle_event(
     "bundle_fixer_completed",
@@ -151,6 +157,19 @@ repair_bundle_component <- function(state, packet, attempt_rec, round) {
 
   list(state = state, applied = TRUE, repair = repair_rec,
        helper_changed = has_helper_patch)
+}
+
+# Retained locally even when no candidate was applied. Applied outcomes remain
+# in the existing repair history; other outcomes belong to bundle diagnostics.
+bundle_repair_outcome <- function(state, attempt, revision, reference_triggered, round,
+                                  outcome, rejection_reasons = character()) {
+  list(run_id = state$paths$run_id, component_id = revision$component_id,
+    attempt_id = attempt$attempt_id, execution_id = attempt$execution_id %||% attempt$attempt_id,
+    round = round + 1L, revision_id = revision$revision_id,
+    prior_revision_id = revision$prior_revision_id, outcome = outcome,
+    reference_triggered_review = reference_triggered,
+    diagnosis = revision$diagnosis, remaining_uncertainty = revision$remaining_uncertainty,
+    evidence_ids = revision$evidence_ids, rejection_reasons = rejection_reasons)
 }
 
 # Repair ceilings are counts, not timeouts or unlimited-loop switches.
@@ -336,6 +355,7 @@ bundle_repair_queue <- function(state, attempt, assessment, diagnostic,
       failed_attempt$stdout_path <- execution$stdout_path
       failed_attempt$stderr_path <- execution$stderr_path
       failed_attempt$execution_id <- execution$execution_id
+      failed_attempt$diagnostic_execution <- execution
     }
     packet <- build_bundle_repair_packet(state, failed_attempt, subset, previous_disposition)
     packet$primary_component_id <- repair_cid

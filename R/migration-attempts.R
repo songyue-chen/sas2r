@@ -294,7 +294,10 @@ snapshot_selected_bundle <- function(state, attempt) {
   if (!is.null(state$project) && inherits(state$project, "sas2r_project")) {
     fcat <- tryCatch(compile_format_catalog(state$project), error = function(e) list(catalog = list()))
     if (!is.null(fcat$catalog)) {
-      write_formats(fcat$catalog, bundle_dir)
+      # The dates the selected programs declare where they write datasets,
+      # so a program of this bundle run on its own reads them back as numbers.
+      write_formats(fcat$catalog, bundle_dir,
+        output_date_registry(lapply(state$selected_revisions, revision_code)))
     } else {
       writeLines(c("# sas2r: no format catalog definitions", ""), file.path(bundle_dir, "_sas2r_formats.R"))
     }
@@ -493,6 +496,7 @@ select_attempt <- function(paths, candidate, assessment, previous = NULL) {
     execution_order = candidate$execution_order,
     execution_passed = isTRUE(candidate$passed),
     population_checks = candidate$population_checks %||% list(),
+    log_notes = candidate$log_notes %||% list(),
     executed_component_ids = candidate$executed_component_ids %||% character()
   )
 

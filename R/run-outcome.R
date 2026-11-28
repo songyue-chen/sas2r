@@ -24,7 +24,7 @@ migration_run_outcome <- function(state, report, attempts) {
   details <- c(
     if (!is.null(failure$stage)) paste("Stopped during:", failure$stage),
     if (!is.null(stopped$message)) paste0("Bundle execution stopped in ", stopped$component_id %||% "unknown component",
-      " (", latest$attempt_id, "): ", stopped$message),
+      " (", latest$attempt_id, "): ", cli::ansi_strip(stopped$message)),
     if (!is.null(stopped$message)) {
       missing <- missing_source_dataset(state, stopped$component_id, stopped)
       recorded <- recorded_dataset_output(latest, missing)
@@ -32,6 +32,11 @@ migration_run_outcome <- function(state, report, attempts) {
         "but this reader could not find it. Check the effective library bindings; output contents remain unverified.")
     },
     if (!is.null(stopped$message)) paste("Bundle logs:", latest$stdout_path, latest$stderr_path),
+    if (length(log_note_sentences(report$log_notes))) {
+      named <- unique(unlist(lapply(report$log_notes, function(entries) vapply(entries, `[[`, "", "variable"))))
+      paste0("SAS log notes: ", length(named), " uninitialized variable", if (length(named) == 1L) "" else "s",
+        " read as missing (", paste(named, collapse = ", "), "); see SAS log notes in the report.")
+    },
     if (length(pending)) paste0("Separate outstanding static reviews (not proof these paths executed): ",
       paste(pending, collapse = ", ")),
     if (!is.null(report$diagnostics$pipeline)) pipeline_coverage_lines(report$diagnostics$pipeline),
@@ -40,7 +45,7 @@ migration_run_outcome <- function(state, report, attempts) {
     readiness_warning_lines(readiness),
     vapply(names(blocking), function(id) paste0("Dependency findings for ", id, ": ",
       paste(blocking[[id]]$findings, collapse = ", ")), ""),
-    vapply(names(advisory), function(id) paste0("Reported names without a scanned producer for ", id,
+    vapply(names(advisory), function(id) paste0("Dependency observations for ", id,
       " (not blocking execution): ", paste(advisory[[id]]$advisory, collapse = ", ")), ""),
     if (length(judgment)) paste0("Findings for human judgment (no automated repair addresses them): ",
       paste(judgment, collapse = "; ")),

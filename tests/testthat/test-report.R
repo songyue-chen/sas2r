@@ -112,7 +112,8 @@ test_that("write_migration_report writes report.json and report.md and redacts s
   expect_true(file.exists(paths$report_json))
 
   # Read JSON
-  rep_json <- read_migration_report(paths$report_json)
+  rep_json <- jsonlite::fromJSON(paths$report_json, simplifyVector = TRUE,
+                                 simplifyDataFrame = FALSE)
   expect_identical(rep_json$status, "migration_ready")
   expect_identical(rep_json$run_id, "test_run_123")
   # Verify secret redaction

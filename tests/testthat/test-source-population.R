@@ -98,3 +98,51 @@ test_that("compatible factor and integer BY representations preserve populations
   expect_no_error(fx$env$lib_write(data.frame(id = 1L), "work", "out"))
   expect_identical(fx$observer$finish()[[1]]$status, "passed")
 })
+
+test_that("LENGTH declarations before SET determine the output column prefix", {
+  input <- data.frame(id = 1, value = 2)
+  fx <- population_fixture(paste("data work.stage; length FLAG $8; set raw.source;",
+    "flag='YES'; run; proc print data=work.stage; run;"), list(raw.source = input))
+  wrong <- transform(input, flag = "YES")
+  expect_error(fx$env$lib_write(wrong, "work", "stage"), "column order",
+    class = "sas2r_column_order_mismatch")
+  expect_no_error(fx$env$lib_write(wrong[c("flag", "id", "value")], "work", "stage"))
+  checks <- fx$observer$finish()
+  expect_true(any(vapply(checks, function(x) identical(x$reason, "source_column_order") &&
+    identical(x$status, "passed"), logical(1))))
+})
+
+test_that("grouped LENGTH declarations and existing input columns keep first occurrence order", {
+  input <- data.frame(id = 1, value = 2)
+  fx <- population_fixture("data work.out; length z id 8 a b $ 5; set raw.source; run;",
+    list(raw.source = input))
+  out <- data.frame(z = 0, id = 1, a = "", b = "", value = 2)
+  expect_no_error(fx$env$lib_write(out, "work", "out"))
+  expect_error(fx$env$lib_write(out[c(2, 1, 3, 4, 5)], "work", "out"), "column order")
+})
+
+test_that("ambiguous declaration and dataset options defer column-order assertions", {
+  for (sas in c(
+    "data work.out; length x1-x3 8; set raw.source; run;",
+    "data work.out; retain id; length flag $8; set raw.source; run;",
+    "data work.out; length flag $8; set raw.source(keep=id); run;",
+    "data work.out; length flag $8; set raw.source; drop flag; run;",
+    "data work.out; length flag $8; set raw.source; run; data work.out; set raw.source; run;")) {
+    fx <- population_fixture(sas, list(raw.source = data.frame(id = 1)))
+    expect_false(any(vapply(fx$specs, function(x) identical(x$route, "column_order") &&
+      identical(x$status, "supported"), logical(1))))
+    expect_no_error(fx$env$lib_write(data.frame(id = 1), "work", "out"))
+  }
+})
+
+test_that("column-order failures preserve a source-based diagnostic for repair", {
+  fx <- population_fixture("data work.out; length flag $8; set raw.source; run;",
+    list(raw.source = data.frame(id = 1)))
+  error <- tryCatch(fx$env$lib_write(data.frame(id = 1, flag = "PRIVATE_VALUE"), "work", "out"),
+    error = identity)
+  facts <- agent_error_facts(error, "x$flag <- 'YES'; lib_write(x, 'work', 'out')")
+  expect_identical(facts$kind, "source_column_order")
+  expect_match(facts$condition_message, "LENGTH declarations before SET", fixed = TRUE)
+  expect_identical(facts$identifiers, "flag")
+  expect_false(grepl("PRIVATE_VALUE", paste(unlist(facts), collapse = " "), fixed = TRUE))
+})

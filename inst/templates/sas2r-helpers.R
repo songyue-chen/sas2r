@@ -359,6 +359,42 @@ sas2r_assignment_path <- function(path, env) {
   normalizePath(path.expand(path), winslash = "/", mustWork = FALSE)
 }
 
+sas2r_tlf_relative_path <- function(path) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path))
+    stop("Report path must be a non-empty relative path", call. = FALSE)
+  path <- gsub("\\\\", "/", path)
+  path <- sub("^(\\./)+", "", path)
+  if (grepl("^(/|[A-Za-z]:|~)", path))
+    stop("Use a relative logical report path within the output root", call. = FALSE)
+  parts <- character()
+  for (part in strsplit(path, "/", fixed = TRUE)[[1L]]) {
+    if (part %in% c("", ".")) next
+    if (part == "..") {
+      if (!length(parts)) stop("Report path escapes the logical output root", call. = FALSE)
+      parts <- utils::head(parts, -1L)
+    } else parts <- c(parts, part)
+  }
+  path <- paste(parts, collapse = "/")
+  if (!nzchar(path)) stop("Report path must name a file", call. = FALSE)
+  path
+}
+
+sas_output_path <- function(path, env = parent.frame()) {
+  # Follow the translated function's lexical scope, stopping before the
+  # workspace unless the standalone helper was itself sourced there.
+  while (!identical(env, emptyenv()) && !identical(env, globalenv()) &&
+         !exists(".sas2r_output_root", envir = env, inherits = FALSE)) {
+    env <- parent.env(env)
+  }
+  root <- if (!identical(env, globalenv()) || identical(environment(sas_output_path), env))
+    get0(".sas2r_output_root", envir = env, inherits = FALSE)
+  if (!is.character(root) || length(root) != 1L || is.na(root) || !nzchar(root))
+    stop("A runtime output root is required; source autoexec.R into a local environment", call. = FALSE)
+  dest <- file.path(root, "tlf", sas2r_tlf_relative_path(path))
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  dest
+}
+
 sas2r_libname_clear <- function(libref) {
   env <- sas2r_registry_env()
   registry <- get(".sas2r_registry", envir = env, inherits = FALSE)
@@ -542,17 +578,45 @@ lib_read <- function(libref, member, ...) {
   df <- if (target$type == "rds") readRDS(target$path)
   else if (target$type == "sas7bdat") haven::read_sas(target$path)
   else if (target$type == "xpt") haven::read_xpt(target$path)
+  # SAS keeps a date as a number of days from 1960-01-01 and a format that says
+  # to show it as a date. A column a program gave a date format when it wrote
+  # the dataset is stored as an R Date (see lib_write()) and handed back here
+  # as the SAS number, so
+  # date arithmetic in a later program is the SAS arithmetic. The format
+  # attribute goes with the class: R arithmetic copies attributes, and a
+  # duration computed from two dates must not look like a date.
+  dates <- get0(".sas2r_output_dates", envir = sas2r_registry_env(), inherits = TRUE)
+  dates <- if (is.list(dates)) dates[[tolower(paste(libref, member, sep = "."))]]
+  if (is.character(dates) && !is.null(names(dates))) {
+    origin <- -as.numeric(as.Date("1960-01-01"))
+    for (name in names(dates)) {
+      at <- which(tolower(names(df)) == tolower(name))
+      if (length(at) != 1L || !inherits(df[[at]], "Date")) next
+      x <- unclass(df[[at]])
+      storage.mode(x) <- "double"
+      present <- !is.na(x)
+      x[present] <- x[present] + origin
+      attr(x, "format.sas") <- NULL
+      df[[at]] <- x
+    }
+  }
   class(df) <- unique(c("sas2r_dataset", class(df)))
   df
 }
 
-lib_write <- function(df, libref, member, ...) {
-  # Exactly one call form: lib_write(df, "lib", "member"), data frame first.
+lib_write <- function(df, libref, member, formats = NULL, ...) {
+  # Exactly one call form: lib_write(df, "lib", "member"), data frame first,
+  # with the optional formats = c(column = "format.") after it.
   # See lib_read() for why the other forms are rejected rather than absorbed.
   canonical <- 'lib_write(df, "lib", "member")'
   if (length(list(...)) > 0L) {
     sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write(): dataset=/table= aliases are not accepted; use ",
          canonical))
+  }
+  if (!is.null(formats) && (!is.character(formats) || is.null(names(formats)) || anyNA(formats) ||
+      anyNA(names(formats)) || !all(nzchar(names(formats))) || anyDuplicated(tolower(names(formats))) > 0L)) {
+    sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write(): formats names each column once with its SAS format; use ",
+         canonical, ' with formats = c(column = "date9.")'))
   }
   if (missing(df)) {
     sas2r_libref_stop("sas2r_lib_write_arguments", paste0("lib_write() takes the data frame first; use ", canonical))
@@ -587,11 +651,64 @@ lib_write <- function(df, libref, member, ...) {
   fmt <- if (is.null(reg$write)) "rds" else reg$write
   df <- as.data.frame(df)
   if (!fmt %in% c("rds", "xpt")) sas2r_libref_stop("sas2r_write_format", paste0("Unsupported write format: ", fmt))
+  # A SAS date is a day number with a format that shows it as a date. A column
+  # the program gives a date format, in `formats`, is stored as an R Date. Only
+  # what is stored changes: the program keeps, and is returned, its own data,
+  # and lib_read() gives a later program the SAS day number again.
+  # A column is converted only when it is a plain number and every value comes
+  # back exactly, so reading returns the numbers written; one value that would
+  # not, such as some fractional day counts, leaves the whole column as it is.
+  # A missing value is never computed on, which keeps a special missing
+  # value's tag. A column that is already a Date is left.
+  # The date formats are the ones haven reads back as a date.
+  stored <- df
+  dates <- character()
+  if (length(formats)) {
+    declared <- toupper(sub("[.][0-9]*$", "", trimws(formats)))
+    is_date <- grepl("^(DATE|WEEKDATE|(YYMMDD|MMDDYY|DDMMYY)[BCDNPS]?|E8601DA|B8601DA|IS8601DA)[0-9]*$", declared)
+    dates <- declared[is_date]
+    names(dates) <- tolower(names(formats)[is_date])
+  }
+  as_dates <- character()
+  origin <- -as.numeric(as.Date("1960-01-01"))
+  for (name in names(dates)) {
+    at <- which(tolower(names(stored)) == name)
+    if (length(at) != 1L) next
+    x <- stored[[at]]
+    # A declared column that is a Date already is stored as it is, and is
+    # read back as a day number like any other declared date.
+    if (inherits(x, "Date")) { as_dates[[name]] <- dates[[name]]; next }
+    if (!is.numeric(x) || !is.null(oldClass(x))) next
+    present <- !is.na(x)
+    shifted <- as.double(x[present]) - origin
+    if (!identical(shifted + origin, as.double(x[present]))) next
+    storage.mode(x) <- "double"
+    x[present] <- shifted
+    if (is.null(attr(x, "format.sas", exact = TRUE))) attr(x, "format.sas") <- dates[[name]]
+    class(x) <- "Date"
+    stored[[at]] <- x
+    as_dates[[name]] <- dates[[name]]
+  }
   target <- sas2r_lib_member_path(w_dir, member, paste0(".", fmt))
   pending <- tempfile(".sas2r-write-", tmpdir = w_dir, fileext = paste0(".", fmt))
   on.exit(unlink(pending), add = TRUE)
-  if (fmt == "rds") saveRDS(df, pending) else haven::write_xpt(df, pending)
+  # haven names an XPT member after its file, and the temporary file's name is
+  # not a SAS name: name the member after the file it becomes.
+  if (fmt == "rds") saveRDS(stored, pending) else
+    haven::write_xpt(stored, pending, name = sub("[.]xpt$", "", basename(target), ignore.case = TRUE))
   if (!file.rename(pending, target)) sas2r_libref_stop("sas2r_library_unavailable", paste0("Could not replace dataset member: ", target))
+  # lib_read() returns the day number for the columns stored as dates here. A
+  # bundle's `_sas2r_formats.R` lists the same columns for a program run in
+  # another session; this keeps the list right within one, also for a member
+  # written again without the format.
+  env <- sas2r_registry_env()
+  known <- get0(".sas2r_output_dates", envir = env, inherits = TRUE)
+  key <- tolower(paste(libref, member, sep = "."))
+  if (length(as_dates) || (is.list(known) && !is.null(known[[key]]))) {
+    if (!is.list(known)) known <- list()
+    known[[key]] <- if (length(as_dates)) as_dates else NULL
+    assign(".sas2r_output_dates", known, envir = env)
+  }
   invisible(df)
 }
 
@@ -636,24 +753,97 @@ lib_delete <- function(libref, members) {
   invisible(unique(stem(targets)))
 }
 
+sas_uninitialized <- function(df, vars, type = "numeric") {
+  if (!is.data.frame(df)) stop("sas_uninitialized(): df must be a data frame", call. = FALSE)
+  if (!is.character(vars) || anyNA(vars) || !all(grepl("^[A-Za-z_][A-Za-z0-9_]*$", vars))) {
+    stop("sas_uninitialized(): vars names each variable as a string", call. = FALSE)
+  }
+  if (!is.character(type) || length(type) != 1L || !type %in% c("numeric", "character")) {
+    stop('sas_uninitialized(): type is "numeric" or "character"', call. = FALSE)
+  }
+  absent <- vars[!tolower(vars) %in% tolower(names(df))]
+  absent <- absent[!duplicated(tolower(absent))]
+  if (!length(absent)) return(df)
+  value <- if (identical(type, "character")) NA_character_ else NA_real_
+  for (name in absent) df[[name]] <- rep(value, nrow(df))
+  # A run reads the notes of each program from here; a script that loaded no
+  # registry still gets the columns and the printed note.
+  env <- tryCatch(sas2r_registry_env(), error = function(e) NULL)
+  if (!is.null(env)) {
+    notes <- get0(".sas2r_log_notes", envir = env, inherits = FALSE)
+    if (!is.list(notes)) notes <- list()
+    for (name in absent) {
+      notes[[length(notes) + 1L]] <- list(note = "uninitialized_variable", variable = name,
+        type = type, rows = nrow(df))
+    }
+    assign(".sas2r_log_notes", notes, envir = env)
+  }
+  for (name in absent) {
+    message(structure(class = c("sas2r_uninitialized_variable", "message", "condition"),
+      list(message = paste0("NOTE: Variable ", name, " is uninitialized.\n"), call = NULL, variable = name)))
+  }
+  df
+}
+
 # Runtime helpers: PROC SORT and MERGE. Part of the runtime every translated
 # program carries; see ?sas2r_runtime.
 
 # NOTE: NODUPKEY dedups adjacent sorted keys; distinct() semantics match only after sorting -- which this pipeline guarantees.
 sas_sort <- function(df, by, descending = character(), ...) {
-  if (nrow(df) == 0L) return(df)
-  cols <- lapply(by, function(v) {
-    idx <- match(tolower(v), tolower(names(df)))
-    if (is.na(idx)) {
+  # Rank of each SAS missing value, used to order BY values: NA where x is not
+  # missing, 0 for ._, 1 for . (an untagged NA or NaN), 2-27 for .A-.Z. Special
+  # missing values are haven tagged NAs; haven reads them with lower-case tags
+  # while R code may write upper-case ones, so tags compare case-insensitively.
+  # A tag outside ._ and .A-.Z ranks as an ordinary missing value.
+  sas2r_missing_rank <- function(x) {
+    out <- rep(NA_integer_, length(x))
+    miss <- is.na(x)
+    out[miss] <- 1L
+    if (is.double(x) && any(miss)) {
+      tag <- tolower(haven::na_tag(x[miss]))
+      tag[is.na(tag)] <- "."
+      rank <- match(tag, c("_", ".", letters)) - 1L
+      rank[is.na(rank)] <- 1L
+      out[miss] <- rank
+    }
+    out
+  }
+  # Every BY variable is resolved before the empty-data return: PROC SORT
+  # refuses a missing BY variable whether or not there are rows to sort.
+  idx <- vapply(by, function(v) {
+    hit <- which(tolower(names(df)) == tolower(v))
+    if (!length(hit)) {
       stop("sas_sort: by variable not found in dataset: ", v, call. = FALSE)
     }
-    x <- df[[idx]]
+    # SAS names are case-insensitive, so two columns that differ only by case
+    # leave the BY variable undefined: refuse, as sas_merge() does.
+    if (length(hit) > 1L) {
+      stop("sas_sort: by variable ", v, " matches more than one column in the dataset: ",
+           paste(names(df)[hit], collapse = ", "), call. = FALSE)
+    }
+    hit
+  }, integer(1))
+  if (nrow(df) == 0L) return(df)
+  cols <- lapply(seq_along(by), function(i) {
+    v <- by[[i]]
+    x <- df[[idx[[i]]]]
+    # SAS has no factors: order a factor by its values, not its level codes,
+    # so the order agrees with how sas_merge() matches the same key.
+    if (is.factor(x)) x <- as.character(x)
+    desc <- tolower(v) %in% tolower(descending)
+    if (is.double(x)) {
+      # SAS orders ._ < . < .A < ... < .Z < every number: missing values take
+      # their rank 0-27 and numbers rank above them.
+      key <- as.double(sas2r_missing_rank(x))
+      present <- is.na(key)
+      key[present] <- 28 + rank(xtfrm(x[present]), ties.method = "min")
+      return(if (desc) -key else key)
+    }
     if (is.character(x)) {
       x <- sub(" +$", "", x)
       x[x == "" & !is.na(x)] <- NA_character_
       x <- match(x, sort(unique(x), method = "radix", na.last = NA))
     }
-    desc <- tolower(v) %in% tolower(descending)
     if (desc) {
       rank(-xtfrm(x), na.last = TRUE, ties.method = "min")
     } else {
@@ -667,9 +857,90 @@ sas_sort <- function(df, by, descending = character(), ...) {
 sas_merge <- function(a, b, by,
                       keep = c("full", "both", "left", "right", "left_only",
                                "right_only"), ...) {
+  # The BY columns of df rewritten for matching only, the way SAS compares BY
+  # values. Character (and factor) values: trailing blanks never distinguish
+  # values, and a blank value is the missing one, so trailing spaces are dropped
+  # and NA becomes "". Leading blanks still count. Double values: every missing
+  # value becomes one NA and a companion column carries its lower-case special
+  # missing tag, because .A and . are distinct BY values that vctrs would
+  # otherwise treat as equal. Other columns are unchanged.
+  sas2r_by_key <- function(df, cols) {
+    key <- as.data.frame(df[cols])
+    for (i in seq_along(cols)) {
+      x <- key[[i]]
+      if (is.character(x) || is.factor(x)) {
+        x <- sub(" +$", "", as.character(x))
+        x[is.na(x)] <- ""
+        key[[i]] <- x
+      } else if (is.double(x)) {
+        key[[paste0(".sas2r_tag_", i)]] <- tolower(haven::na_tag(x))
+        x[is.na(x)] <- NA_real_
+        key[[i]] <- x
+      }
+    }
+    key
+  }
   keep <- match.arg(keep)
-  dup_a <- anyDuplicated(a[by]) > 0L
-  dup_b <- anyDuplicated(b[by]) > 0L
+  # SAS variable names are case-insensitive: find each BY variable in both
+  # inputs, then spell every column of b the way a spells it.
+  idx_a <- match(tolower(by), tolower(names(a)))
+  idx_b <- match(tolower(by), tolower(names(b)))
+  absent <- by[is.na(idx_a) | is.na(idx_b)]
+  if (length(absent)) {
+    stop("sas_merge: by variable not found in dataset: ", absent[1], call. = FALSE)
+  }
+  # Refuse what case-insensitive matching cannot decide: a BY variable that
+  # matches two columns of one input, or two columns of b that a's spelling
+  # would merge into one. Case-only pairs nothing renames are left alone.
+  for (v in by) for (nm in list(names(a), names(b))) {
+    hits <- nm[tolower(nm) == tolower(v)]
+    if (length(hits) > 1L) {
+      stop("sas_merge: by variable ", v, " matches more than one column in a dataset: ",
+           paste(hits, collapse = ", "), call. = FALSE)
+    }
+  }
+  a_pos <- match(tolower(names(b)), tolower(names(a)))
+  renamed <- names(b)
+  renamed[!is.na(a_pos)] <- names(a)[a_pos[!is.na(a_pos)]]
+  for (v in unique(renamed[duplicated(renamed)])) {
+    from <- unique(names(b)[renamed == v])
+    if (length(from) > 1L) {
+      stop("sas_merge: columns ", paste(from, collapse = ", "),
+           " of the second dataset both match column ", v, " of the first",
+           call. = FALSE)
+    }
+  }
+  names(b) <- renamed
+  # SAS refuses a BY variable that is character in one input and numeric in
+  # the other. Dates count as numeric; factors count as character.
+  is_chr <- function(x) is.character(x) || is.factor(x)
+  is_num <- function(x) is.numeric(x) || is.double(x)
+  for (i in seq_along(by)) {
+    xa <- a[[idx_a[i]]]; xb <- b[[idx_b[i]]]
+    if ((is_chr(xa) && is_num(xb)) || (is_num(xa) && is_chr(xb))) {
+      stop("sas_merge: by variable ", by[i],
+           " is numeric in one dataset and character in the other", call. = FALSE)
+    }
+  }
+  by <- names(a)[idx_a]
+  # SAS has no factors. Where both inputs supply a column, a factor on either
+  # side is combined as character: assigning between a factor and a character
+  # vector, or between factors with different levels, writes level codes or NA.
+  # Factors that share their levels combine correctly and are left alone.
+  for (v in intersect(names(a), names(b))) {
+    fa <- is.factor(a[[v]]); fb <- is.factor(b[[v]])
+    if ((fa || fb) && !(fa && fb && setequal(levels(a[[v]]), levels(b[[v]])))) {
+      if (fa) a[[v]] <- as.character(a[[v]])
+      if (fb) b[[v]] <- as.character(b[[v]])
+    }
+  }
+  # Keys are compared through sas2r_by_key(); the returned values stay as given.
+  # One group id per row serves both the duplicate checks and the join.
+  ids <- vctrs::vec_group_id(sas2r_by_key(rbind(a[by], b[by]), by))
+  ids_a <- ids[seq_len(nrow(a))]
+  ids_b <- ids[nrow(a) + seq_len(nrow(b))]
+  dup_a <- anyDuplicated(ids_a) > 0L
+  dup_b <- anyDuplicated(ids_b) > 0L
   if (dup_a && dup_b)
     stop("sas_merge: many-to-many merge on keys (", paste(by, collapse = ", "),
          ") -- SAS row-walking semantics cannot be reproduced by a join. ",
@@ -685,9 +956,8 @@ sas_merge <- function(a, b, by,
   a$.in_a <- rep(TRUE, nrow(a)); b$.in_b <- rep(TRUE, nrow(b))
   key_id <- ".sas2r_merge_key"
   while (key_id %in% c(names(a), names(b))) key_id <- paste0(key_id, "_")
-  ids <- vctrs::vec_group_id(rbind(a[by], b[by]))
-  a[[key_id]] <- ids[seq_len(nrow(a))]
-  b[[key_id]] <- ids[nrow(a) + seq_len(nrow(b))]
+  a[[key_id]] <- ids_a
+  b[[key_id]] <- ids_b
   m <- merge(a, b, by = key_id, all = TRUE, suffixes = c(".sas2r_a", ""))
   for (v in by) {
     missing_right <- is.na(m$.in_b)
@@ -870,5 +1140,102 @@ split_ds <- function(ds, macro_vars = character()) {
   p <- strsplit(ds, ".", fixed = TRUE)[[1]]
   if (length(p) == 1L) c(lib = "work", member = p[1])
   else c(lib = p[1], member = p[2])
+}
+
+sas_print_table <- function(data, file, labels = names(data), obs = TRUE,
+                            pointsize = 10, rows_per_page = 40L) {
+  if (!is.data.frame(data) || !ncol(data)) {
+    stop("sas_print_table: data must be a data frame with at least one column.", call. = FALSE)
+  }
+  if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
+    stop("sas_print_table: file must be an explicit PDF destination.", call. = FALSE)
+  }
+  if (!endsWith(tolower(file), ".pdf")) {
+    stop(paste0("sas_print_table: file must end in .pdf (case-insensitive); ",
+                "this helper writes PDF only. Use a format-appropriate writer for non-PDF output."),
+         call. = FALSE)
+  }
+  if (!is.character(labels) || length(labels) != ncol(data) || anyNA(labels)) {
+    stop("sas_print_table: labels must contain one heading per column.", call. = FALSE)
+  }
+  if (!is.logical(obs) || length(obs) != 1L || is.na(obs)) {
+    stop("sas_print_table: obs must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.numeric(pointsize) || length(pointsize) != 1L ||
+      !is.finite(pointsize) || pointsize <= 0) {
+    stop("sas_print_table: pointsize must be positive and finite.", call. = FALSE)
+  }
+  if (!is.numeric(rows_per_page) || length(rows_per_page) != 1L ||
+      !is.finite(rows_per_page) || rows_per_page < 1 || rows_per_page != floor(rows_per_page)) {
+    stop("sas_print_table: rows_per_page must be a positive integer.", call. = FALSE)
+  }
+  columns <- lapply(data, sas_display)
+  if (isTRUE(obs)) {
+    columns <- c(list(as.character(seq_len(nrow(data)))), columns)
+    labels <- c("Obs", labels)
+  }
+  # Split every cell before measuring so a multiline cell cannot overlap the
+  # following record. Empty cells still occupy one line.
+  split_cell <- function(x) {
+    x <- gsub("\r\n?", "\n", x)
+    x <- gsub("\t", " ", x, fixed = TRUE)
+    lines <- strsplit(paste0(x, "\n"), "\n", fixed = TRUE)[[1L]]
+    if (length(lines)) lines else ""
+  }
+  cells <- lapply(seq_along(columns), function(j) {
+    lapply(c(labels[[j]], columns[[j]]), split_cell)
+  })
+  heights <- vapply(seq_len(nrow(data) + 1L), function(i) {
+    max(vapply(cells, function(col) length(col[[i]]), integer(1)))
+  }, integer(1))
+  lines <- do.call(cbind, lapply(cells, function(col) {
+    unlist(lapply(seq_along(col), function(i) {
+      c(col[[i]], rep("", heights[[i]] - length(col[[i]])))
+    }), use.names = FALSE)
+  }))
+  # Some iconv implementations transliterate even with sub = NA. Check the
+  # round trip before opening the destination so substitutions cannot pass.
+  text <- unique(enc2utf8(as.character(lines)))
+  if (any(grepl("[[:cntrl:]]", text))) {
+    stop("sas_print_table: unsupported control character in a heading or cell.", call. = FALSE)
+  }
+  encoded <- iconv(text, from = "UTF-8", to = "CP1252", sub = NA)
+  decoded <- iconv(encoded, from = "CP1252", to = "UTF-8", sub = NA)
+  if (anyNA(decoded) || any(decoded != text) || any(grepl("\u00ad", text, fixed = TRUE))) {
+    stop("sas_print_table: text is outside the printable Windows-1252 PDF encoding. Use a renderer and font that support the required characters.", call. = FALSE)
+  }
+  header <- lines[seq_len(heights[[1L]]), , drop = FALSE]
+  body <- lines[-seq_len(heights[[1L]]), , drop = FALSE]
+
+  # Measure on a null PDF device with the same font as the destination. Never
+  # implicitly open Rplots.pdf or alter the caller's graphics parameters.
+  grDevices::pdf(NULL, pointsize = pointsize, family = "mono", encoding = "WinAnsi.enc")
+  device <- grDevices::dev.cur()
+  on.exit(if (device %in% grDevices::dev.list()) grDevices::dev.off(device), add = TRUE)
+  widths <- apply(lines, 2L, function(x) max(graphics::strwidth(x, units = "inches")))
+  gap <- graphics::strwidth("  ", units = "inches")
+  grDevices::dev.off(device)
+  margin <- 0.5
+  line_height <- pointsize * 1.4 / 72
+  width <- max(7, 2 * margin + sum(widths) + gap * (ncol(lines) - 1L))
+  height <- max(3, 2 * margin + (nrow(header) + rows_per_page) * line_height)
+  x <- margin + c(0, utils::head(cumsum(widths + gap), -1L))
+  grDevices::pdf(file, width = width, height = height, pointsize = pointsize,
+                 family = "mono", encoding = "WinAnsi.enc")
+  device <- grDevices::dev.cur()
+  graphics::par(mar = c(0, 0, 0, 0), xaxs = "i", yaxs = "i")
+  pages <- max(1L, ceiling(nrow(body) / rows_per_page))
+  for (page in seq_len(pages)) {
+    first <- (page - 1L) * rows_per_page + 1L
+    last <- min(page * rows_per_page, nrow(body))
+    content <- if (first <= last) rbind(header, body[first:last, , drop = FALSE]) else header
+    graphics::plot.new()
+    graphics::plot.window(c(0, width), c(0, height))
+    y <- height - margin - (seq_len(nrow(content)) - 0.5) * line_height
+    for (j in seq_len(ncol(content))) {
+      graphics::text(x[[j]], y, labels = content[, j], adj = c(0, 0.5))
+    }
+  }
+  invisible(file)
 }
 

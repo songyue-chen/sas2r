@@ -135,10 +135,12 @@ source_review_config <- function(config) {
   config$usage_limits <- NULL
   config$migration$max_parallel_translations <- NULL
   config$migration$report_diagnosis <- NULL
+  config$migration$bug_reports <- NULL
   if (!length(config$migration)) config$migration <- NULL
   if (is.list(config$raw)) {
     config$raw$migration$max_parallel_translations <- NULL
     config$raw$migration$report_diagnosis <- NULL
+    config$raw$migration$bug_reports <- NULL
     if (!length(config$raw$migration)) config$raw$migration <- NULL
   }
   if (is.list(config$outputs)) {
@@ -174,7 +176,11 @@ review_bundle_mismatches <- function(state, attempt, assessment, round) {
     if (identical(component_review_verdict(history), "repair_required") && !isTRUE(queue[[cid]]$artifact_investigation)) next
     full_review <- identical(component_review_verdict(history), "review_unavailable")
     targets <- sort(unique(vapply(c(queue[[cid]]$failed_targets, queue[[cid]]$investigation_targets), `[[`, "", "target_key")))
-    discrepancies <- lapply(targets, function(key) reviewer_discrepancy_summary(assessment$targets[[key]], key))
+    withheld <- new.env(parent = emptyenv())
+    discrepancies <- Filter(Negate(is.null), lapply(targets, function(key)
+      reviewer_discrepancy_summary(assessment$targets[[key]], key, omitted = withheld)))
+    state$diagnostics$discrepancy_summary_omitted <- c(
+      state$diagnostics$discrepancy_summary_omitted, withheld$items)
     key <- migration_hash(list(
       evidence_schema = DISCREPANCY_SUMMARY_VERSION, discrepancies = discrepancies,
       code = rev$r_code, binding = old$binding,

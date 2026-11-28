@@ -1,87 +1,61 @@
-## Unsubmitted source update: 2026-11-08
+## sas2r 0.6.2
 
-This candidate preserves printing and invalid-argument execution diagnostics for
-repair agents, with subprocess and prompt regressions. It has not been submitted
-to CRAN; the version and submission notes must be finalized for the next release.
+This update follows the published 0.5.8 release. The candidate uses the reviewed
+package implementation and complete development tests at
+`4e5bddd7a9f591840247ac2f00a0a5539a6f3d71`.
 
-Complete compatible release tests, including the new regression, are pinned at
-`d0300efcb91b5d54d6eb18ff9065b8bc5909ca36` and retained by the permanent tag
-`release-tests-0.5.8-20261108`. Unrelated development features are not backported.
+## Earlier review feedback
 
-The validation below records the previous accepted release, not this candidate.
-Current candidate validation is recorded in its pull request.
+- Routine progress can be silenced. The one new note, for a variable that no
+  input supplies, is a `message()`. No function added since 0.5.8 writes to the
+  console with `cat()` or `print()` outside a print method. Execution failures
+  keep their diagnostics.
+- Runtime state stays local. No function writes to the global workspace.
+  `sas_output_path()` compares the calling environment with `globalenv()` only
+  to stop its search for the output root; it assigns nothing. Each `<<-`
+  updates a variable already initialized in an enclosing local scope, as
+  described in the CRAN Cookbook.
+- Examples use explicit or temporary output directories, and internal helpers
+  have no runnable help examples. All 39 help topics with examples document
+  exported functions.
+- The archive ships a representative offline test suite. Full development
+  tests run separately against the installed package. The previous review
+  requested an overall check time under ten minutes on Windows and Linux.
 
-## Resubmission: sas2r 0.5.8
+## Submission archive and checks
 
-This revision addresses the manual review about console output and writes to
-the global workspace.
+The submission file is `sas2r_0.6.2.tar.gz` (866,949 bytes). It was built with
+R 4.6.2 on Linux from release commit
+`a3aa39438bb124fa63d748b4520d54a0a4e2785e`. Its SHA-256 is
+`781f156651c6f94d8b53fbc21da55ff6ec19183927da464f2e2f3734ae9f92d6`.
+The package code, namespace, help and installed files match the reviewed
+development commit. This submission record is excluded from the archive.
 
-- Progress and preflight updates now use `message()`. They remain visible by
-  default and can be silenced with `suppressMessages()`. The existing
-  `sas2r.progress` option still controls progress separately.
-- The executor's error diagnostic uses `message()` instead of `cat()`.
-  Worker stdout/stderr files, structured conditions and saved reports are
-  retained even when the calling migration is silenced.
-- Executor callbacks now update explicitly allocated local environments
-  rather than using `<<-`.
-- Package runtime helpers no longer fall back to a registry in `.GlobalEnv`.
-  Interactive examples load the runtime into a dedicated environment.
-  Standalone generated scripts still use the runtime explicitly loaded into
-  their own execution environment, including direct `Rscript` execution.
-- Replay scripts source code locally and restore the working directory on
-  success or error. Tests no longer source helpers into, assign sentinels to,
-  or remove objects from the test runner's global workspace. An unused global
-  sentinel helper was removed. A new regression seeds a workspace registry
-  only in a disposable subprocess and confirms package calls leave it untouched.
-- Help, the runtime template, the helper reference and the vignette were
-  updated together. Regression tests cover message suppression, retained
-  smoke/bundle error logs, local library changes and replay isolation.
+Each platform checked the same file with `R CMD check --as-cran` and reported
+zero errors, warnings and NOTEs. Windows and Linux R-devel included incoming
+checks. The Linux release and R-devel jobs checked both PDF and HTML manuals.
 
-Other uses of `<<-` update variables already initialized in enclosing local
-scopes, as described in the CRAN Cookbook; they do not create global bindings.
+| Platform | Overall check | Tests |
+| --- | ---: | ---: |
+| Windows R-devel (r90926) | 333 s | 188 s |
+| Windows R release (4.6.2) | 201 s | 119 s |
+| Linux R-devel (r90998) | 228 s | 119 s |
+| Linux R release (4.6.2) | 224 s | 123 s |
+| Linux R 4.1.3 | 227 s | 124 s |
+| macOS R release (4.6.2) | 125 s | 74 s |
 
-The release retains 89 representative test files and all previous corrections
-for unexported examples, temporary file destinations and check timing. Complete
-release regression tests are pinned at
-`44313af07a58d22e69176c08624f7dc0a553c05f` and run against the installed release
-archive. The permanent tag `release-tests-0.5.8-20261021` retains that snapshot
-after its working branch is deleted. Development-only features are not included in this revision.
+Times are elapsed seconds and exclude runner and dependency setup. The archive
+contains 103 representative test files. Each platform passed 5,809 assertions
+with 12 source-checkout skips.
 
-## Current validation
+The complete development suite, pinned to the development commit, ran against
+the installed submission file and passed 13,465 assertions with two
+environment-dependent skips and no failures or test warnings. The offline
+documentation examples and the synthetic migration acceptance run passed
+against the same installed file. The shipped tests also pass against it with
+the global workspace locked (`lockEnvironment(globalenv())`).
 
-The current archive passes `R CMD check --as-cran --no-manual` on macOS with
-R 4.4.0: 0 errors, 0 warnings and two NOTEs (New submission and unable to verify
-current time). All 3,285 shipped assertions pass in 34 seconds locally. Examples and rebuilt
-vignettes pass, with no temporary-directory detritus.
+CRAN listed no reverse dependencies, including Suggests and Enhances, on
+November 28, 2026.
 
-The unchanged runtime implementation also passed all seven offline migration
-acceptance gates and the complete release regression suite against an installed
-archive: 1,779 cases, 10,788 passing assertions, no failures or test warnings,
-and three documented skips. This final archive additionally includes the
-subprocess workspace regression. All 11 CI checks passed for the tested code in
-release PR #60, including the full installed-package suite, Linux, macOS,
-Windows release and Windows R-devel checks:
-https://github.com/songyue-chen/sas2r/pull/60
-
-The final archive also passed win-builder on 2026-10-21 with R Under development
-(2026-10-20 r90728 ucrt), Windows Server 2022 x64:
-
-- 0 errors, 0 warnings, 1 NOTE: CRAN incoming feasibility, "New submission".
-- Installation: 38 seconds; check: 362 seconds (6 minutes 2 seconds).
-- Tests: 152 seconds; 3,285 assertions passed, 0 failures and 0 test warnings.
-  The 12 skipped checks require the source checkout and are covered separately.
-- Examples, rebuilt vignettes, PDF manual and HTML manual passed.
-
-The reported check time is below the ten-minute limit from the earlier review;
-installation plus check time is 400 seconds (6 minutes 40 seconds).
-
-Windows check log:
-https://win-builder.r-project.org/pw4uQ12NRsnW/00check.log
-
-The tested source archive is `sas2r_0.5.8.tar.gz` (736,131 bytes), built from
-release code commit `8746246b3f626eb17ee19b96a7cca6c6b3d80383`.
-Submission notes are excluded from the archive; this results update does not
-require rebuilding the tested package. Source archive SHA-256:
-`2f7dd8d3b65b60e0ac0774976b82ac3f8950f8ca676fe70a9633a734b19ce417`.
-
-Version 0.5.8 remains a first-submission candidate, not an accepted CRAN release.
+[Platform checks and source archive](https://github.com/songyue-chen/sas2r/actions/runs/46114525073)

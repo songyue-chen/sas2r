@@ -42,7 +42,7 @@ features needing translation/review; this is expected, not a missing API key.
 ## Translate and inspect
 
 Add an `llm:` block to the copied `_sas2r.yml` using a
-[provider profile](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md#2-configuration-examples-_sas2ryml),
+[provider profile](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md#2-configuration-examples-_sas2ryml),
 and configure that provider's credentials. The next step can make paid model
 calls. Inspect the configured limits before running it.
 

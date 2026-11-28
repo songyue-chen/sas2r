@@ -278,10 +278,7 @@ test_that("provider guide covers the closed registry and how to test it", {
   path <- test_path("..", "..", "docs", "llm-providers.md")
   skip_if_not(file.exists(path), "source-tree documentation contract")
   text <- paste(readLines(path, warn = FALSE), collapse = "\n")
-  ids <- c(
-    "openai", "anthropic", "bedrock", "azure", "databricks", "deepseek",
-    "github", "gemini", "vertex", "ollama", "posit", "snowflake"
-  )
+  ids <- sas2r:::llm_provider_ids()
   expect_true(all(vapply(
     ids, function(id) grepl(paste0("`", id, "`"), text, fixed = TRUE),
     logical(1)

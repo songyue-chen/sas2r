@@ -211,6 +211,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
   # Usage and cost
   usage_obj <- state$usage_budget %||% state$usage
   usage_summary <- migration_usage_summary(usage_obj)
+  usage_summary$gathered_answers <- gathered_answer_summary(paths$logs)
   coverage <- migration_coverage(output_assessments, histories, contracts = state$output_contracts)
 
   # Diagnostics
@@ -256,12 +257,14 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     output_assessments = output_assessments,
     discrepancy_summaries = discrepancy_summaries,
     report_diagnosis = state$report_diagnosis,
+    package_bug_diagnosis = state$package_bug_diagnosis,
     repair_table = repair_table,
     component_evidence = component_evidence_list,
     bundle_execution = bundle_execution,
     attempts = attempts_data,
     repair_history = repair_history,
     repair_observations = observations,
+    log_notes = report_log_notes(state, attempt_records),
     input_hashes = input_hashes,
     usage = usage_summary,
     environment = state$environment,
@@ -301,6 +304,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "",
     report_explanation_lines(state$report_diagnosis),
     "",
+    package_bug_report_lines(state$package_bug_diagnosis),
     "## Repair decisions",
     "",
     migration_md_table(repair_table),
@@ -309,6 +313,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "",
     report_payload$outcome$details,
     "",
+    log_note_report_lines(report_payload$log_notes),
     "## Selected Artifacts",
     "",
     paste0("- **Generated R Bundle:** `", bundle_dir %||% "(none)", "`"),
@@ -338,7 +343,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
       md_lines <- c(md_lines, paste0("  - `", attempt$attempt_id, "`: ", attempt$status,
         "; matches current revision: ", attempt$matches_current_revision,
         "; [execution record](<", record_path, ">)",
-        if (!is.null(attempt$condition$message)) paste0("; ", attempt$condition$message)))
+        if (!is.null(attempt$condition$message)) paste0("; ", cli::ansi_strip(attempt$condition$message))))
     }
   }
   md_lines <- c(md_lines, "", "## Repair observations (human review only)", "",
@@ -440,7 +445,8 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
         "", "## Unresolved Output Expressions", "",
         "Source expressions are not additional missing files. Concrete filenames and complete coverage remain unverified.",
         "", migration_md_table(targets_df[targets_df$status == "unresolved_target", , drop = FALSE])),
-      ""
+      "",
+      date_columns_report_lines(output_assessments)
     )
   }
 
@@ -515,6 +521,15 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     for (id in names(repair_budget$deferred)) {
       md_lines <- c(md_lines, paste0("- ", id, ": ", repair_budget$deferred[[id]]))
     }
+    for (outcome in repair_budget$outcomes %||% list()) {
+      md_lines <- c(md_lines, "", paste0("### Unapplied repair: ", outcome$component_id),
+        paste("Outcome:", outcome$outcome, "| Run:", outcome$run_id,
+          "| Attempt:", outcome$attempt_id, "| Candidate:", outcome$revision_id),
+        paste("Diagnosis (unverified):", outcome$diagnosis),
+        paste("Remaining uncertainty:", paste(outcome$remaining_uncertainty, collapse = "; ")),
+        paste("Evidence:", paste(outcome$evidence_ids, collapse = ", ")),
+        if (length(outcome$rejection_reasons)) paste("Rejection:", paste(outcome$rejection_reasons, collapse = "; ")))
+    }
     md_lines <- c(md_lines, "")
   }
 
@@ -524,6 +539,7 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     "## Resource Usage & Spend",
     "",
     migration_usage_lines(usage_summary),
+    migration_request_cut_lines(usage_summary),
     paste0("- **Total LLM Calls:** ", usage_summary$calls),
     paste0("- **Known Total Input Tokens:** ", usage_summary$input_tokens),
     paste0("- **Known Total Output Tokens:** ", usage_summary$output_tokens),
@@ -545,22 +561,4 @@ write_migration_report <- function(state, emit_outcome = FALSE) {
     flush(stderr())
   }
   invisible(paths$report_md)
-}
-
-#' Read a migration report JSON record from disk
-#'
-#' @param path Path to `report.json` or migration directory.
-#' @return Named list representing the parsed migration report.
-#' @noRd
-read_migration_report <- function(path) {
-  json_file <- if (dir.exists(path)) {
-    candidates <- file.path(path, c("report/report.json", ".sas2r/report.json", "report.json"))
-    candidates[file.exists(candidates)][1L]
-  } else {
-    path
-  }
-  if (is.na(json_file) || !file.exists(json_file)) {
-    cli::cli_abort("Migration report file not found: {.file {path}}", class = "sas2r_file_not_found")
-  }
-  jsonlite::fromJSON(json_file, simplifyVector = TRUE, simplifyDataFrame = FALSE)
 }

@@ -101,7 +101,7 @@ live quality and performance validation remains outstanding.
 
 Gemini Flash and DeepSeek Flash are suggested starting points for evaluation;
 stronger frontier models remain available. Choose using source review and output
-evidence for the actual study. See the [provider settings guide](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md)
+evidence for the actual study. See the [provider settings guide](https://github.com/songyue-chen/sas2r/blob/develop/docs/llm-providers.md)
 for provider-specific output limits, timeouts and capabilities.
 The adapter preserves native provider conversation history through tool calls.
 Offline replay tests cover tool continuation and parallel workers on ellmer

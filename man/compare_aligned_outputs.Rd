@@ -20,9 +20,13 @@ compare_aligned_outputs(
 
 \item{candidate}{Candidate data frame or tibble.}
 
-\item{target}{Discovered target metadata row or list.}
+\item{target}{Target metadata: a list or one-row data frame with
+\code{target_id}, \code{logical_dataset}, \code{role} and \code{contributing_unit_ids}, as in
+the example.}
 
-\item{context}{Optional alignment context list.}
+\item{context}{Optional list of source knowledge about row identity and
+order, such as \code{by} (key columns) and \code{order_contract}. \code{NULL} infers row
+keys from the data alone.}
 
 \item{profile}{Comparison profile.}
 

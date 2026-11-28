@@ -2,8 +2,11 @@ strict_json_list <- function(value, strip_markdown_fences = FALSE) {
   if (is.list(value)) return(value)
   if (!is.character(value) || length(value) != 1L || is.na(value)) return(NULL)
   text <- if (strip_markdown_fences) strip_fences(value) else trimws(value)
+  # Model text is parsed as JSON text only: fromJSON() would fetch a URL or
+  # read a file named by a short non-JSON string.
+  if (!substr(text, 1L, 1L) %in% c("{", "[")) return(NULL)
   parsed <- tryCatch(
-    jsonlite::fromJSON(text, simplifyVector = FALSE),
+    jsonlite::parse_json(text, simplifyVector = FALSE),
     error = function(error) NULL
   )
   if (is.list(parsed)) parsed else NULL
@@ -67,6 +70,9 @@ normalized_usage <- function(raw) {
     present_list(usage$completion_tokens_details)
   canonical_input <- !is.null(usage$total_input_tokens)
   canonical_output <- !is.null(usage$total_output_tokens)
+  # Interactions uses total_output_tokens for visible output only. Its raw
+  # step envelope distinguishes it from our already-normalized usage records.
+  interactions_usage <- is.list(raw[["steps", exact = TRUE]]) && canonical_input
 
   reported_input <- first_number(
     usage$input_tokens, usage$prompt_tokens, usage$input,
@@ -94,6 +100,11 @@ normalized_usage <- function(raw) {
   )
   native_miss <- first_number(usage$prompt_cache_miss_tokens)
   tool_input <- first_number(usage$toolUsePromptTokenCount)
+  if (interactions_usage) {
+    reported_output <- first_number(usage$total_output_tokens)
+    cached_input <- first_number(usage$total_cached_tokens)
+    reasoning <- first_number(usage$total_thought_tokens)
+  }
 
   if (inclusive_input_details) {
     if (is.na(cached_input)) cached_input <- 0
@@ -113,7 +124,10 @@ normalized_usage <- function(raw) {
   if (hit_miss_cache_usage && is.na(cached_input)) cached_input <- 0
   input <- reported_input
   accounting_parts <- NULL
-  if (canonical_input) {
+  if (interactions_usage) {
+    input <- safe_difference(total_input, cached_input)
+    accounting_parts <- c(input, cached_input)
+  } else if (canonical_input) {
     total_input <- first_number(usage$total_input_tokens)
   } else if (metadata_usage) {
     prompt_input <- reported_input
@@ -158,7 +172,12 @@ normalized_usage <- function(raw) {
   }
 
   output <- reported_output
-  if (canonical_output) {
+  if (interactions_usage) {
+    total_output <- safe_difference(first_number(usage$total_tokens), total_input)
+    if (is.na(total_output) && !is.na(output) && !is.na(reasoning)) {
+      total_output <- output + reasoning
+    }
+  } else if (canonical_output) {
     total_output <- first_number(usage$total_output_tokens)
   } else if (metadata_usage) {
     total_output <- if (is.na(output) || is.na(reasoning)) NA_real_ else
@@ -840,10 +859,4 @@ normalize_provider_response <- function(raw, request = NULL, provider = NULL) {
               cost_usd = attr(raw, "cost_usd", exact = TRUE)),
     request, provider
   )
-}
-
-is_schema_retryable_response <- function(response) {
-  inherits(response, "sas2r_llm_response") &&
-    identical(response$status, "completed") &&
-    identical(response$action, "final")
 }

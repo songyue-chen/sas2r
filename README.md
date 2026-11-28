@@ -9,11 +9,12 @@ The package **does not require SAS** to translate or run generated R. Comparing
 results with SAS requires matching reference outputs. AI review does not replace
 independent programming or your organization's statistical QC procedures.
 
-**Release status:** sas2r 0.5.8 is available on [CRAN](https://CRAN.R-project.org/package=sas2r).
-`main` currently includes an **unsubmitted release-candidate fix** for execution
-error diagnostics; this fix is not yet on CRAN. Ongoing development and the complete test suite
-live on [`develop`](https://github.com/songyue-chen/sas2r/tree/develop).
-See the [release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md) for validation and branch roles.
+**This README describes sas2r 0.6.2.** The
+[CRAN package page](https://CRAN.R-project.org/package=sas2r) shows the version
+CRAN currently distributes. Development and the full test suite live on
+`develop`. The maintainer reserves `main` for CRAN submissions. See
+[what changed since 0.5.8](NEWS.md) and the
+[release workflow](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/releasing.md).
 
 [Quickstart](#quickstart) · [AI models](#choosing-an-ai-model) ·
 [Parallel translation](#parallel-translation-opt-in) ·
@@ -59,16 +60,16 @@ reference difference prompts investigation against the SAS source before repair.
 Dependencies come from the SAS sources. For example, a summary program waits
 for the program that creates its analysis dataset. Independent translation and
 review can overlap; execution tests, repairs and the full study run happen one
-at a time. See the [workflow guide](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#workflow-and-review-order)
+at a time. See the [workflow guide](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#workflow-and-review-order)
 for review timing and how earlier passing results are protected.
 
 ## Quickstart
 
 ### 1. Install
 
-AI translation requires **ellmer 0.4.2 or newer**. We recommend **ellmer 0.5.0**
-for new installations; both versions pass our offline compatibility tests.
-Deterministic workflows can run without ellmer.
+AI translation requires **ellmer 0.4.2 or newer** and discovers public chat
+connectors from the installed version. The minimum and current ellmer releases
+are tested offline. Deterministic workflows can run without ellmer.
 
 <!-- sas2r-example: network install -->
 ```r
@@ -78,13 +79,18 @@ install.packages("sas2r")
 install.packages("ellmer")
 ```
 
-For unreleased development changes, install `remotes` and then run
-`remotes::install_github("songyue-chen/sas2r@develop")` instead.
+If CRAN does not list 0.6.2 yet, the features described below that are new in
+this version, including `sas_print_table()` and `sas_bug_report()`, need the
+source archive of 0.6.2. Download it and run
+`install.packages("sas2r_0.6.2.tar.gz", repos = NULL, type = "source")`
+from the directory containing the archive.
 
 Installed examples are available without a GitHub checkout. Locate them with
 `system.file("examples", package = "sas2r")`; its README explains how to copy the
 migration demo into a writable directory and prepare its synthetic input. The
 annotated YAML is a configuration reference to adapt to your own study.
+Try the [package-bug reporting beta demo](inst/examples/README.md#try-the-package-bug-reporting-beta)
+to export a saved synthetic triage result without SAS or an API key.
 
 ### 2. Describe your study in `_sas2r.yml`
 
@@ -125,13 +131,13 @@ llm:                  # a recommended Flash starting profile
 
 Make `DEEPSEEK_API_KEY` available to your R session before translation. For Gemini
 Flash or another provider, replace the `llm:` block with its complete
-[provider profile](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md#2-configuration-examples-_sas2ryml).
+[provider profile](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/llm-providers.md#2-configuration-examples-_sas2ryml).
 
 Every `budget:` limit is commented out by default: observe mode records usage
 without stopping requests, so translation finishes without interruption.
 Uncomment a limit only if you want the run to stop when it is reached. The
 code style keys `dialect` and `allowlist` are described in
-[code style and packages](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#code-style-and-packages).
+[code style and packages](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#code-style-and-packages).
 
 ### 3. Check the setup offline
 
@@ -152,8 +158,8 @@ With `diagnose = "off"`, preflight checks the source setup without model calls o
 The default `diagnose = "auto"` reports missing LLM configuration or uses one bounded
 request to suggest corrections for findings. Advice never clears static findings.
 To specify a shared-session program sequence, set `migration.execution_order`;
-see [execution order](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#explicit-execution-order).
-Review the findings: missing resources usually allow translation with warnings. See the [preflight guide](https://github.com/songyue-chen/sas2r/blob/main/docs/clinical-qc-preflight.md)
+see [execution order](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#explicit-execution-order).
+Review the findings: missing resources usually allow translation with warnings. See the [preflight guide](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/clinical-qc-preflight.md)
 for library paths, output requirements and QC profiles.
 
 ### 4. Run it
@@ -213,6 +219,13 @@ outputs, diagnostics and comparison reports, and states what ran, what was
 skipped, and why a run was blocked or failed. Saved code can be incomplete or
 unvalidated; file existence alone does not establish success.
 
+Preserve the format requested by the SAS source, including PDF and non-PDF
+outputs such as RTF, Word DOCX, HTML and images. `sas_print_table()` writes only
+PDF; other formats need an appropriate writer. DOCX is recognized as a report
+target, but has no built-in format validator. It and other unsupported report
+formats require review even if their files exist. This does not establish their
+content, layout or equivalence to SAS output.
+
 ### The four statuses
 
 | Status | Meaning |
@@ -236,7 +249,7 @@ Wrap the call in `suppressMessages()` to hide all routine messages, including
 progress, the final summary and report locations. Returned results, saved reports
 and execution error logs remain available. Source
 parsing caches use session-temporary storage and do not modify input projects. See
-[logs, repairs and resume](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#reading-the-progress-log).
+[logs, repairs and resume](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#reading-the-progress-log).
 
 ## Parallel translation (opt-in)
 
@@ -268,8 +281,8 @@ Start with one, then compare two on representative programs. Equal live-model
 quality and a particular speedup are not established by the offline tests.
 The [speed FAQ](#will-two-workers-halve-the-run-time-or-four-workers-quarter-it)
 explains why more workers do not give proportional time savings.
-See [parallel details](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#parallel-translation-opt-in)
-and [provider settings](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md#recommended-starting-settings).
+See [parallel details](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#parallel-translation-opt-in)
+and [provider settings](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/llm-providers.md#recommended-starting-settings).
 
 ## Choosing an AI model
 
@@ -278,7 +291,7 @@ of speed, cost and coding capability, making them our recommended first choice
 for translation trials. Confirm accuracy on representative study programs with
 the same code review, execution and output checks you would use with a frontier
 model. Use a frontier model when the first choice leaves unresolved translation
-problems. See the current [Gemini model documentation](https://ai.google.dev/gemini-api/docs/latest-model)
+problems. See the current [Gemini model documentation](https://aistudio.google.com/docs/latest-model)
 and [DeepSeek model and pricing information](https://api-docs.deepseek.com/quick_start/pricing/).
 
 For OpenAI, start with **GPT-5.6 Luna**, which is designed for cost-sensitive,
@@ -287,8 +300,8 @@ See the [official Luna model documentation](https://developers.openai.com/api/do
 
 ### Recommended starting settings
 
-These are suggested profiles, not automatic package defaults. Model availability
-and settings were checked on **September 18, 2026**. Use the documented maximum
+These are suggested profiles. Published output limits were checked on
+**November 17, 2026**. Availability depends on your account. Use the documented maximum
 output allowance when your endpoint accepts it and the request fits the context
 window, to give reasoning and complete R code room to finish.
 
@@ -317,20 +330,20 @@ window, to give reasoning and complete R code room to finish.
   `llm.max_output_tokens`. Strict dollar budgets reserve worst-case costs before
   requests; larger ceilings may need more budget, especially with parallel work.
 
-**Claude qualification:** Sonnet 5 replaces the older Sonnet 4.6 recommendation.
-Its 128,000-token maximum is conditional guidance for this package: sas2r currently
-uses non-streaming requests, and very long responses need transport validation.
-Anthropic recommends streaming or batch processing for long requests; increasing
-the token ceiling or timeout does not enable either. See the
-[Claude profile](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md#anthropic) before using its full allowance.
+Anthropic lists the Sonnet 5 model used in this example as legacy.
+Its 128,000-token maximum is conditional guidance for this package: sas2r sends
+requests to Anthropic as a stream, which keeps the connection active while the
+model works, but completion of responses near the full allowance has not been
+established. See the
+[Claude profile](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/llm-providers.md#anthropic) before using its full allowance.
 
-Use the [provider guide](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md) for complete connection profiles,
+Use the [provider guide](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/llm-providers.md) for complete connection profiles,
 model availability checks, output allowances, timeouts and tuning guidance.
 The [full configuration template](inst/examples/_sas2r.example.yml) lists the
 available study and model settings. The program folder itself is the `path`
 argument of `sas_preflight()` and `sas_translate()`, not a configuration key.
 Called macro folders are configured through
-`macros.search_path`; see [macro setup and limitations](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#called-macros-in-separate-folders).
+`macros.search_path`; see [macro setup and limitations](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#called-macros-in-separate-folders).
 
 ## Privacy: What Your Model Provider Can Receive
 
@@ -344,7 +357,7 @@ Focused mismatch investigation can receive relative sizes, column/type differenc
 categorical patterns. Fixers and candidate acceptance reviews remain reference-blind:
 SAS is the source of truth. Human report explanations never drive code repairs.
 Use an organization-approved endpoint and confirm its data residency and retention terms.
-Read the [full privacy guidance](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md) before using confidential
+Read the [full privacy guidance](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/model-privacy.md) before using confidential
 study material; generated R is not a filesystem sandbox.
 
 ## Frequently asked questions
@@ -400,7 +413,7 @@ Dataset comparisons check the configured reference data and tolerances. A
 readable table or figure file alone does not establish that its content is
 correct. Review the analysis populations, denominators, statistics, rounding,
 labels and presentation, as applicable. See the
-[output-evidence guide](https://github.com/songyue-chen/sas2r/blob/main/docs/output-evidence.md) for comparison coverage.
+[output-evidence guide](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/output-evidence.md) for comparison coverage.
 
 ### Can dependent programs translate at the same time?
 
@@ -443,14 +456,14 @@ Check input paths, missing programs or macros, and the reported code error.
 For comparison failures, first confirm that the SAS reference uses the same
 inputs and specifications. Do not change R code merely to match a reference
 that represents a different analysis. See
-[reference differences](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#reference-differences-translation-error-or-different-specification).
+[reference differences](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#reference-differences-translation-error-or-different-specification).
 
 ### Must I restart everything after an interruption or a fix?
 
 Use `resume = TRUE` to reuse compatible saved work. Changed source code, inputs
 or other relevant settings can require fresh translation or checks. Repair
 allowances and recorded spending are retained; resume does not reset them.
-See [resume and limit provider calls](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md#resume-and-limit-provider-calls).
+See [resume and limit provider calls](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md#resume-and-limit-provider-calls).
 
 ### Can patient data reach the AI provider?
 
@@ -459,7 +472,7 @@ cells, previews or raw runtime logs. Source code, comments and project paths are
 still sent to the configured provider and may themselves contain confidential
 information. Approved aggregate comparison patterns go only to focused
 investigation and human-report diagnosis. Review the
-[privacy details](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md)
+[privacy details](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/model-privacy.md)
 before using confidential study material.
 
 ### Can our programmers edit and run the R code without sas2r or AI?
@@ -473,12 +486,12 @@ reruns need new QC and do not automatically update the saved migration report.
 
 | I want to… | Read |
 | --- | --- |
-| Set up libraries, required outputs and QC checks | [Preflight and QC](https://github.com/songyue-chen/sas2r/blob/main/docs/clinical-qc-preflight.md) |
-| Understand logs, repairs, resume, macros or exported files | [Running migrations](https://github.com/songyue-chen/sas2r/blob/main/docs/running-migrations.md) |
-| Choose a provider and configure model settings | [AI providers](https://github.com/songyue-chen/sas2r/blob/main/docs/llm-providers.md) |
-| Compare saved datasets and investigate differences | [Output comparisons](https://github.com/songyue-chen/sas2r/blob/main/docs/output-evidence.md) |
-| Understand acceptance rules and recorded evidence | [Migration evidence](https://github.com/songyue-chen/sas2r/blob/main/docs/migration-evidence.md) |
-| Understand what can be sent to an AI provider | [Privacy](https://github.com/songyue-chen/sas2r/blob/main/docs/model-privacy.md) |
+| Set up libraries, required outputs and QC checks | [Preflight and QC](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/clinical-qc-preflight.md) |
+| Understand logs, repairs, resume, macros or exported files | [Running migrations](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/running-migrations.md) |
+| Choose a provider and configure model settings | [AI providers](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/llm-providers.md) |
+| Compare saved datasets and investigate differences | [Output comparisons](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/output-evidence.md) |
+| Understand acceptance rules and recorded evidence | [Migration evidence](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/migration-evidence.md) |
+| Understand what can be sent to an AI provider | [Privacy](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/docs/model-privacy.md) |
 
 For regulated work, review migrated code and outputs under your organization's
 SOPs. Automated translation does not replace required independent review or QC.
@@ -488,4 +501,4 @@ companion site. Its workflow differs from this R package.
 
 ## License
 
-Apache License 2.0. See [LICENSE.md](https://github.com/songyue-chen/sas2r/blob/main/LICENSE.md).
+Licensed under the Apache License, version 2.0 or later. See the [license text](https://github.com/songyue-chen/sas2r/blob/4e5bddd7a9f591840247ac2f00a0a5539a6f3d71/LICENSE.md).

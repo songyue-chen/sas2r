@@ -1,32 +1,3 @@
-#' Context constructor for row alignment
-#'
-#' @param by Character vector of BY variables.
-#' @param sort List of sort variables/directions or character vector.
-#' @param merge List of merge keys or character vector.
-#' @param lineage Upstream lineage metadata or candidate keys.
-#' @param known_identifiers Character vector of known identifier column names.
-#' @param order_contract Explicit ordering contract if established by source.
-#' @param collation Character collation sequence (e.g. "standard", "unknown").
-#' @return A list representing alignment context.
-#' @noRd
-alignment_context <- function(by = character(),
-                              sort = list(vars = by, descending = rep(FALSE, length(by))),
-                              merge = list(),
-                              lineage = list(),
-                              known_identifiers = by,
-                              order_contract = NULL,
-                              collation = NULL) {
-  list(
-    by = as.character(by),
-    sort = sort,
-    merge = merge,
-    lineage = lineage,
-    known_identifiers = as.character(known_identifiers),
-    order_contract = order_contract,
-    collation = collation
-  )
-}
-
 #' Empty alignment context
 #'
 #' @return An empty alignment context list.
@@ -227,6 +198,13 @@ infer_alignment_keys <- function(reference, candidate, context = NULL) {
       keys = keys,
       provenance = provenance
     )
+  }
+
+  # 0. Keys the user configured for the comparison. They state row identity
+  # outright, so they come before anything read or guessed from the source.
+  configured_vars <- as.character(context$configured_keys %||% character())
+  if (length(configured_vars) > 0L) {
+    add_candidate(configured_vars, "configured")
   }
 
   # 1. Output BY clause (highest precedence source contract)
@@ -518,6 +496,52 @@ validate_alignment_key <- function(reference, candidate, keys,
     only_reference = as.integer(only_ref),
     only_candidate = as.integer(only_cand)
   )
+}
+
+#' Key columns that, taken alone, keep unpaired rows apart
+#'
+#' Row matching ran to its end and left rows over on both sides. For each key
+#' column this pairs the left-over rows on the other key columns through
+#' [validate_alignment_key()], so a key value is equal, missing or repeated
+#' here exactly as it is in the comparison. A column is recorded when the
+#' other columns name one left-over row on each side and at least one of the
+#' resulting pairs differs on the column left out. A column whose removal
+#' leaves a repeated key is ambiguous and is not recorded; neither is a
+#' difference that takes two key columns to explain. A row can count toward
+#' more than one column, so the counts are not to be added up.
+#'
+#' The record holds column names and counts, never a key value. It changes
+#' neither the pairing nor the verdict.
+#'
+#' @param ref_norm,cand_norm Normalized reference and candidate frames.
+#' @param alignment The result of [align_output_rows()] for those frames.
+#' @return A list with one record per recorded key column -- `key`,
+#'   `pair_without` (the pairs found without it that differ on it),
+#'   `missing_reference` and `missing_generated` (the left-over rows where it
+#'   is missing) -- or `NULL` when no column is recorded.
+#' @noRd
+unpaired_key_evidence <- function(ref_norm, cand_norm, alignment) {
+  keys <- as.character(alignment$selected_keys %||% character())
+  only_ref <- alignment$only_reference
+  only_cand <- alignment$only_candidate
+  # Matching that stopped at a size limit can leave rows of one key on both sides.
+  if (!identical(alignment$resource_state, "complete") || length(keys) < 2L ||
+      !length(only_ref) || !length(only_cand)) return(NULL)
+  # A diagnostic beside the comparison: it must never stop one.
+  tryCatch({
+    ref <- ref_norm[only_ref, keys, drop = FALSE]
+    cand <- cand_norm[only_cand, keys, drop = FALSE]
+    records <- lapply(keys, function(key) {
+      without <- validate_alignment_key(ref, cand, setdiff(keys, key), normalized = TRUE)
+      if (!isTRUE(without$valid)) return(NULL)
+      pairs <- sum(!vctrs::vec_equal(ref[[key]][without$pairs$reference_row],
+        cand[[key]][without$pairs$candidate_row], na_equal = TRUE))
+      if (pairs > 0L) list(key = key, pair_without = pairs,
+        missing_reference = sum(is.na(ref[[key]])), missing_generated = sum(is.na(cand[[key]])))
+    })
+    records <- Filter(Negate(is.null), records)
+    if (length(records)) records
+  }, error = function(e) NULL)
 }
 
 #' Match exact normalized row multisets within groups or whole datasets
@@ -1135,6 +1159,13 @@ print.sas2r_row_alignment <- function(x, ...) {
 #'
 #' Automatically infers credible candidate keys from source contracts (BY, SORT,
 #' merge, lineage) and schema identifiers without requiring manual key configuration.
+#' Keys configured for the comparison (`context$configured_keys`) come first and,
+#' when usable, are not replaced by an inferred key. When they repeat, the first
+#' other candidate that makes them unique on both sides refines them: rows pair
+#' on the configured keys plus that candidate, so never across different
+#' configured key values. A configured key group in which both sides hold rows
+#' the refined key cannot pair is matched by content instead, as every group is
+#' when no candidate refines the configured keys.
 #' Handles unique keys, duplicate keys, and keyless datasets with multiset and residual
 #' assignment.
 #'
@@ -1191,6 +1222,35 @@ align_output_rows <- function(reference, candidate, context = NULL,
     }
   }
 
+  # Configured keys are the user's statement of row identity. When they can
+  # pair rows at all (present on both sides with one type), they are the keys:
+  # unique, they were selected above as the first candidate; repeated, rows are
+  # matched inside each configured key group, and no inferred key that happens
+  # to be unique may pair rows across different configured key values.
+  configured <- Filter(function(e) identical(e$provenance, "configured"), evaluated_candidates)
+  refined <- NULL
+  if (length(configured) && !isTRUE(configured[[1L]]$valid) &&
+      !configured[[1L]]$reason %in% c("empty_keys", "missing_columns", "type_mismatch")) {
+    selected_val <- NULL
+    first_valid_key <- configured[[1L]]
+    first_valid_key_names <- configured[[1L]]$keys
+    # A repeating configured key does not say which rows of a group belong
+    # together. The first other candidate that makes the configured keys unique
+    # on both sides does. It can only pair rows that agree on the configured
+    # keys, because the refined key contains them.
+    for (cand in candidate_descriptors) {
+      if (identical(cand$provenance, "configured")) next
+      keys <- union(first_valid_key_names, cand$keys)
+      v <- validate_alignment_key(ref_norm, cand_norm, keys, profile = profile, normalized = TRUE)
+      if (!isTRUE(v$valid)) next
+      refined <- list(keys = keys, validation = v)
+      evaluated_candidates[[length(evaluated_candidates) + 1L]] <- list(
+        keys = keys, provenance = "configured_refined", unique_reference = TRUE,
+        unique_candidate = TRUE, valid = TRUE, reason = v$reason)
+      break
+    }
+  }
+
   # 1. Unique Key Case
   if (!is.null(selected_val)) {
     order_info <- analyze_output_order(ref_norm, cand_norm, selected_val$pairs, context = context)
@@ -1219,17 +1279,50 @@ align_output_rows <- function(reference, candidate, context = NULL,
     ref_key_sig <- row_signatures(ref_k)
     cand_key_sig <- row_signatures(cand_k)
 
-    ref_by_k <- split(seq_len(nrow(ref_norm)), ref_key_sig)
-    cand_by_k <- split(seq_len(nrow(cand_norm)), cand_key_sig)
-
-    all_k_sigs <- union(names(ref_by_k), names(cand_by_k))
-
     all_pairs_list <- list()
     all_only_ref <- integer()
     all_only_cand <- integer()
     all_ambig_list <- list()
     overall_resource_state <- "complete"
     dup_group_rows <- list()
+    content_ref <- seq_len(nrow(ref_norm))
+    content_cand <- seq_len(nrow(cand_norm))
+
+    if (!is.null(refined)) {
+      # The refining key decides a configured key group when it leaves rows
+      # unpaired on at most one side: those rows are missing or extra. A group
+      # with unpaired rows on both sides is one where the two sides disagree on
+      # the refining key's values, so the whole group is matched by content.
+      v <- refined$validation
+      disputed <- intersect(ref_key_sig[v$only_reference], cand_key_sig[v$only_candidate])
+      if (!length(disputed)) {
+        order_info <- analyze_output_order(ref_norm, cand_norm, v$pairs, context = context)
+        return(new_row_alignment(
+          method = "unique_key",
+          candidate_keys = evaluated_candidates,
+          selected_keys = refined$keys,
+          pairs = v$pairs,
+          only_reference = v$only_reference,
+          only_candidate = v$only_candidate,
+          duplicate_groups = tibble::tibble(),
+          ambiguous_groups = tibble::tibble(),
+          order = order_info,
+          resource_state = "complete"
+        ))
+      }
+      content_ref <- which(ref_key_sig %in% disputed)
+      content_cand <- which(cand_key_sig %in% disputed)
+      settled <- !(v$pairs$reference_row %in% content_ref | v$pairs$candidate_row %in% content_cand)
+      key_pairs <- v$pairs[settled, , drop = FALSE]
+      if (nrow(key_pairs) > 0L) all_pairs_list[[1L]] <- key_pairs
+      all_only_ref <- setdiff(seq_len(nrow(ref_norm)), c(key_pairs$reference_row, content_ref))
+      all_only_cand <- setdiff(seq_len(nrow(cand_norm)), c(key_pairs$candidate_row, content_cand))
+    }
+
+    ref_by_k <- split(content_ref, ref_key_sig[content_ref])
+    cand_by_k <- split(content_cand, cand_key_sig[content_cand])
+
+    all_k_sigs <- union(names(ref_by_k), names(cand_by_k))
 
     for (ks in all_k_sigs) {
       r_rows <- ref_by_k[[ks]]

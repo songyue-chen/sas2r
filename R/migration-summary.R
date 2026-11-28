@@ -45,6 +45,65 @@ migration_coverage <- function(targets = list(), histories = list(), contracts =
   )
 }
 
+# Share of input tokens read from the provider's prompt cache. Only requests
+# that reported both figures count, so a provider that reports no cached input
+# yields NA and not a misleading zero. The per-request rule is
+# usage_cache_read_rate()'s.
+usage_records_cache_read_rate <- function(records) {
+  total <- vapply(records, function(r) nonnegative_number_or_na(r$total_input_tokens), numeric(1))
+  cached <- vapply(records, function(r) nonnegative_number_or_na(r$cached_input_tokens), numeric(1))
+  known <- !is.na(total) & !is.na(cached) & total > 0 & cached <= total
+  if (!any(known)) return(NA_real_)
+  sum(cached[known]) / sum(total[known])
+}
+
+# Completed requests grouped by the role that made them. Reporting only: the
+# ledger already records the role, and nothing reads this to make a decision.
+usage_role_breakdown <- function(completed) {
+  if (!length(completed)) return(list())
+  role <- vapply(completed, function(r) {
+    value <- r$role %||% r$agent
+    if (is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value)) value else "agent"
+  }, character(1))
+  known_sum <- function(records, field) {
+    values <- vapply(records, function(r) nonnegative_number_or_na(r[[field]]), numeric(1))
+    if (all(is.na(values))) NA_real_ else sum(values, na.rm = TRUE)
+  }
+  lapply(split(completed, role)[sort(unique(role))], function(records) list(
+    calls = length(records),
+    input_tokens = known_sum(records, "total_input_tokens"),
+    output_tokens = known_sum(records, "total_output_tokens"),
+    cached_input_tokens = known_sum(records, "cached_input_tokens"),
+    cache_read_rate = usage_records_cache_read_rate(records)
+  ))
+}
+
+# How often an answer written while tools were still open was accepted as the
+# final answer, saving the separate finalization request. Read from this run's
+# request log. `tools_closed` entries are counted but left out of the rate: the
+# transport closed the tools and the model never got to answer.
+gathered_answer_summary <- function(log_dir) {
+  if (!is.character(log_dir) || length(log_dir) != 1L || is.na(log_dir)) return(NULL)
+  path <- file.path(log_dir, "llm_log.jsonl")
+  if (!file.exists(path)) return(NULL)
+  lines <- grep('"gathered_answer"', readLines(path, warn = FALSE), fixed = TRUE, value = TRUE)
+  outcomes <- unlist(lapply(lines, function(line) {
+    entry <- tryCatch(jsonlite::parse_json(line), error = function(e) NULL)
+    value <- if (is.list(entry)) entry$gathered_answer else NULL
+    if (is.character(value) && length(value) == 1L) value else NULL
+  }))
+  count <- function(value) sum(outcomes == value)
+  accepted <- count("schema_valid")
+  answered <- accepted + count("schema_valid_not_accepted") + count("not_schema_valid")
+  list(
+    accepted = accepted,
+    valid_not_accepted = count("schema_valid_not_accepted"),
+    not_valid = count("not_schema_valid"),
+    tools_closed = count("tools_closed"),
+    reuse_rate = if (answered > 0L) accepted / answered else NA_real_
+  )
+}
+
 migration_usage_summary <- function(budget) {
   limits <- usage_limit_names()
   completed <- last_usage_records_by_id(budget$records %||% list(), "request_completed")
@@ -66,6 +125,8 @@ migration_usage_summary <- function(budget) {
     output_token_category = reported_tokens("output_tokens"),
     cached_input_tokens = reported_tokens("cached_input_tokens"),
     cache_write_tokens = reported_tokens("cache_write_tokens"),
+    cache_read_rate = usage_records_cache_read_rate(completed),
+    by_role = usage_role_breakdown(completed),
     reasoning_tokens = reported_tokens("reasoning_tokens"),
     unknown_input_token_calls = unknown("total_input_tokens"),
     unknown_output_token_calls = unknown("total_output_tokens"),
@@ -76,7 +137,8 @@ migration_usage_summary <- function(budget) {
     limits = stats::setNames(lapply(limits, function(nm) {
       value <- budget[[nm]]
       if (is.null(value)) "unavailable" else if (is.finite(value)) value else "unlimited"
-    }), limits)
+    }), limits),
+    request_cuts = usage_request_cuts(completed)
   )
 }
 
@@ -92,12 +154,31 @@ migration_coverage_lines <- function(coverage) {
 }
 
 migration_usage_lines <- function(usage) {
+  shown <- function(x) if (is.null(x) || is.na(x)) "unknown" else format(x, scientific = FALSE, trim = TRUE)
+  percent <- function(x) if (is.null(x) || is.na(x)) "not reported" else sprintf("%.1f%%", 100 * x)
+  # Absent on summaries built before these fields existed; print nothing then.
+  cache <- if ("cache_read_rate" %in% names(usage)) paste0(
+    "Share of input read from the provider's prompt cache: ", percent(usage$cache_read_rate), ".")
+  roles <- if (length(usage$by_role)) paste0("Completed requests by role: ", paste(vapply(
+    names(usage$by_role), function(role) {
+      r <- usage$by_role[[role]]
+      sprintf("%s %d (input %s, output %s, cache read %s)", role, as.integer(r$calls),
+        shown(r$input_tokens), shown(r$output_tokens), percent(r$cache_read_rate))
+    }, character(1)), collapse = "; "), ".")
+  gathered <- usage$gathered_answers
+  answered <- sum(as.integer(unlist(gathered[c("accepted", "valid_not_accepted", "not_valid")])))
+  early <- if (length(gathered) && answered > 0L) sprintf(
+    "Answers written before the tool phase ended: %d of %d accepted as final, each saving one request (%s; %d valid but not accepted, %d not valid, %d cut off when tools closed).",
+    as.integer(gathered$accepted), answered, percent(gathered$reuse_rate),
+    as.integer(gathered$valid_not_accepted), as.integer(gathered$not_valid),
+    as.integer(gathered$tools_closed))
   c(sprintf("Elapsed: %.1f seconds. Provider calls: %d. Known spend: $%.4f (billed $%.4f; estimated $%.4f; unknown cost calls: %d).",
             usage$elapsed_seconds, usage$calls, usage$known_amount, usage$billed_amount, usage$estimated_amount, usage$unknown_cost_calls),
     sprintf("Known token totals: input %s; output %s (includes reasoning %s). Cached input %s; cache creation %s. Unknown input usage calls: %s; unknown output usage calls: %s.",
       usage$input_tokens, usage$output_tokens, usage$reasoning_tokens,
       usage$cached_input_tokens, usage$cache_write_tokens,
       usage$unknown_input_token_calls, usage$unknown_output_token_calls),
+    cache, roles, early,
     paste0("Effective limits (", usage$mode, "): ", paste(names(usage$limits), unlist(usage$limits), sep = "=", collapse = ", ")))
 }
 
