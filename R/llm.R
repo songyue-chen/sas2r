@@ -1,4 +1,3 @@
-
 new_llm_audit_redactor <- function(redaction_secrets = character()) {
   known_secrets <- llm_credential_secret_values(redaction_secrets)
   local({
@@ -394,6 +393,13 @@ normalize_json_schema_arrays <- function(schema) {
   map_json_schema_children(schema, normalize_json_schema_arrays)
 }
 
+llm_prompt_with_output_schema <- function(prompt, schema) {
+  paste(prompt,
+    "Return a JSON object matching this exact schema. Use the required field names and types.",
+    jsonlite::toJSON(normalize_json_schema_arrays(schema), auto_unbox = TRUE, pretty = TRUE),
+    sep = "\n\n")
+}
+
 normalize_strict_output_objects <- function(schema) {
   if (!is.list(schema)) return(schema)
   # Strict schema dialects reject document fragment identifiers, schema refs,
@@ -482,6 +488,29 @@ ellmer_tool_result <- function(value) {
   jsonlite::toJSON(value, auto_unbox = TRUE)
 }
 
+# Tool definitions stay fixed for the invocation so providers can reuse their
+# prompt cache; the remaining allowance travels in each bound tool's result.
+# Only object-shaped and plain-text results gain the note, so encoded JSON,
+# Content, data-frame and unnamed list results keep their exact shape.
+ellmer_tool_allowance <- function(value, state) {
+  if (!is.environment(state)) return(value)
+  if (inherits(value, "json") || inherits(value, "ellmer::Content") ||
+      is.data.frame(value)) return(value)
+  if (is.list(value) && length(value) > 0L &&
+      all(vapply(value, inherits, logical(1), "ellmer::Content"))) {
+    return(value)
+  }
+  note <- agent_tool_allowance_message(state)
+  if (is.list(value) && (length(value) == 0L || !is.null(names(value)))) {
+    value$tool_allowance <- note
+    return(value)
+  }
+  if (is.character(value) && length(value) == 1L) {
+    return(paste(value, note, sep = "\n\n"))
+  }
+  value
+}
+
 ellmer_tool_function <- function(tool) {
   # `names(list())` is NULL, and mget(NULL) aborts with "invalid first
   # argument", so an argument-less tool must normalise to character(0).
@@ -501,7 +530,7 @@ ellmer_tool_function <- function(tool) {
   body(fn) <- quote({
     args <- mget(.argument_names, envir = environment(), inherits = FALSE)
     args <- args[!vapply(args, is.null, logical(1))]
-    ellmer_tool_result(.tool$call(args))
+    ellmer_tool_result(ellmer_tool_allowance(.tool$call(args), .tool$budget_state))
   })
   fn
 }
@@ -1040,11 +1069,17 @@ ellmer_last_text <- function(chat, fallback = NULL) {
 #' multiply wall time and spend beneath the budget ledger, which only counts
 #' sas2r-level retries. Options are the only levers ellmer exposes, so scope
 #' them to the request rather than mutating globally.
+#'
+#' `ellmer_echo` is pinned for the same reason. Left to itself ellmer echoes
+#' model text to the console, and streams the request, whenever the session
+#' sets that option or the caller counts as user facing (a package under test
+#' does). How a request is sent is decided here, not by the session.
 #' @noRd
 with_ellmer_limits <- function(timeout_seconds, max_tries, expr) {
   previous <- options(
     ellmer_timeout_s = timeout_seconds,
-    ellmer_max_tries = max_tries
+    ellmer_max_tries = max_tries,
+    ellmer_echo = "none"
   )
   on.exit(options(previous), add = TRUE)
   force(expr)
@@ -1054,13 +1089,61 @@ ELLMER_TRANSPORT_CONSTRAINTS <- list(
   tools_with_structured_output = "unsupported"
 )
 
+# Providers whose text requests are streamed unless `sas2r.stream_requests`
+# says otherwise. A whole-response request sends and receives nothing while the
+# model works, and a network or provider that closes silent connections then
+# ends every long request at the same elapsed time. A streamed request carries
+# the provider's keep-alive events instead. The list holds the providers whose
+# ellmer stream reader raises an error when a stream ends early; for the
+# others an early end reads as a finished turn, so they stay on whole
+# responses until that is checked.
+ELLMER_STREAMED_PROVIDERS <- "anthropic"
+
+# `sas2r.stream_requests` set to TRUE or FALSE decides for every provider;
+# left unset, the provider list above decides. Requests for native structured
+# output are not streamed either way.
+ellmer_streams_requests <- function(cfg) {
+  choice <- getOption("sas2r.stream_requests")
+  if (isTRUE(choice) || isFALSE(choice)) return(choice)
+  isTRUE(cfg$provider %in% ELLMER_STREAMED_PROVIDERS)
+}
+
+# Send one text request, tool rounds included, and return the last turn's
+# text. Streaming runs the same ellmer loop and callbacks as `chat$chat()`;
+# only the wire format differs, so a chat object that cannot stream gets the
+# whole-response call.
+#
+# Once a stream has started the provider has already answered 200, so a later
+# failure arrives as a stream event or an early end and ellmer raises it as a
+# plain error. Sent whole, the same failure is a 5xx or a dropped connection,
+# which the runner retries. Such an error is therefore raised as a transport
+# failure. Errors that already say what they are pass through: the package's
+# own conditions (closed tools, budget), HTTP statuses and connection errors.
+ellmer_send_text <- function(chat, prompt, stream = FALSE) {
+  if (!isTRUE(stream) || !is.function(chat$stream) ||
+      !requireNamespace("coro", quietly = TRUE)) return(chat$chat(prompt))
+  chunks <- tryCatch(
+    getExportedValue("coro", "collect")(chat$stream(prompt)),
+    error = function(error) {
+      if (any(startsWith(class(error), "sas2r_")) ||
+          inherits(error, c("httr2_error", "curl_error"))) stop(error)
+      stop(structure(list(
+        message = paste0("the streamed response ended before it was complete: ",
+                         conditionMessage(error)),
+        call = NULL
+      ), class = c("sas2r_llm_transport_error", "error", "condition")))
+    }
+  )
+  ellmer_last_text(chat, fallback = paste(unlist(chunks), collapse = ""))
+}
+
 # End native gathering at the allowance, rather than asking the provider to
 # stop while leaving its internal tool loop running. Public callbacks preserve
 # the last result even when ellmer has not appended the whole parallel batch.
-ellmer_gather_tools <- function(chat, prompt, tools) {
+ellmer_gather_tools <- function(chat, prompt, tools, stream = FALSE) {
   state <- if (length(tools)) tools[[1L]]$budget_state else NULL
   if (!is.environment(state) || !is.function(chat$on_tool_result) ||
-      !is.function(chat$set_tools)) return(chat$chat(prompt))
+      !is.function(chat$set_tools)) return(ellmer_send_text(chat, prompt, stream))
   seen <- native_results <- list()
   chat$on_tool_result(function(result) {
     native_results[[length(native_results) + 1L]] <<- result
@@ -1077,14 +1160,8 @@ ellmer_gather_tools <- function(chat, prompt, tools) {
       stop(structure(list(message = AGENT_TOOL_LIMIT_MESSAGE, call = NULL),
                      class = c("sas2r_tools_closed", "error", "condition")))
     }
-    # ellmer owns the native tool loop. Request callbacks meter each HTTP
-    # transfer without flattening provider state or inserting a user prompt.
-    chat$set_tools(lapply(tools, function(tool) {
-      tool$description <- paste(tool$description, agent_tool_allowance_message(state))
-      ellmer_tool_contract(tool)
-    }))
   })
-  tryCatch(chat$chat(prompt), sas2r_tools_closed = function(error) {
+  tryCatch(ellmer_send_text(chat, prompt, stream), sas2r_tools_closed = function(error) {
     messages <- ellmer_conversation_messages(chat)
     result_ids <- vapply(Filter(function(m) identical(m$role, "tool"), messages),
                          function(m) m$tool_call_id %||% "", character(1))
@@ -1192,7 +1269,8 @@ ellmer_transport_request <- function(cfg, request, model, params) {
     if (!is.null(meter)) end_request(chat$last_turn())
     list(type = "final", data = value)
   } else {
-    value <- ellmer_gather_tools(chat, prompt, request$tools)
+    value <- ellmer_gather_tools(chat, prompt, request$tools,
+                                 stream = ellmer_streams_requests(cfg))
     gathered_conversation <- attr(value, "conversation", exact = TRUE)
     if (!is.null(gathered_conversation)) value <- as.character(value)
     if (is.null(gathered_conversation)) value <- ellmer_last_text(chat, fallback = value)
@@ -1235,7 +1313,7 @@ ellmer_transport_request <- function(cfg, request, model, params) {
 #' Construct an LLM adapter backed by ellmer public APIs
 #' @noRd
 ellmer_llm <- function(cfg) {
-  if (!isTRUE(cfg$provider %in% llm_provider_ids())) {
+  if (is.null(llm_provider_spec_or_null(cfg$provider))) {
     cli::cli_abort("unknown LLM provider {.val {cfg$provider}}",
                    class = "sas2r_llm_error")
   }
@@ -1320,8 +1398,8 @@ ellmer_llm <- function(cfg) {
 #' Construct an LLM adapter from a project's `llm:` configuration
 #'
 #' The supported way to obtain the `llm` argument that [sas_translate()] accepts.
-#' The adapter is backed by public `ellmer` APIs for one of the twelve registered provider
-#' ids. Credential values may be held in memory by adapters and redactors.
+#' The adapter uses the public `ellmer` connector for the configured provider.
+#' Credential values may be held in memory by adapters and redactors.
 #' Keep adapters private; reports redact registered secret values.
 #' Constructing an adapter contacts no network -- use [sas_llm_probe()] to
 #' validate connectivity and model capabilities, and [sas_llm_models()] to see
@@ -1873,79 +1951,6 @@ sas_llm_probe <- function(llm, max_retries = 2L, log_dir = tempdir(),
       stop(error)
     }
   )
-}
-
-#' Write pinned LLM configuration and prompt hashes to lockfile
-#' @noRd
-write_llm_lock <- function(cfg, prompts_dir, path, specs = NULL,
-                           requested_parameters = NULL,
-                           effective_parameters = NULL,
-                           capability_record = NULL) {
-  prompts <- if (!is.null(specs)) {
-    prompt_files <- c(
-      vapply(specs, function(spec) spec$prompt, character(1)),
-      specs$translator$prompt_macro %||% "translator-macro.md"
-    )
-    prompt_files <- unique(prompt_files[nzchar(prompt_files)])
-    resolved <- vapply(prompt_files, function(prompt) {
-      if (grepl("[/\\]", prompt) && file.exists(prompt)) {
-        prompt
-      } else if (!grepl("[/\\]", prompt)) {
-        packaged <- system.file("prompts", prompt, package = "sas2r")
-        if (nzchar(packaged) && file.exists(packaged)) packaged else ""
-      } else {
-        cli::cli_warn("prompt {.val {prompt}} could not be resolved for lockfile pinning")
-        ""
-      }
-    }, character(1))
-    resolved[nzchar(resolved) & file.exists(resolved)]
-  } else if (is.character(prompts_dir) && length(prompts_dir) == 1L &&
-             dir.exists(prompts_dir)) {
-    list.files(prompts_dir, pattern = "\\.md$", full.names = TRUE)
-  } else if (is.character(prompts_dir)) {
-    prompts_dir[file.exists(prompts_dir)]
-  } else character()
-
-  hashes <- as.list(tools::md5sum(prompts))
-  names(hashes) <- basename(prompts)
-  hashes <- hashes[nzchar(names(hashes))]
-  if (is.null(requested_parameters)) {
-    requested_parameters <- lapply(LLM_OPTIONAL_PARAMETERS, function(name) cfg[[name]])
-    names(requested_parameters) <- LLM_OPTIONAL_PARAMETERS
-  }
-  if (is.null(effective_parameters)) {
-    effective_parameters <- stats::setNames(
-      rep(list(NULL), length(LLM_OPTIONAL_PARAMETERS)), LLM_OPTIONAL_PARAMETERS
-    )
-    lock_model <- cfg$model %||% unlist(cfg$tiers, use.names = FALSE)[1]
-    if (!is.null(lock_model) && length(lock_model) == 1L && !is.na(lock_model) &&
-        nzchar(lock_model) && isTRUE(cfg$provider %in% llm_provider_ids())) {
-      capability_record <- capability_record %||% resolve_model_capabilities(
-        cfg$provider, ellmer_endpoint_identity(cfg), lock_model,
-        ellmer_api_version_identity(cfg), overrides = cfg$capabilities
-      )
-      lock_request <- do.call(llm_request, c(
-        list(messages = list(list(role = "user", content = "lockfile"))),
-        requested_parameters
-      ))
-      supported <- effective_model_params(lock_request, capability_record)
-      for (name in names(supported)) effective_parameters[[name]] <- supported[[name]]
-    }
-  }
-  payload <- list(
-    provider = cfg$provider, model = cfg$model, tiers = cfg$tiers,
-    identity = llm_selector_identity(cfg),
-    requested_parameters = requested_parameters,
-    effective_parameters = effective_parameters,
-    capability_record_hash = capability_record$record_hash %||% NULL,
-    prompts = hashes
-  )
-  jsonlite::write_json(redact_llm_secrets(
-    payload, secret_values = unique(c(
-      llm_config_secret_values(cfg), llm_registered_secret_values()
-    ))
-  ), path, auto_unbox = TRUE, null = "null", na = "null", pretty = TRUE)
-  invisible(path)
 }
 
 #' Append LLM request/response entry to local JSONL log

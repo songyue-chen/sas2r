@@ -27,6 +27,23 @@ run_native_history_contract <- function() {
           calls[[j]]$tool_calls[[1]]$id == paste0("native_", j),
           results[[j]]$tool_call_id == paste0("native_", j),
           (!check_batch || jsonlite::fromJSON(results[[j]]$content)$batch == j))
+      } else if (utils::packageVersion("ellmer") >= "0.5.1") {
+        stopifnot(endsWith(wire[[i]]$path, "/interactions"))
+        steps <- body$input
+        calls <- Filter(function(s) identical(s$type, "function_call"), steps)
+        results <- Filter(function(s) identical(s$type, "function_result"), steps)
+        thoughts <- Filter(function(s) identical(s$type, "thought"), steps)
+        users <- Filter(function(s) identical(s$type, "user_input"), steps)
+        stopifnot(length(calls) == expected, length(results) == expected,
+          length(thoughts) == expected,
+          length(users) == if (i == length(wire)) 2L else 1L)
+        for (j in seq_len(expected)) stopifnot(
+          thoughts[[j]]$signature == paste0("c2lnbmF0dXJl", j),
+          thoughts[[j]]$summary[[1]]$text == paste("native reasoning batch", j),
+          calls[[j]]$id == paste0("native_", j),
+          results[[j]]$call_id == calls[[j]]$id,
+          results[[j]]$name == calls[[j]]$name,
+          (!check_batch || jsonlite::fromJSON(results[[j]]$result)$batch == j))
       } else {
         parts <- unlist(lapply(body$contents, `[[`, "parts"), recursive = FALSE)
         calls <- Filter(function(p) !is.null(p$functionCall), parts)
@@ -120,6 +137,8 @@ run_native_history_contract <- function() {
       key <- vapply(wire, function(entry) {
         if (provider == "deepseek") {
           prompt <- Filter(function(m) identical(m$role, "user"), entry$body$messages)[[1]]$content
+        } else if (utils::packageVersion("ellmer") >= "0.5.1") {
+          prompt <- Filter(function(s) identical(s$type, "user_input"), entry$body$input)[[1]]$content
         } else {
           prompt <- Filter(function(m) identical(m$role, "user"), entry$body$contents)[[1]]$parts
         }

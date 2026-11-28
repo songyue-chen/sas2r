@@ -1,8 +1,29 @@
-# sas2r (development)
+# sas2r 0.6.2
 
-- Preserve printing and invalid-argument execution diagnostics in reviewer and
-  fixer evidence, including `invalid printing width`. Argument values and raw
-  logs remain local.
+- **SAS behavior.** A date the SAS program formats is stored as a date in the
+  datasets a migration writes. A variable that no input supplies is read as
+  missing and reported, as SAS does (`sas_uninitialized()`). `sas_merge()` and
+  `sas_sort()` compare and order BY values more closely to SAS.
+- **Checks against references.** Rows are paired on the comparison keys you
+  configure. `lib_write()` now works for a library written as XPT.
+- **Performance improvements.** Faster dependency checks for projects with many
+  programs, and fewer repeated model requests. Requests to Anthropic are sent
+  as a stream, so a long request is not closed while the model works.
+- **Reporting improvements.** Add `sas_print_table()` for plain PDF listings,
+  keep full relative report paths under `outputs/tlf/`, and show SAS log notes
+  and more cost detail in the run reports.
+- **AI support.** Providers are discovered through the installed ellmer
+  package. Optional AI bug triage (`migration.bug_reports: true`) names the
+  package step it suspects, and `sas_bug_report()` writes an issue draft from
+  what the run recorded.
+- **Bug fixes.** More reliable handling of program order, translation repairs
+  and run results.
+- A configuration file that sets `verification` is now rejected, with a message
+  saying what to use instead. The minimum jsonlite version is 1.6.
+- A saved checkpoint is reused only by the sas2r version that saved it, so
+  `resume = TRUE` after this upgrade regenerates translations with new model
+  calls.
+
 
 # sas2r 0.5.8
 

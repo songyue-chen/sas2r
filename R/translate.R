@@ -80,7 +80,7 @@
 #'   `$output_assessments`, `$diagnostics`, `$repair_history`, `$usage`, and `$project`.
 #'   `$outputs_dir` contains selected contract deliverables with their library and
 #'   relative-path layout (for example `datasets/work/out.rds`,
-#'   `datasets/adam/adsl.rds`, and `tlf/outputs/table.html`); it is NULL when
+#'   `datasets/adam/adsl.rds`, and `tlf/table.html`); it is NULL when
 #'   execution is disabled or no selected deliverables were produced. The JSON
 #'   report includes separate target/reference/review coverage and effective limits.
 #' @examples
@@ -354,13 +354,17 @@ sas_translate <- function(
 
   # Report advice is terminal output: it cannot influence repair or status.
   state$report_diagnosis <- migration_report_diagnosis(state)
+  state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm)
 
   # 13. Write authoritative machine and markdown reports
   budget$end_time <- Sys.time()
   write_migration_report(state, emit_outcome = TRUE)
   write_migration_checkpoint(state, resume_fingerprint)
+  usage_summary <- migration_usage_summary(budget)
   with_sas2r_progress(signal_bundle_event(
-    "migration_summary", summary = migration_usage_lines(migration_usage_summary(budget))
+    "migration_summary", summary = c(
+      migration_usage_lines(usage_summary), migration_request_cut_lines(usage_summary)
+    )
   ))
 
   message("Start here: ", paths$start_here)
@@ -393,6 +397,9 @@ sas_translate <- function(
     state <- error$migration_state %||% state
     if (identical(stage, "preflight") && inherits(error, c("sas2r_invalid_argument",
         "sas2r_config_error", "sas2r_llm_config_error", "sas2r_output_contract_error", "sas2r_budget_config_error", "sas2r_run_locked"))) stop(error)
+    if (stage %in% c("translation", "bundle execution and repair"))
+      state$package_bug_diagnosis <- migration_package_bug_diagnosis(state, llm = resolved_llm,
+        failure = error, stage = stage)
     finalize_usage_run(budget, terminal_status = "failed")
     # Evidence writing must never hide the original failure, including an
     # unwritable output location. No additional success state is invented.
@@ -450,7 +457,9 @@ print.sas2r_translation <- function(x, ...) {
   }
 
   cli::cat_line(migration_coverage_lines(migration_coverage(x$output_assessments, x$component_evidence)))
-  cli::cat_line(migration_usage_lines(migration_usage_summary(x$usage)))
+  usage_summary <- migration_usage_summary(x$usage)
+  cli::cat_line(migration_usage_lines(usage_summary))
+  cli::cat_line(migration_request_cut_lines(usage_summary))
   invisible(x)
 }
 

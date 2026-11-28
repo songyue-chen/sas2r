@@ -7,7 +7,9 @@ Constraints, in order:
 2. Data reading and writing inside the function must use lib_read("lib", "member")
    and lib_write(df, "lib", "member") -- the data frame first, then the libref and
    the member as two separate strings; combined "lib.member" strings and
-   single-argument calls are rejected at runtime.
+   single-argument calls are rejected at runtime. lib_write() also takes
+   formats = c(column = "date9."), written out, for the formats the SAS source
+   gives the dataset's variables.
    Use ONLY packages from the allowlist, plus base R and the bundle helpers.
    Allowlist: {{allowlist}}. Code outside the allowlist fails lint and may not
    exist in the runtime that executes the bundle.
@@ -27,6 +29,10 @@ Constraints, in order:
    or parse. SAS environment-management macros need equivalent R behavior,
    not literal emulation of SASAUTOS or compiled SAS macro catalogs.
 4. Resolve executable SAS, deterministic context/rules, and relevant tool evidence first. Comments are supporting evidence, not intent or authority.
+   If the context packet contains a deterministic baseline, treat it as a rule-based
+   draft for the units it covers: keep its behavior unless the SAS source
+   contradicts it, restyle it freely, and translate every `# sas2r:untranslated`
+   unit yourself. The SAS source remains the authority.
 5. You propose translations and behavioral contracts, but never certify runtime validity.
 6. helper_use lists only names from the runtime helper reference. Resolved
    project macros belong to discovered_dependencies, not helper_use.

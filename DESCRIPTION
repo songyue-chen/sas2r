@@ -1,6 +1,6 @@
 Package: sas2r
 Title: Translate 'SAS' Programs to R with Dependency-Aware Migration
-Version: 0.5.8
+Version: 0.6.2
 Authors@R: person("Songyue", "Chen", email = "songyue.chen.dev@gmail.com", role = c("aut", "cre"))
 Description: Translates 'SAS' programs and projects into R code, orders
     connected programs by their dependencies, and executes generated code.
@@ -22,14 +22,17 @@ Imports:
     cli (>= 3.4),
     clue,
     filelock,
+    graphics,
+    grDevices,
     haven,
-    jsonlite,
+    jsonlite (>= 1.6),
     stats,
     tibble,
     utils,
     vctrs,
     yaml
 Suggests:
+    coro,
     diffdf,
     dplyr (>= 1.1.0),
     ellmer (>= 0.4.2),

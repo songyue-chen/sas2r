@@ -1,6 +1,6 @@
 test_that("public API has one translation workflow plus the runtime helpers", {
   workflow <- c(
-    "sas_translate", "sas_preflight", "qc_profile", "sas_code", "sas_write", "sas_config", "sas_llm",
+    "sas_translate", "sas_preflight", "qc_profile", "sas_code", "sas_write", "sas_bug_report", "sas_config", "sas_llm",
     "sas_llm_models", "sas_llm_probe", "analyze_output_order",
     "as_digest_json", "compare_aligned_outputs", "compare_datasets",
     "compare_profile", "diff_digest", "passed", "read_comparison_report",
@@ -15,7 +15,7 @@ test_that("public API has one translation workflow plus the runtime helpers", {
     "sas2r_resolve_registry", "sas2r_fold_names", "chr_cmp", "sas_if_else", "sas_sum", "sas_mean",
     "sas_min", "sas_max", "sas_round", "sas_missing", "sas_true", "sas_length", "sas_substr",
     "sas_compress", "sas_display", "sas_sort", "sas_merge", "apply_format",
-    "sas_put", "sas2r_source_include"
+    "sas_put", "sas2r_source_include", "sas_output_path", "sas_print_table", "sas_uninitialized"
   )
   expect_setequal(getNamespaceExports("sas2r"), c(workflow, runtime))
   expect_true(all(runtime %in% sas2r:::SAS2R_HELPER_NAMES))

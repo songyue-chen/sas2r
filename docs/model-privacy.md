@@ -14,9 +14,9 @@ With the default `agent_evidence = "code_only"`, a request can contain:
 | Information | Examples |
 |---|---|
 | SAS source and comments | Program statements, macro definitions and calls, included source, attached comments, and literal values written in the source |
-| Generated R and review evidence | Current or proposed R code, shared helpers, syntax/lint failures and source-supported review findings |
+| Generated R and review evidence | Current or proposed R code, the rule-based R that sas2r derives from the SAS source (shown to the translator only), shared helpers, syntax/lint failures and source-supported review findings |
 | Project context | Program and dataset names, column names and types inferred from code, dependencies, macro arguments, filenames, library paths and the execution root |
-| Execution diagnostics | Recognized error kinds (including printing/argument failures such as `invalid printing width`), standard condition classes, failed component identifiers, source-verified object/dataset/column names, source call locations and local log paths; no raw messages or log contents |
+| Execution diagnostics | Recognized error kinds (including printing/argument failures such as `invalid printing width`, and row-size failures with whether the assigned value was empty but never its size), standard condition classes, failed component identifiers, source-verified object/dataset/column names, source call locations and local log paths; no raw messages or log contents |
 | Investigation/report summaries only | Relative row/column sizes, complete/partial row pairing, type differences, some/all/missing-only variable differences and enumerated patterns; no exact counts, difference amounts or per-record values |
 | Guidance and lookup results | Helper interfaces, installed-package versions, translation rules, registered skills and enabled local documentation mirrors |
 
@@ -44,6 +44,36 @@ unavailable/incomplete diagnosis without changing validation status. Set
 `migration.report_diagnosis: off` to disable these explanations. Report prose never
 feeds repair or acceptance requests.
 
+The opt-in `migration.bug_reports` beta lets the configured reviewer triage
+possible package bugs in one budget-accounted request. It can receive bounded
+SAS/R code, structured failure facts, output check names and aggregate comparison
+patterns. For each failed dataset it also receives attribution facts: the names
+and types of the differing columns, including columns present on one side only;
+whether the SAS and the generated R assign each one; the runtime helpers that
+handled it; the type sas2r told the translator; the names of the columns used
+to pair rows; whether the tolerance and keys were configured; the file types
+compared; who wrote each program; and difference classes that repeat across
+outputs. To say whether a type difference holds the same values, sas2r reads
+the generated dataset and the reference a second time on your machine and
+sends only yes, no or not checked. These facts are names and fixed words. For a
+differing date column the request also carries the reason sas2r recorded for
+leaving it as a number: one of a few fixed sentences, such as that the
+generated program declares no date format for the column. The
+request receives no dataset records, cell values, key values, counts, file
+paths, raw logs or raw execution messages. See the
+[attribution fields](discrepancy-evidence.md#bug-triage-attribution-facts).
+
+The issue draft on `START_HERE.html`, which `sas_bug_report()` saves as a
+Markdown file, is built on your computer from the saved report and is not sent
+anywhere. Building it asks no model and runs no example. Beside the model's
+saved text and any proposed synthetic R code, it shows what sas2r recorded for
+the output: its name, the key column names and the row counts of the
+comparison, including a key column that keeps unpaired rows apart and the
+counts recorded for it. Those counts were never part of a model request, and
+the draft holds no key value. Read the
+draft and decide what to share. The package leaves execution of the example to
+the reader.
+
 All authoring/review roles can retrieve paged SAS and selected R for related
 upstream/downstream dependencies, including indirectly called macros. Scheduling-only
 `execution_before` edges do not make every earlier program a code dependency.
@@ -54,6 +84,18 @@ Both list candidates nearest first and explicitly label them unconfirmed.
 Paging uses existing tool limits; repeated unavailable page requests
 stop within the invocation. Review identities include all retrievable selected code,
 so an indirect dependency change invalidates cached evidence.
+
+Bundle fixers also receive revision labels distinguishing shown code from the
+attempt snapshot, up to 12,000 characters of the executed startup script, and
+the existing source-derived dataset lineage tool. Diagnostic smoke executions
+retain their own code identity rather than borrowing a bundle revision binding.
+Startup and helper paths follow the code/path disclosure policy above; raw
+attempt records, logs, population checks, and comparison details are not sent.
+Eligible prior repair conclusions are limited to the same component and current
+run, labeled as unverified, and bounded to 12,000 characters. Reference-triggered
+or unknown-origin narratives are excluded. Acceptance review does not receive
+that history. No-change diagnoses and uncertainty remain in the local report;
+they do not count as applied repairs or change validation status.
 
 The configured `allowlist` (a comma-separated string or YAML list) is used
 consistently in prompts, package facts, helper checks and lint. An explicit list

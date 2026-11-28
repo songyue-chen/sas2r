@@ -145,7 +145,9 @@ worker_prompt_hash <- function(role, project_dir = NULL, prompt = NULL, schema =
 
   # 3. Response schema
   schema_name <- schema %||% spec$output_schema
-  schema_obj <- tryCatch(agent_output_schema(schema_name), error = function(e) list())
+  # A schema that cannot be loaded is an error: hashing nothing in its place
+  # would give every broken schema the same identity.
+  schema_obj <- agent_output_schema(schema_name)
 
   migration_hash(list(
     role = role,

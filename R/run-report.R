@@ -17,6 +17,16 @@ run_html_link <- function(path, label, root) {
   paste0('<a href="', run_html_escape(url), '">', run_html_escape(label), '</a>')
 }
 
+# The issue draft, as sas_bug_report() writes it. The page is written at the
+# end of a run, so a draft that cannot be built is replaced by a pointer and
+# never stops the report. Tests set the strict option and see the error.
+run_bug_report_draft <- function(report) {
+  build <- function() bug_report_html(bug_report_content(report))
+  if (isTRUE(getOption("sas2r.strict_discrepancy_summary", FALSE))) return(build())
+  tryCatch(build(), error = function(error)
+    "<p>The draft could not be shown on this page. The findings are saved in the machine report.</p>")
+}
+
 write_run_navigation <- function(state, report) {
   paths <- state$paths
   order_path <- file.path(paths$bundle, "run-order.json")
@@ -170,6 +180,17 @@ write_run_navigation <- function(state, report) {
       '</p></section>'),
     paste0('<p>Recorded status: ', run_html_escape(report$status), '</p>'),
     '<p>Execution, independent review, and reference equivalence are separate results. Saved outputs may be partial or unvalidated. Manual edits and reruns do not change this report.</p>',
+    if (!is.null(report$package_bug_diagnosis) && !length(report$package_bug_diagnosis$findings)) c(
+      '<h2>AI bug triage (beta)</h2>',
+      paste0('<p>', run_html_escape(report$package_bug_diagnosis$reason), '</p>'),
+      if (length(report$package_bug_diagnosis$observed_failures)) c('<ul>', paste0(
+        '<li>Recorded symptom: ', run_html_escape(report$package_bug_diagnosis$observed_failures),
+        '</li>'), '</ul>')),
+    if (length(report$package_bug_diagnosis$findings)) c(
+      '<h2>Possible sas2r bugs (AI beta)</h2>',
+      run_bug_report_draft(report),
+      paste0("<p>To save this draft as a Markdown file, pass this run's ", link("report/report.json", "machine report"),
+        ' to <code>sas2r::sas_bug_report()</code> with a destination Markdown file.</p>')),
     paste0('<nav>', paste(c(link("bundle/README.md", "Bundle instructions"), link("report/translation.md", "Translation report"),
       link("report/report.json", "Machine report"), link("manifest.json", "Run manifest"),
       link("diagnostics", "Diagnostics")), collapse = " | "), '</nav>'),
@@ -182,6 +203,9 @@ write_run_navigation <- function(state, report) {
     '<h2>Repair decisions</h2>', run_html_table(report$repair_table %||% data.frame()),
     '<p>Acceptance for rerun is separate from output validation. Remaining blockers and the stopping reason appear in the run outcome and component checks.</p>',
     '<h2>Warnings and diagnostics</h2>', run_advisory_groups(report$outcome$details),
+    if (length(log_note_sentences(report$log_notes))) c('<h2>SAS log notes</h2>',
+      paste0('<p>', run_html_escape(LOG_NOTES_INTRODUCTION), '</p>'),
+      '<ul>', paste0('<li>', run_html_escape(log_note_sentences(report$log_notes)), '</li>'), '</ul>'),
     '<h2 id="components">Programs and called macros</h2>',
     if (length(rows)) c('<div style="overflow-x:auto"><table><thead><tr><th>Component / source</th><th>Dependencies</th><th>Checks</th><th>Review</th><th>Execution</th><th>Output assessment</th><th>Next action</th></tr></thead><tbody>', rows, '</tbody></table></div>') else '<p>No component code was generated.</p>',
     '<h2>Saved outputs</h2>', if (any(!unresolved_rows)) c('<ul>', output_rows[!unresolved_rows], '</ul>') else '<p>No concrete output targets were recorded.</p>',
@@ -190,7 +214,7 @@ write_run_navigation <- function(state, report) {
       '<ul>', output_rows[unresolved_rows], '</ul>'),
     '<h2>Model, settings, and usage</h2><pre>',
     run_html_escape(jsonlite::toJSON(settings, auto_unbox = TRUE, pretty = TRUE, null = "null")),
-    run_html_escape(paste(c(migration_environment_lines(report$environment), migration_usage_lines(report$usage)), collapse = "\n")), '</pre>',
+    run_html_escape(paste(c(migration_environment_lines(report$environment), migration_usage_lines(report$usage), migration_request_cut_lines(report$usage)), collapse = "\n")), '</pre>',
     '<h2>Use and edit your translated scripts</h2>', guide,
     '<h2>Run diagnostics</h2><pre>', run_html_escape(jsonlite::toJSON(report$diagnostics, pretty = TRUE, auto_unbox = TRUE, null = "null", force = TRUE)),
     '</pre></html>'), paths$start_here)

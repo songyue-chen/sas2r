@@ -1,41 +1,3 @@
-#' Report what sent a unit into a lint repair round
-#'
-#' The failing detail was composed into the repair prompt and dropped, so a
-#' repair left no trace of its cause. Whether repairs are dominated by syntax
-#' errors in long generations or by something structural is the difference
-#' between bounding output length and changing a prompt, and the audit trail
-#' could not tell them apart.
-#' @noRd
-warn_lint_repair <- function(unit_id, details) {
-  details <- as.character(details %||% character())
-  details <- details[nzchar(details)]
-  if (!length(details)) return(invisible(NULL))
-  shown <- utils::head(details, 3L)
-  more <- length(details) - length(shown)
-  cli::cli_warn(
-    c("Unit {unit_id} failed lint and is being repaired ({length(details)} finding{?s})",
-      "i" = "{paste(shown, collapse = '; ')}",
-      if (more > 0L) c("i" = "and {more} more")),
-    class = "sas2r_lint_repair"
-  )
-  invisible(NULL)
-}
-
-#' @noRd
-order_stubs_for_agents <- function(stubs) {
-  stubs$unit_id[order(stubs$unit_type != "macro_def", stubs$unit_id)]
-}
-
-#' @noRd
-agent_stub_queue <- function(manifest) {
-  rows <- manifest[manifest$tier == "stub" & !is.na(manifest$staged_file), ,
-                   drop = FALSE]
-  rows <- rows[!(rows$reason %in% "include_site_not_emitted"), , drop = FALSE]
-  order_stubs_for_agents(rows)
-}
-
-
-
 render_unit_comment_evidence <- function(project, unit_id) {
   comments <- project$comments
   required <- c("unit_id", "char_start", "file", "line_start", "line_end",
@@ -55,202 +17,8 @@ render_unit_comment_evidence <- function(project, unit_id) {
   ), collapse = "\n\n")
 }
 
-build_context_packet <- function(unit_id, project, config) {
-  us <- project$statements[project$statements$unit_id == unit_id, ]
-  schemas <- infer_schemas(project)
-  inputs <- unique(project$lineage$dataset[
-    project$lineage$unit_id == unit_id & project$lineage$role == "reads"])
-  sch_txt <- vapply(inputs, function(ds) {
-    s <- schemas[[ds]]
-    if (is.null(s)) return(paste0(ds, ": unknown"))
-    paste0(ds, ": ", paste(s$vars$var, s$vars$kind, sep = "=", collapse = ", "))
-  }, character(1))
-  lib_names <- if (!is.null(project$config$libraries)) names(project$config$libraries) else character()
-  # The line range is the one thing read_unit_context() reports that the prompt
-  # does not already carry: {{unit}} is this unit's SAS text and {{context}} is
-  # these schemas, both built from the same objects the tool reads. Naming the
-  # range here leaves that tool with nothing of its own to return.
-  line_txt <- if (!is.null(us$line_start) && length(stats::na.omit(us$line_start))) {
-    span <- range(stats::na.omit(us$line_start))
-    paste0("lines: ", span[1], "-", span[2])
-  } else character()
-  list(us = us,
-       packet = paste(c("input schemas (inferred from code references):", sch_txt,
-                        paste("librefs:", paste(lib_names, collapse = ", ")),
-                        line_txt),
-                      collapse = "\n"),
-       comments = render_unit_comment_evidence(project, unit_id))
-}
-
-#' Translate a single stub translation unit using the translator agent
-#'
-#' @param unit_id Integer unit ID.
-#' @param project A `sas2r_project` object.
-#' @param transpilation A `sas2r_transpilation` object.
-#' @param specs Loaded agent specs.
-#' @param llm `sas2r_llm` instance.
-#' @param config Project configuration list.
-#' @param log_dir Audit log directory.
-#' @param macro_index Optional macro index tibble.
-#' @return List with status, code, flags, confidence, assumptions.
-#' @noRd
-translate_stub_unit <- function(unit_id, project, transpilation, specs, llm,
-                                config, log_dir = tempdir(), macro_index = NULL,
-                                on_charge = NULL, usage_budget = NULL) {
-  ctxp <- build_context_packet(unit_id, project, config)
-  spec <- as.list(specs$translator)
-  is_macro <- length(ctxp$us$unit_type) > 0L && ctxp$us$unit_type[1] == "macro_def"
-  macro_contract <- NULL
-  if (is_macro) {
-    macro_contract <- tryCatch(
-      macro_contract_for_unit(project, unit_id),
-      error = function(error) error
-    )
-    if (inherits(macro_contract, "error")) {
-      return(list(
-        status = "macro_contract_failed",
-        message = conditionMessage(macro_contract),
-        spend_usd = 0,
-        cost_unknown = FALSE
-      ))
-    }
-  }
-  if (is_macro) spec$prompt <- spec$prompt_macro %||% "translator-macro.md"
-  catalog <- agent_skill_catalog()
-  manifest_row <- if (!is.null(transpilation$manifest)) {
-    transpilation$manifest[transpilation$manifest$unit_id == unit_id, , drop = FALSE]
-  } else NULL
-  u_type <- if (length(ctxp$us$unit_type) > 0L) ctxp$us$unit_type[1] else "data_step"
-  procs <- unit_proc_names(ctxp$us)
-  flags <- if (!is.null(manifest_row) && nrow(manifest_row) > 0L && "flags" %in% names(manifest_row)) {
-    unlist(strsplit(manifest_row$flags %||% "", "[, ]+"))
-  } else character(0)
-  flags <- flags[nzchar(flags)]
-  flags <- unique(c(flags, skill_flags_from_sas(ctxp$us$text)))
-
-  routing_ctx <- list(
-    agent = "translator",
-    unit_type = u_type,
-    procs = procs,
-    flags = flags,
-    macros = if (is_macro) "macro_def" else character(0),
-    semantic_rules = if (length(procs)) paste0("procs.", procs) else character(0),
-    comparison_reasons = character(0),
-    functions = character(0)
-  )
-  routed <- route_agent_skills(routing_ctx, catalog = catalog)
-  rendered_skills <- render_agent_skills(routed)
-  skill_provenance <- lapply(routed, function(x) unname(x[c(
-    "skill_id", "version", "content_hash", "activation_reason"
-  )]))
-
-  ctx <- list(agent_role = "translator", project = project, unit_stmts = ctxp$us,
-              schemas = infer_schemas(project), config = config,
-              macro_index = macro_index, skill_catalog = catalog)
-  vars <- list(style = render_style_guidance(config),
-               allowlist = paste(normalize_package_allowlist(config$allowlist), collapse = ", "),
-               unit = format_sas_statements(ctxp$us$text),
-               context = paste(ctxp$packet, render_macro_interface(macro_contract), sep = "\n"),
-               comments = ctxp$comments,
-               skills = rendered_skills)
-  attempt <- function(extra_user = NULL, purpose = "translation") {
-    tools <- build_tools(spec, ctx)
-    run_agent(spec, llm, tools,
-              user_content = extra_user %||% "Translate this unit.",
-              log_dir = log_dir, prompt_vars = vars,
-              on_charge = on_charge, usage_budget = usage_budget,
-              audit_context = list(purpose = purpose,
-                                   unit_id = unit_id,
-                                   skill_provenance = skill_provenance))
-  }
-  r1 <- attempt()
-  tot_spend <- r1$spend_usd %||% 0
-  cost_unknown <- isTRUE(r1$cost_unknown)
-  if (r1$status != "ok") {
-    return(list(status = r1$status, spend_usd = tot_spend, cost_unknown = cost_unknown))
-  }
-  g <- gate_parse(r1$data$r_code)
-  r_final <- r1
-  if (!g$pass) {
-    warn_lint_repair(unit_id, g$lint$detail[g$lint$level == "error"])
-    r2 <- attempt(paste("Previous code failed lint:",
-                        paste(g$lint$detail[g$lint$level == "error"],
-                              collapse = "; "), "- produce corrected JSON."),
-                  purpose = "lint_repair")
-    tot_spend <- tot_spend + (r2$spend_usd %||% 0)
-    cost_unknown <- cost_unknown || isTRUE(r2$cost_unknown)
-    if (r2$status != "ok") {
-      return(list(status = "llm_lint_failed", spend_usd = tot_spend,
-                  cost_unknown = cost_unknown))
-    }
-    g <- gate_parse(r2$data$r_code)
-    if (!g$pass) {
-      return(list(status = "llm_lint_failed", spend_usd = tot_spend,
-                  cost_unknown = cost_unknown))
-    }
-    r_final <- r2
-  }
-
-  macro_gate <- NULL
-  if (is_macro) {
-    macro_gate <- validate_macro_contract(r_final$data$r_code, macro_contract)
-    if (!macro_gate$pass) {
-      known_defaults <- which(macro_contract$parameters$default_status == "known")
-      default_text <- if (length(known_defaults)) {
-        paste(vapply(known_defaults, function(i) {
-          paste0(
-            macro_contract$parameters$name[i], " = ",
-            paste(deparse(macro_contract$parameters$r_default[[i]]), collapse = "")
-          )
-        }, character(1)), collapse = "; ")
-      } else {
-        "(none)"
-      }
-      r3 <- attempt(paste(
-        "The lint-passing R code does not satisfy the SAS macro public contract.",
-        "Contract errors:", paste(macro_gate$errors, collapse = "; "),
-        "Return corrected JSON only.",
-        paste0("The function name must be exactly ", macro_contract$name, "."),
-        paste0("Its formal names must be exactly, in order: ",
-               paste(macro_contract$parameters$name, collapse = ", "), "."),
-        paste0("Known defaults that must be exact: ", default_text, "."),
-        "Do not invent a default for unresolved SAS expressions."
-      ), purpose = "macro_contract_repair")
-      tot_spend <- tot_spend + (r3$spend_usd %||% 0)
-      cost_unknown <- cost_unknown || isTRUE(r3$cost_unknown)
-      if (r3$status != "ok") {
-        return(list(status = "macro_contract_failed", spend_usd = tot_spend,
-                    cost_unknown = cost_unknown))
-      }
-      g <- gate_parse(r3$data$r_code)
-      if (!g$pass) {
-        return(list(status = "macro_contract_failed", spend_usd = tot_spend,
-                    cost_unknown = cost_unknown))
-      }
-      macro_gate <- validate_macro_contract(r3$data$r_code, macro_contract)
-      if (!macro_gate$pass) {
-        return(list(status = "macro_contract_failed", spend_usd = tot_spend,
-                    cost_unknown = cost_unknown))
-      }
-      r_final <- r3
-    }
-  }
-  flags <- unique(c("llm_authored", unlist(r_final$data$flags)))
-  if (is_macro) flags <- unique(c(flags, "macro_semantics_unverified"))
-  if (is_macro && length(macro_gate$unresolved)) {
-    flags <- unique(c(flags, "macro_contract_unverified"))
-  }
-  result <- list(status = "ok", code = r_final$data$r_code,
-                 flags = flags,
-                 confidence = r_final$data$confidence,
-                 assumptions = unlist(r_final$data$assumptions),
-                 spend_usd = tot_spend, cost_unknown = cost_unknown)
-  if (is_macro) result$macro_contract <- macro_contract
-  result
-}
-
 #' Emit generated macro R function file and testthat spec
-#' @param result Translation result list from translate_stub_unit.
+#' @param result List with the translated `code` and its `macro_contract`.
 #' @param macro_name Name of the macro.
 #' @param out_dir Output project directory.
 #' @param is_fallback Logical indicating if macro_name was auto-generated fallback.
@@ -313,6 +81,53 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
   invisible(list(dir = fn_dir, is_fallback = is_fallback, macro_name = safe_name))
 }
 
+# Largest deterministic baseline (bytes) shown to the translator as reference.
+TRANSLATOR_BASELINE_LIMIT <- 40000L
+
+# The unit blocks of a staged module, which is all the translator is shown:
+# the file scaffold (banner, bootstrap, module header comments) before the
+# first unit marker goes, and a stub keeps its unit marker and its
+# `# sas2r:untranslated` header but not the commented SAS source that
+# stub_block() writes under it (the model has that source already).
+translator_baseline_units <- function(lines) {
+  scaffold <- c(BANNER, module_bootstrap())
+  markers <- grep("^# --- sas2r:unit [0-9]+ ---$", lines)
+  lines <- if (length(markers)) lines[markers[[1L]]:length(lines)]
+           else lines[!lines %in% scaffold]
+  drop <- logical(length(lines))
+  for (i in grep("^# sas2r:untranslated (unit=[0-9]+ )?reason=", lines)) {
+    if (!identical(lines[i + 1L], "# --- original SAS ---")) next
+    # stub_block() prefixes every SAS line with "# " and closes the block
+    # with a rule; the block ends before the next line it did not write.
+    run <- i + 1L
+    while (run < length(lines) && startsWith(lines[run + 1L], "# ") &&
+           !grepl("^# --- sas2r:unit [0-9]+ ---$", lines[run + 1L])) run <- run + 1L
+    closes <- which(lines[(i + 1L):run] == "# --------------------")
+    if (length(closes)) drop[(i + 1L):(i + max(closes))] <- TRUE
+  }
+  lines[!drop]
+}
+
+# Packet lines presenting the rule-based output for a component as reference
+# context, or NULL when there is nothing to show.
+render_translator_baseline <- function(baseline_code, limit = TRANSLATOR_BASELINE_LIMIT) {
+  if (is.null(baseline_code) || !length(baseline_code)) return(NULL)
+  baseline_code <- translator_baseline_units(baseline_code)
+  if (!length(baseline_code)) return(NULL)
+  size <- nchar(paste(baseline_code, collapse = "\n"), type = "bytes")
+  if (size > limit) {
+    return(sprintf(
+      "Deterministic baseline omitted: %d bytes exceeds the %d-byte reference limit.",
+      size, as.integer(limit)
+    ))
+  }
+  c(
+    "Deterministic baseline (reference only): sas2r's rule-based output for this component.",
+    "Units under `# sas2r:untranslated` have no baseline.",
+    baseline_code
+  )
+}
+
 #' Build translator context for a program component
 #'
 #' @param component_id Component identifier.
@@ -323,6 +138,8 @@ emit_macro_artifacts <- function(result, macro_name, out_dir, is_fallback = FALS
 #' @param outputs Inferred or explicit output contracts.
 #' @param resolved_contracts Named list of upstream behavioral contracts.
 #' @param config Project configuration list.
+#' @param baseline_code Lines of the component's staged rule-based module, shown
+#'   to the translator as reference; `NULL` leaves the baseline out.
 #' @return Named list containing context for the translator agent.
 #' @noRd
 build_translator_context <- function(
@@ -335,7 +152,8 @@ build_translator_context <- function(
   resolved_contracts = list(),
   config = list(),
   macro_contract = component_macro_contract(project, graph, component_id),
-  selected_revisions = list()
+  selected_revisions = list(),
+  baseline_code = NULL
 ) {
   comp_nodes <- if (!is.null(graph$nodes)) graph$nodes[graph$nodes$component_id == component_id, , drop = FALSE] else NULL
   src_files <- if (!is.null(comp_nodes) && nrow(comp_nodes) > 0L) {
@@ -444,7 +262,8 @@ build_translator_context <- function(
       "Call translated upstream macro functions by their declared names and parameters. Their standalone R/macros files are loaded by autoexec.R; do not inline or redefine them in this component.",
       "known call sites:", call_txt,
       build_agent_guidance(project, component_id, list(macro_contract = macro_contract),
-        selected_revisions, graph, config = config)$text
+        selected_revisions, graph, config = config)$text,
+      render_translator_baseline(baseline_code)
     ),
     collapse = "\n"
   )
@@ -777,7 +596,9 @@ generate_program_revision <- function(
       resolved_contracts = resolved_contracts,
       config = config,
       macro_contract = macro_contract,
-      selected_revisions = selected_revisions
+      selected_revisions = selected_revisions,
+      baseline_code = if (isTRUE(getOption("sas2r.translator_baseline_reference", TRUE)) &&
+        !is.null(comp_units) && any(comp_units$tier == "t1")) staged_lines
     )
     prompt_skill_h <- ctx$prompt_skill_hash
 
@@ -823,7 +644,7 @@ generate_program_revision <- function(
       component_id = component_id, graph = graph, selected_revisions = selected_revisions,
       project = project,
       unit_stmts = unit_stmts,
-      schemas = tryCatch(infer_schemas(project), error = function(e) list()),
+      schemas = infer_schemas(project),
       config = config,
       macro_index = macro_idx
     )
@@ -843,10 +664,22 @@ generate_program_revision <- function(
     if (identical(agent_res$status, "ok") && !is.null(agent_res$data)) {
       tr_data <- agent_res$data
 
+      is_entry <- any(comp_nodes$type == "source_unit") && !any(comp_nodes$type == "setup")
       parsed_chk <- tryCatch(parse(text = tr_data$r_code), error = function(e) e)
-      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(tr_data$r_code, allowlist = config$allowlist) else NULL
+      # An entry program may carry the package's own bootstrap: staging accepts
+      # it and the revision check lints around it, so this lint does too. Any
+      # other source() call is still an error, and so is the bootstrap in a
+      # startup component, which must not load itself.
+      lint_code <- tr_data$r_code
+      if (is_entry && !inherits(parsed_chk, "error")) {
+        body <- drop_module_bootstrap(parsed_chk)
+        if (length(body) < length(parsed_chk)) lint_code <- deparse_expressions(body)
+      }
+      lint_chk <- if (!inherits(parsed_chk, "error")) lint_r_code(lint_code, allowlist = config$allowlist) else NULL
       has_lint_err <- !is.null(lint_chk) && any(lint_chk$level == "error")
-      binding_errors <- check_component_library_assignments(tr_data$r_code, project, component_id)
+      binding_errors <- c(check_component_library_assignments(tr_data$r_code, project, component_id),
+        check_declared_date_formats(tr_data$r_code, project),
+        check_uninitialized_names(tr_data$r_code, project))
 
       if (inherits(parsed_chk, "error") || has_lint_err || length(binding_errors)) {
         err_msg <- if (inherits(parsed_chk, "error")) conditionMessage(parsed_chk) else paste(
@@ -875,8 +708,12 @@ generate_program_revision <- function(
         }
       }
 
-      is_entry <- any(comp_nodes$type == "source_unit") && !any(comp_nodes$type == "setup")
-      staged_lines <- if (is_entry && !any(grepl("sas2r bootstrap", tr_data$r_code))) {
+      # Attach the bootstrap unless the program already carries it, as its
+      # comment or as the call itself.
+      final_parsed <- tryCatch(parse(text = tr_data$r_code), error = function(e) NULL)
+      carries_bootstrap <- any(grepl("sas2r bootstrap", tr_data$r_code)) ||
+        (!is.null(final_parsed) && length(drop_module_bootstrap(final_parsed)) < length(final_parsed))
+      staged_lines <- if (is_entry && !carries_bootstrap) {
         c(BANNER, "", module_bootstrap(), "", tr_data$r_code)
       } else {
         c(BANNER, "", tr_data$r_code)
@@ -940,102 +777,5 @@ generate_program_revision <- function(
     r_code = final_r_code_text,
     agent_status = agent_status,
     mechanical_retry = retry_record
-  )
-}
-
-#' Generate all program revisions in stable dependency order
-#'
-#' @param project A `sas2r_project` object.
-#' @param baseline Optional `sas2r_transpilation` baseline from `sas_transpile()`.
-#' @param graph Optional dependency graph from `build_dependency_graph()`.
-#' @param schedule Optional stable schedule from `stable_dependency_schedule()`.
-#' @param outputs Optional output contracts from `infer_output_contracts()`.
-#' @param llm Optional `sas2r_llm` instance for agent-assisted translation.
-#' @param paths Optional named list of migration paths from `migration_paths()`.
-#' @param config Configuration list.
-#' @param usage_budget Optional shared usage budget.
-#' @param ... Additional arguments.
-#' @return A tibble with columns `component_id`, `revision_id`, `r_path`, `contract_path`, `contract`, `status`, `checks`.
-#' @noRd
-generate_program_revisions <- function(
-  project,
-  baseline = NULL,
-  graph = NULL,
-  schedule = NULL,
-  outputs = NULL,
-  llm = NULL,
-  paths = NULL,
-  config = list(),
-  usage_budget = NULL,
-  ...
-) {
-  if (is.null(paths)) {
-    paths <- init_migration_paths(tempfile("sas2r-revisions-"))
-  } else if (is.character(paths)) {
-    paths <- init_migration_paths(paths)
-  } else if (is.list(paths)) {
-    init_migration_paths(paths$root)
-  }
-
-  if (is.null(baseline)) {
-    baseline <- sas_transpile(project, paths$staging %||% paths$root)
-  }
-  if (is.null(outputs)) {
-    outputs <- infer_output_contracts(project, overrides = config$outputs)
-  }
-  if (is.null(graph)) {
-    graph <- build_dependency_graph(project, output_contracts = outputs)
-  }
-  if (is.null(schedule)) {
-    schedule <- stable_dependency_schedule(graph)
-  }
-
-  resolved_contracts <- list()
-  rows <- list()
-
-  if (nrow(schedule) > 0L) {
-    for (cid in schedule$component_id) {
-      rev_res <- generate_program_revision(
-        component_id = cid,
-        project = project,
-        baseline = baseline,
-        graph = graph,
-        schedule = schedule,
-        outputs = outputs,
-        llm = llm,
-        paths = paths,
-        resolved_contracts = resolved_contracts,
-        revision_id = "r1",
-        config = config,
-        usage_budget = usage_budget,
-        ...
-      )
-      resolved_contracts[[cid]] <- rev_res$contract
-      rows[[length(rows) + 1L]] <- rev_res
-    }
-  }
-
-  if (length(rows) == 0L) {
-    return(tibble::tibble(
-      component_id = character(),
-      revision_id = character(),
-      r_path = character(),
-      contract_path = character(),
-      contract = list(),
-      status = character(),
-      checks = list(),
-      agent_status = character()
-    ))
-  }
-
-  tibble::tibble(
-    component_id = vapply(rows, `[[`, character(1), "component_id"),
-    revision_id = vapply(rows, `[[`, character(1), "revision_id"),
-    r_path = vapply(rows, `[[`, character(1), "r_path"),
-    contract_path = vapply(rows, `[[`, character(1), "contract_path"),
-    contract = lapply(rows, `[[`, "contract"),
-    status = vapply(rows, function(r) r$status %||% "ok", character(1)),
-    checks = lapply(rows, `[[`, "checks"),
-    agent_status = vapply(rows, function(r) r$agent_status %||% NA_character_, character(1))
   )
 }

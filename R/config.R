@@ -1,11 +1,10 @@
 KNOWN_CONFIG_KEYS <- c("llm", "libraries", "macros", "tolerance",
                        "search_docs", "privacy", "budget", "dialect",
                        "allowlist", "project", "includes", "environment",
-                       "verification", "outputs", "comparison_rules",
-                       "migration")
+                       "outputs", "comparison_rules", "migration")
 
 PROJECT_CONFIG_KEYS <- c(KNOWN_CONFIG_KEYS, "macro_search_path", "include_roots",
-  "autoexec", "output_review", "raw", "source")
+  "autoexec", "raw", "source")
 
 is_abs_path <- function(p) {
   grepl("^([A-Za-z]:)?[/\\\\]", p)
@@ -254,67 +253,6 @@ assert_exact_names <- function(x, allowed, context = "config", class = "sas2r_co
   }
 }
 
-normalize_named_paths <- function(raw_paths, config_file) {
-  if (is.null(raw_paths) || length(raw_paths) == 0L) return(list())
-  if (!is.list(raw_paths) || is.null(names(raw_paths)) || anyNA(names(raw_paths)) ||
-      !all(nzchar(names(raw_paths)))) {
-    cli::cli_abort("r_libraries must be a mapping of library names to paths",
-                   class = "sas2r_config_error")
-  }
-  base <- if (!is.na(config_file)) include_normalize_path(dirname(config_file)) else getwd()
-  out <- list()
-  for (nm in names(raw_paths)) {
-    val <- raw_paths[[nm]]
-    if (!is.character(val) || length(val) != 1L || is.na(val) || !nzchar(val)) {
-      cli::cli_abort("library {.val {nm}} must specify a single non-empty path string",
-                     class = "sas2r_config_error")
-    }
-    path <- if (is_anchored_path(val)) val else file.path(base, val)
-    out[[tolower(nm)]] <- normalizePath(path, winslash = "/", mustWork = FALSE)
-  }
-  duplicated_names <- unique(names(out)[duplicated(names(out))])
-  if (length(duplicated_names)) {
-    cli::cli_abort(
-      c("Configured library names must be unique.",
-        "x" = "Repeated: {.val {duplicated_names}}."),
-      class = "sas2r_config_error"
-    )
-  }
-  out
-}
-
-normalize_output_review_config <- function(raw, config_file) {
-  if (is.null(raw) || is.null(raw$verification)) {
-    return(list(enabled = FALSE, r_libraries = list()))
-  }
-  if (!is.list(raw$verification)) {
-    cli::cli_abort("verification configuration must be a mapping",
-                   class = "sas2r_config_error")
-  }
-  assert_exact_names(raw$verification, "output_review", context = "verification")
-  value <- raw$verification$output_review
-  if (is.null(value)) {
-    return(list(enabled = FALSE, r_libraries = list()))
-  }
-  if (!is.list(value)) {
-    cli::cli_abort("verification.output_review must be a mapping",
-                   class = "sas2r_config_error")
-  }
-  assert_exact_names(value, c("enabled", "r_libraries"),
-                     context = "verification.output_review")
-  enabled <- value$enabled %||% FALSE
-  if (!is.logical(enabled) || length(enabled) != 1L || is.na(enabled)) {
-    cli::cli_abort("output_review.enabled must be true or false",
-                   class = "sas2r_config_error")
-  }
-  roots <- normalize_named_paths(value$r_libraries %||% list(), config_file)
-  if (enabled && !length(roots)) {
-    cli::cli_abort("enabled output review needs at least one r_libraries root",
-                   class = "sas2r_config_error")
-  }
-  list(enabled = enabled, r_libraries = roots)
-}
-
 normalize_outputs_config <- function(raw_outputs, config_file = NA_character_) {
   if (is.null(raw_outputs)) return(NULL)
   outputs <- validate_output_overrides(raw_outputs)
@@ -375,6 +313,10 @@ normalize_migration_config <- function(config) {
   if (!is_scalar_character(diagnosis) || !diagnosis %in% c("auto", "off"))
     cli::cli_abort("migration.report_diagnosis must be auto or off", class = "sas2r_config_error")
   out$report_diagnosis <- diagnosis
+  bug_reports <- config[["bug_reports"]] %||% FALSE
+  if (!is.logical(bug_reports) || length(bug_reports) != 1L || is.na(bug_reports))
+    cli::cli_abort("migration.bug_reports must be true or false", class = "sas2r_config_error")
+  out$bug_reports <- bug_reports
   if (!is.null(order)) out$execution_order <- unname(order)
   out
 }
@@ -451,10 +393,13 @@ find_config <- function(start = ".") {
 #'   `path` and `recursive` in [sas_preflight()] or [sas_translate()] still select
 #'   that scope. Omitting the order retains inferred dependencies. Changing the
 #'   order on a previously scanned project requires rescanning the sources.
+#'   Set `migration.bug_reports: true` to enable AI triage of possible sas2r
+#'   bugs under the run's reviewer usage budget. Defaults to false.
+#'   See [sas_bug_report()].
 #' @param path Path to a configuration file. Defaults to `NULL` (use discovery).
 #' @param start Directory from which to search upwards for `_sas2r.yml`. Defaults to `"."`.
 #' @return A `sas2r_config` object containing `libraries`, `macro_search_path`,
-#'   `include_roots`, `migration`, optional normalized `llm`, `output_review`, `outputs`, `source`, and `raw`.
+#'   `include_roots`, `migration`, optional normalized `llm`, `outputs`, `source`, and `raw`.
 #' @examples
 #' # Read the demo project configuration shipped with the package.
 #' cfg <- sas_config(system.file("examples", "migration-demo", "_sas2r.yml",
@@ -481,6 +426,13 @@ sas_config <- function(path = NULL, start = ".") {
       "bool#no" = function(value) if (tolower(value) == "false") FALSE else value
     ))
     if (is.null(raw)) raw <- list()
+    if ("verification" %in% names(raw)) {
+      # Accepted by earlier versions, but no run ever acted on it.
+      cli::cli_abort(
+        c("Config key {.val verification} in {.file {src}} is no longer accepted.",
+          "i" = "It never changed what a run does. Remove it, and list SAS reference outputs under {.code outputs: references:}."),
+        class = "sas2r_config_error")
+    }
     unknown <- setdiff(names(raw), KNOWN_CONFIG_KEYS)
     if (length(unknown)) {
       msg <- paste0("Unknown config key", if (length(unknown) > 1) "s" else "", " in {.file {src}}: {.val {unknown}}")
@@ -489,7 +441,6 @@ sas_config <- function(path = NULL, start = ".") {
   }
   llm <- if (is.null(raw$llm)) NULL else normalize_llm_config(raw$llm)
   budget <- normalize_budget_config(raw$budget)
-  output_review <- normalize_output_review_config(raw, src)
   outputs <- normalize_outputs_config(raw$outputs, src)
   include_roots <- if (is.null(raw$includes$roots)) character()
                    else as.character(raw$includes$roots)
@@ -504,7 +455,6 @@ sas_config <- function(path = NULL, start = ".") {
     include_roots = config_rebase_paths(include_roots, src),
     autoexec = config_rebase_paths(autoexec, src),
     outputs = outputs,
-    output_review = output_review,
     comparison_rules = normalize_comparison_rules(raw$comparison_rules,
       base = if (is.na(src)) NULL else dirname(normalizePath(src, mustWork = FALSE))),
     llm = llm,

@@ -1,75 +1,6 @@
-#' Order translation units by data dependency (topological sort)
-#'
-#' @param lineage Dataset references tibble from extract_dataset_refs().
-#' @param unit_ids Integer vector of unit IDs to order.
-#' @return Integer vector of ordered unit IDs, or `NULL` if a dependency cycle is detected.
-#' @noRd
-unit_order <- function(lineage, unit_ids) {
-  writer <- split(lineage$unit_id[lineage$role == "creates"],
-                  lineage$dataset[lineage$role == "creates"])
-  reads <- lineage[lineage$role == "reads", ]
-  n_reads <- nrow(reads)
-  if (n_reads == 0L) return(unit_ids)
-
-  read_units <- reads$unit_id
-  read_dsets <- reads$dataset
-  edges_from_list <- vector("list", n_reads)
-  edges_to_list <- vector("list", n_reads)
-
-  for (k in seq_len(n_reads)) {
-    r_unit <- read_units[k]
-    w <- writer[[read_dsets[k]]]
-    if (!length(w)) next
-    # In sequential execution, reader depends on the closest preceding writer if available,
-    # or forward writer if reader precedes all writers in file order
-    idx <- findInterval(r_unit - 1L, w)
-    chosen_w <- if (idx > 0L) {
-      w_cand <- w[idx]
-      if (w_cand != r_unit) w_cand else {
-        w_sub <- w[w < r_unit]
-        if (length(w_sub)) max(w_sub) else w[w != r_unit]
-      }
-    } else {
-      w[w != r_unit]
-    }
-    if (length(chosen_w)) {
-      edges_from_list[[k]] <- chosen_w
-      edges_to_list[[k]] <- rep(r_unit, length(chosen_w))
-    }
-  }
-  edges_from <- unlist(edges_from_list, use.names = FALSE)
-  if (is.null(edges_from)) edges_from <- integer()
-  edges_to <- unlist(edges_to_list, use.names = FALSE)
-  if (is.null(edges_to)) edges_to <- integer()
-
-  indeg <- stats::setNames(integer(length(unit_ids)), unit_ids)
-  tab_to <- table(as.character(edges_to))
-  indeg[names(tab_to)] <- as.integer(tab_to)
-
-  adj <- split(edges_to, edges_from)
-  queue <- unit_ids[indeg[as.character(unit_ids)] == 0L]
-  out <- integer(length(unit_ids))
-  out_len <- 0L
-  q_head <- 1L
-  while (q_head <= length(queue)) {
-    v <- queue[q_head]
-    q_head <- q_head + 1L
-    out_len <- out_len + 1L
-    out[out_len] <- v
-    kids <- adj[[as.character(v)]]
-    for (kid in kids) {
-      ckid <- as.character(kid)
-      indeg[ckid] <- indeg[ckid] - 1L
-      if (indeg[ckid] == 0L) queue <- c(queue, kid)
-    }
-  }
-  if (out_len < length(unit_ids)) return(NULL)  # cycle
-  out[seq_len(out_len)]
-}
-
 # Bumped whenever a cached per-file scan product changes shape; stale entries
 # under an older version are simply never looked up again.
-SCAN_CACHE_SCHEMA_VERSION <- "4.5"
+SCAN_CACHE_SCHEMA_VERSION <- "4.6"
 
 # Cache source parsing within this R session without writing into input trees.
 project_cache_dir <- function(root) {
@@ -355,7 +286,8 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
         fmt_defs = fmt_defs_raw,
         fmt_uses = fmt_uses_raw,
         fn_defs = fn_defs_raw,
-        fn_uses = fn_uses_raw
+        fn_uses = fn_uses_raw,
+        scan_findings = source_records$findings
       )
       if (cache) {
         scan_cache[[h]] <- hit
@@ -389,6 +321,11 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     }
     stmt_list[[f]] <- u
     unit_rows[[f]] <- u_rows
+    if (!is.null(hit$scan_findings) && nrow(hit$scan_findings)) {
+      flags_list[[length(flags_list) + 1L]] <- tibble::tibble(
+        kind = hit$scan_findings$kind,
+        detail = paste0(f, ":", hit$scan_findings$line, ": ", hit$scan_findings$reason))
+    }
 
     file_comments <- hit$comments
     if (nrow(file_comments) > 0L) {
@@ -944,6 +881,7 @@ scan_project <- function(path, config, recursive = FALSE, cache = FALSE) {
     macros = list(defs = defs, calls = calls, resolution = resolution),
     lineage = lineage, output_contracts = output_contracts, order = ord, flags = flags, config = config,
     graph = proj_graph, schedule = proj_sched,
+    late_order = producer_plan$late_order, ordered_roots = producer_plan$execution_files,
     dependency_facts = dependency_facts, source_hashes = source_hashes,
     project_dir = root
   ), class = "sas2r_project")

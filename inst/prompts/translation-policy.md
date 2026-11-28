@@ -22,7 +22,8 @@ Shared source-translation policy (translator, static reviewer, fixer):
 - In MERGE ... BY, input values may be retained within one BY group, but are reset at the next BY group. An input absent from a group contributes missing values for its unique variables. For left keys A, B, C and right keys A, C, a right-only value for B is missing; do not carry A's value into B. A reviewer claim of cross-group retention is not authority to add fill-forward code. Preserve the helper's documented limits for repeated keys and overlapping columns.
 - PROC FORMAT definitions are compiled into the single .sas2r_formats catalog loaded by autoexec.R. Use sas_put(x, "name.") or apply_format(x, "name."); retain the $ prefix for character formats. The selected setup R body is source context, not an executed startup program, and does not establish extra runtime bindings. Do not create sas_formats aliases or bare variables for each format.
 - Reference outputs never override executable SAS, its macros/includes or configured order. A source-required failure or a source/reference inconsistency belongs in the report; do not silently correct source behavior in the R translation.
-- Create an uninitialized DATA-step variable only at the source operation that requires it, using a typed vector such as df$score <- rep(NA_real_, nrow(df)) or df |> dplyr::mutate(score = NA_real_). A value supplied by the next merge input must not be pre-created on another input. Preserve genuine overlapping columns; never drop one merely to bypass sas_merge restrictions. A required input column missing from incompatible data is not permission to invent values or silently replace source filters.
+- Create an uninitialized DATA-step variable only at the source operation that requires it, using a typed vector such as df$score <- rep(NA_real_, nrow(df)) or df |> dplyr::mutate(score = NA_real_). A value supplied by the next merge input must not be pre-created on another input. Preserve genuine overlapping columns; never drop one merely to bypass sas_merge restrictions.
+- A variable that a DATA-step expression reads and an input may not carry is read through sas_uninitialized(df, "name"), which supplies missing values and records the note SAS logs. Write no column test, fallback value or stop() of your own for that case, and name only variables the SAS source reads. Where SAS itself stops on an absent variable (BY, WHERE, KEEP=, DROP= or RENAME= on an input, a procedure's variable list), the R stops too. Beyond that, input data that lacks a required column is not permission to invent values or silently replace source filters.
 - A repair must implement the required source effect. Removing a stop or call, returning invisible(NULL), or creating metadata without a consumer does not implement that effect. An equivalent implementation in the caller is acceptable when visible and reviewed. If faithful repair is unavailable, return unchanged code with a precise diagnosis and remaining_uncertainty; it remains unresolved within the existing limits.
 - A reusable macro's known literal calls and its broader supported behavior are separate claims. Inspect what the source calls actually require, while retaining limitations outside that coverage. Dynamic calls remain unknown; observed input values do not prove a branch unreachable. An unsupported_capability label does not excuse an unnecessary stop or wrong use of an available helper.
 - Coordinate selected producer and consumer interfaces: return names, scalar/vector/list shape, lookup rules, missing versus blank values, and caller scope. Do not flatten arbitrary results with unlist(), which can alter names and remove NULL elements. Inspect the selected dependency and preserve source behavior at both ends; do not invent a second global store or compatibility aliases.
@@ -31,3 +32,61 @@ Shared source-translation policy (translator, static reviewer, fixer):
 - lib_members("work") lists ordinary supported registry members for runtime list expansion; lib_delete("work", lib_members("work")) is valid only when source requests those members and deletion restrictions allow it. Listing does not authorize deletion of separate input files or expand views/ranges/name literals. Library contents remain outside authoring-agent access.
 
 - For dates, distinguish storage class, epoch, display format and value. A SAS format does not itself shift the stored number. A uniform numeric difference alone does not establish an epoch mismatch or authorize a conversion to match a reference.
+
+## Report destinations and descriptor order
+
+Use `sas_output_path("outputs/table.pdf", environment())` for a relative ODS/report
+file destination. Pass the complete relative source path, including a leading
+`outputs/` when present. The helper creates the parent directories under the
+run's `tlf/` directory. A nested function can use its enclosing bundle runtime.
+Use `sas2r_assignment_path()` only for LIBNAME input paths. Absolute SAS report
+destinations need an explicit relative logical mapping.
+
+Preserve SAS descriptor/PDV column order, including in default PROC PRINT output.
+Variables first declared by LENGTH, ATTRIB, RETAIN, FORMAT or ARRAY before SET
+precede the input descriptor's remaining columns, in source first-occurrence order.
+A mutate that appends such variables is insufficient: explicitly relocate/select
+columns into their SAS order before writing. KEEP lists select columns but do not
+reorder their descriptor order. Do not sort column names or use a reference file's
+order to override executable SAS. Unsupported declarations still require review.
+
+## Readable report tables
+
+Preserve every source-required output format, for both PDF and non-PDF reports.
+Examples include PDF, RTF, Microsoft Word DOCX (ODS WORD), HTML and image formats;
+this is not an exhaustive list. Use a writer that produces the actual requested
+format at the source-required destination. Renaming a file does not convert its
+format; do not substitute PDF, plain text or another format merely to create a file.
+`sas_print_table()` writes PDF only and rejects non-`.pdf` paths. For non-PDF
+outputs, select a format-appropriate writer available under the configured
+package policy. Retain source-required content, labels, titles, footnotes,
+ordering and report structure. Resolve permitted writer dependencies explicitly;
+if unavailable, report the limitation rather than claiming the output is complete.
+Review and repair must check the writer's actual format as well as the filename;
+a format mismatch is an output defect, not a cosmetic styling difference.
+File existence, signatures, container structure or extracted text alone do not
+prove layout or SAS-reference equivalence. Formats without built-in validators,
+including DOCX, remain unverified and require review; do not claim those checks passed.
+
+For a plain PDF listing, prefer `sas_print_table(data,
+sas_output_path("outputs/table.pdf", environment()))`. It opens and closes its
+own PDF device; do not wrap it in another `pdf()` call. It preserves supplied
+column order, adds Obs by default, aligns headers and values using shared column
+positions, uses fixed line spacing and repeats headers on subsequent pages.
+For text outside the helper's printable Windows-1252 encoding, use a PDF
+renderer and font that preserve the original headings and values.
+Use `obs = FALSE` for NOOBS, supply source-required labels/formatted values,
+and implement source filtering, ordering, ID/BY groups, totals and titles
+separately. It is not a complete PROC PRINT/ODS engine; its page width grows to
+fit content. Use an appropriate alternative for source-required page dimensions
+or complex layouts, preserving the same readability properties.
+
+Do not independently join headers and each row with a constant number of spaces:
+unequal string lengths shift values under the wrong headings. Use shared widths
+computed from both headings and displayed values, or shared drawing coordinates.
+Do not spread a short listing over the full page with a row-count-dependent
+`seq(top, bottom, length.out = n)`; use fixed line spacing and paginate overflow.
+Retain every cell, keep headings associated with their values, and prevent
+overlap or clipping. These are readable-content requirements, not optional
+cosmetic refinements. A file's existence, valid format structure, or presence of
+expected text alone does not establish these layout properties.

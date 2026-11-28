@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic OpenAI Chat Completions replay server for real-ellmer CI."""
+"""Deterministic provider protocol replay server for real-ellmer CI."""
 
 import argparse
 import json
@@ -32,6 +32,20 @@ PROGRAM_TRANSLATION = {
     "uncertainty": [],
 }
 
+# The answer the gathered-answer model writes, as text at the end of the tool
+# phase or as structured output when asked again. Populated arrays let the
+# contract compare the two paths' data shapes.
+ANSWER_TRANSLATION = {
+    **PROGRAM_TRANSLATION,
+    "parameters": [
+        {"name": "cutoff", "type": "numeric", "required": False, "default": 10},
+    ],
+    "uncertainty": [
+        {"severity": "low", "claim": "Rounding follows R.",
+         "evidence": "data step", "affected_outputs": ["work.out"]},
+    ],
+}
+
 
 def contains_pair(value, key, expected):
     if isinstance(value, dict):
@@ -54,11 +68,31 @@ def contains_key(value, key):
 
 
 def structured_payload(body):
-    if contains_key(body, "static_runnability") or "schema program_review_v1" in json.dumps(body):
+    text = json.dumps(body)
+    if "synthetic_bug_triage_target" in text:
+        if "evidence_id" not in text or "repro_r" not in text:
+            # A text-only model cannot see the local schema unless the
+            # request carries it. Mirror the wrong-field regression.
+            return {"findings": [{"evidence_ids": ["E1"]}]}
+        return {"findings": [{
+            "evidence_id": "E1",
+            "responsible_step": "runtime_helpers",
+            "explanation": "The synthetic output check reports a possible package failure.",
+            "expected": "A supported operation produces the expected output.",
+            "uncertainty": "Test this on the affected build.",
+            "next_step": "Try the synthetic example.",
+            "repro_r": "stopifnot(sas2r::sas_sum(c(1, 2)) == 3)",
+        }]}
+    if contains_key(body, "static_runnability") or "schema program_review_v1" in text:
         return {"verdict": "reviewed_no_material_finding", "static_runnability": "looks_runnable", "findings": [], "unresolved_dependencies": []}
     if contains_key(body, "ok"):
         return {"ok": True}
-    if contains_key(body, "side_effects") or "schema program_translation_v1" in json.dumps(body):
+    if body.get("model") == "offline-gathered-answer-model":
+        return ANSWER_TRANSLATION
+    if body.get("model", "").startswith(("offline-provider-model", "offline-local-model")):
+        if "side_effects" not in text:
+            return TRANSLATION
+    if contains_key(body, "side_effects") or "schema program_translation_v1" in text:
         return PROGRAM_TRANSLATION
     return TRANSLATION
 
@@ -67,15 +101,23 @@ class ReplayHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
-        """Return an empty Bedrock inventory without leaving loopback."""
-        if not self.path.startswith("/bedrock-control/foundation-models"):
-            self.send_error(
-                404, "expected /bedrock-control/foundation-models"
-            )
+        """Return synthetic inventories and local server readiness."""
+        if self.path.startswith("/bedrock-control/foundation-models"):
+            result = {"modelSummaries": []}
+        elif self.path == "/api/tags":
+            result = {"models": [{"name": "offline-local-model:latest",
+                "modified_at": "2026-01-01T00:00:00Z", "size": 1}]}
+        elif self.path == "/v1/models":
+            result = {"object": "list", "data": [
+                {"id": "offline-local-model", "object": "model", "created": 0,
+                 "owned_by": "loopback", "slug": "offline-local-model"}
+            ]}
+        else:
+            self.send_error(404, "unknown inventory or readiness endpoint")
             return
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": {}}) + "\n")
-        payload = json.dumps({"modelSummaries": []}).encode("utf-8")
+        payload = json.dumps(result).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -84,20 +126,32 @@ class ReplayHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):  # noqa: N802 - stdlib handler API
+        if self.path == "/api/show":
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            payload = b'{"capabilities":["completion","tools"]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         is_chat_completions = self.path.endswith("/chat/completions")
         is_responses = self.path.endswith("/responses")
         is_anthropic_messages = self.path.endswith("/anthropic/v1/messages")
         is_gemini_generate = self.path.endswith(":generateContent")
+        is_gemini_interactions = self.path.endswith("/interactions")
         if not (
             is_chat_completions
             or is_responses
             or is_anthropic_messages
             or is_gemini_generate
+            or is_gemini_interactions
         ):
             self.send_error(
                 404,
                 "expected /chat/completions, /responses, "
-                "/anthropic/v1/messages, or :generateContent",
+                "/anthropic/v1/messages, :generateContent, or /interactions",
             )
             return
         length = int(self.headers.get("Content-Length", "0"))
@@ -110,6 +164,10 @@ class ReplayHandler(BaseHTTPRequestHandler):
 
         with open(self.server.log_file, "a", encoding="utf-8") as stream:
             stream.write(json.dumps({"path": self.path, "body": body}) + "\n")
+
+        if body.get("model") == "offline-provider-model-anonymous" and self.headers.get("Authorization"):
+            self.send_error(400, "anonymous endpoint received authorization")
+            return
 
         if body.get("model") == "offline-parallel-rejection-model" and "temperature" in body:
             payload = json.dumps({"error": {"message": "Unsupported parameter: temperature"}}).encode()
@@ -156,13 +214,22 @@ class ReplayHandler(BaseHTTPRequestHandler):
             response = self.anthropic_messages_response(body)
         elif is_gemini_generate:
             response = self.gemini_generate_content_response(body, "native-gemini" in self.path)
+        elif is_gemini_interactions:
+            response = self.gemini_interactions_response(body)
         elif is_chat_completions:
             response = self.chat_completions_response(body, response_kind)
         else:
             response = self.responses_response(body, response_kind)
-        payload = json.dumps(response).encode("utf-8")
+        if is_anthropic_messages and body.get("stream") is True:
+            # The Messages API answers a streamed request with server-sent
+            # events, not with one JSON document.
+            payload = self.anthropic_event_stream(response).encode("utf-8")
+            content_type = "text/event-stream"
+        else:
+            payload = json.dumps(response).encode("utf-8")
+            content_type = "application/json"
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Connection", "close")
         self.end_headers()
@@ -172,9 +239,57 @@ class ReplayHandler(BaseHTTPRequestHandler):
             pass
 
     @staticmethod
+    def anthropic_event_stream(message):
+        """The same Messages reply as the event stream a streamed request gets."""
+        def event(data):
+            return f"event: {data['type']}\ndata: {json.dumps(data)}\n\n"
+
+        events = [event({
+            "type": "message_start",
+            "message": {**message, "content": [], "stop_reason": None,
+                        "usage": {**message["usage"], "output_tokens": 1}},
+        })]
+        for index, block in enumerate(message["content"]):
+            events += [
+                event({"type": "content_block_start", "index": index,
+                       "content_block": {"type": "text", "text": ""}}),
+                event({"type": "ping"}),
+                event({"type": "content_block_delta", "index": index,
+                       "delta": {"type": "text_delta", "text": block["text"]}}),
+                event({"type": "content_block_stop", "index": index}),
+            ]
+        events += [
+            event({"type": "message_delta",
+                   "delta": {"stop_reason": message["stop_reason"],
+                             "stop_sequence": message["stop_sequence"]},
+                   "usage": {"output_tokens": message["usage"]["output_tokens"]}}),
+            event({"type": "message_stop"}),
+        ]
+        return "".join(events)
+
+    @staticmethod
+    def two_round_kind(body, response_kind, completed):
+        # One tool call per round until two results are back, so the contract
+        # can compare the tool definitions sent across consecutive rounds.
+        if body.get("model") != "offline-tworound-model" or response_kind == "structured":
+            return response_kind
+        return "tool" if completed < 2 else "gathered"
+
+    @staticmethod
+    def gathered_text(body):
+        # A model that ends the tool phase by writing its complete answer as
+        # plain text, so the contract can see the runner accept it without a
+        # separate structured-output request.
+        if body.get("model") == "offline-gathered-answer-model":
+            return json.dumps(ANSWER_TRANSLATION, separators=(",", ":"))
+        return "gathered context"
+
+    @staticmethod
     def chat_completions_response(body, response_kind):
         native = "native-deepseek" in body.get("model", "")
-        batch = 1 + sum(m.get("role") == "tool" for m in body.get("messages", []))
+        completed = sum(m.get("role") == "tool" for m in body.get("messages", []))
+        batch = 1 + completed
+        response_kind = ReplayHandler.two_round_kind(body, response_kind, completed)
         if response_kind == "tool":
             message = {
                 "role": "assistant",
@@ -192,9 +307,11 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 message["tool_calls"].append({
                     **message["tool_calls"][0], "id": "real_auto_2"
                 })
+            if body.get("model") == "offline-tworound-model":
+                message["tool_calls"][0]["id"] = f"real_round_{batch}"
             finish_reason = "tool_calls"
         elif response_kind == "gathered":
-            message = {"role": "assistant", "content": "gathered context"}
+            message = {"role": "assistant", "content": ReplayHandler.gathered_text(body)}
             finish_reason = "stop"
         else:
             message = {
@@ -220,11 +337,18 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "prompt_tokens": 100,
                 "completion_tokens": 25,
                 "total_tokens": 125,
+                "cost": 0.0001,
             },
         }
 
     @staticmethod
     def responses_response(body, response_kind):
+        input_items = body.get("input") if isinstance(body.get("input"), list) else []
+        completed = sum(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in input_items
+        )
+        response_kind = ReplayHandler.two_round_kind(body, response_kind, completed)
         if response_kind == "tool":
             # `id` and `call_id` carry the same identifier so the paired
             # request/result assertion does not depend on which of the two
@@ -239,8 +363,11 @@ class ReplayHandler(BaseHTTPRequestHandler):
             }]
             if body.get("model") == "offline-batch-model":
                 output.append({**output[0], "id": "real_auto_2", "call_id": "real_auto_2"})
+            if body.get("model") == "offline-tworound-model":
+                round_id = f"real_round_{completed + 1}"
+                output[0].update({"id": round_id, "call_id": round_id})
         else:
-            text = "gathered context" if response_kind == "gathered" else json.dumps(
+            text = ReplayHandler.gathered_text(body) if response_kind == "gathered" else json.dumps(
                 structured_payload(body), separators=(",", ":")
             )
             output = [{
@@ -285,7 +412,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
             "model": body.get("model", "offline-anthropic-model"),
             "content": [{
                 "type": "text",
-                "text": json.dumps(TRANSLATION, separators=(",", ":")),
+                "text": json.dumps(structured_payload(body), separators=(",", ":")),
             }],
             "stop_reason": "end_turn",
             "stop_sequence": None,
@@ -295,7 +422,7 @@ class ReplayHandler(BaseHTTPRequestHandler):
     @staticmethod
     def gemini_generate_content_response(body, native=False):
         """One native Gemini generateContent reply."""
-        parts = [{"text": json.dumps(TRANSLATION, separators=(",", ":"))}]
+        parts = [{"text": json.dumps(structured_payload(body), separators=(",", ":"))}]
         if native:
             completed = sum("functionResponse" in part for turn in body.get("contents", [])
                             for part in turn.get("parts", []))
@@ -326,6 +453,36 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 "totalTokenCount": 125,
             },
             "modelVersion": "offline-gemini-model",
+        }
+
+    @staticmethod
+    def gemini_interactions_response(body):
+        """Gemini Interactions reply used by ellmer >= 0.5.1."""
+        native = "native-gemini" in body.get("model", "")
+        completed = sum(step.get("type") == "function_result"
+                        for step in body.get("input", []))
+        status = "completed"
+        if native and body.get("tools") and completed < 2:
+            batch = completed + 1
+            name = ("lookup_rulebook" if contains_pair(body["tools"], "name", "lookup_rulebook")
+                    else "lookup")
+            steps = [
+                {"type": "thought", "signature": f"c2lnbmF0dXJl{batch}",
+                 "summary": [{"type": "text", "text": f"native reasoning batch {batch}"}]},
+                {"type": "function_call", "id": f"native_{batch}",
+                 "name": name, "arguments": {"name": "round"}},
+            ]
+            status = "requires_action"
+        else:
+            text = ("gathered context" if native and body.get("tools")
+                    else json.dumps(structured_payload(body), separators=(",", ":")))
+            steps = [{"type": "model_output", "content": [{"type": "text", "text": text}]}]
+        return {
+            "id": "offline-gemini-interaction", "status": status,
+            "model": body.get("model"), "steps": steps,
+            "usage": {"total_input_tokens": 100, "total_output_tokens": 25,
+                      "total_cached_tokens": 0, "total_thought_tokens": 0,
+                      "total_tokens": 125},
         }
 
     def log_message(self, *_args):

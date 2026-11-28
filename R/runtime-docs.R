@@ -40,7 +40,7 @@
 #' \describe{
 #'   \item{Data access}{[lib_read()], [lib_write()], [sas2r_libname_assign()],
 #'     [sas2r_libname_clear()], [sas2r_resolve_registry()],
-#'     [sas2r_fold_names()]; datasets read through
+#'     [sas2r_fold_names()], [sas_uninitialized()]; datasets read through
 #'     `lib_read()` carry class `sas2r_dataset`, whose `$` and `[[` methods
 #'     resolve column names case-insensitively.}
 #'   \item{SAS value semantics}{[chr_cmp()], [sas_if_else()], [sas_sum()] and
@@ -53,6 +53,8 @@
 #'     `"NA"`; SAS pads fixed-width operands, this does not).}
 #'   \item{Sorting and merging}{[sas_sort()], [sas_merge()].}
 #'   \item{Formats}{[apply_format()], [sas_put()].}
+#'   \item{Reports}{[sas_output_path()] for destinations and [sas_print_table()]
+#'     for plain PDF listings with aligned columns and repeated page headers.}
 #'   \item{Includes}{[sas2r_source_include()].}
 #' }
 #'

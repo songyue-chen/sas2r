@@ -174,6 +174,14 @@ test_that("reviewer prompt context excludes translator reasoning and assumptions
   expect_no_match(reviewer_prompt_text, "{{claim}}", fixed = TRUE)
 })
 
+test_that("a response schema that cannot be loaded fails the prompt hash", {
+  # Hashing an empty schema instead would give every broken schema one identity.
+  expect_error(
+    worker_prompt_hash("translator", schema = "no_such_schema_v1"),
+    class = "sas2r_output_schema_error"
+  )
+})
+
 test_that("prompt and skill binding hashes cover YAML, prompt template, schema, and skills", {
   h_trans <- worker_prompt_hash("translator")
   expect_type(h_trans, "character")

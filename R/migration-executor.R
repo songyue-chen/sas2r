@@ -8,6 +8,9 @@ execution_process_env <- function(startup_file) {
   names <- unique(c(names, names(current)[current %in% secrets & nzchar(current)]))
   env[names] <- NA_character_
   env[c("R_ENVIRON_USER", "R_PROFILE_USER")] <- startup_file
+  # Saved messages and logs are read as text and matched by pattern: a parent
+  # session that advertises colors must not make the child style them.
+  env[c("NO_COLOR", "R_CLI_NUM_COLORS")] <- "1"
   env
 }
 
@@ -260,7 +263,7 @@ prepare_program_smoke <- function(state, plan, attempt_dir) {
   list(plan = plan, attempt_dir = dir, runtime = list(
     autoexec = file.path(dir, "autoexec.R"), helpers = helpers,
     output_dirs = c(vapply(libraries, function(entry) entry$write_path, character(1)),
-                    libraries = file.path(dir, "libraries"))))
+                    libraries = file.path(dir, "libraries"), tlf = file.path(dir, "tlf"))))
 }
 
 #' Run a program smoke test in a fresh callr subprocess
@@ -385,7 +388,7 @@ run_program_smoke <- function(
     ""
   }
 
-  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_call, format_call_names) {
+  smoke_runner_fn <- function(autoexec_file, registry_file, helpers_file, formats_file, dep_codes, target_code, call_site, component_id, population_specs, observe_population, format_condition, format_call, format_call_names) {
     # Initialize fresh environment
     execution_env <- new.env(parent = globalenv())
 
@@ -409,15 +412,19 @@ run_program_smoke <- function(
     diagnostics <- new.env(parent = emptyenv())
     diagnostics$current <- component_id
     diagnostics$population_checks <- list()
+    diagnostics$log_notes <- list()
     diagnostics$call_names <- character()
     execute_component <- function(id, code) {
       diagnostics$current <- id
       diagnostics$call_names <- character()
       if (!is.null(registry_seed)) assign(".sas2r_registry", registry_seed, envir = execution_env)
+      # Notes sas_uninitialized() records belong to the program that is running.
+      if (exists(".sas2r_log_notes", envir = execution_env, inherits = FALSE)) rm(".sas2r_log_notes", envir = execution_env)
       observer <- observe_population(population_specs[[id]], execution_env)
       on.exit({
         diagnostics$population_checks[[id]] <- observer$finish()
         observer$restore()
+        diagnostics$log_notes[[id]] <- get0(".sas2r_log_notes", envir = execution_env, inherits = FALSE)
       })
       withCallingHandlers(eval(parse(text = code), envir = execution_env),
         error = function(e) {
@@ -448,18 +455,18 @@ run_program_smoke <- function(
       success = TRUE,
       executed_components = executed_components,
       executed_calls = executed_calls,
-      population_checks = diagnostics$population_checks
+      population_checks = diagnostics$population_checks,
+      log_notes = diagnostics$log_notes
     )
     }, error = function(e) {
       message("Error: ", conditionMessage(e))
       list(
       success = FALSE, executed_components = executed_components,
       executed_calls = executed_calls, failed_component_id = diagnostics$current,
-      population_checks = diagnostics$population_checks,
-      condition = list(message = conditionMessage(e), class = class(e),
-                       call = format_call(conditionCall(e)), identifiers = e$identifiers,
-                       call_names = diagnostics$call_names,
-                       component_id = diagnostics$current, population_check = e$population_check)
+      population_checks = diagnostics$population_checks, log_notes = diagnostics$log_notes,
+      # The same record a bundle failure gets, so both are classified alike.
+      condition = c(format_condition(e, format_call),
+                    list(call_names = diagnostics$call_names, component_id = diagnostics$current))
     )})
   }
 
@@ -481,6 +488,7 @@ run_program_smoke <- function(
         component_id = component_id,
         population_specs = plan$population_specs %||% list(),
         observe_population = observe_source_population,
+        format_condition = execution_condition,
         format_call = execution_call_text,
         format_call_names = execution_call_names
       ),
@@ -561,6 +569,7 @@ run_program_smoke <- function(
     failed_component_id = condition$component_id %||% NULL,
     blocked_by = if (!is.null(condition$component_id) && !identical(condition$component_id, component_id)) condition$component_id else NULL,
     population_checks = res$population_checks %||% list(),
+    log_notes = run_log_notes(res$log_notes),
     executed_component_ids = if (passed) c(names(dep_codes), component_id) else (res$executed_components %||% character()),
     executed_call_ids = if (passed && nzchar(call_site_str)) "call_site_1" else character(),
     stdout_path = stdout_path,
@@ -604,14 +613,51 @@ run_program_smoke <- function(
 agent_error_facts <- function(condition, source_code = "") {
   if (!length(condition)) return(list(kind = "none", identifiers = character(),
     condition_class = character(), source_location = NA_character_, condition_message = ""))
+  # Live rlang conditions have parents; persisted records retain the formatted
+  # cause in their message. Match individual lines, never copy their contents.
+  causes <- list(condition)
+  while (inherits(condition$parent, "condition")) {
+    condition <- condition$parent
+    causes <- c(causes, list(condition))
+  }
+  raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
+  messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
+    conditionMessage(e) else e$message %||% ""), use.names = FALSE)
+  # A saved subprocess message can carry terminal styling; match the plain text.
+  messages <- cli::ansi_strip(messages)
+  lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
+    unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
+  if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
+  name <- "([A-Za-z_][A-Za-z0-9_.]*)"
+  variable_pattern <- paste0("^", name, ": variable ", name, " is not in the data[.]?$")
+  variable_errors <- Filter(length, regmatches(lines, regexec(variable_pattern, lines, perl = TRUE)))
+
   source_code <- paste(source_code, collapse = "\n")
   facts <- new.env(parent = emptyenv())
   facts$identifiers <- unique(tolower(regmatches(source_code,
     gregexpr("[A-Za-z_][A-Za-z0-9_.]*", source_code, perl = TRUE))[[1L]]))
   facts$calls <- character()
+  facts$argument_names <- character()
   walk <- function(x) {
     if (is.call(x)) {
       facts$calls <- c(facts$calls, paste(deparse(x), collapse = " "))
+      facts$argument_names <- c(facts$argument_names, setdiff(names(x), ""))
+      # Generated functions can stop without retaining a call in the stack.
+      # Ground both identifiers in the same call in the selected code.
+      if (length(variable_errors) && is.symbol(x[[1L]]) && is.null(facts$variable_error)) {
+        for (matched in variable_errors) {
+          if (!identical(as.character(x[[1L]]), matched[2L])) next
+          args <- as.list(x)[-1L]
+          matches_arg <- vapply(args, function(arg) {
+            !identical(arg, quote(expr = )) && (is.symbol(arg) || is.character(arg)) &&
+              identical(tolower(as.character(arg)), tolower(matched[3L]))
+          }, logical(1))
+          if (any(matches_arg)) {
+            facts$variable_error <- matched[2:3]
+            break
+          }
+        }
+      }
       # Registry calls express one dataset name as two literal arguments.
       fn <- as.character(x[[1L]])
       if (utils::tail(fn, 1L) %in% c("lib_read", "lib_exists", "lib_write")) {
@@ -628,20 +674,6 @@ agent_error_facts <- function(condition, source_code = "") {
   }
   parsed <- tryCatch(parse(text = source_code), error = function(e) expression())
   walk(parsed)
-  # Live rlang conditions have parents; persisted records retain the formatted
-  # cause in their message. Match individual lines, never copy their contents.
-  causes <- list(condition)
-  while (inherits(condition$parent, "condition")) {
-    condition <- condition$parent
-    causes <- c(causes, list(condition))
-  }
-  raw_classes <- unique(unlist(lapply(causes, function(e) e$class %||% class(e))))
-  messages <- unlist(lapply(causes, function(e) if (inherits(e, "condition"))
-    conditionMessage(e) else e$message %||% ""), use.names = FALSE)
-  lines <- trimws(gsub("^[[:space:]!\u2716\u2139]+", "",
-    unlist(strsplit(messages, "\n", fixed = TRUE)), perl = TRUE))
-  if ("rlang_error" %in% raw_classes) lines <- sub("^[xi] ", "", lines)
-  name <- "([A-Za-z_][A-Za-z0-9_.]*)"
   quote_mark <- paste0("['", intToUtf8(96), "\"]")
   patterns <- c(dataset_not_found = paste0("^Dataset not found: ", name, "$"),
     object_not_found = paste0("^object ", quote_mark, name, quote_mark, " not found$"),
@@ -658,6 +690,13 @@ agent_error_facts <- function(condition, source_code = "") {
     found <- sub(patterns[[candidate]], "\\1", matched, perl = TRUE)
     found <- unique(found[tolower(found) %in% facts$identifiers])
     if (length(found)) { kind <- candidate; found_names <- found; break }
+  }
+  called_function <- variable_message <- NULL
+  if (kind == "unclassified_error" && length(facts$variable_error)) {
+    kind <- "column_not_found"
+    called_function <- facts$variable_error[1L]
+    found_names <- facts$variable_error[2L]
+    variable_message <- sprintf("%s: variable %s is not in the data", called_function, found_names)
   }
   # Base R printing uses unquoted parameter names. Keep its value-free
   # diagnostic verbatim; numeric values (e.g. invalid digits) remain local.
@@ -680,37 +719,53 @@ agent_error_facts <- function(condition, source_code = "") {
   if (kind == "unclassified_error") for (candidate in names(fixed)) {
     if (any(grepl(fixed[[candidate]], lines, perl = TRUE))) { kind <- candidate; break }
   }
+  # One row-size failure has many wordings. Sizes are discarded; whether the
+  # offending value was empty is kept, because that is not a data count and it
+  # points at an absent column or NULL. A column name is sent only when the
+  # selected code assigns that name as a call argument.
+  if (kind == "unclassified_error") {
+    size_error <- execution_size_error(lines, raw_classes)
+    if (!is.null(size_error)) {
+      kind <- if (size_error$zero_length) "zero_length_value" else "differing_row_counts"
+      found_names <- intersect(size_error$names, facts$argument_names)
+    }
+  }
   if (kind == "unclassified_error" && "vctrs_error_incompatible_type" %in% raw_classes)
     kind <- "incompatible_types"
   if (kind == "unclassified_error" && "vctrs_error_subscript_oob" %in% raw_classes)
     kind <- "subscript_out_of_bounds"
   if (kind == "unclassified_error" && "rlang_error" %in% raw_classes &&
       any(grepl("^.* must be a logical vector, not ", lines))) kind <- "filter_not_logical"
-  helper_kinds <- c(sas2r_dataset_not_found = "dataset_not_found",
+  helper_kinds <- c(sas2r_column_order_mismatch = "source_column_order",
+    sas2r_dataset_not_found = "dataset_not_found",
     sas2r_unknown_libref = "unknown_library", sas2r_libref_member_error = "invalid_member",
     sas2r_lib_read_arguments = "lib_read_arguments", sas2r_lib_write_arguments = "lib_write_arguments",
     sas2r_library_unavailable = "library_unavailable", sas2r_write_format = "unsupported_write_format")
   helper <- intersect(raw_classes, names(helper_kinds))
   if (length(helper)) {
     kind <- unname(helper_kinds[helper[1L]])
+    called_function <- variable_message <- NULL
     names_in_condition <- unlist(lapply(causes, function(e) e$identifiers), use.names = FALSE)
     found_names <- unique(c(found_names, names_in_condition[tolower(names_in_condition) %in% facts$identifiers]))
   }
   classes <- intersect(raw_classes,
     c("error", "condition", "simpleError", "rlang_error", "dplyr:::mutate_error",
       "dplyr:::filter_error", "subscriptOutOfBoundsError", "sas2r_execution_timeout",
-      "vctrs_error_incompatible_type", "vctrs_error_subscript_oob", names(helper_kinds)))
+      "vctrs_error_incompatible_type", "vctrs_error_incompatible_size",
+      "vctrs_error_subscript_oob", names(helper_kinds)))
   # A call is safe only if it occurs verbatim in the supplied code tree.
   call_text <- unlist(lapply(causes, function(e) execution_call_text(e$call)), use.names = FALSE)
   location <- intersect(call_text, facts$calls)
   location <- if (length(location)) location[1L] else NA_character_
-  labels <- c(dataset_not_found = "Dataset not found", object_not_found = "Object not found",
+  labels <- c(source_column_order = "SAS column order mismatch: place LENGTH declarations before SET ahead of remaining input columns in descriptor order",
+    dataset_not_found = "Dataset not found", object_not_found = "Object not found",
     column_not_found = "Column not found", function_not_found = "Function not found",
     missing_argument = "Required argument missing", invalid_argument = "Invalid argument",
     unused_argument = "Unused argument",
     non_numeric_operand = "Non-numeric operand in arithmetic", missing_boolean = "Missing value in an if/while condition",
     empty_argument = "Zero-length argument in a condition", subscript_out_of_bounds = "Subscript out of bounds",
     undefined_columns = "Undefined columns selected", differing_row_counts = "Incompatible row counts",
+    zero_length_value = "Zero-length value where one per row is required; an absent column or NULL is a common cause",
     incompatible_types = "Incompatible column types", filter_not_logical = "Filter condition must be logical",
     unknown_library = "Library is not registered", invalid_member = "Invalid dataset member name",
     lib_read_arguments = 'Invalid helper arguments; use lib_read("lib", "member")',
@@ -719,9 +774,43 @@ agent_error_facts <- function(condition, source_code = "") {
     unsupported_write_format = "Unsupported dataset write format",
     unclassified_error = "Execution failed; inspect the local diagnostics")
   list(kind = kind, identifiers = found_names, condition_class = classes,
-    source_location = location,
-    condition_message = printing_message %||% paste0(labels[[kind]],
+    source_location = location, called_function = called_function,
+    condition_message = variable_message %||% printing_message %||% paste0(labels[[kind]],
       if (length(found_names)) paste0(": ", paste(found_names, collapse = ", "))))
+}
+
+# Recognize a row-size failure as base R, dplyr, tibble and vctrs word it.
+# Returns whether the offending value was empty and the column names the
+# message gives, or NULL when the lines describe something else. Sizes are
+# never returned: they can come from data.
+execution_size_error <- function(lines, classes = character()) {
+  name <- "`([A-Za-z_][A-Za-z0-9_.]*)`"
+  matches <- function(pattern) Filter(length, regmatches(lines, regexec(pattern, lines, perl = TRUE)))
+  result <- function(zero_length, names = character()) list(zero_length = zero_length, names = names)
+  # dplyr: `x` must be size 2 or 1, not 0.
+  hit <- matches(paste0("^", name, " must be size [0-9]+(?: or 1)?, not ([0-9]+)[.]?$"))
+  if (length(hit)) return(result(identical(hit[[1L]][3L], "0"), hit[[1L]][2L]))
+  # base R: replacement has 0 rows, data has 2
+  hit <- matches("^replacement has ([0-9]+) rows?, data has [0-9]+$")
+  if (length(hit)) return(result(identical(hit[[1L]][2L], "0")))
+  # tibble::add_column(): New column has 0 rows.
+  hit <- matches("^New columns? ha(?:s|ve) ([0-9]+) rows?[.]?$")
+  if (length(hit)) return(result(identical(hit[[1L]][2L], "0")))
+  # tibble::tibble(): one "Size n: Column `x`." line for each column.
+  if ("tibble_error_incompatible_size" %in% classes ||
+      any(grepl("^Tibble columns must have compatible sizes[.]?$", lines))) {
+    columns <- matches(paste0("^[*\u2022] Size ([0-9]+): Column ", name, "[.]?$"))
+    empty <- Filter(function(m) identical(m[2L], "0"), columns)
+    named <- if (length(empty)) empty else columns
+    return(result(length(empty) > 0L, vapply(named, `[[`, character(1), 3L)))
+  }
+  # vctrs: Can't recycle input of size 3 to size 2.
+  #        Can't recycle `a` (size 2) to match `b` (size 3).
+  if ("vctrs_error_incompatible_size" %in% classes ||
+      any(grepl("^Can't recycle .* to (?:size [0-9]+|match .* \\(size [0-9]+\\))[.]?$", lines, perl = TRUE))) {
+    return(result(any(grepl("^Can't recycle (?:input of size 0|.* \\(size 0\\)) to ", lines, perl = TRUE))))
+  }
+  NULL
 }
 
 bounded_agent_diagnostics <- function(execution,
@@ -836,6 +925,7 @@ run_bundle_attempt <- function(
   attempt$helper_hash <- unname(cli::hash_file_sha256(file.path(bundle_dir, "sas2r-helpers.R")))
   attempt$revision_manifest <- lapply(state$selected_revisions, function(rev) list(
     revision_id = rev$revision_id, r_hash = migration_hash(revision_code(rev)),
+    binding_hash = rev$contract$binding$binding_hash %||% rev$binding$binding_hash,
     source_hash = rev$contract$binding$source_hash %||% rev$binding$source_hash,
     affected_outputs = rev$affected_outputs %||% rev$contract$affected_outputs))
   plan <- build_bundle_execution_plan(state$graph)
@@ -898,10 +988,14 @@ run_bundle_attempt <- function(
     status_file <- file.path(bundle_dir, "_sas2r_bundle_progress.json")
     executed <- character()
     population_checks <- list()
+    log_notes <- list()
     diagnostics <- new.env(parent = emptyenv())
     for (item in execution_order) {
       assign(".sas2r_registry", registry_seed, envir = execution_env)
-      writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
+      # Notes sas_uninitialized() records belong to the program that is running.
+      if (exists(".sas2r_log_notes", envir = execution_env, inherits = FALSE)) rm(".sas2r_log_notes", envir = execution_env)
+      writeLines(jsonlite::toJSON(list(current = item, executed = executed, population_checks = population_checks,
+        log_notes = log_notes), auto_unbox = TRUE), status_file)
       candidates <- c(
         file.path(bundle_dir, program_files[[item]]),
         file.path(bundle_dir, item),
@@ -928,19 +1022,22 @@ run_bundle_attempt <- function(
         }, finally = {
           population_checks[[item]] <- observer$finish()
           observer$restore()
+          log_notes[[item]] <- get0(".sas2r_log_notes", envir = execution_env, inherits = FALSE)
           writeLines(jsonlite::toJSON(list(current = item, executed = executed,
-            population_checks = population_checks, call_names = diagnostics$call_names), auto_unbox = TRUE), status_file)
+            population_checks = population_checks, log_notes = log_notes,
+            call_names = diagnostics$call_names), auto_unbox = TRUE), status_file)
         })
         bindings <- get(".sas2r_registry", envir = execution_env)
         for (lib in names(bindings)) output_dirs[[lib]] <- unique(c(output_dirs[[lib]], bindings[[lib]]$write_path))
         executed <- c(executed, item)
-        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks), auto_unbox = TRUE), status_file)
+        writeLines(jsonlite::toJSON(list(current = NA_character_, executed = executed, population_checks = population_checks,
+          log_notes = log_notes), auto_unbox = TRUE), status_file)
       } else {
         stop(sprintf("Target program %s not found in bundle", item))
       }
     }
     list(success = TRUE, executed = executed, population_checks = population_checks,
-      output_dirs = output_dirs)
+      log_notes = log_notes, output_dirs = output_dirs)
   }
 
   startup_file <- tempfile("sas2r-empty-startup-")
@@ -1029,6 +1126,7 @@ run_bundle_attempt <- function(
     deferred_component_ids = scope$deferred_component_ids,
     deferred_reasons = scope$deferred_reasons,
     population_checks = res$population_checks %||% prog_info$population_checks %||% list(),
+    log_notes = run_log_notes(res$log_notes %||% prog_info$log_notes),
     condition = condition,
     stdout_path = stdout_path,
     stderr_path = stderr_path,
@@ -1046,12 +1144,31 @@ run_bundle_attempt <- function(
   completed_rec
 }
 
-# callr wraps the useful child condition in parent; preserve the deepest cause.
-execution_condition <- function(error) {
-  while (inherits(error$parent, "condition")) error <- error$parent
-  list(message = conditionMessage(error), class = class(error),
-       call = execution_call_text(conditionCall(error)), identifiers = error$identifiers,
-       population_check = error$population_check)
+# callr wraps the child's condition, and a package such as dplyr wraps the
+# cause in its own. The deepest cause supplies the message, as before. The
+# classes of every level below callr's wrapper and the first recorded call are
+# kept as well: they say what kind of failure it was and where in the code.
+# A smoke run calls this inside the program's own process, where only base R,
+# `pkg::` calls and the arguments are certain to be the current code.
+execution_condition <- function(error, format_call = execution_call_text) {
+  while (inherits(error, "callr_error") && inherits(error$parent, "condition")) error <- error$parent
+  chain <- list(error)
+  while (inherits(error$parent, "condition")) {
+    error <- error$parent
+    chain <- c(chain, list(error))
+  }
+  first <- function(get) {
+    for (level in chain) {
+      value <- get(level)
+      if (!is.null(value)) return(value)
+    }
+    NULL
+  }
+  list(message = cli::ansi_strip(conditionMessage(error)),
+       class = unique(unlist(lapply(chain, class), use.names = FALSE)),
+       call = first(function(e) format_call(conditionCall(e))),
+       identifiers = first(function(e) e$identifiers),
+       population_check = first(function(e) e$population_check))
 }
 
 # Capture only bare function names while the stack is live, never arguments or

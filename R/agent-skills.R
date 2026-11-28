@@ -20,12 +20,12 @@ skill_allowed_tools <- function() {
 }
 
 valid_semantic_rule_ids <- function() {
-  registry <- tryCatch(load_semantic_registry(), error = function(e) NULL)
-  if (is.null(registry)) return(character(0))
+  # Both lists ship with the package. One that cannot load is an error here:
+  # an empty list would report every skill trigger as nonexistent instead.
+  registry <- load_semantic_registry()
   rules <- names(registry$rules %||% list())
   domains <- paste0("known_domains.", names(registry$known_domains %||% list()))
-  exec_ids <- tryCatch(semantic_executable_rule_ids(), error = function(e) character(0))
-  unique(c(rules, domains, exec_ids))
+  unique(c(rules, domains, semantic_executable_rule_ids()))
 }
 
 check_duplicate_yaml_keys <- function(lines) {
@@ -535,38 +535,13 @@ skill_flags_from_sas <- function(sas_text) {
   if (grepl("\\b(boxplot|boxplotparm|vbox|hbox|pctldef|qntldef|percentile)\\b|\\bproc\\s+(means|summary|univariate)\\b|\\bround\\s*\\(", x)) {
     flags <- c(flags, "statistical_defaults")
   }
-  unique(flags)
-}
-
-#' Skill-trigger comparison reasons derived from repair difference evidence
-#'
-#' Maps the redacted digest's pattern hints and the gate's alignment
-#' provenance onto the `comparison_reasons` trigger vocabulary, so the
-#' alignment and ordering skills route to the fixer exactly when the failed
-#' comparison shows their failure modes.
-#'
-#' @param outputs The per-target difference evidence list handed to the fixer.
-#' @return A character vector drawn from the comparison-reason vocabulary.
-#' @noRd
-comparison_reasons_from_outputs <- function(outputs) {
-  if (!is.list(outputs) || !length(outputs)) return(character())
-  reasons <- character()
-  for (t in outputs) {
-    d <- t$differences
-    if (!is.list(d)) next
-    hints <- tryCatch(as.character(d$digest$pattern_hints$hint),
-                      error = function(e) character())
-    if (any(hints == "DUPLICATE_KEYS")) reasons <- c(reasons, "duplicate_key_order")
-    if (any(hints == "NA_PATTERN_DIFF")) reasons <- c(reasons, "missing_order_difference")
-    st <- d$structure
-    if (is.list(st)) {
-      if (isTRUE(st$dup_fanout)) reasons <- c(reasons, "duplicate_key_order")
-      if (identical(st$alignment_method, "keyless_multiset")) {
-        reasons <- c(reasons, "keyless_reorder")
-      }
-    }
+  # A FORMAT or ATTRIB statement, a format= option, a date literal, or one of
+  # the functions that make or measure dates. PROC FORMAT defines value
+  # formats and is not this.
+  if (grepl("(^|;)\\s*(format|attrib)\\b|\\bformat\\s*=|'[0-9]{1,2}[a-z]{3}[0-9]{2,4}'d\\b|\\b(mdy|today|datepart|intck|intnx)\\s*\\(", x, perl = TRUE)) {
+    flags <- c(flags, "sas_formats")
   }
-  unique(reasons)
+  unique(flags)
 }
 
 #' Statements belonging to one component, by source file identity

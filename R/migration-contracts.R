@@ -20,13 +20,6 @@ BUNDLE_STATUSES <- c(
   "validated"
 )
 
-#' Allowed agent evidence policies
-#' @noRd
-AGENT_EVIDENCE_POLICIES <- c(
-  "code_only",
-  "bounded"
-)
-
 #' Recursively canonicalize values for deterministic migration hashing
 #'
 #' Sorts named-list keys alphabetically while preserving vector element order.
@@ -155,120 +148,6 @@ init_migration_paths <- function(out_dir, run_id = NULL) {
     dir.create(paths[[name]], recursive = TRUE, showWarnings = FALSE)
   }
   paths
-}
-
-#' Create a new migration run record
-#'
-#' @param run_id Unique run identifier.
-#' @param path Input SAS file or directory path.
-#' @param out_dir Output root directory path.
-#' @param status Initial or final bundle status (must be in BUNDLE_STATUSES).
-#' @param agent_evidence Agent evidence policy ("code_only" or "bounded").
-#' @param execute Logical indicating if execution is enabled.
-#' @param max_program_repair_rounds Integer repair budget for programs.
-#' @param max_bundle_repair_rounds Optional overall bundle fixer-call cap.
-#' @param max_bundle_repairs_per_component Maximum bundle fixer calls per component.
-#' @param schema_version Schema version string.
-#' @param created_at ISO 8601 creation timestamp.
-#' @param ... Additional metadata fields.
-#' @return A named list representing the migration run record.
-#' @noRd
-new_migration_run_record <- function(
-  run_id,
-  path = character(),
-  out_dir = character(),
-  status = "blocked",
-  agent_evidence = "code_only",
-  execute = TRUE,
-  max_program_repair_rounds = 1L,
-  max_bundle_repair_rounds = NULL,
-  schema_version = MIGRATION_SCHEMA_VERSION,
-  created_at = NULL,
-  max_bundle_repairs_per_component = 2L,
-  ...
-) {
-  if (!is.character(run_id) || length(run_id) != 1L || !nzchar(run_id)) {
-    cli::cli_abort("run_id must be a non-empty string", class = "sas2r_invalid_argument")
-  }
-  if (!is.null(status) && (!is.character(status) || length(status) != 1L || !status %in% BUNDLE_STATUSES)) {
-    cli::cli_abort(
-      "invalid bundle status: {.val {status}}; must be one of {.val {BUNDLE_STATUSES}}",
-      class = "sas2r_invalid_status"
-    )
-  }
-  if (!is.character(agent_evidence) || length(agent_evidence) != 1L || !agent_evidence %in% AGENT_EVIDENCE_POLICIES) {
-    cli::cli_abort(
-      "invalid agent evidence policy: {.val {agent_evidence}}; must be one of {.val {AGENT_EVIDENCE_POLICIES}}",
-      class = "sas2r_invalid_evidence_policy"
-    )
-  }
-  if (is.null(created_at)) {
-    created_at <- strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  }
-
-  record <- list(
-    schema_version = schema_version,
-    run_id = run_id,
-    path = path,
-    out_dir = out_dir,
-    status = status,
-    agent_evidence = agent_evidence,
-    execute = isTRUE(execute),
-    max_program_repair_rounds = as.integer(max_program_repair_rounds),
-    max_bundle_repair_rounds = max_bundle_repair_rounds,
-    max_bundle_repairs_per_component = as.integer(max_bundle_repairs_per_component),
-    created_at = created_at
-  )
-  extra <- list(...)
-  if (length(extra) > 0) {
-    record <- utils::modifyList(record, extra)
-  }
-  record
-}
-
-#' Create a new bundle status record
-#'
-#' @param status Bundle status (must be in BUNDLE_STATUSES).
-#' @param reason Explanatory reason for status.
-#' @param attempt_id Identifier of the attempt evaluated (if any).
-#' @param assessed_targets Optional list or vector of assessed target summary records.
-#' @param schema_version Schema version string.
-#' @param created_at ISO 8601 creation timestamp.
-#' @param ... Additional metadata fields.
-#' @return A named list representing the bundle status record.
-#' @noRd
-new_bundle_status_record <- function(
-  status,
-  reason = character(),
-  attempt_id = NULL,
-  assessed_targets = list(),
-  schema_version = MIGRATION_SCHEMA_VERSION,
-  created_at = NULL,
-  ...
-) {
-  if (!is.character(status) || length(status) != 1L || !status %in% BUNDLE_STATUSES) {
-    cli::cli_abort(
-      "invalid bundle status: {.val {status}}; must be one of {.val {BUNDLE_STATUSES}}",
-      class = "sas2r_invalid_status"
-    )
-  }
-  if (is.null(created_at)) {
-    created_at <- strftime(as.POSIXlt(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  }
-
-  record <- list(
-    schema_version = schema_version,
-    status = status,
-    reason = reason,
-    attempt_id = attempt_id,
-    assessed_targets = assessed_targets,
-    created_at = created_at
-  )
-  extra <- list(...)
-  if (length(extra) > 0) {
-    record <- utils::modifyList(record, extra)
-  }
-  record
 }
 
 #' Create a new behavioral contract record for a component

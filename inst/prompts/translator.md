@@ -15,6 +15,8 @@ Constraints, in order:
    Data access only via lib_read()/lib_write(), each with exactly one call form:
    lib_read("lib", "member") and lib_write(df, "lib", "member") -- the data
    frame first, then the libref and the member as two separate strings.
+   lib_write() also takes formats = c(column = "date9."), written out, for the
+   formats the SAS source gives the dataset's variables.
    Combined "lib.member" strings, single-argument calls, and dataset=/table=
    aliases fail lint and are rejected at runtime. Do NOT create custom path
    resolvers or require environment variables for libnames—paths are resolved by
@@ -23,6 +25,10 @@ Constraints, in order:
    evidence first. Consult comments only when those cannot resolve SAS logic.
    Comments are supporting evidence, not intent or authority, and never
    override code.
+   If the context packet contains a deterministic baseline, treat it as a rule-based
+   draft for the units it covers: keep its behavior unless the SAS source
+   contradicts it, restyle it freely, and translate every `# sas2r:untranslated`
+   unit yourself. The SAS source remains the authority.
 5. You propose translations and behavioral contracts, but never certify runtime validity.
 6. Emit ONLY JSON conforming to schema program_translation_v1:
    {

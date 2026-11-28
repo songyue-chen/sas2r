@@ -13,7 +13,7 @@ sas_config(path = NULL, start = ".")
 }
 \value{
 A \code{sas2r_config} object containing \code{libraries}, \code{macro_search_path},
-\code{include_roots}, \code{migration}, optional normalized \code{llm}, \code{output_review}, \code{outputs}, \code{source}, and \code{raw}.
+\code{include_roots}, \code{migration}, optional normalized \code{llm}, \code{outputs}, \code{source}, and \code{raw}.
 }
 \description{
 Looks for \verb{_sas2r.yml} upward from \code{start}; the \code{SAS2R_CONFIG}
@@ -48,6 +48,9 @@ retain their existing roles. The list orders the scanned source scope;
 \code{path} and \code{recursive} in \code{\link[=sas_preflight]{sas_preflight()}} or \code{\link[=sas_translate]{sas_translate()}} still select
 that scope. Omitting the order retains inferred dependencies. Changing the
 order on a previously scanned project requires rescanning the sources.
+Set \code{migration.bug_reports: true} to enable AI triage of possible sas2r
+bugs under the run's reviewer usage budget. Defaults to false.
+See \code{\link[=sas_bug_report]{sas_bug_report()}}.
 }
 \examples{
 # Read the demo project configuration shipped with the package.

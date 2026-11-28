@@ -39,6 +39,11 @@ review verdict. `coordinator ...: reviewed` means the coordinator recorded a
 review result, which can still contain `repair_required` findings. The report
 and component review history contain the verdict and findings.
 
+A completed successful bundle run supersedes earlier smoke failures or runtime
+deferrals only for the unchanged component bindings it actually executed.
+The earlier smoke result remains in the report and event history. Review,
+mechanical, dependency, and output/reference findings remain separate gates.
+
 Mechanical checks, reviews, smoke execution, and bundle output checks establish
 different facts. A smoke pass does not clear a mechanical failure or missing
 review. A later successful review resolves prior review-specific blockers while
@@ -229,7 +234,9 @@ The accepted names are documented in `?sas_translate`; misspellings fail.
 For shipped adapters on ellmer 0.5.0+, `max_calls` counts each admitted request:
 initial gathering, every tool-result continuation, and structured or JSON
 finalization. For example, two tool batches followed by a gathered answer and
-finalization use four calls within one agent invocation. This applies with one
+finalization use four calls within one agent invocation; when the gathered
+answer already passes the output schema check it is used as the answer and
+finalization is skipped, so the same invocation uses three. This applies with one
 or several workflows. ellmer 0.4.2 uses the native serial tool loop with legacy
 phase-level admission, so that example uses two admissions; parallel execution
 falls back to one workflow. Review ceilings configured for the older counting
@@ -277,7 +284,10 @@ in the checkpoint identity. Changes to them can regenerate translations, not
 just reviews. The native-graphics changes in 0.5.2 update the shared policy,
 skill catalogue and default package list. Checkpoints saved by 0.5.1 or
 earlier are invalidated and translations can regenerate with fresh model
-calls. A package version number alone does not invalidate a checkpoint.
+calls. The installed sas2r version is part of the checkpoint identity too. A
+checkpoint saved by one version is not reused by another, even when no prompt
+or helper changed, so resuming after a package upgrade regenerates
+translations.
 
 ## Checking figure content
 
@@ -302,9 +312,17 @@ reference evidence.
 
 `result$outputs_dir` contains selected contract deliverables under
 `datasets/<library>/` and `tlf/`: for example `datasets/work/out.rds`,
-`datasets/adam/adsl.rds`, and `tlf/outputs/table.html`. It is NULL when execution
+`datasets/adam/adsl.rds`, and `tlf/table.html`. It is NULL when execution
 is disabled or no selected deliverables were produced. Unrequested scratch
-outputs stay in diagnostics rather than being included as deliverables.
+outputs stay in diagnostics. Report destinations retain their source subfolders.
+For example, `table.html` is saved as `tlf/table.html` and `outputs/table.html`
+as `tlf/outputs/table.html`. A second contract spelling the latter path as
+`./outputs/table.html` retains its own assessment and points to the same saved file.
+Regenerate and rerun an older development bundle
+if its two source destinations overwrote the same file. Update scripts that read
+a report from the older flattened location. An exported bundle keeps its own
+runtime helpers. Regenerate the bundle to pick up the updated PDF and path
+handling. Use a writer for the requested format when creating RTF, DOCX or HTML.
 
 `sas_write(result, "delivery")` writes the selected code and runtime, saved
 deliverables under `saved-outputs/`, reports under `report/`, a dependency/input

@@ -68,16 +68,28 @@ compare_datasets <- function(base, comp, profile = compare_profile(),
 #' [align_output_rows()] -- key inference from schema identifiers, uniqueness
 #' validation, duplicate-key multiset matching, and keyless multiset fallback
 #' -- instead of positional matching, so a content-equal reorder is not
-#' reported as a wall of cell mismatches. Configured `keys` steer key selection
-#' as row identity; they are deliberately not treated as an order contract.
+#' reported as a wall of cell mismatches. Configured `keys` are the first
+#' candidate for row identity, ahead of any key in `context`: unique, rows pair
+#' on them; repeated, rows are paired inside each configured key group. Inside
+#' a group a source or inferred key that makes the configured keys unique pairs
+#' the rows, and `selected_keys` then holds both; a group the two sides
+#' disagree on for that key, or any group when there is no such key, is matched
+#' by content. Keys replace the configured ones only when those cannot pair
+#' rows (a key column of a different type on each side). They are deliberately
+#' not treated as an order contract.
 #'
 #' @param base The reference dataset.
 #' @param comp The candidate dataset.
 #' @param profile A [compare_profile()].
 #' @param keys Optional key columns; inferred from the data when `NULL`.
+#' @param context Optional source alignment context from
+#'   [build_output_alignment_context()].
 #' @return An object of class `sas2r_comparison` whose `structure` also
-#'   carries `alignment_method`, `selected_keys`, `order`, and
-#'   `alignment_resource_state`.
+#'   carries `alignment_method`, `selected_keys`, `configured_keys`, `order`,
+#'   and `alignment_resource_state`. Its `keys` are the keys rows were paired
+#'   on, which is `selected_keys`. When rows are left unpaired on both sides
+#'   and one key column alone keeps some of them apart, `unpaired_keys` holds
+#'   the record from [unpaired_key_evidence()].
 #' @noRd
 compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
                                      keys = NULL, context = NULL) {
@@ -96,36 +108,37 @@ compare_datasets_aligned <- function(base, comp, profile = compare_profile(),
 
   ref_eng <- normalize_output_frame(al$base, profile = profile)
   cand_eng <- normalize_output_frame(al$comp, profile = profile)
-  ctx <- context %||% if (length(keys)) {
-    list(
-      by = character(),
-      sort = list(vars = character(), descending = logical()),
-      merge = list(),
-      lineage = list(keys = keys),
-      known_identifiers = keys,
-      order_contract = NULL,
-      collation = NULL
-    )
-  } else {
-    NULL
+  # Configured keys are the first candidate for row identity whether or not a
+  # source context is supplied. The context keeps its own BY/SORT/MERGE
+  # candidates and its order contract.
+  ctx <- context
+  if (length(keys)) {
+    ctx <- ctx %||% empty_alignment_context()
+    ctx$configured_keys <- keys
   }
   alignment <- align_output_rows(ref_eng, cand_eng, context = ctx,
                                  profile = profile, normalized = TRUE)
+  # Measured on the rows the pairing left over, after the pairing is final.
+  unpaired_keys <- unpaired_key_evidence(ref_eng, cand_eng, alignment)
 
+  # The record's `keys` are the keys rows were paired on; what was configured
+  # is kept beside them, so the two can be told apart when they differ.
   compare_datasets_impl(
-    al = al, profile = profile, keys = keys,
+    al = al, profile = profile,
+    keys = if (length(alignment$selected_keys)) alignment$selected_keys else NULL,
     pairing = list(
       base_idx = as.integer(alignment$pairs$reference_row),
       comp_idx = as.integer(alignment$pairs$candidate_row),
       rows_only_base = length(alignment$only_reference),
       rows_only_comp = length(alignment$only_candidate),
       dup_fanout = identical(alignment$method, "duplicate_key_multiset"),
-      structure_extras = list(
+      structure_extras = c(list(
         alignment_method = alignment$method,
         selected_keys = alignment$selected_keys,
+        configured_keys = as.character(keys %||% character()),
         order = alignment$order,
         alignment_resource_state = alignment$resource_state
-      )
+      ), if (!is.null(unpaired_keys)) list(unpaired_keys = unpaired_keys))
     )
   )
 }

@@ -189,13 +189,6 @@ test_that("registry credential env values are redacted even when no name regex m
     list(error = list(message = paste("rejected", private_key))),
     dir = dir, redactor = redactor
   )
-  lock <- file.path(dir, "_sas2r.lock")
-  sas2r:::write_llm_lock(
-    cfg, prompts_dir = dir, path = lock,
-    requested_parameters = list(note = private_key),
-    effective_parameters = list(note = private_key)
-  )
-
   ledger <- file.path(dir, "usage.jsonl")
   llm <- sas2r:::new_llm(function(request) {
     stop(paste("provider rejected key", private_key))
@@ -213,13 +206,11 @@ test_that("registry credential env values are redacted even when no name regex m
 
   text <- paste(c(
     readLines(file.path(dir, "llm_log.jsonl"), warn = FALSE),
-    readLines(lock, warn = FALSE),
     readLines(ledger, warn = FALSE)
   ), collapse = "\n")
   expect_false(grepl(private_key, text, fixed = TRUE))
   expect_match(text, "[REDACTED]", fixed = TRUE)
   expect_match(text, "run_summary", fixed = TRUE)
-  expect_match(text, "org-acct", fixed = TRUE)
 })
 
 test_that("existing provider arguments are unchanged after registry dispatch", {
@@ -241,6 +232,15 @@ test_that("existing provider arguments are unchanged after registry dispatch", {
   expect_match(bargs$base_url, "bedrock-runtime.us-east-1")
 })
 
+test_that("ellmer constructor names preserve existing sas2r provider profiles", {
+  config <- sas2r:::normalize_llm_config(list(
+    provider = "google_vertex", model = "model-a",
+    project_id = "fixture", location = "us-central1"
+  ))
+  expect_identical(config$provider, "vertex")
+  expect_identical(sas2r:::llm_provider_spec("claude")$id, "anthropic")
+})
+
 test_that("configuration cannot select an arbitrary ellmer export", {
   expect_error(
     sas2r:::llm_provider_spec("chat_openai_compatible"),
@@ -248,8 +248,7 @@ test_that("configuration cannot select an arbitrary ellmer export", {
   )
   expect_error(
     sas2r:::normalize_llm_config(list(
-      provider = "openai_compatible", model = "model-a",
-      base_url = "https://gateway.example.invalid/v1"
+      provider = "nonexistent_connector", model = "model-a"
     )),
     class = "sas2r_llm_config_error"
   )
@@ -277,8 +276,8 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
       id = "openai", chat_export = "chat_openai",
       auth_modes = "device_code", default_auth_mode = "device_code"
     )),
-    forbidden_export = list(gateway = sas2r:::new_llm_provider_spec(
-      id = "gateway", chat_export = "chat_openai_compatible",
+    malformed_export = list(gateway = sas2r:::new_llm_provider_spec(
+      id = "gateway", chat_export = "ellmer::chat_openai_compatible",
       auth_modes = "api_key", default_auth_mode = "api_key"
     )),
     community_support = list(openai = sas2r:::new_llm_provider_spec(
@@ -347,7 +346,6 @@ test_that("registry validation rejects unsafe or malformed provider specs", {
 
 test_that("the mock capability record stays outside the production registry", {
   expect_false("mock" %in% sas2r:::llm_provider_ids())
-  expect_false("mock" %in% sas2r:::LLM_PROVIDERS)
   expect_identical(
     sas2r:::adapter_capability_metadata("mock"),
     list(

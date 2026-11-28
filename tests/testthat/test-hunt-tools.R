@@ -34,12 +34,6 @@ test_that("list_macro_files returns names only and paths cannot be injected", {
   expect_identical(miss$error, "not_in_index")
 })
 
-test_that("orchestrator translates macro stubs before caller stubs", {
-  ids <- order_stubs_for_agents(tibble::tibble(
-    unit_id = c(10L, 4L), unit_type = c("data_step", "macro_def")))
-  expect_identical(ids, c(4L, 10L))
-})
-
 test_that("find_macro handles missing macros and multiple shadowed hits", {
   dir <- withr::local_tempdir()
   d1 <- file.path(dir, "root1"); dir.create(d1)
