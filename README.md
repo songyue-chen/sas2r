@@ -9,10 +9,10 @@ The package **does not require SAS** to translate or run generated R. Comparing
 results with SAS requires matching reference outputs. AI review does not replace
 independent programming or your organization's statistical QC procedures.
 
-**This README describes the 0.6.0 development preview.** The published release is
+**This README describes the 0.6.2 development preview.** The published release is
 [0.5.8 on CRAN](https://CRAN.R-project.org/package=sas2r). Development and the
 full test suite live on `develop`. The maintainer reserves `main` for CRAN
-submissions. See [what changed in 0.6.0](NEWS.md) and the
+submissions. See [what changed since 0.5.8](NEWS.md) and the
 [release workflow](https://github.com/songyue-chen/sas2r/blob/develop/docs/releasing.md).
 
 [Quickstart](#quickstart) · [AI models](#choosing-an-ai-model) ·
@@ -78,7 +78,7 @@ install.packages("sas2r")
 install.packages("ellmer")
 ```
 
-For the 0.6.0 features described below, including `sas_print_table()` and
+For the development features described below, including `sas_print_table()` and
 `sas_bug_report()`, install `remotes` and run
 `remotes::install_github("songyue-chen/sas2r@develop")`.
 

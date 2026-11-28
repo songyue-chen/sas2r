@@ -1,7 +1,7 @@
-# sas2r 0.6.0 development status
+# sas2r 0.6.2 development status
 
 The published version is [sas2r 0.5.8](https://CRAN.R-project.org/package=sas2r).
-Version 0.6.0 is under review on `develop`. The
+Version 0.6.2 is under review on `develop`. The
 [0.5.8 submission record](https://github.com/songyue-chen/sas2r/blob/e28af41d73e5b577c9ed4c628539c635a3340c20/cran-comments.md)
 contains the earlier release's checks and correspondence.
 
