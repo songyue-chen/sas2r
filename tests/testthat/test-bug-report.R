@@ -876,7 +876,9 @@ test_that("the issue draft finds its output by the name saved with the finding",
   # E2 is the first output, although the second saved assessment is the other.
   second <- draft_lines(draft_run(state, "E2")$report)
   expect_true(all(c("- Output: `work.out1`", "- Reference rows: 3", "- Records paired: 3") %in% second))
-  expect_false(any(grepl("177", second, fixed = TRUE)))
+  # Nothing of the other output. The draft holds a run ID with random
+  # characters, so a bare number is not a safe thing to look for.
+  expect_false(any(grepl("work.out2|rows: 177", second)))
 
   # The saved order of the assessments does not matter either.
   reordered <- draft_changed(third$report, function(report) {
