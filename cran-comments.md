@@ -24,31 +24,38 @@ package implementation and complete development tests at
 
 ## Submission archive and checks
 
-The archive contains 103 representative test files. The package code,
-namespace, help and runtime sources match the reviewed development commit. This
-submission record is excluded from the archive.
+The submission file is `sas2r_0.6.2.tar.gz` (866,949 bytes). It was built with
+R 4.6.2 on Linux from release commit
+`a3aa39438bb124fa63d748b4520d54a0a4e2785e`. Its SHA-256 is
+`781f156651c6f94d8b53fbc21da55ff6ec19183927da464f2e2f3734ae9f92d6`.
+The package code, namespace, help and installed files match the reviewed
+development commit. This submission record is excluded from the archive.
 
-Not yet recorded. These come from the checks of the release pull request, on
-the one archive that will be submitted, and are entered here before submission:
+Each platform checked the same file with `R CMD check --as-cran` and reported
+zero errors, warnings and NOTEs. Windows and Linux R-devel included incoming
+checks. The Linux release and R-devel jobs checked both PDF and HTML manuals.
 
-- the submission file's name, size, SHA-256, build R version and release commit;
-- overall check time and test time on each platform, including Windows and
-  Linux R-devel with incoming checks, and the PDF and HTML manuals on Linux;
-- the complete development suite against the installed submission file;
-- the reverse-dependency listing on the day of submission.
+| Platform | Overall check | Tests |
+| --- | ---: | ---: |
+| Windows R-devel (r90926) | 333 s | 188 s |
+| Windows R release (4.6.2) | 201 s | 119 s |
+| Linux R-devel (r90998) | 228 s | 119 s |
+| Linux R release (4.6.2) | 224 s | 123 s |
+| Linux R 4.1.3 | 227 s | 124 s |
+| macOS R release (4.6.2) | 125 s | 74 s |
 
-## Rehearsal before the pull request
+Times are elapsed seconds and exclude runner and dependency setup. The archive
+contains 103 representative test files. Each platform passed 5,809 assertions
+with 12 source-checkout skips.
 
-A rehearsal archive was built on macOS with R 4.4.0 from this tree, with the
-README links pointing at the preceding development commit. Its package code,
-help and tests are the ones in this candidate.
+The complete development suite, pinned to the development commit, ran against
+the installed submission file and passed 13,465 assertions with two
+environment-dependent skips and no failures or test warnings. The offline
+documentation examples and the synthetic migration acceptance run passed
+against the same installed file. The shipped tests also pass against it with
+the global workspace locked (`lockEnvironment(globalenv())`).
 
-- `NOT_CRAN=false R CMD check --as-cran --no-manual`: 0 errors, 0 warnings and
-  one NOTE, `unable to verify current time`, which comes from the check host.
-  154 seconds overall and 72 seconds for tests, with 5,809 passing assertions
-  and 12 source-checkout skips.
-- The shipped tests pass against the installed archive with the global
-  workspace locked (`lockEnvironment(globalenv())`): 6,091 assertions, no
-  failures.
+CRAN listed no reverse dependencies, including Suggests and Enhances, on
+November 28, 2026.
 
-These are not the submission's results.
+[Platform checks and source archive](https://github.com/songyue-chen/sas2r/actions/runs/46114525073)
